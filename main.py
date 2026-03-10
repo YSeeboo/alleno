@@ -40,6 +40,9 @@ app.include_router(jewelries_router)
 from api.inventory import router as inventory_router
 app.include_router(inventory_router)
 
+from api.orders import router as orders_router
+app.include_router(orders_router)
+
 
 @app.get("/")
 def root():
