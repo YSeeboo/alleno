@@ -7,6 +7,10 @@ class BomSet(BaseModel):
     qty_per_unit: float
 
 
+class BomQty(BaseModel):
+    qty_per_unit: float
+
+
 class BomResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

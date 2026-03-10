@@ -1,13 +1,17 @@
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import os
+import sys
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 import models  # registers all ORM classes with Base
-from database import Base
+from database import Base, get_db
+from main import app
 
 
 @pytest.fixture
@@ -23,11 +27,6 @@ def db():
     yield session
     session.close()
     Base.metadata.drop_all(engine)
-
-
-from fastapi.testclient import TestClient
-from main import app
-from database import get_db
 
 
 @pytest.fixture
