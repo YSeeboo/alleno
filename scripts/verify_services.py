@@ -1,25 +1,27 @@
 """
 End-to-end verification script for Allen Shop service layer.
 Run from project root:  python scripts/verify_services.py
-Creates verify_test.db (deleted at end).
+Requires PostgreSQL; defaults to postgresql://allen:allen@localhost:5432/allen_shop_test
 """
 import os
-os.environ.setdefault("DATABASE_URL", "sqlite:///./verify_test.db")
+os.environ.setdefault("DATABASE_URL", "postgresql://allen:allen@localhost:5432/allen_shop_test")
 
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy import create_engine
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 import models
-from database import Base
+from database import Base, engine
 
-DB_PATH = "verify_test.db"
-engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
 db = Session()
+
+with engine.begin() as conn:
+    for table in reversed(Base.metadata.sorted_tables):
+        conn.execute(text(f'TRUNCATE TABLE "{table.name}" RESTART IDENTITY CASCADE'))
 
 from services.part import create_part
 from services.jewelry import create_jewelry
@@ -98,6 +100,5 @@ print(f"  ✓ {handcraft.id} 最终 status = {final_hc.status}")
 
 db.commit()
 db.close()
-os.remove(DB_PATH)
 print("=" * 60)
 print("✓ All verification flows passed!")
