@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
-    DATABASE_URL: str = "postgresql://allen:allen@localhost:5432/allen_shop"
+    DATABASE_URL: str = "sqlite:///./allen_shop.db"
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_WHITELIST: str = ""
     ANTHROPIC_API_KEY: str = ""
