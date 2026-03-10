@@ -2,7 +2,12 @@ fastapi
 uvicorn[standard]
 sqlalchemy
 psycopg2-binary
-python-telegram-bot
+python-telegram-bot>=20.0
 anthropic
 pydantic-settings
 python-dotenv
+
+# dev / test
+pytest
+pytest-asyncio
+httpx
