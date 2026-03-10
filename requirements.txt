@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+python-telegram-bot
+anthropic
+pydantic-settings
+python-dotenv

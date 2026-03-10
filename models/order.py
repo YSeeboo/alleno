@@ -1,0 +1,25 @@
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+
+from database import Base
+from time_utils import now_beijing
+
+
+class Order(Base):
+    __tablename__ = "order"
+
+    id = Column(String, primary_key=True)
+    customer_name = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="待生产")
+    total_amount = Column(Numeric(10, 2), nullable=True)
+    created_at = Column(DateTime, default=now_beijing)
+
+
+class OrderItem(Base):
+    __tablename__ = "order_item"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(String, ForeignKey("order.id"), nullable=False)
+    jewelry_id = Column(String, ForeignKey("jewelry.id"), nullable=False)
+    quantity = Column(Integer, nullable=False)
+    unit_price = Column(Numeric(10, 2), nullable=False)
+    remarks = Column(Text, nullable=True)
