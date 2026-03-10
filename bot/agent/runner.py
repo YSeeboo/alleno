@@ -14,7 +14,10 @@ _MAX_ITERATIONS = 10
 
 async def run_agent(user_message: str, db: Session) -> str:
     """Run the Claude agentic loop and return the final text response."""
-    client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = anthropic.AsyncAnthropic(
+        api_key=settings.ANTHROPIC_API_KEY,
+        **({"base_url": settings.ANTHROPIC_BASE_URL} if settings.ANTHROPIC_BASE_URL else {}),
+    )
     messages = [{"role": "user", "content": user_message}]
 
     for _ in range(_MAX_ITERATIONS):
