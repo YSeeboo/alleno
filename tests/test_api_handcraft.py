@@ -1,0 +1,193 @@
+import pytest
+from services.part import create_part
+from services.jewelry import create_jewelry
+from services.inventory import add_stock
+
+
+def _setup(db):
+    part = create_part(db, {"name": "P1"})
+    jewelry = create_jewelry(db, {"name": "J1"})
+    # Add stock for the part so we can send it
+    add_stock(db, "part", part.id, 100.0, "初始入库")
+    return part, jewelry
+
+
+def test_create_handcraft_order(client, db):
+    part, jewelry = _setup(db)
+    resp = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier A",
+        "parts": [{"part_id": part.id, "qty": 10.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 5}],
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["id"].startswith("HC-")
+    assert data["supplier_name"] == "Supplier A"
+    assert data["status"] == "pending"
+
+
+def test_create_handcraft_order_with_note(client, db):
+    part, jewelry = _setup(db)
+    resp = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier B",
+        "parts": [{"part_id": part.id, "qty": 5.0, "bom_qty": 4.0, "note": "extra"}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 3, "note": "rush"}],
+        "note": "urgent order",
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["note"] == "urgent order"
+
+
+def test_list_handcraft_orders(client, db):
+    part, jewelry = _setup(db)
+    client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier A",
+        "parts": [{"part_id": part.id, "qty": 10.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 5}],
+    })
+    client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier B",
+        "parts": [{"part_id": part.id, "qty": 5.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 2}],
+    })
+    resp = client.get("/api/handcraft/")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 2
+
+
+def test_list_handcraft_orders_filter_by_status(client, db):
+    part, jewelry = _setup(db)
+    resp_create = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier A",
+        "parts": [{"part_id": part.id, "qty": 10.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 5}],
+    })
+    order_id = resp_create.json()["id"]
+
+    # Send to change status to processing
+    client.post(f"/api/handcraft/{order_id}/send")
+
+    resp_pending = client.get("/api/handcraft/?status=pending")
+    assert resp_pending.status_code == 200
+    assert len(resp_pending.json()) == 0
+
+    resp_processing = client.get("/api/handcraft/?status=processing")
+    assert resp_processing.status_code == 200
+    assert len(resp_processing.json()) == 1
+
+
+def test_get_handcraft_order(client, db):
+    part, jewelry = _setup(db)
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier A",
+        "parts": [{"part_id": part.id, "qty": 10.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 5}],
+    }).json()
+    resp = client.get(f"/api/handcraft/{created['id']}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == created["id"]
+
+
+def test_get_handcraft_order_not_found(client, db):
+    resp = client.get("/api/handcraft/HC-9999")
+    assert resp.status_code == 404
+
+
+def test_send_handcraft_order(client, db):
+    part, jewelry = _setup(db)
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier A",
+        "parts": [{"part_id": part.id, "qty": 10.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 5}],
+    }).json()
+    resp = client.post(f"/api/handcraft/{created['id']}/send")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "processing"
+
+
+def test_send_handcraft_order_not_found(client, db):
+    resp = client.post("/api/handcraft/HC-9999/send")
+    assert resp.status_code == 404
+
+
+def test_send_handcraft_order_insufficient_stock(client, db):
+    part = create_part(db, {"name": "P2"})
+    jewelry = create_jewelry(db, {"name": "J2"})
+    # No stock added for part
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier C",
+        "parts": [{"part_id": part.id, "qty": 50.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 5}],
+    }).json()
+    resp = client.post(f"/api/handcraft/{created['id']}/send")
+    assert resp.status_code == 400
+
+
+def test_receive_handcraft_jewelries(client, db):
+    part, jewelry = _setup(db)
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier A",
+        "parts": [{"part_id": part.id, "qty": 10.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 5}],
+    }).json()
+    order_id = created["id"]
+
+    # Send first
+    client.post(f"/api/handcraft/{order_id}/send")
+
+    # Get jewelry item id - need to check what we need
+    # The receive endpoint needs handcraft_jewelry_item_id
+    # We need to query it; use the service layer via db fixture
+    from models.handcraft_order import HandcraftJewelryItem
+    from database import get_db
+    # Access through the test db fixture
+    ji = db.query(HandcraftJewelryItem).filter(
+        HandcraftJewelryItem.handcraft_order_id == order_id
+    ).first()
+
+    resp = client.post(f"/api/handcraft/{order_id}/receive", json={
+        "receipts": [{"handcraft_jewelry_item_id": ji.id, "qty": 3}]
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["received_qty"] == 3
+    assert data[0]["status"] == "制作中"  # not yet fully received
+
+
+def test_receive_handcraft_jewelries_completes_order(client, db):
+    part, jewelry = _setup(db)
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier A",
+        "parts": [{"part_id": part.id, "qty": 10.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 5}],
+    }).json()
+    order_id = created["id"]
+
+    client.post(f"/api/handcraft/{order_id}/send")
+
+    from models.handcraft_order import HandcraftJewelryItem
+    ji = db.query(HandcraftJewelryItem).filter(
+        HandcraftJewelryItem.handcraft_order_id == order_id
+    ).first()
+
+    # Receive all 5
+    resp = client.post(f"/api/handcraft/{order_id}/receive", json={
+        "receipts": [{"handcraft_jewelry_item_id": ji.id, "qty": 5}]
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data[0]["status"] == "已收回"
+
+    # Order should now be completed
+    order_resp = client.get(f"/api/handcraft/{order_id}")
+    assert order_resp.json()["status"] == "completed"
+
+
+def test_receive_handcraft_order_not_found(client, db):
+    resp = client.post("/api/handcraft/HC-9999/receive", json={"receipts": []})
+    assert resp.status_code == 404
