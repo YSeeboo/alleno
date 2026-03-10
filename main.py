@@ -17,14 +17,19 @@ app = FastAPI(title="Allen Shop", description="饰品店管理系统", lifespan=
 
 
 # TODO: register routers
-# from api import parts, jewelries, bom, inventory, orders, plating, handcraft
+# from api import parts, jewelries, inventory, orders, plating, handcraft
 # app.include_router(parts.router)
 # app.include_router(jewelries.router)
-# app.include_router(bom.router)
 # app.include_router(inventory.router)
 # app.include_router(orders.router)
 # app.include_router(plating.router)
 # app.include_router(handcraft.router)
+
+from api.bom import router as bom_router
+app.include_router(bom_router)
+
+from api.parts import router as parts_router
+app.include_router(parts_router)
 
 
 @app.get("/")
