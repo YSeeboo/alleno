@@ -189,3 +189,34 @@ def test_receive_plating_items_order_not_found(client, db):
         "receipts": [{"plating_order_item_id": 1, "qty": 5.0}]
     })
     assert resp.status_code == 404
+
+
+def test_receive_plating_items_over_receive(client, db):
+    part = create_part(db, {"name": "P_over"})
+    add_stock(db, "part", part.id, 50.0, "initial stock")
+    db.commit()
+
+    create_resp = client.post("/api/plating/", json={
+        "supplier_name": "Supplier OVR",
+        "items": [{"part_id": part.id, "qty": 10.0}],
+    })
+    order_id = create_resp.json()["id"]
+    client.post(f"/api/plating/{order_id}/send")
+
+    from models.plating_order import PlatingOrderItem
+    item_id = db.query(PlatingOrderItem).filter(
+        PlatingOrderItem.plating_order_id == order_id
+    ).first().id
+
+    resp = client.post(f"/api/plating/{order_id}/receive", json={
+        "receipts": [{"plating_order_item_id": item_id, "qty": 15.0}]
+    })
+    assert resp.status_code == 400
+
+
+def test_create_plating_order_empty_items(client, db):
+    resp = client.post("/api/plating/", json={
+        "supplier_name": "Supplier Empty",
+        "items": [],
+    })
+    assert resp.status_code == 422

@@ -67,6 +67,11 @@ def receive_plating_items(db: Session, plating_order_id: str, receipts: list) ->
                 f"PlatingOrderItem {receipt['plating_order_item_id']} does not belong to order {plating_order_id}"
             )
         qty = receipt["qty"]
+        remaining = float(item.qty) - float(item.received_qty or 0)
+        if qty > remaining:
+            raise ValueError(
+                f"Cannot receive {qty}: only {remaining} remaining for item {item.id}"
+            )
         item.received_qty = float(item.received_qty or 0) + qty
         add_stock(db, "part", item.part_id, qty, "电镀收回")
         if float(item.received_qty) >= float(item.qty):

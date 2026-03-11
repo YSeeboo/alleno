@@ -121,6 +121,7 @@ const itemColumns = [
         h(NInputNumber, {
           value: r.receiveQty,
           min: 0.01,
+          max: r.qty - (r.received_qty ?? 0),
           style: 'width: 90px;',
           onUpdateValue: (v) => { r.receiveQty = v },
         }),

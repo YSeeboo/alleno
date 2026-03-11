@@ -53,6 +53,7 @@ const partOptions = ref([])
 
 const submit = async () => {
   if (!supplierName.value) { message.warning('请输入电镀厂名称'); return }
+  if (items.length === 0) { message.warning('请至少添加一条明细'); return }
   if (items.some((i) => !i.part_id)) { message.warning('请选择配件'); return }
   submitting.value = true
   try {

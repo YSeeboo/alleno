@@ -17,10 +17,12 @@ def get_part(db: Session, part_id: str) -> Optional[Part]:
     return db.query(Part).filter(Part.id == part_id).first()
 
 
-def list_parts(db: Session, category: str = None) -> List[Part]:
+def list_parts(db: Session, category: str = None, name: str = None) -> List[Part]:
     q = db.query(Part)
     if category is not None:
         q = q.filter(Part.category == category)
+    if name is not None:
+        q = q.filter(Part.name.contains(name))
     return q.all()
 
 

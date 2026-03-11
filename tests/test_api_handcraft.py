@@ -191,3 +191,48 @@ def test_receive_handcraft_jewelries_completes_order(client, db):
 def test_receive_handcraft_order_not_found(client, db):
     resp = client.post("/api/handcraft/HC-9999/receive", json={"receipts": []})
     assert resp.status_code == 404
+
+
+def test_receive_handcraft_jewelries_over_receive(client, db):
+    part, jewelry = _setup(db)
+    db.commit()
+
+    create_resp = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier OVR",
+        "parts": [{"part_id": part.id, "qty": 10.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 5}],
+    })
+    order_id = create_resp.json()["id"]
+    client.post(f"/api/handcraft/{order_id}/send")
+
+    from models.handcraft_order import HandcraftJewelryItem
+    ji = db.query(HandcraftJewelryItem).filter(
+        HandcraftJewelryItem.handcraft_order_id == order_id
+    ).first()
+
+    resp = client.post(f"/api/handcraft/{order_id}/receive", json={
+        "receipts": [{"handcraft_jewelry_item_id": ji.id, "qty": 10}]
+    })
+    assert resp.status_code == 400
+
+
+def test_create_handcraft_order_empty_parts(client, db):
+    _, jewelry = _setup(db)
+    db.commit()
+    resp = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier EP",
+        "parts": [],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 1}],
+    })
+    assert resp.status_code == 422
+
+
+def test_create_handcraft_order_empty_jewelries(client, db):
+    part, _ = _setup(db)
+    db.commit()
+    resp = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier EJ",
+        "parts": [{"part_id": part.id, "qty": 5.0}],
+        "jewelries": [],
+    })
+    assert resp.status_code == 422

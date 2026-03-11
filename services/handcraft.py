@@ -85,6 +85,11 @@ def receive_handcraft_jewelries(db: Session, handcraft_order_id: str, receipts: 
                 f"HandcraftJewelryItem {receipt['handcraft_jewelry_item_id']} does not belong to order {handcraft_order_id}"
             )
         qty = receipt["qty"]
+        remaining = ji.qty - (ji.received_qty or 0)
+        if qty > remaining:
+            raise ValueError(
+                f"Cannot receive {qty}: only {remaining} remaining for item {ji.id}"
+            )
         ji.received_qty = (ji.received_qty or 0) + qty
         add_stock(db, "jewelry", ji.jewelry_id, qty, "手工完成")
         if ji.received_qty >= ji.qty:

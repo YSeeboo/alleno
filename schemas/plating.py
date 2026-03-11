@@ -1,6 +1,6 @@
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PlatingItemCreate(BaseModel):
@@ -12,7 +12,7 @@ class PlatingItemCreate(BaseModel):
 
 class PlatingCreate(BaseModel):
     supplier_name: str
-    items: List[PlatingItemCreate]
+    items: List[PlatingItemCreate] = Field(min_length=1)
     note: Optional[str] = None
 
 

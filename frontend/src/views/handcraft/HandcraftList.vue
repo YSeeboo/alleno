@@ -19,7 +19,7 @@ import { NSpace, NButton, NSelect, NDataTable, NSpin, NTag, NEmpty } from 'naive
 import { listHandcraft } from '@/api/handcraft'
 
 const router = useRouter()
-const loading = ref(false)
+const loading = ref(true)
 const rows = ref([])
 const filterStatus = ref(null)
 const statusOptions = [

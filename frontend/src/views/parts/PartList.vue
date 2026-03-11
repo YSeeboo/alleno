@@ -69,7 +69,7 @@ import { getStock, addStock } from '@/api/inventory'
 const router = useRouter()
 const message = useMessage()
 
-const loading = ref(false)
+const loading = ref(true)
 const rows = ref([])
 const searchName = ref('')
 const searchCategory = ref('')

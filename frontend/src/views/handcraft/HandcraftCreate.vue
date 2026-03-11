@@ -73,6 +73,8 @@ const jewelryOptions = ref([])
 
 const submit = async () => {
   if (!supplierName.value) { message.warning('请输入手工商家名称'); return }
+  if (parts.length === 0) { message.warning('请至少添加一条配件'); return }
+  if (jewelries.length === 0) { message.warning('请至少添加一条成品'); return }
   if (parts.some((p) => !p.part_id)) { message.warning('请选择配件'); return }
   if (jewelries.some((j) => !j.jewelry_id)) { message.warning('请选择饰品'); return }
   submitting.value = true

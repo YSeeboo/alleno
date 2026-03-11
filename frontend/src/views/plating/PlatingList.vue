@@ -19,7 +19,7 @@ import { NSpace, NButton, NSelect, NDataTable, NSpin, NTag, NEmpty } from 'naive
 import { listPlating } from '@/api/plating'
 
 const router = useRouter()
-const loading = ref(false)
+const loading = ref(true)
 const rows = ref([])
 const filterStatus = ref(null)
 const statusOptions = [

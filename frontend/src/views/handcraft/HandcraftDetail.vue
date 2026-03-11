@@ -150,6 +150,7 @@ const jewelryColumns = [
         h(NInputNumber, {
           value: r.receiveQty,
           min: 1,
+          max: r.qty - (r.received_qty ?? 0),
           style: 'width: 80px;',
           onUpdateValue: (v) => { r.receiveQty = v },
         }),
