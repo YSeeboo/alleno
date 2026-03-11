@@ -220,3 +220,23 @@ def test_create_plating_order_empty_items(client, db):
         "items": [],
     })
     assert resp.status_code == 422
+
+
+def test_create_plating_order_zero_qty(client, db):
+    part = create_part(db, {"name": "P_zero"})
+    db.commit()
+    resp = client.post("/api/plating/", json={
+        "supplier_name": "Supplier Z",
+        "items": [{"part_id": part.id, "qty": 0}],
+    })
+    assert resp.status_code == 422
+
+
+def test_create_plating_order_negative_qty(client, db):
+    part = create_part(db, {"name": "P_neg"})
+    db.commit()
+    resp = client.post("/api/plating/", json={
+        "supplier_name": "Supplier N",
+        "items": [{"part_id": part.id, "qty": -5.0}],
+    })
+    assert resp.status_code == 422

@@ -43,6 +43,20 @@ def test_list_parts_filter_category(db):
     assert results[0].name == "A"
 
 
+def test_list_parts_filter_name(db):
+    create_part(db, {"name": "铜扣环"})
+    create_part(db, {"name": "银链条"})
+    results = list_parts(db, name="铜")
+    assert len(results) == 1
+    assert results[0].name == "铜扣环"
+
+
+def test_list_parts_filter_name_no_match(db):
+    create_part(db, {"name": "铜扣环"})
+    results = list_parts(db, name="金")
+    assert len(results) == 0
+
+
 def test_update_part_partial(db):
     create_part(db, {"name": "铜扣", "category": "扣件"})
     part = update_part(db, "PJ-0001", {"name": "铜扣V2"})

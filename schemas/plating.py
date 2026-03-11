@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class PlatingItemCreate(BaseModel):
     part_id: str
-    qty: float
+    qty: float = Field(gt=0)
     plating_method: Optional[str] = None
     note: Optional[str] = None
 
@@ -18,7 +18,7 @@ class PlatingCreate(BaseModel):
 
 class ReceiptItem(BaseModel):
     plating_order_item_id: int
-    qty: float
+    qty: float = Field(gt=0)
 
 
 class ReceiptRequest(BaseModel):

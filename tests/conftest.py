@@ -47,3 +47,34 @@ def client(db):
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def client_real_get_db(engine):
+    """TestClient that exercises the real get_db() commit/rollback path.
+
+    Unlike `client`, this fixture does NOT inject a shared session — each
+    request goes through a fresh get_db() generator, so commit() is called
+    on success and rollback() on failure, exactly as in production.
+    """
+    with engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            conn.execute(text(f'TRUNCATE TABLE "{table.name}" RESTART IDENTITY CASCADE'))
+
+    Session = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+    def real_get_db():
+        db = Session()
+        try:
+            yield db
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = real_get_db
+    with TestClient(app) as c:
+        yield c
+    app.dependency_overrides.clear()

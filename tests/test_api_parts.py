@@ -27,6 +27,22 @@ def test_list_parts_filter(client):
     assert len(resp.json()) == 1
     assert resp.json()[0]["name"] == "A"
 
+
+def test_list_parts_filter_name(client):
+    client.post("/api/parts/", json={"name": "铜扣环", "category": "rings"})
+    client.post("/api/parts/", json={"name": "银链条", "category": "chains"})
+    resp = client.get("/api/parts/?name=铜")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+    assert resp.json()[0]["name"] == "铜扣环"
+
+
+def test_list_parts_filter_name_no_match(client):
+    client.post("/api/parts/", json={"name": "铜扣环"})
+    resp = client.get("/api/parts/?name=金")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
 def test_get_part(client):
     created = client.post("/api/parts/", json={"name": "X"}).json()
     resp = client.get(f"/api/parts/{created['id']}")

@@ -236,3 +236,47 @@ def test_create_handcraft_order_empty_jewelries(client, db):
         "jewelries": [],
     })
     assert resp.status_code == 422
+
+
+def test_create_handcraft_order_zero_part_qty(client, db):
+    part, jewelry = _setup(db)
+    db.commit()
+    resp = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier ZP",
+        "parts": [{"part_id": part.id, "qty": 0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 1}],
+    })
+    assert resp.status_code == 422
+
+
+def test_create_handcraft_order_negative_part_qty(client, db):
+    part, jewelry = _setup(db)
+    db.commit()
+    resp = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier NP",
+        "parts": [{"part_id": part.id, "qty": -3.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 1}],
+    })
+    assert resp.status_code == 422
+
+
+def test_create_handcraft_order_zero_jewelry_qty(client, db):
+    part, jewelry = _setup(db)
+    db.commit()
+    resp = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier ZJ",
+        "parts": [{"part_id": part.id, "qty": 5.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 0}],
+    })
+    assert resp.status_code == 422
+
+
+def test_create_handcraft_order_negative_jewelry_qty(client, db):
+    part, jewelry = _setup(db)
+    db.commit()
+    resp = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier NJ",
+        "parts": [{"part_id": part.id, "qty": 5.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": -2}],
+    })
+    assert resp.status_code == 422

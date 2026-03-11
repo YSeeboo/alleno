@@ -5,14 +5,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class HandcraftPartIn(BaseModel):
     part_id: str
-    qty: float
+    qty: float = Field(gt=0)
     bom_qty: Optional[float] = None
     note: Optional[str] = None
 
 
 class HandcraftJewelryIn(BaseModel):
     jewelry_id: str
-    qty: int
+    qty: int = Field(gt=0)
     note: Optional[str] = None
 
 
@@ -25,7 +25,7 @@ class HandcraftCreate(BaseModel):
 
 class ReceiptItem(BaseModel):
     handcraft_jewelry_item_id: int
-    qty: int
+    qty: int = Field(gt=0)
 
 
 class ReceiptRequest(BaseModel):
