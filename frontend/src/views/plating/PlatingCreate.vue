@@ -65,7 +65,11 @@ const submit = async () => {
 }
 
 onMounted(async () => {
-  const { data } = await listParts()
-  partOptions.value = data.map((p) => ({ label: `${p.id} ${p.name}`, value: p.id }))
+  try {
+    const { data } = await listParts()
+    partOptions.value = data.map((p) => ({ label: `${p.id} ${p.name}`, value: p.id }))
+  } catch (_) {
+    // error already shown by axios interceptor
+  }
 })
 </script>

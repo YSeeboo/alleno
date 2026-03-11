@@ -6,7 +6,7 @@
     </n-space>
 
     <n-form label-placement="left" label-width="90" style="margin-bottom: 16px;">
-      <n-form-item label="客户名" :rule="{ required: true }">
+      <n-form-item label="客户名">
         <n-input v-model:value="customerName" placeholder="请输入客户名称" style="width: 300px;" />
       </n-form-item>
     </n-form>

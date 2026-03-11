@@ -46,7 +46,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
-  NSpace, NButton, NH2, NTag, NProgress, NInputNumber, NGrid, NGi, NEmpty,
+  NSpace, NButton, NH2, NTag, NProgress, NInputNumber, NGrid, NGi,
 } from 'naive-ui'
 import { getHandcraft, getHandcraftParts, getHandcraftJewelries, sendHandcraft, receiveHandcraft } from '@/api/handcraft'
 import { listParts } from '@/api/parts'

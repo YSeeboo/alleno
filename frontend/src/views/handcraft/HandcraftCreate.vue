@@ -91,8 +91,12 @@ const submit = async () => {
 }
 
 onMounted(async () => {
-  const [pRes, jRes] = await Promise.all([listParts(), listJewelries({ status: 'active' })])
-  partOptions.value = pRes.data.map((p) => ({ label: `${p.id} ${p.name}`, value: p.id }))
-  jewelryOptions.value = jRes.data.map((j) => ({ label: `${j.id} ${j.name}`, value: j.id }))
+  try {
+    const [pRes, jRes] = await Promise.all([listParts(), listJewelries({ status: 'active' })])
+    partOptions.value = pRes.data.map((p) => ({ label: `${p.id} ${p.name}`, value: p.id }))
+    jewelryOptions.value = jRes.data.map((j) => ({ label: `${j.id} ${j.name}`, value: j.id }))
+  } catch (_) {
+    // error already shown by axios interceptor
+  }
 })
 </script>

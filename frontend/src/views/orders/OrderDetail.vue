@@ -95,8 +95,8 @@ const advanceStatus = async () => {
 const itemColumns = [
   { title: '饰品', key: 'jewelry_name' },
   { title: '数量', key: 'quantity' },
-  { title: '单价', key: 'unit_price', render: (r) => r.unit_price.toFixed(2) },
-  { title: '小计', key: 'subtotal', render: (r) => (r.quantity * r.unit_price).toFixed(2) },
+  { title: '单价', key: 'unit_price', render: (r) => r.unit_price?.toFixed(2) ?? '-' },
+  { title: '小计', key: 'subtotal', render: (r) => ((r.quantity || 0) * (r.unit_price || 0)).toFixed(2) },
   { title: '备注', key: 'remarks', render: (r) => r.remarks || '-' },
 ]
 

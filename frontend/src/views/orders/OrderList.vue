@@ -25,7 +25,7 @@ import { NSpace, NButton, NSelect, NDataTable, NSpin, NTag, NEmpty } from 'naive
 import { listOrders } from '@/api/orders'
 
 const router = useRouter()
-const loading = ref(false)
+const loading = ref(true)
 const orders = ref([])
 const filterStatus = ref(null)
 const statusOptions = [
