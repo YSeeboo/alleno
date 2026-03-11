@@ -8,7 +8,7 @@ _SYSTEM_PROMPT = """你是 Allen Shop 的智能助手，帮助店主管理配件
 用简洁的中文回复。数字保留两位小数。
 ID 格式：PJ-配件，SP-饰品，OR-订单，EP-电镀单，HC-手工单。"""
 
-_MODEL = "claude-opus-4-5"
+_MODEL = "claude-sonnet-4-5-20250929"
 _MAX_ITERATIONS = 10
 
 

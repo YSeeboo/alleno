@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://allen:allen@localhost:5432/allen_shop"
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_WHITELIST: str = ""
+    TELEGRAM_PROXY_URL: str = ""
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_BASE_URL: str = ""
 

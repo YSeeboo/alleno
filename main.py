@@ -28,21 +28,29 @@ def start_bot() -> None:
     Only called when TELEGRAM_BOT_TOKEN is configured.
     """
     from telegram.ext import ApplicationBuilder, MessageHandler, filters
+    from telegram.request import HTTPXRequest
 
     from bot.handlers import handle_message, handle_error
     from bot.middleware import WhitelistMiddleware, RateLimitMiddleware
 
-    bot_app = (
-        ApplicationBuilder()
-        .token(settings.TELEGRAM_BOT_TOKEN)
-        .build()
-    )
-    bot_app.add_middleware(WhitelistMiddleware())
-    bot_app.add_middleware(RateLimitMiddleware())
-    bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    whitelist = WhitelistMiddleware()
+    rate_limit = RateLimitMiddleware()
+
+    async def guarded_handler(update, context):
+        async def run_rate_limit(u):
+            async def run_message(u):
+                await handle_message(u, context)
+            await rate_limit.process_update(u, run_message)
+        await whitelist.process_update(update, run_rate_limit)
+
+    builder = ApplicationBuilder().token(settings.TELEGRAM_BOT_TOKEN)
+    if settings.TELEGRAM_PROXY_URL:
+        builder = builder.request(HTTPXRequest(proxy=settings.TELEGRAM_PROXY_URL))
+    bot_app = builder.build()
+    bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, guarded_handler))
     bot_app.add_error_handler(handle_error)
     bot_app.bot_data["db_factory"] = SessionLocal
-    bot_app.run_polling()
+    bot_app.run_polling(stop_signals=())
 
 
 @asynccontextmanager
