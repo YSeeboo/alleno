@@ -113,3 +113,15 @@ def list_handcraft_orders(db: Session, status: str = None) -> list:
     if status is not None:
         q = q.filter(HandcraftOrder.status == status)
     return q.all()
+
+
+def get_handcraft_parts(db: Session, order_id: str) -> list:
+    return db.query(HandcraftPartItem).filter(
+        HandcraftPartItem.handcraft_order_id == order_id
+    ).all()
+
+
+def get_handcraft_jewelries(db: Session, order_id: str) -> list:
+    return db.query(HandcraftJewelryItem).filter(
+        HandcraftJewelryItem.handcraft_order_id == order_id
+    ).all()

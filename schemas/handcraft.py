@@ -44,6 +44,17 @@ class HandcraftJewelryItemResponse(BaseModel):
     note: Optional[str] = None
 
 
+class HandcraftPartItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    handcraft_order_id: str
+    part_id: str
+    qty: float
+    bom_qty: Optional[float] = None
+    note: Optional[str] = None
+
+
 class HandcraftResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

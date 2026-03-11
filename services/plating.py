@@ -96,3 +96,9 @@ def list_plating_orders(db: Session, status: str = None) -> list:
     if status is not None:
         q = q.filter(PlatingOrder.status == status)
     return q.all()
+
+
+def get_plating_items(db: Session, order_id: str) -> list:
+    return db.query(PlatingOrderItem).filter(
+        PlatingOrderItem.plating_order_id == order_id
+    ).all()

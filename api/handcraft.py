@@ -7,6 +7,7 @@ from api._errors import service_errors
 from database import get_db
 from schemas.handcraft import (
     HandcraftCreate,
+    HandcraftPartItemResponse,
     HandcraftResponse,
     ReceiptRequest,
     HandcraftJewelryItemResponse,
@@ -14,6 +15,8 @@ from schemas.handcraft import (
 from services.handcraft import (
     create_handcraft_order,
     get_handcraft_order,
+    get_handcraft_parts,
+    get_handcraft_jewelries,
     list_handcraft_orders,
     receive_handcraft_jewelries,
     send_handcraft_order,
@@ -47,6 +50,22 @@ def api_get_handcraft_order(order_id: str, db: Session = Depends(get_db)):
     if order is None:
         raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
     return order
+
+
+@router.get("/{order_id}/parts", response_model=list[HandcraftPartItemResponse])
+def api_get_handcraft_parts(order_id: str, db: Session = Depends(get_db)):
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
+    return get_handcraft_parts(db, order_id)
+
+
+@router.get("/{order_id}/jewelries", response_model=list[HandcraftJewelryItemResponse])
+def api_get_handcraft_jewelries(order_id: str, db: Session = Depends(get_db)):
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
+    return get_handcraft_jewelries(db, order_id)
 
 
 @router.post("/{order_id}/send", response_model=HandcraftResponse)

@@ -9,6 +9,7 @@ from schemas.plating import PlatingCreate, PlatingResponse, ReceiptRequest, Plat
 from services.plating import (
     create_plating_order,
     get_plating_order,
+    get_plating_items,
     list_plating_orders,
     receive_plating_items,
     send_plating_order,
@@ -41,6 +42,14 @@ def api_get_plating_order(order_id: str, db: Session = Depends(get_db)):
     if order is None:
         raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
     return order
+
+
+@router.get("/{order_id}/items", response_model=list[PlatingItemResponse])
+def api_get_plating_items(order_id: str, db: Session = Depends(get_db)):
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
+    return get_plating_items(db, order_id)
 
 
 @router.post("/{order_id}/send", response_model=PlatingResponse)
