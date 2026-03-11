@@ -31,6 +31,15 @@ def get_order(db: Session, order_id: str) -> Optional[Order]:
     return db.query(Order).filter(Order.id == order_id).first()
 
 
+def list_orders(db: Session, status: Optional[str] = None, customer_name: Optional[str] = None) -> list:
+    q = db.query(Order)
+    if status:
+        q = q.filter(Order.status == status)
+    if customer_name:
+        q = q.filter(Order.customer_name.contains(customer_name))
+    return q.order_by(Order.created_at.desc()).all()
+
+
 def get_order_items(db: Session, order_id: str) -> list:
     return db.query(OrderItem).filter(OrderItem.order_id == order_id).all()
 

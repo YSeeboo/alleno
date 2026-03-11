@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -9,10 +10,20 @@ from services.order import (
     get_order_items,
     get_parts_summary,
     update_order_status,
+    list_orders,
 )
 from api._errors import service_errors
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
+
+
+@router.get("/", response_model=list[OrderResponse])
+def api_list_orders(
+    status: Optional[str] = None,
+    customer_name: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    return list_orders(db, status=status, customer_name=customer_name)
 
 
 @router.post("/", response_model=OrderResponse, status_code=201)
