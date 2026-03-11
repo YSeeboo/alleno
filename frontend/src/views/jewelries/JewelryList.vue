@@ -117,8 +117,13 @@ const save = async () => {
 
 const toggleStatus = async (row) => {
   const newStatus = row.status === 'active' ? 'inactive' : 'active'
-  await updateJewelryStatus(row.id, newStatus)
-  row.status = newStatus
+  try {
+    await updateJewelryStatus(row.id, newStatus)
+    row.status = newStatus
+  } catch (_) {
+    // error shown by interceptor; reload to sync visual state
+    await load()
+  }
 }
 
 const doDelete = async (id) => {
