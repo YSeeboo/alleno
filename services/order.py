@@ -33,9 +33,9 @@ def get_order(db: Session, order_id: str) -> Optional[Order]:
 
 def list_orders(db: Session, status: Optional[str] = None, customer_name: Optional[str] = None) -> list:
     q = db.query(Order)
-    if status:
+    if status is not None:
         q = q.filter(Order.status == status)
-    if customer_name:
+    if customer_name is not None:
         q = q.filter(Order.customer_name.contains(customer_name))
     return q.order_by(Order.created_at.desc()).all()
 

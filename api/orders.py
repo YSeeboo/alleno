@@ -23,7 +23,8 @@ def api_list_orders(
     customer_name: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    return list_orders(db, status=status, customer_name=customer_name)
+    with service_errors():
+        return list_orders(db, status=status, customer_name=customer_name)
 
 
 @router.post("/", response_model=OrderResponse, status_code=201)
