@@ -1,3 +1,5 @@
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -16,7 +18,7 @@ def api_create_part(body: PartCreate, db: Session = Depends(get_db)):
     return part
 
 
-@router.get("/", response_model=list[PartResponse])
+@router.get("/", response_model=List[PartResponse])
 def api_list_parts(category: str = None, name: str = None, db: Session = Depends(get_db)):
     with service_errors():
         return list_parts(db, category=category, name=name)

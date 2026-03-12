@@ -6,8 +6,8 @@
       <n-button type="primary" @click="router.push('/handcraft/create')">新建手工单</n-button>
     </n-space>
     <n-spin :show="loading">
-      <n-data-table :columns="columns" :data="rows" :bordered="false" :row-props="rowProps" />
-      <n-empty v-if="!loading && rows.length === 0" description="暂无手工单" style="margin-top: 24px;" />
+      <n-data-table v-if="rows.length > 0" :columns="columns" :data="rows" :bordered="false" :row-props="rowProps" />
+      <n-empty v-else-if="!loading" description="暂无手工单" style="margin-top: 24px;" />
     </n-spin>
   </div>
 </template>

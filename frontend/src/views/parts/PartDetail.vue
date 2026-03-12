@@ -9,7 +9,19 @@
       <n-card v-if="part" title="基本信息" style="margin-bottom: 16px;">
         <n-descriptions :column="3" bordered>
           <n-descriptions-item label="编号">{{ part.id }}</n-descriptions-item>
-          <n-descriptions-item label="名称">{{ part.name }}</n-descriptions-item>
+          <n-descriptions-item label="配件">{{ part.name }}</n-descriptions-item>
+          <n-descriptions-item label="图片">
+            <n-image
+              v-if="part.image"
+              :src="part.image"
+              :alt="part.name"
+              :width="48"
+              :height="48"
+              object-fit="cover"
+              style="border-radius: 8px; border: 1px solid #ffd6d6; overflow: hidden; display: block; cursor: zoom-in;"
+            />
+            <span v-else>无图</span>
+          </n-descriptions-item>
           <n-descriptions-item label="类目">{{ part.category || '-' }}</n-descriptions-item>
           <n-descriptions-item label="颜色">{{ part.color || '-' }}</n-descriptions-item>
           <n-descriptions-item label="单位">{{ part.unit || '-' }}</n-descriptions-item>
@@ -24,8 +36,8 @@
       </n-card>
 
       <n-card title="库存流水">
-        <n-data-table :columns="logColumns" :data="logs" :bordered="false" />
-        <n-empty v-if="logs.length === 0" description="暂无流水" style="margin-top: 16px;" />
+        <n-data-table v-if="logs.length > 0" :columns="logColumns" :data="logs" :bordered="false" />
+        <n-empty v-else description="暂无流水" style="margin-top: 16px;" />
       </n-card>
     </n-spin>
   </div>
@@ -36,7 +48,7 @@ import { ref, h, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
-  NSpace, NButton, NH2, NText, NEmpty,
+  NSpace, NButton, NH2, NText, NEmpty, NImage,
 } from 'naive-ui'
 import { getPart } from '@/api/parts'
 import { getStock, getStockLog } from '@/api/inventory'

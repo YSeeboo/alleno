@@ -37,15 +37,16 @@
         <!-- Order items -->
         <n-gi>
           <n-card title="饰品清单">
-            <n-data-table :columns="itemColumns" :data="orderItems" :bordered="false" size="small" />
+            <n-data-table v-if="orderItems.length > 0" :columns="itemColumns" :data="orderItems" :bordered="false" size="small" />
+            <n-empty v-else description="暂无饰品明细" style="margin-top: 16px;" />
           </n-card>
         </n-gi>
       </n-grid>
 
       <!-- Parts summary -->
       <n-card title="配件汇总">
-        <n-data-table :columns="partsColumns" :data="partsSummaryRows" :bordered="false" size="small" />
-        <n-empty v-if="partsSummaryRows.length === 0" description="暂无配件汇总" style="margin-top: 16px;" />
+        <n-data-table v-if="partsSummaryRows.length > 0" :columns="partsColumns" :data="partsSummaryRows" :bordered="false" size="small" />
+        <n-empty v-else description="暂无配件汇总" style="margin-top: 16px;" />
       </n-card>
     </n-spin>
   </div>
@@ -62,6 +63,7 @@ import {
 import { getOrder, getOrderItems, getPartsSummary, updateOrderStatus } from '@/api/orders'
 import { listParts } from '@/api/parts'
 import { listJewelries } from '@/api/jewelries'
+import { renderNamedImage } from '@/utils/ui'
 
 const route = useRoute()
 const router = useRouter()
@@ -93,7 +95,13 @@ const advanceStatus = async () => {
 }
 
 const itemColumns = [
-  { title: '饰品', key: 'jewelry_name' },
+  { title: '饰品编号', key: 'jewelry_id', width: 110 },
+  {
+    title: '饰品',
+    key: 'jewelry_name',
+    minWidth: 180,
+    render: (row) => renderNamedImage(row.jewelry_name, row.jewelry_image, row.jewelry_name),
+  },
   { title: '数量', key: 'quantity' },
   { title: '单价', key: 'unit_price', render: (r) => r.unit_price?.toFixed(2) ?? '-' },
   { title: '小计', key: 'subtotal', render: (r) => ((r.quantity || 0) * (r.unit_price || 0)).toFixed(2) },
@@ -102,7 +110,12 @@ const itemColumns = [
 
 const partsColumns = [
   { title: '配件编号', key: 'part_id' },
-  { title: '配件名称', key: 'part_name' },
+  {
+    title: '配件',
+    key: 'part_name',
+    minWidth: 180,
+    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name),
+  },
   { title: '所需总量', key: 'total_qty', render: (r) => r.total_qty },
 ]
 
@@ -119,19 +132,21 @@ onMounted(async () => {
     order.value = oRes.data
 
     const jewelryMap = {}
-    jRes.data.forEach((j) => { jewelryMap[j.id] = j.name })
+    jRes.data.forEach((j) => { jewelryMap[j.id] = j })
     orderItems.value = iRes.data.map((i) => ({
       ...i,
-      jewelry_name: jewelryMap[i.jewelry_id] || i.jewelry_id,
+      jewelry_name: jewelryMap[i.jewelry_id]?.name || i.jewelry_id,
+      jewelry_image: jewelryMap[i.jewelry_id]?.image || '',
     }))
 
     const partMap = {}
-    pRes.data.forEach((p) => { partMap[p.id] = p.name })
+    pRes.data.forEach((p) => { partMap[p.id] = p })
 
     // parts-summary returns dict {part_id: qty}
     partsSummaryRows.value = Object.entries(sRes.data).map(([part_id, total_qty]) => ({
       part_id,
-      part_name: partMap[part_id] || part_id,
+      part_name: partMap[part_id]?.name || part_id,
+      part_image: partMap[part_id]?.image || '',
       total_qty,
     }))
   } finally {

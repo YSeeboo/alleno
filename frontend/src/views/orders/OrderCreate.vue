@@ -17,6 +17,7 @@
           <n-select
             v-model:value="item.jewelry_id"
             :options="jewelryOptions"
+            :render-label="renderOptionWithImage"
             filterable
             placeholder="选择饰品"
             style="width: 220px;"
@@ -38,7 +39,7 @@
     </n-card>
 
     <n-space justify="space-between" align="center">
-      <n-text>合计：<n-text style="font-size: 18px; font-weight: 600; color: #18a058;">
+      <n-text>合计：<n-text style="font-size: 18px; font-weight: 600; color: #FF0000;">
         ¥{{ total.toFixed(2) }}
       </n-text></n-text>
       <n-button type="primary" :loading="submitting" @click="submit">提交订单</n-button>
@@ -53,6 +54,7 @@ import { useMessage } from 'naive-ui'
 import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NText, NH2 } from 'naive-ui'
 import { listJewelries } from '@/api/jewelries'
 import { createOrder } from '@/api/orders'
+import { renderOptionWithImage } from '@/utils/ui'
 
 const router = useRouter()
 const message = useMessage()
@@ -89,7 +91,13 @@ const submit = async () => {
 onMounted(async () => {
   const { data } = await listJewelries({ status: 'active' })
   data.forEach((j) => { jewelryMap.value[j.id] = j })
-  jewelryOptions.value = data.map((j) => ({ label: `${j.id} ${j.name}`, value: j.id }))
+  jewelryOptions.value = data.map((j) => ({
+    label: `${j.id} ${j.name}`,
+    value: j.id,
+    code: j.id,
+    name: j.name,
+    image: j.image,
+  }))
   addLine()
 })
 </script>

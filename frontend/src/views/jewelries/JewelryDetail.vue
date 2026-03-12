@@ -9,7 +9,19 @@
       <n-card v-if="jewelry" title="基本信息" style="margin-bottom: 16px;">
         <n-descriptions :column="3" bordered>
           <n-descriptions-item label="编号">{{ jewelry.id }}</n-descriptions-item>
-          <n-descriptions-item label="名称">{{ jewelry.name }}</n-descriptions-item>
+          <n-descriptions-item label="饰品">{{ jewelry.name }}</n-descriptions-item>
+          <n-descriptions-item label="图片">
+            <n-image
+              v-if="jewelry.image"
+              :src="jewelry.image"
+              :alt="jewelry.name"
+              :width="48"
+              :height="48"
+              object-fit="cover"
+              style="border-radius: 8px; border: 1px solid #ffd6d6; overflow: hidden; display: block; cursor: zoom-in;"
+            />
+            <span v-else>无图</span>
+          </n-descriptions-item>
           <n-descriptions-item label="类目">{{ jewelry.category || '-' }}</n-descriptions-item>
           <n-descriptions-item label="颜色">{{ jewelry.color || '-' }}</n-descriptions-item>
           <n-descriptions-item label="零售价">{{ jewelry.retail_price?.toFixed(2) ?? '-' }}</n-descriptions-item>
@@ -20,8 +32,8 @@
       </n-card>
 
       <n-card title="BOM 配置">
-        <n-data-table :columns="bomColumns" :data="bomRows" :bordered="false" />
-        <n-empty v-if="bomRows.length === 0" description="暂无BOM配置" style="margin: 16px 0;" />
+        <n-data-table v-if="bomRows.length > 0" :columns="bomColumns" :data="bomRows" :bordered="false" />
+        <n-empty v-else description="暂无BOM配置" style="margin: 16px 0;" />
 
         <!-- Add BOM row -->
         <n-divider>添加配件</n-divider>
@@ -29,6 +41,7 @@
           <n-select
             v-model:value="newPartId"
             :options="partOptions"
+            :render-label="renderOptionWithImage"
             filterable
             placeholder="选择配件"
             style="width: 240px;"
@@ -47,12 +60,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
-  NSpace, NButton, NH2, NEmpty, NDivider, NSelect, NInputNumber, NPopconfirm,
+  NSpace, NButton, NH2, NEmpty, NDivider, NSelect, NInputNumber, NPopconfirm, NImage,
 } from 'naive-ui'
 import { getJewelry } from '@/api/jewelries'
 import { getBom, setBom, deleteBom } from '@/api/bom'
 import { getStock } from '@/api/inventory'
 import { listParts } from '@/api/parts'
+import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
 
 const route = useRoute()
 const router = useRouter()
@@ -74,7 +88,8 @@ const loadBom = async () => {
   const { data } = await getBom(route.params.id)
   bomRows.value = data.map((b) => ({
     ...b,
-    part_name: partMap.value[b.part_id] || b.part_id,
+    part_name: partMap.value[b.part_id]?.name || b.part_id,
+    part_image: partMap.value[b.part_id]?.image || '',
     editQty: null,
   }))
 }
@@ -89,8 +104,14 @@ onMounted(async () => {
     ])
     jewelry.value = jRes.data
     stock.value = sRes.data.current
-    partsRes.data.forEach((p) => { partMap.value[p.id] = p.name })
-    partOptions.value = partsRes.data.map((p) => ({ label: `${p.id} ${p.name}`, value: p.id }))
+    partsRes.data.forEach((p) => { partMap.value[p.id] = p })
+    partOptions.value = partsRes.data.map((p) => ({
+      label: `${p.id} ${p.name}`,
+      value: p.id,
+      code: p.id,
+      name: p.name,
+      image: p.image,
+    }))
     await loadBom()
   } finally {
     loading.value = false
@@ -126,7 +147,13 @@ const doDeleteBom = async (row) => {
 }
 
 const bomColumns = [
-  { title: '配件名称', key: 'part_name' },
+  { title: '配件编号', key: 'part_id', width: 110 },
+  {
+    title: '配件',
+    key: 'part_name',
+    minWidth: 180,
+    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name),
+  },
   {
     title: '每件用量',
     key: 'qty_per_unit',

@@ -9,8 +9,8 @@
     </n-space>
 
     <n-spin :show="loading">
-      <n-data-table :columns="columns" :data="rows" :bordered="false" />
-      <n-empty v-if="!loading && rows.length === 0" description="暂无数据" style="margin-top: 24px;" />
+      <n-data-table v-if="rows.length > 0" :columns="columns" :data="rows" :bordered="false" />
+      <n-empty v-else-if="!loading" description="暂无数据" style="margin-top: 24px;" />
     </n-spin>
 
     <!-- Create / Edit Modal -->
@@ -18,6 +18,25 @@
       <n-form ref="formRef" :model="form" label-placement="left" label-width="100">
         <n-form-item label="名称" path="name" :rule="{ required: true, message: '请输入名称' }">
           <n-input v-model:value="form.name" />
+        </n-form-item>
+        <n-form-item label="图片">
+          <n-space vertical style="width: 100%;">
+            <n-space align="center" style="width: 100%;">
+              <n-input v-model:value="form.image" placeholder="上传后自动填充，也可手动输入 URL" />
+              <n-button :loading="uploadingImage" @click="triggerImageUpload">
+                {{ uploadingImage ? '上传中' : '上传图片' }}
+              </n-button>
+            </n-space>
+            <n-image
+              v-if="form.image"
+              :src="form.image"
+              alt="配件图片"
+              :width="72"
+              :height="72"
+              object-fit="cover"
+              style="border-radius: 12px; border: 1px solid #ffd6d6; overflow: hidden; display: block; cursor: zoom-in;"
+            />
+          </n-space>
         </n-form-item>
         <n-form-item label="类目"><n-input v-model:value="form.category" /></n-form-item>
         <n-form-item label="颜色"><n-input v-model:value="form.color" /></n-form-item>
@@ -34,6 +53,8 @@
         </n-space>
       </template>
     </n-modal>
+
+    <input ref="imageInputRef" type="file" accept="image/*" style="display: none;" @change="onImageSelected" />
 
     <!-- Quick Stock-In Modal -->
     <n-modal v-model:show="showStockModal" preset="card" title="快速入库" style="width: 360px;">
@@ -61,10 +82,12 @@ import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
   NSpace, NButton, NInput, NInputNumber, NForm, NFormItem,
-  NModal, NDataTable, NSpin, NEmpty, NPopconfirm,
+  NModal, NDataTable, NSpin, NEmpty, NPopconfirm, NImage,
 } from 'naive-ui'
 import { listParts, createPart, updatePart, deletePart } from '@/api/parts'
+import { uploadImageToOss } from '@/api/uploads'
 import { getStock, addStock } from '@/api/inventory'
+import { renderNamedImage } from '@/utils/ui'
 
 const router = useRouter()
 const message = useMessage()
@@ -78,8 +101,10 @@ const searchCategory = ref('')
 const showModal = ref(false)
 const editingId = ref(null)
 const saving = ref(false)
+const uploadingImage = ref(false)
+const imageInputRef = ref(null)
 const formRef = ref(null)
-const form = reactive({ name: '', category: '', color: '', unit: '', unit_cost: null, plating_process: '' })
+const form = reactive({ name: '', image: '', category: '', color: '', unit: '', unit_cost: null, plating_process: '' })
 
 // Stock modal state
 const showStockModal = ref(false)
@@ -106,7 +131,7 @@ const load = async () => {
 
 const openCreate = () => {
   editingId.value = null
-  Object.assign(form, { name: '', category: '', color: '', unit: '', unit_cost: null, plating_process: '' })
+  Object.assign(form, { name: '', image: '', category: '', color: '', unit: '', unit_cost: null, plating_process: '' })
   showModal.value = true
 }
 
@@ -114,6 +139,7 @@ const openEdit = (row) => {
   editingId.value = row.id
   Object.assign(form, {
     name: row.name,
+    image: row.image || '',
     category: row.category || '',
     color: row.color || '',
     unit: row.unit || '',
@@ -121,6 +147,29 @@ const openEdit = (row) => {
     plating_process: row.plating_process || '',
   })
   showModal.value = true
+}
+
+const triggerImageUpload = () => {
+  imageInputRef.value?.click()
+}
+
+const onImageSelected = async (event) => {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  uploadingImage.value = true
+  try {
+    form.image = await uploadImageToOss({
+      kind: 'part',
+      file,
+      entityId: editingId.value,
+    })
+    message.success('图片上传成功')
+  } catch (error) {
+    message.error(error.response?.data || error.message || '图片上传失败')
+  } finally {
+    uploadingImage.value = false
+  }
 }
 
 const save = async () => {
@@ -134,7 +183,7 @@ const save = async () => {
     }
     message.success('保存成功')
     showModal.value = false
-    load()
+    await load()
   } finally {
     saving.value = false
   }
@@ -153,7 +202,7 @@ const doStock = async () => {
     await addStock('part', stockingId.value, { qty: stockQty.value, reason: '采购入库', note: stockNote.value })
     message.success('入库成功')
     showStockModal.value = false
-    load()
+    await load()
   } finally {
     stocking.value = false
   }
@@ -162,12 +211,17 @@ const doStock = async () => {
 const doDelete = async (id) => {
   await deletePart(id)
   message.success('已删除')
-  load()
+  await load()
 }
 
 const columns = [
   { title: '编号', key: 'id', width: 100 },
-  { title: '名称', key: 'name' },
+  {
+    title: '配件',
+    key: 'name',
+    minWidth: 180,
+    render: (row) => renderNamedImage(row.name, row.image, row.name),
+  },
   { title: '类目', key: 'category' },
   { title: '颜色', key: 'color' },
   { title: '单位', key: 'unit', width: 60 },

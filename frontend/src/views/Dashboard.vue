@@ -11,7 +11,7 @@
           <n-spin :show="card.loading">
             <div style="text-align: center; padding: 8px 0;">
               <n-text depth="3" style="font-size: 14px;">{{ card.title }}</n-text>
-              <n-h1 style="margin: 8px 0; color: #18a058;">{{ card.value ?? '-' }}</n-h1>
+              <n-h1 style="margin: 8px 0; color: #FF0000;">{{ card.value ?? '-' }}</n-h1>
             </div>
           </n-spin>
         </n-card>

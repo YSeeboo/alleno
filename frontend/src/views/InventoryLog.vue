@@ -13,8 +13,8 @@
     </n-space>
 
     <n-spin :show="loading">
-      <n-data-table :columns="columns" :data="logs" :bordered="false" />
-      <n-empty v-if="!loading && queried && logs.length === 0" description="暂无流水记录" style="margin-top: 24px;" />
+      <n-data-table v-if="logs.length > 0" :columns="columns" :data="logs" :bordered="false" />
+      <n-empty v-else-if="!loading && queried" description="暂无流水记录" style="margin-top: 24px;" />
     </n-spin>
   </div>
 </template>
@@ -24,6 +24,9 @@ import { ref, h } from 'vue'
 import { useMessage } from 'naive-ui'
 import { NSpace, NButton, NSelect, NInput, NDataTable, NSpin, NH2, NEmpty } from 'naive-ui'
 import { getStockLog } from '@/api/inventory'
+import { getPart } from '@/api/parts'
+import { getJewelry } from '@/api/jewelries'
+import { renderNamedImage } from '@/utils/ui'
 
 const message = useMessage()
 const itemType = ref('part')
@@ -37,8 +40,18 @@ const query = async () => {
   loading.value = true
   queried.value = true
   try {
-    const { data } = await getStockLog(itemType.value, itemId.value)
-    logs.value = data
+    const [logRes, itemRes] = await Promise.all([
+      getStockLog(itemType.value, itemId.value),
+      itemType.value === 'part' ? getPart(itemId.value) : getJewelry(itemId.value),
+    ])
+    const entity = itemRes.data
+    const kindLabel = itemType.value === 'part' ? '配件' : '饰品'
+    logs.value = logRes.data.map((log) => ({
+      ...log,
+      item_name: entity.name,
+      item_image: entity.image,
+      item_label: `${kindLabel} ${entity.name}`,
+    }))
   } finally {
     loading.value = false
   }
@@ -48,6 +61,12 @@ const columns = [
   { title: '时间', key: 'created_at', render: (r) => new Date(r.created_at).toLocaleString('zh-CN') },
   { title: '品类', key: 'item_type', render: (r) => r.item_type === 'part' ? '配件' : '饰品' },
   { title: '编号', key: 'item_id' },
+  {
+    title: '图片',
+    key: 'item_label',
+    minWidth: 180,
+    render: (row) => renderNamedImage(row.item_name, row.item_image, row.item_label),
+  },
   {
     title: '变动数量',
     key: 'change_qty',

@@ -1,25 +1,50 @@
+import json
 import logging
 
-from telegram import Update
-from telegram.ext import ContextTypes
+import httpx
 
-from bot.agent.runner import run_agent
+from config import settings
 
 logger = logging.getLogger(__name__)
 
-_MAX_MSG_LEN = 4096
+_FEISHU_API = "https://open.feishu.cn/open-apis"
 
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Process an incoming text message through the Claude agent."""
-    db_factory = context.bot_data.get("db_factory")
-    if db_factory is None:
-        await update.message.reply_text("系统未就绪，请稍后重试。")
-        return
+async def _get_tenant_access_token() -> str:
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{_FEISHU_API}/auth/v3/tenant_access_token/internal",
+            json={"app_id": settings.FEISHU_APP_ID, "app_secret": settings.FEISHU_APP_SECRET},
+        )
+        resp.raise_for_status()
+        return resp.json()["tenant_access_token"]
 
-    db = db_factory()
+
+async def send_feishu_message(chat_id: str, text: str) -> None:
+    """Send a text message to a Feishu chat."""
+    # Feishu message limit is 4000 chars; split if needed
+    chunks = [text[i:i + 4000] for i in range(0, max(len(text), 1), 4000)]
+    token = await _get_tenant_access_token()
+    async with httpx.AsyncClient() as client:
+        for chunk in chunks:
+            await client.post(
+                f"{_FEISHU_API}/im/v1/messages?receive_id_type=chat_id",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "receive_id": chat_id,
+                    "msg_type": "text",
+                    "content": json.dumps({"text": chunk}),
+                },
+            )
+
+
+async def process_feishu_message(chat_id: str, text: str) -> None:
+    """Run the agent and send the reply to Feishu. Called as a background task."""
+    from database import SessionLocal
+    from bot.agent.runner import run_agent
+
+    db = SessionLocal()
     try:
-        text = update.message.text or ""
         response = await run_agent(text, db)
         db.commit()
     except Exception as exc:
@@ -29,13 +54,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     finally:
         db.close()
 
-    # Split long responses to respect Telegram's 4096-char limit
-    for i in range(0, max(len(response), 1), _MAX_MSG_LEN):
-        await update.message.reply_text(response[i : i + _MAX_MSG_LEN])
-
-
-async def handle_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Log errors and notify the user if possible."""
-    logger.error("Telegram error: %s", context.error, exc_info=context.error)
-    if isinstance(update, Update) and update.message:
-        await update.message.reply_text("处理失败，请稍后重试。")
+    try:
+        await send_feishu_message(chat_id, response)
+    except Exception as exc:
+        logger.exception("send_feishu_message failed: %s", exc)

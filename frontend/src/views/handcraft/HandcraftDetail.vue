@@ -27,12 +27,14 @@
       <n-grid :cols="2" :x-gap="16">
         <n-gi>
           <n-card title="配件明细">
-            <n-data-table :columns="partColumns" :data="partItems" :bordered="false" size="small" />
+            <n-data-table v-if="partItems.length > 0" :columns="partColumns" :data="partItems" :bordered="false" size="small" />
+            <n-empty v-else description="暂无配件明细" style="margin-top: 16px;" />
           </n-card>
         </n-gi>
         <n-gi>
           <n-card title="成品明细">
-            <n-data-table :columns="jewelryColumns" :data="jewelryItems" :bordered="false" size="small" />
+            <n-data-table v-if="jewelryItems.length > 0" :columns="jewelryColumns" :data="jewelryItems" :bordered="false" size="small" />
+            <n-empty v-else description="暂无成品明细" style="margin-top: 16px;" />
           </n-card>
         </n-gi>
       </n-grid>
@@ -46,11 +48,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
-  NSpace, NButton, NH2, NTag, NProgress, NInputNumber, NGrid, NGi,
+  NSpace, NButton, NH2, NTag, NProgress, NInputNumber, NGrid, NGi, NEmpty,
 } from 'naive-ui'
 import { getHandcraft, getHandcraftParts, getHandcraftJewelries, sendHandcraft, receiveHandcraft } from '@/api/handcraft'
 import { listParts } from '@/api/parts'
 import { listJewelries } from '@/api/jewelries'
+import { renderNamedImage } from '@/utils/ui'
 
 const route = useRoute()
 const router = useRouter()
@@ -76,11 +79,13 @@ const loadData = async () => {
   order.value = oRes.data
   partItems.value = pRes.data.map((p) => ({
     ...p,
-    part_name: partMap.value[p.part_id] || p.part_id,
+    part_name: partMap.value[p.part_id]?.name || p.part_id,
+    part_image: partMap.value[p.part_id]?.image || '',
   }))
   jewelryItems.value = jRes.data.map((j) => ({
     ...j,
-    jewelry_name: jewelryMap.value[j.jewelry_id] || j.jewelry_id,
+    jewelry_name: jewelryMap.value[j.jewelry_id]?.name || j.jewelry_id,
+    jewelry_image: jewelryMap.value[j.jewelry_id]?.image || '',
     receiveQty: 0,
   }))
 }
@@ -110,7 +115,13 @@ const doReceive = async (item) => {
 }
 
 const partColumns = [
-  { title: '配件名称', key: 'part_name' },
+  { title: '配件编号', key: 'part_id', width: 110 },
+  {
+    title: '配件',
+    key: 'part_name',
+    minWidth: 180,
+    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name),
+  },
   { title: '实际发出', key: 'qty' },
   { title: 'BOM理论', key: 'bom_qty', render: (r) => r.bom_qty ?? '-' },
   {
@@ -127,7 +138,13 @@ const partColumns = [
 ]
 
 const jewelryColumns = [
-  { title: '饰品名称', key: 'jewelry_name' },
+  { title: '饰品编号', key: 'jewelry_id', width: 110 },
+  {
+    title: '饰品',
+    key: 'jewelry_name',
+    minWidth: 180,
+    render: (row) => renderNamedImage(row.jewelry_name, row.jewelry_image, row.jewelry_name),
+  },
   { title: '预期数量', key: 'qty' },
   { title: '已收回', key: 'received_qty', render: (r) => r.received_qty ?? 0 },
   {
@@ -163,8 +180,8 @@ const jewelryColumns = [
 onMounted(async () => {
   try {
     const [pRes, jRes] = await Promise.all([listParts(), listJewelries()])
-    pRes.data.forEach((p) => { partMap.value[p.id] = p.name })
-    jRes.data.forEach((j) => { jewelryMap.value[j.id] = j.name })
+    pRes.data.forEach((p) => { partMap.value[p.id] = p })
+    jRes.data.forEach((j) => { jewelryMap.value[j.id] = j })
     await loadData()
   } finally {
     loading.value = false

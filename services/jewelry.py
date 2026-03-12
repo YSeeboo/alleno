@@ -25,7 +25,7 @@ def list_jewelries(db: Session, category: str = None, status: str = None) -> lis
         q = q.filter(Jewelry.category == category)
     if status is not None:
         q = q.filter(Jewelry.status == status)
-    return q.all()
+    return q.order_by(Jewelry.id.desc()).all()
 
 
 def update_jewelry(db: Session, jewelry_id: str, data: dict) -> Jewelry:

@@ -19,7 +19,14 @@
         <n-card title="发出配件">
           <div v-for="(item, idx) in parts" :key="idx" style="margin-bottom: 10px;">
             <n-space align="center">
-              <n-select v-model:value="item.part_id" :options="partOptions" filterable placeholder="选择配件" style="width: 190px;" />
+              <n-select
+                v-model:value="item.part_id"
+                :options="partOptions"
+                :render-label="renderOptionWithImage"
+                filterable
+                placeholder="选择配件"
+                style="width: 190px;"
+              />
               <n-input-number v-model:value="item.qty" :min="0.01" placeholder="实际发出" style="width: 100px;" />
               <n-input-number v-model:value="item.bom_qty" :min="0" placeholder="BOM理论(选填)" style="width: 120px;" />
               <n-button type="error" size="small" @click="parts.splice(idx, 1)">删</n-button>
@@ -34,7 +41,14 @@
         <n-card title="预期收回饰品">
           <div v-for="(item, idx) in jewelries" :key="idx" style="margin-bottom: 10px;">
             <n-space align="center">
-              <n-select v-model:value="item.jewelry_id" :options="jewelryOptions" filterable placeholder="选择饰品" style="width: 220px;" />
+              <n-select
+                v-model:value="item.jewelry_id"
+                :options="jewelryOptions"
+                :render-label="renderOptionWithImage"
+                filterable
+                placeholder="选择饰品"
+                style="width: 220px;"
+              />
               <n-input-number v-model:value="item.qty" :min="1" placeholder="预期数量" style="width: 100px;" />
               <n-button type="error" size="small" @click="jewelries.splice(idx, 1)">删</n-button>
             </n-space>
@@ -60,6 +74,7 @@ import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard
 import { listParts } from '@/api/parts'
 import { listJewelries } from '@/api/jewelries'
 import { createHandcraft } from '@/api/handcraft'
+import { renderOptionWithImage } from '@/utils/ui'
 
 const router = useRouter()
 const message = useMessage()
@@ -95,8 +110,20 @@ const submit = async () => {
 onMounted(async () => {
   try {
     const [pRes, jRes] = await Promise.all([listParts(), listJewelries({ status: 'active' })])
-    partOptions.value = pRes.data.map((p) => ({ label: `${p.id} ${p.name}`, value: p.id }))
-    jewelryOptions.value = jRes.data.map((j) => ({ label: `${j.id} ${j.name}`, value: j.id }))
+    partOptions.value = pRes.data.map((p) => ({
+      label: `${p.id} ${p.name}`,
+      value: p.id,
+      code: p.id,
+      name: p.name,
+      image: p.image,
+    }))
+    jewelryOptions.value = jRes.data.map((j) => ({
+      label: `${j.id} ${j.name}`,
+      value: j.id,
+      code: j.id,
+      name: j.name,
+      image: j.image,
+    }))
   } catch (_) {
     // error already shown by axios interceptor
   }

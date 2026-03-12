@@ -4,8 +4,8 @@
       bordered
       style="height: 64px; padding: 0 24px; display: flex; align-items: center;"
     >
-      <n-text style="font-size: 20px; font-weight: 600; color: #18a058;">
-        Allen Shop 管理系统
+      <n-text :style="{ fontSize: '20px', fontWeight: 600, color: BRAND_COLOR }">
+        Allenop 管理系统
       </n-text>
     </n-layout-header>
     <n-layout has-sider style="height: calc(100vh - 64px)">
@@ -45,6 +45,7 @@ import {
   HomeOutline, ExtensionPuzzleOutline, DiamondOutline, ReceiptOutline,
   ColorWandOutline, HammerOutline, ListOutline,
 } from '@vicons/ionicons5'
+import { BRAND_COLOR } from '@/utils/ui'
 
 const router = useRouter()
 const route = useRoute()

@@ -17,7 +17,14 @@
     <n-card title="电镀明细" style="margin-bottom: 16px;">
       <div v-for="(item, idx) in items" :key="idx" style="margin-bottom: 10px;">
         <n-space align="center">
-          <n-select v-model:value="item.part_id" :options="partOptions" filterable placeholder="选择配件" style="width: 220px;" />
+          <n-select
+            v-model:value="item.part_id"
+            :options="partOptions"
+            :render-label="renderOptionWithImage"
+            filterable
+            placeholder="选择配件"
+            style="width: 220px;"
+          />
           <n-input-number v-model:value="item.qty" :min="0.01" placeholder="发出数量" style="width: 110px;" />
           <n-input v-model:value="item.plating_method" placeholder="电镀方式" style="width: 120px;" />
           <n-input v-model:value="item.note" placeholder="备注" style="width: 140px;" />
@@ -42,6 +49,7 @@ import { useMessage } from 'naive-ui'
 import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2 } from 'naive-ui'
 import { listParts } from '@/api/parts'
 import { createPlating } from '@/api/plating'
+import { renderOptionWithImage } from '@/utils/ui'
 
 const router = useRouter()
 const message = useMessage()
@@ -68,7 +76,13 @@ const submit = async () => {
 onMounted(async () => {
   try {
     const { data } = await listParts()
-    partOptions.value = data.map((p) => ({ label: `${p.id} ${p.name}`, value: p.id }))
+    partOptions.value = data.map((p) => ({
+      label: `${p.id} ${p.name}`,
+      value: p.id,
+      code: p.id,
+      name: p.name,
+      image: p.image,
+    }))
   } catch (_) {
     // error already shown by axios interceptor
   }

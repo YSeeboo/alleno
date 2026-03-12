@@ -23,7 +23,7 @@ def list_parts(db: Session, category: str = None, name: str = None) -> List[Part
         q = q.filter(Part.category == category)
     if name is not None:
         q = q.filter(Part.name.contains(name))
-    return q.all()
+    return q.order_by(Part.id.desc()).all()
 
 
 def update_part(db: Session, part_id: str, data: dict) -> Part:

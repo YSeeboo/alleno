@@ -8,11 +8,17 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     DATABASE_URL: str = "postgresql://allen:allen@localhost:5432/allen_shop"
-    TELEGRAM_BOT_TOKEN: str = ""
-    TELEGRAM_WHITELIST: str = ""
-    TELEGRAM_PROXY_URL: str = ""
-    ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_BASE_URL: str = ""
+    DEEPSEEK_API_KEY: str = ""
+    FEISHU_APP_ID: str = ""
+    FEISHU_APP_SECRET: str = ""
+    # 允许使用 Bot 的飞书 open_id，多个用逗号分隔，留空则不限制
+    FEISHU_WHITELIST: str = ""
+    OSS_BUCKET: str = ""
+    OSS_REGION: str = ""
+    OSS_ENDPOINT: str = ""
+    OSS_ACCESS_KEY_ID: str = ""
+    OSS_ACCESS_KEY_SECRET: str = ""
+    OSS_PUBLIC_BASE_URL: str = ""
 
     @field_validator("DATABASE_URL")
     @classmethod
@@ -22,10 +28,32 @@ class Settings(BaseSettings):
         return value
 
     @property
-    def telegram_whitelist_ids(self) -> List[int]:
-        if not self.TELEGRAM_WHITELIST:
+    def feishu_whitelist_ids(self) -> List[str]:
+        if not self.FEISHU_WHITELIST:
             return []
-        return [int(uid.strip()) for uid in self.TELEGRAM_WHITELIST.split(",") if uid.strip()]
+        return [uid.strip() for uid in self.FEISHU_WHITELIST.split(",") if uid.strip()]
+
+    @property
+    def oss_enabled(self) -> bool:
+        return all(
+            [
+                self.OSS_BUCKET,
+                self.OSS_ENDPOINT,
+                self.OSS_ACCESS_KEY_ID,
+                self.OSS_ACCESS_KEY_SECRET,
+            ]
+        )
+
+    @property
+    def oss_upload_host(self) -> str:
+        if not self.oss_enabled:
+            return ""
+        endpoint = self.OSS_ENDPOINT.replace("https://", "").replace("http://", "").strip("/")
+        return f"https://{self.OSS_BUCKET}.{endpoint}"
+
+    @property
+    def oss_public_base_url(self) -> str:
+        return (self.OSS_PUBLIC_BASE_URL or self.oss_upload_host).rstrip("/")
 
 
 settings = Settings()

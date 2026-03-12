@@ -29,6 +29,13 @@ def test_list_jewelries_filter_status(db):
     assert len(active) == 1
 
 
+def test_list_jewelries_returns_latest_first(db):
+    create_jewelry(db, {"name": "A"})
+    create_jewelry(db, {"name": "B"})
+    results = list_jewelries(db)
+    assert [item.id for item in results] == ["SP-0002", "SP-0001"]
+
+
 def test_list_jewelries_filter_category(db):
     create_jewelry(db, {"name": "A", "category": "戒指"})
     create_jewelry(db, {"name": "B", "category": "项链"})

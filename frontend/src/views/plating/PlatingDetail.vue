@@ -25,8 +25,8 @@
       </n-card>
 
       <n-card title="电镀明细">
-        <n-data-table :columns="itemColumns" :data="items" :bordered="false" />
-        <n-empty v-if="items.length === 0" description="暂无明细" style="margin-top: 16px;" />
+        <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" />
+        <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
       </n-card>
     </n-spin>
   </div>
@@ -42,6 +42,7 @@ import {
 } from 'naive-ui'
 import { getPlating, getPlatingItems, sendPlating, receivePlating } from '@/api/plating'
 import { listParts } from '@/api/parts'
+import { renderNamedImage } from '@/utils/ui'
 
 const route = useRoute()
 const router = useRouter()
@@ -63,7 +64,8 @@ const loadData = async () => {
   order.value = oRes.data
   items.value = iRes.data.map((i) => ({
     ...i,
-    part_name: partMap.value[i.part_id] || i.part_id,
+    part_name: partMap.value[i.part_id]?.name || i.part_id,
+    part_image: partMap.value[i.part_id]?.image || '',
     receiveQty: 0,
   }))
 }
@@ -93,7 +95,13 @@ const doReceive = async (item) => {
 }
 
 const itemColumns = [
-  { title: '配件名称', key: 'part_name' },
+  { title: '配件编号', key: 'part_id', width: 110 },
+  {
+    title: '配件',
+    key: 'part_name',
+    minWidth: 180,
+    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name),
+  },
   { title: '发出数量', key: 'qty' },
   { title: '已收回', key: 'received_qty', render: (r) => r.received_qty ?? 0 },
   {
@@ -134,7 +142,7 @@ const itemColumns = [
 onMounted(async () => {
   try {
     const { data: parts } = await listParts()
-    parts.forEach((p) => { partMap.value[p.id] = p.name })
+    parts.forEach((p) => { partMap.value[p.id] = p })
     await loadData()
   } finally {
     loading.value = false

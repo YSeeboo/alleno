@@ -12,8 +12,8 @@
       <n-button type="primary" @click="router.push('/orders/create')">新建订单</n-button>
     </n-space>
     <n-spin :show="loading">
-      <n-data-table :columns="columns" :data="orders" :bordered="false" :row-props="rowProps" />
-      <n-empty v-if="!loading && orders.length === 0" description="暂无订单" style="margin-top: 24px;" />
+      <n-data-table v-if="orders.length > 0" :columns="columns" :data="orders" :bordered="false" :row-props="rowProps" />
+      <n-empty v-else-if="!loading" description="暂无订单" style="margin-top: 24px;" />
     </n-spin>
   </div>
 </template>

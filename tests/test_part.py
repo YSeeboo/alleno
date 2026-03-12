@@ -2,7 +2,9 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import pytest
+from sqlalchemy import create_engine, inspect, text
 from services.part import create_part, get_part, list_parts, update_part, delete_part
+from database import ensure_optional_columns
 
 
 def test_create_part_generates_id(db):
@@ -33,6 +35,13 @@ def test_list_parts_all(db):
     create_part(db, {"name": "A", "category": "扣件"})
     create_part(db, {"name": "B", "category": "链条"})
     assert len(list_parts(db)) == 2
+
+
+def test_list_parts_returns_latest_first(db):
+    create_part(db, {"name": "A"})
+    create_part(db, {"name": "B"})
+    results = list_parts(db)
+    assert [part.id for part in results] == ["PJ-0002", "PJ-0001"]
 
 
 def test_list_parts_filter_category(db):
@@ -78,3 +87,17 @@ def test_delete_part(db):
 def test_delete_part_not_found(db):
     with pytest.raises(ValueError):
         delete_part(db, "PJ-9999")
+
+
+def test_ensure_optional_columns_adds_missing_image(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text('CREATE TABLE part (id TEXT PRIMARY KEY, name TEXT NOT NULL)'))
+        conn.execute(text('CREATE TABLE jewelry (id TEXT PRIMARY KEY, name TEXT NOT NULL)'))
+
+    monkeypatch.setattr("database.engine", engine)
+    ensure_optional_columns()
+
+    inspector = inspect(engine)
+    assert "image" in {column["name"] for column in inspector.get_columns("part")}
+    assert "image" in {column["name"] for column in inspector.get_columns("jewelry")}

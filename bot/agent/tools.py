@@ -1,185 +1,217 @@
 """
-Tool definitions for the Allen Shop Telegram Bot agent.
-Provides TOOLS list (Anthropic SDK format) and execute_tool dispatcher.
+Tool definitions for the Allen Shop bot agent.
+Uses OpenAI function-calling format (compatible with DeepSeek).
 """
 
 TOOLS = [
     {
-        "name": "get_stock",
-        "description": "查询配件或饰品的当前库存数量",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "item_type": {"type": "string", "description": "part 或 jewelry"},
-                "item_id": {"type": "string", "description": "物品 ID，如 PJ-0001 或 SP-0001"},
+        "type": "function",
+        "function": {
+            "name": "get_stock",
+            "description": "查询配件或饰品的当前库存数量",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_type": {"type": "string", "description": "part 或 jewelry"},
+                    "item_id": {"type": "string", "description": "物品 ID，如 PJ-0001 或 SP-0001"},
+                },
+                "required": ["item_type", "item_id"],
             },
-            "required": ["item_type", "item_id"],
         },
     },
     {
-        "name": "get_stock_log",
-        "description": "查询配件或饰品的库存流水历史记录",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "item_type": {"type": "string", "description": "part 或 jewelry"},
-                "item_id": {"type": "string", "description": "物品 ID，如 PJ-0001 或 SP-0001"},
+        "type": "function",
+        "function": {
+            "name": "get_stock_log",
+            "description": "查询配件或饰品的库存流水历史记录",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_type": {"type": "string", "description": "part 或 jewelry"},
+                    "item_id": {"type": "string", "description": "物品 ID，如 PJ-0001 或 SP-0001"},
+                },
+                "required": ["item_type", "item_id"],
             },
-            "required": ["item_type", "item_id"],
         },
     },
     {
-        "name": "add_stock",
-        "description": "入库：为指定配件或饰品增加库存",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "item_type": {"type": "string", "description": "part 或 jewelry"},
-                "item_id": {"type": "string", "description": "物品 ID，如 PJ-0001"},
-                "qty": {"type": "number", "description": "入库数量（正数）"},
-                "reason": {"type": "string", "description": "入库原因，如 采购入库"},
-                "note": {"type": "string", "description": "备注（可选）"},
+        "type": "function",
+        "function": {
+            "name": "add_stock",
+            "description": "入库：为指定配件或饰品增加库存",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_type": {"type": "string", "description": "part 或 jewelry"},
+                    "item_id": {"type": "string", "description": "物品 ID，如 PJ-0001"},
+                    "qty": {"type": "number", "description": "入库数量（正数）"},
+                    "reason": {"type": "string", "description": "入库原因，如 采购入库"},
+                    "note": {"type": "string", "description": "备注（可选）"},
+                },
+                "required": ["item_type", "item_id", "qty", "reason"],
             },
-            "required": ["item_type", "item_id", "qty", "reason"],
         },
     },
     {
-        "name": "deduct_stock",
-        "description": "出库：从指定配件或饰品中扣减库存",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "item_type": {"type": "string", "description": "part 或 jewelry"},
-                "item_id": {"type": "string", "description": "物品 ID，如 PJ-0001"},
-                "qty": {"type": "number", "description": "出库数量（正数）"},
-                "reason": {"type": "string", "description": "出库原因，如 销售出库"},
-                "note": {"type": "string", "description": "备注（可选）"},
+        "type": "function",
+        "function": {
+            "name": "deduct_stock",
+            "description": "出库：从指定配件或饰品中扣减库存",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_type": {"type": "string", "description": "part 或 jewelry"},
+                    "item_id": {"type": "string", "description": "物品 ID，如 PJ-0001"},
+                    "qty": {"type": "number", "description": "出库数量（正数）"},
+                    "reason": {"type": "string", "description": "出库原因，如 销售出库"},
+                    "note": {"type": "string", "description": "备注（可选）"},
+                },
+                "required": ["item_type", "item_id", "qty", "reason"],
             },
-            "required": ["item_type", "item_id", "qty", "reason"],
         },
     },
     {
-        "name": "get_order",
-        "description": "获取订单基本信息，包括客户名、状态、总金额等",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "order_id": {"type": "string", "description": "订单 ID，如 OR-0001"},
+        "type": "function",
+        "function": {
+            "name": "get_order",
+            "description": "获取订单基本信息，包括客户名、状态、总金额等",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {"type": "string", "description": "订单 ID，如 OR-0001"},
+                },
+                "required": ["order_id"],
             },
-            "required": ["order_id"],
         },
     },
     {
-        "name": "get_order_items",
-        "description": "获取订单中的饰品清单（饰品ID、数量、单价等）",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "order_id": {"type": "string", "description": "订单 ID，如 OR-0001"},
+        "type": "function",
+        "function": {
+            "name": "get_order_items",
+            "description": "获取订单中的饰品清单（饰品ID、数量、单价等）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {"type": "string", "description": "订单 ID，如 OR-0001"},
+                },
+                "required": ["order_id"],
             },
-            "required": ["order_id"],
         },
     },
     {
-        "name": "get_parts_summary",
-        "description": "根据订单的饰品清单和 BOM，汇总生产所需的配件总用量",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "order_id": {"type": "string", "description": "订单 ID，如 OR-0001"},
+        "type": "function",
+        "function": {
+            "name": "get_parts_summary",
+            "description": "根据订单的饰品清单和 BOM，汇总生产所需的配件总用量",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {"type": "string", "description": "订单 ID，如 OR-0001"},
+                },
+                "required": ["order_id"],
             },
-            "required": ["order_id"],
         },
     },
     {
-        "name": "update_order_status",
-        "description": "更新订单状态（待生产 / 生产中 / 已完成）",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "order_id": {"type": "string", "description": "订单 ID，如 OR-0001"},
-                "status": {"type": "string", "description": "新状态：待生产、生产中 或 已完成"},
+        "type": "function",
+        "function": {
+            "name": "update_order_status",
+            "description": "更新订单状态（待生产 / 生产中 / 已完成）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {"type": "string", "description": "订单 ID，如 OR-0001"},
+                    "status": {"type": "string", "description": "新状态：待生产、生产中 或 已完成"},
+                },
+                "required": ["order_id", "status"],
             },
-            "required": ["order_id", "status"],
         },
     },
     {
-        "name": "get_plating_order",
-        "description": "获取电镀单信息，包括供应商、状态及各明细项",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "plating_order_id": {"type": "string", "description": "电镀单 ID，如 EP-0001"},
+        "type": "function",
+        "function": {
+            "name": "get_plating_order",
+            "description": "获取电镀单信息，包括供应商、状态及各明细项",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "plating_order_id": {"type": "string", "description": "电镀单 ID，如 EP-0001"},
+                },
+                "required": ["plating_order_id"],
             },
-            "required": ["plating_order_id"],
         },
     },
     {
-        "name": "receive_plating_items",
-        "description": "收回电镀配件：按明细项 ID 记录收回数量，更新库存",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "plating_order_id": {"type": "string", "description": "电镀单 ID，如 EP-0001"},
-                "receipts": {
-                    "type": "array",
-                    "description": "收回明细列表，每项包含 plating_order_item_id 和 qty",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "plating_order_item_id": {"type": "integer", "description": "电镀明细行 ID"},
-                            "qty": {"type": "number", "description": "本次收回数量"},
+        "type": "function",
+        "function": {
+            "name": "receive_plating_items",
+            "description": "收回电镀配件：按明细项 ID 记录收回数量，更新库存",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "plating_order_id": {"type": "string", "description": "电镀单 ID，如 EP-0001"},
+                    "receipts": {
+                        "type": "array",
+                        "description": "收回明细列表，每项包含 plating_order_item_id 和 qty",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "plating_order_item_id": {"type": "integer", "description": "电镀明细行 ID"},
+                                "qty": {"type": "number", "description": "本次收回数量"},
+                            },
+                            "required": ["plating_order_item_id", "qty"],
                         },
-                        "required": ["plating_order_item_id", "qty"],
                     },
                 },
+                "required": ["plating_order_id", "receipts"],
             },
-            "required": ["plating_order_id", "receipts"],
         },
     },
     {
-        "name": "get_handcraft_order",
-        "description": "获取手工单信息，包括供应商、状态及配件/饰品明细",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "handcraft_order_id": {"type": "string", "description": "手工单 ID，如 HC-0001"},
+        "type": "function",
+        "function": {
+            "name": "get_handcraft_order",
+            "description": "获取手工单信息，包括供应商、状态及配件/饰品明细",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "handcraft_order_id": {"type": "string", "description": "手工单 ID，如 HC-0001"},
+                },
+                "required": ["handcraft_order_id"],
             },
-            "required": ["handcraft_order_id"],
         },
     },
     {
-        "name": "receive_handcraft_jewelries",
-        "description": "收回手工饰品：按饰品明细项 ID 记录收回数量，更新库存",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "handcraft_order_id": {"type": "string", "description": "手工单 ID，如 HC-0001"},
-                "receipts": {
-                    "type": "array",
-                    "description": "收回明细列表，每项包含 handcraft_jewelry_item_id 和 qty",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "handcraft_jewelry_item_id": {"type": "integer", "description": "手工饰品明细行 ID"},
-                            "qty": {"type": "number", "description": "本次收回数量"},
+        "type": "function",
+        "function": {
+            "name": "receive_handcraft_jewelries",
+            "description": "收回手工饰品：按饰品明细项 ID 记录收回数量，更新库存",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "handcraft_order_id": {"type": "string", "description": "手工单 ID，如 HC-0001"},
+                    "receipts": {
+                        "type": "array",
+                        "description": "收回明细列表，每项包含 handcraft_jewelry_item_id 和 qty",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "handcraft_jewelry_item_id": {"type": "integer", "description": "手工饰品明细行 ID"},
+                                "qty": {"type": "number", "description": "本次收回数量"},
+                            },
+                            "required": ["handcraft_jewelry_item_id", "qty"],
                         },
-                        "required": ["handcraft_jewelry_item_id", "qty"],
                     },
                 },
+                "required": ["handcraft_order_id", "receipts"],
             },
-            "required": ["handcraft_order_id", "receipts"],
         },
     },
 ]
 
 
 def execute_tool(name: str, inputs: dict, db) -> str:
-    """Dispatch a tool call by name, returning a human-readable result string.
-
-    All exceptions are caught and returned as error strings so the agent loop
-    never crashes on a bad tool call.
-    """
+    """Dispatch a tool call by name, returning a human-readable result string."""
     try:
         if name == "get_stock":
             from services.inventory import get_stock
@@ -200,27 +232,15 @@ def execute_tool(name: str, inputs: dict, db) -> str:
 
         elif name == "add_stock":
             from services.inventory import add_stock
-            log = add_stock(
-                db,
-                inputs["item_type"],
-                inputs["item_id"],
-                float(inputs["qty"]),
-                inputs["reason"],
-                inputs.get("note"),
-            )
+            add_stock(db, inputs["item_type"], inputs["item_id"],
+                      float(inputs["qty"]), inputs["reason"], inputs.get("note"))
             db.commit()
             return f"入库成功：{inputs['item_type']} {inputs['item_id']} +{inputs['qty']}"
 
         elif name == "deduct_stock":
             from services.inventory import deduct_stock
-            log = deduct_stock(
-                db,
-                inputs["item_type"],
-                inputs["item_id"],
-                float(inputs["qty"]),
-                inputs["reason"],
-                inputs.get("note"),
-            )
+            deduct_stock(db, inputs["item_type"], inputs["item_id"],
+                         float(inputs["qty"]), inputs["reason"], inputs.get("note"))
             db.commit()
             return f"出库成功：{inputs['item_type']} {inputs['item_id']} -{inputs['qty']}"
 
@@ -273,9 +293,7 @@ def execute_tool(name: str, inputs: dict, db) -> str:
                 .filter(PlatingOrderItem.plating_order_id == order.id)
                 .all()
             )
-            lines = [
-                f"电镀单 {order.id} 供应商:{order.supplier_name} 状态:{order.status}"
-            ]
+            lines = [f"电镀单 {order.id} 供应商:{order.supplier_name} 状态:{order.status}"]
             for item in items:
                 lines.append(
                     f"  明细#{item.id} {item.part_id} qty:{item.qty} "
@@ -286,9 +304,7 @@ def execute_tool(name: str, inputs: dict, db) -> str:
 
         elif name == "receive_plating_items":
             from services.plating import receive_plating_items
-            updated = receive_plating_items(
-                db, inputs["plating_order_id"], inputs["receipts"]
-            )
+            updated = receive_plating_items(db, inputs["plating_order_id"], inputs["receipts"])
             db.commit()
             lines = [
                 f"明细#{item.id} 已收:{item.received_qty}/{item.qty} 状态:{item.status}"
@@ -312,9 +328,7 @@ def execute_tool(name: str, inputs: dict, db) -> str:
                 .filter(HandcraftJewelryItem.handcraft_order_id == order.id)
                 .all()
             )
-            lines = [
-                f"手工单 {order.id} 供应商:{order.supplier_name} 状态:{order.status}"
-            ]
+            lines = [f"手工单 {order.id} 供应商:{order.supplier_name} 状态:{order.status}"]
             lines.append("配件:")
             for p in part_items:
                 lines.append(f"  {p.part_id} qty:{p.qty} bom参考:{p.bom_qty or '-'}")
