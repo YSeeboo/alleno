@@ -1,14 +1,14 @@
 <template>
   <n-layout style="height: 100vh">
-    <n-layout-header
-      bordered
-      style="height: 64px; padding: 0 24px; display: flex; align-items: center;"
-    >
-      <n-text :style="{ fontSize: '20px', fontWeight: 600, color: BRAND_COLOR }">
-        Allenop 管理系统
-      </n-text>
+    <n-layout-header bordered style="height: 60px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between;">
+      <div class="brand">
+        <span class="brand-gem">◆</span>
+        <span class="brand-en">ALLENOP</span>
+        <span class="brand-sep">|</span>
+        <span class="brand-zh">管理系统</span>
+      </div>
     </n-layout-header>
-    <n-layout has-sider style="height: calc(100vh - 64px)">
+    <n-layout has-sider style="height: calc(100vh - 60px)">
       <n-layout-sider
         bordered
         collapse-mode="width"
@@ -28,7 +28,7 @@
           @update:value="handleSelect"
         />
       </n-layout-sider>
-      <n-layout-content content-style="padding: 24px; overflow-y: auto;">
+      <n-layout-content content-style="padding: 28px; overflow-y: auto; background: #F6F5F1;">
         <router-view />
       </n-layout-content>
     </n-layout>
@@ -38,14 +38,11 @@
 <script setup>
 import { ref, computed, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  NLayout, NLayoutHeader, NLayoutSider, NLayoutContent, NMenu, NText,
-} from 'naive-ui'
+import { NLayout, NLayoutHeader, NLayoutSider, NLayoutContent, NMenu } from 'naive-ui'
 import {
   HomeOutline, ExtensionPuzzleOutline, DiamondOutline, ReceiptOutline,
-  ColorWandOutline, HammerOutline, ListOutline,
+  ColorWandOutline, HammerOutline, ListOutline, GridOutline,
 } from '@vicons/ionicons5'
-import { BRAND_COLOR } from '@/utils/ui'
 
 const router = useRouter()
 const route = useRoute()
@@ -61,6 +58,7 @@ const menuOptions = [
   { label: '电镀单', key: 'plating', icon: icon(ColorWandOutline) },
   { label: '手工单', key: 'handcraft', icon: icon(HammerOutline) },
   { label: '库存流水', key: 'inventory-log', icon: icon(ListOutline) },
+  { label: '进度看板', key: 'kanban', icon: icon(GridOutline) },
 ]
 
 const activeKey = computed(() => {
@@ -72,3 +70,35 @@ const handleSelect = (key) => {
   router.push(key === 'dashboard' ? '/' : `/${key}`)
 }
 </script>
+
+<style scoped>
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-gem {
+  color: #C4952A;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.brand-en {
+  color: #E8DCC8;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.brand-sep {
+  color: #3A3830;
+  font-size: 16px;
+}
+
+.brand-zh {
+  color: #6B6560;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+}
+</style>

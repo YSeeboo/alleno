@@ -5,6 +5,7 @@ psycopg2-binary
 openai
 pydantic-settings
 python-dotenv
+oss2
 
 # dev / test
 pytest

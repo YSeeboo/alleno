@@ -19,9 +19,9 @@ def api_create_jewelry(body: JewelryCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=List[JewelryResponse])
-def api_list_jewelries(status: Optional[str] = None, category: Optional[str] = None, db: Session = Depends(get_db)):
+def api_list_jewelries(status: Optional[str] = None, category: Optional[str] = None, name: Optional[str] = None, db: Session = Depends(get_db)):
     with service_errors():
-        return list_jewelries(db, status=status, category=category)
+        return list_jewelries(db, status=status, category=category, name=name)
 
 
 @router.get("/{jewelry_id}", response_model=JewelryResponse)

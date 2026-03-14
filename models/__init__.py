@@ -5,6 +5,7 @@ from .order import Order, OrderItem
 from .inventory_log import InventoryLog
 from .plating_order import PlatingOrder, PlatingOrderItem
 from .handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
+from .vendor_receipt import VendorReceipt
 
 __all__ = [
     "Part",
@@ -18,4 +19,5 @@ __all__ = [
     "HandcraftOrder",
     "HandcraftPartItem",
     "HandcraftJewelryItem",
+    "VendorReceipt",
 ]

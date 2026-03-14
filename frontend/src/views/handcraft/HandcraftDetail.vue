@@ -48,9 +48,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
-  NSpace, NButton, NH2, NTag, NProgress, NInputNumber, NGrid, NGi, NEmpty,
+  NSpace, NButton, NH2, NTag, NGrid, NGi, NEmpty,
 } from 'naive-ui'
-import { getHandcraft, getHandcraftParts, getHandcraftJewelries, sendHandcraft, receiveHandcraft } from '@/api/handcraft'
+import { getHandcraft, getHandcraftParts, getHandcraftJewelries, sendHandcraft } from '@/api/handcraft'
 import { listParts } from '@/api/parts'
 import { listJewelries } from '@/api/jewelries'
 import { renderNamedImage } from '@/utils/ui'
@@ -86,7 +86,6 @@ const loadData = async () => {
     ...j,
     jewelry_name: jewelryMap.value[j.jewelry_id]?.name || j.jewelry_id,
     jewelry_image: jewelryMap.value[j.jewelry_id]?.image || '',
-    receiveQty: 0,
   }))
 }
 
@@ -98,19 +97,6 @@ const doSend = async () => {
     await loadData()
   } finally {
     sending.value = false
-  }
-}
-
-const doReceive = async (item) => {
-  if (!item.receiveQty || item.receiveQty <= 0) { message.warning('请输入收回数量'); return }
-  item.receiving = true
-  try {
-    await receiveHandcraft(route.params.id, [{ handcraft_jewelry_item_id: item.id, qty: item.receiveQty }])
-    message.success('登记成功')
-    item.receiveQty = 0
-    await loadData()
-  } finally {
-    item.receiving = false
   }
 }
 
@@ -146,35 +132,7 @@ const jewelryColumns = [
     render: (row) => renderNamedImage(row.jewelry_name, row.jewelry_image, row.jewelry_name),
   },
   { title: '预期数量', key: 'qty' },
-  { title: '已收回', key: 'received_qty', render: (r) => r.received_qty ?? 0 },
-  {
-    title: '进度',
-    key: 'progress',
-    render: (r) => h(NProgress, {
-      type: 'line',
-      percentage: r.qty > 0 ? Math.round(((r.received_qty ?? 0) / r.qty) * 100) : 0,
-      indicatorPlacement: 'inside',
-      style: 'min-width: 120px;',
-    }),
-  },
   { title: '状态', key: 'status' },
-  {
-    title: '操作',
-    key: 'actions',
-    render: (r) => {
-      if (order.value?.status !== 'processing' || r.status === '已收回') return null
-      return h(NSpace, { align: 'center' }, () => [
-        h(NInputNumber, {
-          value: r.receiveQty,
-          min: 1,
-          max: r.qty - (r.received_qty ?? 0),
-          style: 'width: 80px;',
-          onUpdateValue: (v) => { r.receiveQty = v },
-        }),
-        h(NButton, { size: 'small', type: 'primary', loading: r.receiving, onClick: () => doReceive(r) }, () => '登记收回'),
-      ])
-    },
-  },
 ]
 
 onMounted(async () => {

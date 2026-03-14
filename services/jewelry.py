@@ -19,12 +19,14 @@ def get_jewelry(db: Session, jewelry_id: str) -> Optional[Jewelry]:
     return db.query(Jewelry).filter(Jewelry.id == jewelry_id).first()
 
 
-def list_jewelries(db: Session, category: str = None, status: str = None) -> list:
+def list_jewelries(db: Session, category: str = None, status: str = None, name: str = None) -> list:
     q = db.query(Jewelry)
     if category is not None:
         q = q.filter(Jewelry.category == category)
     if status is not None:
         q = q.filter(Jewelry.status == status)
+    if name is not None:
+        q = q.filter(Jewelry.name.ilike(f"%{name}%"))
     return q.order_by(Jewelry.id.desc()).all()
 
 

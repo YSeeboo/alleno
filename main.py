@@ -17,6 +17,7 @@ from api.plating import router as plating_router
 from api.handcraft import router as handcraft_router
 from api.uploads import router as uploads_router
 from api.feishu import router as feishu_router
+from api.kanban import router as kanban_router
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ app = FastAPI(title="Allenop", description="饰品店管理系统", lifespan=lif
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "https://ycbhomeland.top", "https://www.ycbhomeland.top"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -49,6 +50,7 @@ app.include_router(plating_router)
 app.include_router(handcraft_router)
 app.include_router(uploads_router)
 app.include_router(feishu_router)
+app.include_router(kanban_router, prefix="/api/kanban", tags=["kanban"])
 
 
 @app.get("/")
