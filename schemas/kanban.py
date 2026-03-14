@@ -22,6 +22,7 @@ class ReceiptItemIn(BaseModel):
 class VendorReceiptCreate(BaseModel):
     vendor_name: str = Field(min_length=1)
     order_type: Literal["plating", "handcraft"]
+    order_id: str = Field(min_length=1)
     items: list[ReceiptItemIn] = Field(min_length=1)
 
     @field_validator("vendor_name")
@@ -29,6 +30,13 @@ class VendorReceiptCreate(BaseModel):
     def vendor_name_not_blank(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("vendor_name 不能为空白字符串")
+        return v.strip()
+
+    @field_validator("order_id")
+    @classmethod
+    def order_id_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("order_id 不能为空白字符串")
         return v.strip()
 
 
@@ -75,3 +83,43 @@ class VendorDetailResponse(BaseModel):
     order_type: str
     items: list[VendorItemSummary]
     orders: list[VendorOrderSummary]
+
+
+# ---------- 收回弹窗 - 订单下拉 ----------
+
+class VendorOrderOption(BaseModel):
+    order_id: str
+    status: str
+    created_at: datetime
+
+
+# ---------- 收回弹窗 - 订单明细（带剩余量提示）----------
+
+class OrderItemHint(BaseModel):
+    item_id: str
+    item_type: str         # "part" | "jewelry"
+    item_name: str | None  # 可能查不到
+    dispatched_qty: float
+    received_qty: float    # 该订单已收回量
+    remaining_qty: float   # dispatched_qty - received_qty
+
+
+class OrderItemsForReceiptResponse(BaseModel):
+    order_id: str
+    order_type: str
+    items: list[OrderItemHint]
+
+
+# ---------- 手动状态变更 ----------
+
+class OrderStatusChangeRequest(BaseModel):
+    order_id: str = Field(min_length=1)
+    order_type: Literal["plating", "handcraft"]
+    new_status: Literal["pending", "processing", "completed"]
+
+    @field_validator("order_id")
+    @classmethod
+    def order_id_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("order_id 不能为空白字符串")
+        return v.strip()
