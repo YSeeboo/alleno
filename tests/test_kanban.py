@@ -59,6 +59,7 @@ def _valid_body(**overrides):
     base = {
         "vendor_name": "厂A",
         "order_type": "plating",
+        "order_id": "EP-0001",
         "items": [{"item_id": "PJ-0001", "item_type": "part", "qty": 1}],
     }
     base.update(overrides)
@@ -72,6 +73,16 @@ def test_422_vendor_name_empty(client):
 
 def test_422_vendor_name_blank(client):
     r = client.post("/api/kanban/return", json=_valid_body(vendor_name="   "))
+    assert r.status_code == 422
+
+
+def test_422_order_id_empty(client):
+    r = client.post("/api/kanban/return", json=_valid_body(order_id=""))
+    assert r.status_code == 422
+
+
+def test_422_order_id_blank(client):
+    r = client.post("/api/kanban/return", json=_valid_body(order_id="   "))
     assert r.status_code == 422
 
 
