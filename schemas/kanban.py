@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ---------- 收回弹窗请求 ----------
@@ -88,6 +88,8 @@ class VendorDetailResponse(BaseModel):
 # ---------- 收回弹窗 - 订单下拉 ----------
 
 class VendorOrderOption(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     order_id: str
     status: str
     created_at: datetime
@@ -96,6 +98,8 @@ class VendorOrderOption(BaseModel):
 # ---------- 收回弹窗 - 订单明细（带剩余量提示）----------
 
 class OrderItemHint(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     item_id: str
     item_type: str         # "part" | "jewelry"
     item_name: str | None  # 可能查不到
@@ -105,6 +109,8 @@ class OrderItemHint(BaseModel):
 
 
 class OrderItemsForReceiptResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     order_id: str
     order_type: str
     items: list[OrderItemHint]
