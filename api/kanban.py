@@ -5,7 +5,14 @@ from sqlalchemy.orm import Session
 
 from api._errors import service_errors
 from database import get_db
-from schemas.kanban import KanbanResponse, VendorDetailResponse, VendorReceiptCreate
+from schemas.kanban import (
+    KanbanResponse,
+    VendorDetailResponse,
+    VendorReceiptCreate,
+    VendorOrderOption,
+    OrderItemsForReceiptResponse,
+    OrderStatusChangeRequest,
+)
 from services import kanban as kanban_svc
 
 router = APIRouter()
@@ -41,6 +48,42 @@ def get_vendor_detail(
 ):
     with service_errors():
         return kanban_svc.get_vendor_detail(db, vendor_name=vendor_name, order_type=order_type)
+
+
+@router.get("/vendor-orders", response_model=list[VendorOrderOption])
+def get_vendor_orders(
+    vendor_name: str = Query(...),
+    order_type: Annotated[Literal["plating", "handcraft"], Query()] = ...,
+    db: Session = Depends(get_db),
+):
+    with service_errors():
+        return kanban_svc.get_orders_for_vendor(db, vendor_name=vendor_name, order_type=order_type)
+
+
+@router.get("/order-items", response_model=OrderItemsForReceiptResponse)
+def get_order_items(
+    order_id: str = Query(...),
+    order_type: Annotated[Literal["plating", "handcraft"], Query()] = ...,
+    db: Session = Depends(get_db),
+):
+    with service_errors():
+        return kanban_svc.get_order_items_for_receipt(db, order_id=order_id, order_type=order_type)
+
+
+@router.post("/order-status")
+def change_order_status(
+    body: OrderStatusChangeRequest,
+    db: Session = Depends(get_db),
+):
+    with service_errors():
+        kanban_svc.change_order_status(
+            db,
+            order_id=body.order_id,
+            order_type=body.order_type,
+            new_status=body.new_status,
+        )
+        db.commit()
+    return {"ok": True}
 
 
 @router.post("/return")
