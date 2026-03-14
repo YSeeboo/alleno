@@ -123,7 +123,7 @@ def test_duplicate_item_second_row_warns(db, plating_vendor):
         ReceiptItemIn(item_id=part.id, item_type="part", qty=6),
         ReceiptItemIn(item_id=part.id, item_type="part", qty=6),
     ]
-    _, warnings = record_vendor_receipt(db, "电镀厂A", "plating", items)
+    _, warnings = record_vendor_receipt(db, "电镀厂A", "plating", order.id, items)
 
     assert len(warnings) == 1
     assert part.id in warnings[0]
@@ -140,7 +140,7 @@ def test_duplicate_item_no_warn_within_cap(db, plating_vendor):
         ReceiptItemIn(item_id=part.id, item_type="part", qty=4),
         ReceiptItemIn(item_id=part.id, item_type="part", qty=4),
     ]
-    _, warnings = record_vendor_receipt(db, "电镀厂A", "plating", items)
+    _, warnings = record_vendor_receipt(db, "电镀厂A", "plating", order.id, items)
 
     assert warnings == []
     receipts = db.query(VendorReceipt).filter(VendorReceipt.vendor_name == "电镀厂A").all()
@@ -176,7 +176,7 @@ def test_handcraft_detail_jewelry_received_qty_updates(db, handcraft_vendor):
     """After recording a receipt for jewelry, received_qty in detail should update."""
     order, part, jewelry = handcraft_vendor
 
-    record_vendor_receipt(db, "手工厂A", "handcraft", [
+    record_vendor_receipt(db, "手工厂A", "handcraft", order.id, [
         ReceiptItemIn(item_id=jewelry.id, item_type="jewelry", qty=5),
     ])
 
@@ -193,7 +193,7 @@ def test_plating_autocomplete_on_full_receipt(db, plating_vendor):
     """Receiving all dispatched parts triggers PlatingOrder → completed."""
     order, part = plating_vendor
 
-    record_vendor_receipt(db, "电镀厂A", "plating", [
+    record_vendor_receipt(db, "电镀厂A", "plating", order.id, [
         ReceiptItemIn(item_id=part.id, item_type="part", qty=10),
     ])
 
@@ -206,7 +206,7 @@ def test_plating_no_autocomplete_on_partial_receipt(db, plating_vendor):
     """Partial receipt must NOT auto-complete the order."""
     order, part = plating_vendor
 
-    record_vendor_receipt(db, "电镀厂A", "plating", [
+    record_vendor_receipt(db, "电镀厂A", "plating", order.id, [
         ReceiptItemIn(item_id=part.id, item_type="part", qty=9),
     ])
 
@@ -219,7 +219,7 @@ def test_handcraft_autocomplete_on_full_jewelry_receipt(db, handcraft_vendor):
     """Receiving all expected jewelry triggers HandcraftOrder → completed."""
     order, part, jewelry = handcraft_vendor
 
-    record_vendor_receipt(db, "手工厂A", "handcraft", [
+    record_vendor_receipt(db, "手工厂A", "handcraft", order.id, [
         ReceiptItemIn(item_id=jewelry.id, item_type="jewelry", qty=10),
     ])
 
@@ -232,7 +232,7 @@ def test_handcraft_no_autocomplete_on_partial_jewelry_receipt(db, handcraft_vend
     """Partial jewelry receipt must NOT auto-complete the handcraft order."""
     order, part, jewelry = handcraft_vendor
 
-    record_vendor_receipt(db, "手工厂A", "handcraft", [
+    record_vendor_receipt(db, "手工厂A", "handcraft", order.id, [
         ReceiptItemIn(item_id=jewelry.id, item_type="jewelry", qty=9),
     ])
 
@@ -245,13 +245,13 @@ def test_handcraft_autocomplete_accumulates_across_calls(db, handcraft_vendor):
     """Two separate record_vendor_receipt calls totalling full qty must complete the order."""
     order, part, jewelry = handcraft_vendor
 
-    record_vendor_receipt(db, "手工厂A", "handcraft", [
+    record_vendor_receipt(db, "手工厂A", "handcraft", order.id, [
         ReceiptItemIn(item_id=jewelry.id, item_type="jewelry", qty=6),
     ])
     db.refresh(order)
     assert order.status == "processing"  # not yet complete
 
-    record_vendor_receipt(db, "手工厂A", "handcraft", [
+    record_vendor_receipt(db, "手工厂A", "handcraft", order.id, [
         ReceiptItemIn(item_id=jewelry.id, item_type="jewelry", qty=4),
     ])
     db.refresh(order)

@@ -53,6 +53,7 @@ def record_return(
             db,
             vendor_name=body.vendor_name,
             order_type=body.order_type,
+            order_id=body.order_id,
             items=body.items,
         )
         db.commit()

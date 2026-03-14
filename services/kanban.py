@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from models.plating_order import PlatingOrder, PlatingOrderItem
 from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
 from models.vendor_receipt import VendorReceipt
+from models.part import Part
+from models.jewelry import Jewelry
 from schemas.kanban import (
     ReceiptItemIn,
     VendorCard,
@@ -15,8 +17,13 @@ from schemas.kanban import (
     VendorItemSummary,
     VendorOrderSummary,
     VendorDetailResponse,
+    VendorOrderOption,
+    OrderItemHint,
+    OrderItemsForReceiptResponse,
 )
-from services.inventory import add_stock
+from services.inventory import add_stock, deduct_stock
+from services.plating import send_plating_order
+from services.handcraft import send_handcraft_order
 from time_utils import now_beijing
 
 _DISPATCHED_STATUSES = ("processing", "completed")
@@ -570,6 +577,7 @@ def record_vendor_receipt(
     db: Session,
     vendor_name: str,
     order_type: str,
+    order_id: str,
     items: list[ReceiptItemIn],
     note: str | None = None,
 ) -> tuple[list[VendorReceipt], list[str]]:
@@ -612,6 +620,7 @@ def record_vendor_receipt(
         receipt = VendorReceipt(
             vendor_name=vendor_name,
             order_type=order_type,
+            order_id=order_id,
             item_type=item.item_type,
             item_id=item.item_id,
             qty=item.qty,
@@ -628,6 +637,276 @@ def record_vendor_receipt(
 
     _try_complete_vendor_orders(db, vendor_name, order_type)
     return receipts, warnings
+
+
+def get_orders_for_vendor(
+    db: Session, vendor_name: str, order_type: str
+) -> list[VendorOrderOption]:
+    if order_type == "plating":
+        rows = (
+            db.query(PlatingOrder)
+            .filter(PlatingOrder.supplier_name == vendor_name, PlatingOrder.status == "processing")
+            .order_by(PlatingOrder.created_at.desc())
+            .all()
+        )
+        return [VendorOrderOption(order_id=o.id, status=o.status, created_at=o.created_at) for o in rows]
+    else:
+        rows = (
+            db.query(HandcraftOrder)
+            .filter(HandcraftOrder.supplier_name == vendor_name, HandcraftOrder.status == "processing")
+            .order_by(HandcraftOrder.created_at.desc())
+            .all()
+        )
+        return [VendorOrderOption(order_id=o.id, status=o.status, created_at=o.created_at) for o in rows]
+
+
+def get_order_items_for_receipt(
+    db: Session, order_id: str, order_type: str
+) -> OrderItemsForReceiptResponse:
+    # Query already-received qty (aggregated by order_id)
+    received_rows = (
+        db.query(VendorReceipt.item_id, VendorReceipt.item_type, func.sum(VendorReceipt.qty).label("qty"))
+        .filter(VendorReceipt.order_id == order_id)
+        .group_by(VendorReceipt.item_id, VendorReceipt.item_type)
+        .all()
+    )
+    received: dict[tuple, float] = {(r.item_id, r.item_type): float(r.qty) for r in received_rows}
+
+    raw_items: list[tuple[str, str, float]] = []  # (item_id, item_type, dispatched_qty)
+
+    if order_type == "plating":
+        rows = (
+            db.query(PlatingOrderItem.part_id, func.sum(PlatingOrderItem.qty).label("qty"))
+            .filter(PlatingOrderItem.plating_order_id == order_id)
+            .group_by(PlatingOrderItem.part_id)
+            .all()
+        )
+        raw_items = [(r.part_id, "part", float(r.qty)) for r in rows]
+    else:  # handcraft
+        part_rows = (
+            db.query(HandcraftPartItem.part_id, func.sum(HandcraftPartItem.qty).label("qty"))
+            .filter(HandcraftPartItem.handcraft_order_id == order_id)
+            .group_by(HandcraftPartItem.part_id)
+            .all()
+        )
+        jewelry_rows = (
+            db.query(HandcraftJewelryItem.jewelry_id, func.sum(HandcraftJewelryItem.qty).label("qty"))
+            .filter(HandcraftJewelryItem.handcraft_order_id == order_id)
+            .group_by(HandcraftJewelryItem.jewelry_id)
+            .all()
+        )
+        raw_items = (
+            [(r.part_id, "part", float(r.qty)) for r in part_rows]
+            + [(r.jewelry_id, "jewelry", float(r.qty)) for r in jewelry_rows]
+        )
+
+    hints: list[OrderItemHint] = []
+    for item_id, item_type, dispatched_qty in raw_items:
+        recv_qty = received.get((item_id, item_type), 0.0)
+        if item_type == "part":
+            obj = db.query(Part).filter(Part.id == item_id).first()
+            item_name = obj.name if obj else None
+        else:
+            obj = db.query(Jewelry).filter(Jewelry.id == item_id).first()
+            item_name = obj.name if obj else None
+
+        hints.append(OrderItemHint(
+            item_id=item_id,
+            item_type=item_type,
+            item_name=item_name,
+            dispatched_qty=dispatched_qty,
+            received_qty=recv_qty,
+            remaining_qty=dispatched_qty - recv_qty,
+        ))
+
+    return OrderItemsForReceiptResponse(order_id=order_id, order_type=order_type, items=hints)
+
+
+def _undo_receipts_for_order(db: Session, order_id: str, order_type: str) -> None:
+    """Delete all VendorReceipt rows for this order_id and reverse the stock additions."""
+    receipts = db.query(VendorReceipt).filter(VendorReceipt.order_id == order_id).all()
+    _reason_undo_map = {
+        ("plating", "part"): "电镀收回撤回",
+        ("handcraft", "part"): "手工退回撤回",
+        ("handcraft", "jewelry"): "手工完成撤回",
+    }
+    for r in receipts:
+        reason = _reason_undo_map.get((order_type, r.item_type), "收回撤回")
+        deduct_stock(db, r.item_type, r.item_id, r.qty, reason=reason)
+        db.delete(r)
+
+
+def _force_complete_plating(db: Session, order: PlatingOrder, now) -> None:
+    """For plating order, supplement missing receipts to force completion."""
+    received_rows = (
+        db.query(VendorReceipt.item_id, func.sum(VendorReceipt.qty).label("qty"))
+        .filter(VendorReceipt.order_id == order.id, VendorReceipt.item_type == "part")
+        .group_by(VendorReceipt.item_id)
+        .all()
+    )
+    received = {r.item_id: float(r.qty) for r in received_rows}
+
+    # Aggregate dispatched qty per part_id using direct query (no relationship)
+    items = (
+        db.query(PlatingOrderItem.part_id, func.sum(PlatingOrderItem.qty).label("qty"))
+        .filter(PlatingOrderItem.plating_order_id == order.id)
+        .group_by(PlatingOrderItem.part_id)
+        .all()
+    )
+    dispatched: dict[str, float] = {r.part_id: float(r.qty) for r in items}
+
+    for part_id, d_qty in dispatched.items():
+        r_qty = received.get(part_id, 0.0)
+        remaining = d_qty - r_qty
+        if remaining > 0:
+            receipt = VendorReceipt(
+                vendor_name=order.supplier_name,
+                order_type="plating",
+                order_id=order.id,
+                item_type="part",
+                item_id=part_id,
+                qty=remaining,
+                note="强制完成",
+                created_at=now_beijing(),
+            )
+            db.add(receipt)
+            add_stock(db, "part", part_id, remaining, reason="电镀收回")
+
+    order.status = "completed"
+    order.completed_at = now
+
+
+def _force_complete_handcraft(db: Session, order: HandcraftOrder, now) -> None:
+    """For handcraft order, supplement missing receipts for parts (returned) and jewelry (completed)."""
+    received_rows = (
+        db.query(VendorReceipt.item_id, VendorReceipt.item_type, func.sum(VendorReceipt.qty).label("qty"))
+        .filter(VendorReceipt.order_id == order.id)
+        .group_by(VendorReceipt.item_id, VendorReceipt.item_type)
+        .all()
+    )
+    received = {(r.item_id, r.item_type): float(r.qty) for r in received_rows}
+
+    # Parts (返回配件) - using direct query
+    part_items = (
+        db.query(HandcraftPartItem.part_id, func.sum(HandcraftPartItem.qty).label("qty"))
+        .filter(HandcraftPartItem.handcraft_order_id == order.id)
+        .group_by(HandcraftPartItem.part_id)
+        .all()
+    )
+    part_dispatched: dict[str, float] = {r.part_id: float(r.qty) for r in part_items}
+
+    for part_id, d_qty in part_dispatched.items():
+        r_qty = received.get((part_id, "part"), 0.0)
+        remaining = d_qty - r_qty
+        if remaining > 0:
+            db.add(VendorReceipt(
+                vendor_name=order.supplier_name, order_type="handcraft",
+                order_id=order.id, item_type="part", item_id=part_id,
+                qty=remaining, note="强制完成", created_at=now_beijing(),
+            ))
+            add_stock(db, "part", part_id, remaining, reason="手工退回")
+
+    # Jewelry (完成) - using direct query
+    jewelry_items = (
+        db.query(HandcraftJewelryItem.jewelry_id, func.sum(HandcraftJewelryItem.qty).label("qty"))
+        .filter(HandcraftJewelryItem.handcraft_order_id == order.id)
+        .group_by(HandcraftJewelryItem.jewelry_id)
+        .all()
+    )
+    jewelry_expected: dict[str, float] = {r.jewelry_id: float(r.qty) for r in jewelry_items}
+
+    for jewelry_id, e_qty in jewelry_expected.items():
+        r_qty = received.get((jewelry_id, "jewelry"), 0.0)
+        remaining = e_qty - r_qty
+        if remaining > 0:
+            db.add(VendorReceipt(
+                vendor_name=order.supplier_name, order_type="handcraft",
+                order_id=order.id, item_type="jewelry", item_id=jewelry_id,
+                qty=remaining, note="强制完成", created_at=now_beijing(),
+            ))
+            add_stock(db, "jewelry", jewelry_id, remaining, reason="手工完成")
+
+    order.status = "completed"
+    order.completed_at = now
+
+
+def change_order_status(
+    db: Session,
+    order_id: str,
+    order_type: str,
+    new_status: str,
+) -> None:
+    now = datetime.now(timezone.utc)
+
+    if order_type == "plating":
+        order = db.query(PlatingOrder).filter(PlatingOrder.id == order_id).first()
+        if order is None:
+            raise ValueError(f"电镀单 {order_id} 不存在")
+        current_status = order.status
+
+        if current_status == new_status:
+            return
+
+        if current_status == "pending" and new_status == "processing":
+            send_plating_order(db, order_id)
+
+        elif current_status == "processing" and new_status == "pending":
+            _undo_receipts_for_order(db, order_id, order_type)
+            # Return dispatched parts to inventory using direct query
+            items = (
+                db.query(PlatingOrderItem)
+                .filter(PlatingOrderItem.plating_order_id == order_id)
+                .all()
+            )
+            for item in items:
+                add_stock(db, "part", item.part_id, float(item.qty), reason="电镀发出撤回")
+            order.status = "pending"
+
+        elif current_status == "processing" and new_status == "completed":
+            _force_complete_plating(db, order, now)
+
+        elif current_status == "completed" and new_status == "processing":
+            _undo_receipts_for_order(db, order_id, order_type)
+            order.status = "processing"
+            order.completed_at = None
+
+        else:
+            raise ValueError(f"不支持的状态转换：{current_status} → {new_status}")
+
+    else:  # handcraft
+        order = db.query(HandcraftOrder).filter(HandcraftOrder.id == order_id).first()
+        if order is None:
+            raise ValueError(f"手工单 {order_id} 不存在")
+        current_status = order.status
+
+        if current_status == new_status:
+            return
+
+        if current_status == "pending" and new_status == "processing":
+            send_handcraft_order(db, order_id)
+
+        elif current_status == "processing" and new_status == "pending":
+            _undo_receipts_for_order(db, order_id, order_type)
+            # Return dispatched parts to inventory using direct query
+            part_items = (
+                db.query(HandcraftPartItem)
+                .filter(HandcraftPartItem.handcraft_order_id == order_id)
+                .all()
+            )
+            for item in part_items:
+                add_stock(db, "part", item.part_id, float(item.qty), reason="手工发出撤回")
+            order.status = "pending"
+
+        elif current_status == "processing" and new_status == "completed":
+            _force_complete_handcraft(db, order, now)
+
+        elif current_status == "completed" and new_status == "processing":
+            _undo_receipts_for_order(db, order_id, order_type)
+            order.status = "processing"
+            order.completed_at = None
+
+        else:
+            raise ValueError(f"不支持的状态转换：{current_status} → {new_status}")
 
 
 def list_vendors(db: Session, order_type: str | None = None, q: str | None = None) -> list[str]:
