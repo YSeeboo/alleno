@@ -1,5 +1,6 @@
 from typing import List, Optional
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from models.part import Part
@@ -22,7 +23,7 @@ def list_parts(db: Session, category: str = None, name: str = None) -> List[Part
     if category is not None:
         q = q.filter(Part.category == category)
     if name is not None:
-        q = q.filter(Part.name.contains(name))
+        q = q.filter(or_(Part.name.ilike(f"%{name}%"), Part.id.ilike(f"%{name}%")))
     return q.order_by(Part.id.desc()).all()
 
 

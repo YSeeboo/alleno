@@ -1,5 +1,6 @@
 from typing import Optional
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from models.jewelry import Jewelry
@@ -26,7 +27,7 @@ def list_jewelries(db: Session, category: str = None, status: str = None, name: 
     if status is not None:
         q = q.filter(Jewelry.status == status)
     if name is not None:
-        q = q.filter(Jewelry.name.ilike(f"%{name}%"))
+        q = q.filter(or_(Jewelry.name.ilike(f"%{name}%"), Jewelry.id.ilike(f"%{name}%")))
     return q.order_by(Jewelry.id.desc()).all()
 
 
