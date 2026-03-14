@@ -860,6 +860,7 @@ def change_order_status(
             )
             for item in items:
                 add_stock(db, "part", item.part_id, float(item.qty), reason="电镀发出撤回")
+                item.status = "未送出"
             order.status = "pending"
 
         elif current_status == "processing" and new_status == "completed":
@@ -895,6 +896,14 @@ def change_order_status(
             )
             for item in part_items:
                 add_stock(db, "part", item.part_id, float(item.qty), reason="手工发出撤回")
+            # Reset jewelry item statuses back to 未送出
+            jewelry_items = (
+                db.query(HandcraftJewelryItem)
+                .filter(HandcraftJewelryItem.handcraft_order_id == order_id)
+                .all()
+            )
+            for ji in jewelry_items:
+                ji.status = "未送出"
             order.status = "pending"
 
         elif current_status == "processing" and new_status == "completed":
