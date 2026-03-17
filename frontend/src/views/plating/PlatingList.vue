@@ -1,10 +1,17 @@
 <template>
   <div>
-    <n-space justify="space-between" align="center" style="margin-bottom: 16px;">
+    <div class="page-header">
+      <div class="page-breadcrumb">生产 / 电镀单</div>
+      <h2 class="page-title">电镀单</h2>
+      <div class="page-divider"></div>
+    </div>
+    <div class="filter-bar">
       <n-select v-model:value="filterStatus" :options="statusOptions" clearable placeholder="筛选状态"
         style="width: 140px;" @update:value="load" />
-      <n-button type="primary" @click="router.push('/plating/create')">新建电镀单</n-button>
-    </n-space>
+      <div class="filter-bar-end">
+        <n-button type="primary" @click="router.push('/plating/create')">新建电镀单</n-button>
+      </div>
+    </div>
     <n-spin :show="loading">
       <n-data-table v-if="rows.length > 0" :columns="columns" :data="rows" :bordered="false" :row-props="rowProps" />
       <n-empty v-else-if="!loading" description="暂无电镀单" style="margin-top: 24px;" />
@@ -15,7 +22,7 @@
 <script setup>
 import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { NSpace, NButton, NSelect, NDataTable, NSpin, NTag, NEmpty } from 'naive-ui'
+import { NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
 import { listPlating } from '@/api/plating'
 
 const router = useRouter()
@@ -27,8 +34,8 @@ const statusOptions = [
   { label: '进行中', value: 'processing' },
   { label: '已完成', value: 'completed' },
 ]
-const statusType = { pending: 'default', processing: 'info', completed: 'success' }
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
+const statusBadge = { pending: 'badge-amber', processing: 'badge-indigo', completed: 'badge-green' }
 
 const load = async () => {
   loading.value = true
@@ -49,7 +56,7 @@ const columns = [
   {
     title: '状态',
     key: 'status',
-    render: (r) => h(NTag, { type: statusType[r.status] || 'default' }, () => statusLabel[r.status] || r.status),
+    render: (r) => h('span', { class: `badge ${statusBadge[r.status] || 'badge-gray'}` }, `• ${statusLabel[r.status] || r.status}`),
   },
   { title: '创建时间', key: 'created_at', render: (r) => new Date(r.created_at).toLocaleString('zh-CN') },
 ]
