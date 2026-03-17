@@ -1,21 +1,21 @@
 <template>
   <div class="kanban-page">
     <!-- 顶部工具栏 -->
-    <div class="page-header">
+    <div class="kanban-toolbar">
       <h2 class="page-title">进度看板</h2>
       <div class="toolbar-right">
-        <n-radio-group v-model:value="filterType" @update:value="reloadAll" style="display: flex;">
-          <n-radio-button value="all">全部</n-radio-button>
-          <n-radio-button value="plating">电镀</n-radio-button>
-          <n-radio-button value="handcraft">手工</n-radio-button>
-        </n-radio-group>
+        <n-select v-model:value="filterType" :options="filterOptions" style="width: 120px;" @update:value="reloadAll" />
         <n-button type="primary" @click="receiptVisible = true">收回</n-button>
       </div>
     </div>
+    <div class="page-divider" style="margin-bottom: 24px;"></div>
 
     <!-- 三行看板 -->
     <div v-for="row in kanbanRows" :key="row.status" class="kanban-section">
-      <div class="section-title">{{ row.label }}</div>
+      <div class="section-title" :style="{ '--lane-color': row.color }">
+        <span class="section-label">{{ row.label }}</span>
+        <span class="section-count">{{ row.cards.length }}</span>
+      </div>
 
       <div v-if="row.cards.length > 0" class="cards-grid">
         <div
@@ -26,12 +26,9 @@
         >
           <div class="card-header">
             <span class="supplier-name">{{ card.vendor_name }}</span>
-            <n-tag
-              size="small"
-              :type="card.order_type === 'plating' ? 'info' : 'warning'"
-            >
+            <span :class="`badge ${card.order_type === 'plating' ? 'badge-indigo' : 'badge-amber'}`">
               {{ card.order_type === 'plating' ? '电镀' : '手工' }}
-            </n-tag>
+            </span>
           </div>
           <div v-if="row.status !== 'pending_dispatch'" class="card-meta">
             {{ card.order_type === 'plating' ? '配件种类' : '待收回种类' }}：{{ card.part_count ?? '-' }} 种
@@ -69,7 +66,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
-import { NButton, NTag, NSpin, NEmpty, NRadioGroup, NRadioButton } from 'naive-ui'
+import { NButton, NSelect, NSpin, NEmpty } from 'naive-ui'
 import VendorDetailModal from './VendorDetailModal.vue'
 import ReceiptModal from './ReceiptModal.vue'
 import { getKanban } from '@/api/kanban'
@@ -79,10 +76,16 @@ const PAGE_SIZE = 20
 const filterType = ref('all')
 let _filterVersion = 0
 
+const filterOptions = [
+  { label: '全部', value: 'all' },
+  { label: '电镀', value: 'plating' },
+  { label: '手工', value: 'handcraft' },
+]
+
 const kanbanRows = reactive([
-  { status: 'pending_dispatch', label: '待发出', cards: [], page: 1, hasMore: true, loading: false },
-  { status: 'pending_return',   label: '待收回', cards: [], page: 1, hasMore: true, loading: false },
-  { status: 'returned',         label: '已收回', cards: [], page: 1, hasMore: true, loading: false },
+  { status: 'pending_dispatch', label: '待发出', color: '#F59E0B', cards: [], page: 1, hasMore: true, loading: false },
+  { status: 'pending_return',   label: '待收回', color: '#6366F1', cards: [], page: 1, hasMore: true, loading: false },
+  { status: 'returned',         label: '已收回', color: '#10B981', cards: [], page: 1, hasMore: true, loading: false },
 ])
 
 const loadMore = async (row, version = _filterVersion) => {
@@ -154,19 +157,15 @@ const receiptVisible = ref(false)
   max-width: 1100px;
 }
 
-.page-header {
+.kanban-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 28px;
+  margin-bottom: 16px;
 }
 
-.page-title {
+.kanban-toolbar .page-title {
   margin: 0;
-  font-size: 22px;
-  font-weight: 700;
-  color: #1C1B18;
-  letter-spacing: -0.01em;
 }
 
 .toolbar-right {
@@ -180,14 +179,23 @@ const receiptVisible = ref(false)
 }
 
 .section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-left: 3px solid var(--lane-color);
+  margin-bottom: 14px;
+}
+
+.section-label {
   font-size: 13px;
   font-weight: 600;
-  color: #6B6560;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin-bottom: 14px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #EEECE6;
+  color: #0F172A;
+}
+
+.section-count {
+  font-size: 12px;
+  color: #94A3B8;
 }
 
 .cards-grid {
@@ -206,23 +214,21 @@ const receiptVisible = ref(false)
 
 .vendor-card {
   background: #FFFFFF;
-  border-radius: 12px;
-  border: 1px solid #EEECE6;
-  padding: 16px 18px;
+  border-radius: 8px;
+  border: 1px solid #E2E8F0;
+  padding: 14px 16px;
   cursor: pointer;
-  min-height: 88px;
-  box-shadow: 0 1px 4px rgba(15, 14, 13, 0.04);
-  transition: all 0.2s ease;
+  min-height: 72px;
+  transition: border-color 0.15s, box-shadow 0.15s;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
 }
 
 .vendor-card:hover {
-  transform: translateY(-3px);
-  box-shadow:
-    0 0 0 2px #D62828,
-    0 8px 24px rgba(214, 40, 40, 0.2);
+  border-color: #6366F1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  transform: none;
 }
 
 .card-header {
