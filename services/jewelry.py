@@ -51,11 +51,13 @@ def update_jewelry(db: Session, jewelry_id: str, data: dict) -> Jewelry:
     jewelry = get_jewelry(db, jewelry_id)
     if jewelry is None:
         raise ValueError(f"Jewelry not found: {jewelry_id}")
-    if "category" in data and data["category"] is not None:
-        if data["category"] not in JEWELRY_CATEGORIES:
-            raise ValueError(
-                f"Invalid category '{data['category']}'. Must be one of: {list(JEWELRY_CATEGORIES.keys())}"
-            )
+    # Category changes are disallowed because the jewelry ID encodes the category
+    # (e.g. SP-SET-00001 means 套装). Allowing a category change would make the
+    # ID misleading and break the ID-format contract.
+    if "category" in data:
+        raise ValueError(
+            "Category cannot be changed after creation — the jewelry ID encodes the category."
+        )
     for key, value in data.items():
         if key in _JEWELRY_MODEL_FIELDS:
             setattr(jewelry, key, value)

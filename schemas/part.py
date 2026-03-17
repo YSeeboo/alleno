@@ -28,7 +28,7 @@ class PartResponse(BaseModel):
     id: str
     name: str
     image: Optional[str] = None
-    category: Optional[str] = None
+    category: str
     color: Optional[str] = None
     unit: Optional[str] = None
     unit_cost: Optional[float] = None

@@ -97,10 +97,18 @@ def test_update_jewelry_partial(db):
     assert j.category == "套装"
 
 
-def test_update_jewelry_invalid_category_raises(db):
+def test_update_jewelry_category_raises(db):
+    # Any attempt to change category should fail — the ID encodes the category.
     create_jewelry(db, {"name": "A", "category": "套装"})
-    with pytest.raises(ValueError, match="Invalid category"):
+    with pytest.raises(ValueError, match="Category cannot be changed after creation"):
         update_jewelry(db, "SP-SET-00001", {"category": "非法分类"})
+
+
+def test_update_jewelry_valid_category_still_raises(db):
+    # Even passing a valid (but different) category is disallowed.
+    create_jewelry(db, {"name": "A", "category": "套装"})
+    with pytest.raises(ValueError, match="Category cannot be changed after creation"):
+        update_jewelry(db, "SP-SET-00001", {"category": "单件"})
 
 
 def test_delete_jewelry(db):

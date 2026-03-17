@@ -102,10 +102,18 @@ def test_update_part_partial(db):
     assert part.category == "吊坠"  # untouched
 
 
-def test_update_part_invalid_category_raises(db):
+def test_update_part_category_raises(db):
+    # Any attempt to change category should fail — the ID encodes the category.
     create_part(db, {"name": "铜吊坠", "category": "吊坠"})
-    with pytest.raises(ValueError, match="Invalid category"):
+    with pytest.raises(ValueError, match="Category cannot be changed after creation"):
         update_part(db, "PJ-DZ-00001", {"category": "非法分类"})
+
+
+def test_update_part_valid_category_still_raises(db):
+    # Even passing a valid (but different) category is disallowed.
+    create_part(db, {"name": "铜吊坠", "category": "吊坠"})
+    with pytest.raises(ValueError, match="Category cannot be changed after creation"):
+        update_part(db, "PJ-DZ-00001", {"category": "链条"})
 
 
 def test_update_part_not_found(db):

@@ -43,11 +43,13 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
     part = get_part(db, part_id)
     if part is None:
         raise ValueError(f"Part not found: {part_id}")
-    if "category" in data and data["category"] is not None:
-        if data["category"] not in PART_CATEGORIES:
-            raise ValueError(
-                f"Invalid category '{data['category']}'. Must be one of: {list(PART_CATEGORIES.keys())}"
-            )
+    # Category changes are disallowed because the part ID encodes the category
+    # (e.g. PJ-DZ-00001 means 吊坠). Allowing a category change would make the
+    # ID misleading and break the ID-format contract.
+    if "category" in data:
+        raise ValueError(
+            "Category cannot be changed after creation — the part ID encodes the category."
+        )
     for key, value in data.items():
         setattr(part, key, value)
     db.flush()
