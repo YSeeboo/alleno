@@ -1,6 +1,9 @@
 <template>
   <div>
-    <n-h2>库存流水查询</n-h2>
+    <div class="page-header">
+      <h2 class="page-title">库存流水</h2>
+      <div class="page-divider"></div>
+    </div>
     <n-space style="margin-bottom: 16px;">
       <n-select
         v-model:value="itemType"
@@ -22,7 +25,7 @@
 <script setup>
 import { ref, h } from 'vue'
 import { useMessage } from 'naive-ui'
-import { NSpace, NButton, NSelect, NInput, NDataTable, NSpin, NH2, NEmpty } from 'naive-ui'
+import { NSpace, NButton, NSelect, NInput, NDataTable, NSpin, NEmpty } from 'naive-ui'
 import { getStockLog } from '@/api/inventory'
 import { getPart } from '@/api/parts'
 import { getJewelry } from '@/api/jewelries'

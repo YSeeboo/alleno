@@ -1,12 +1,18 @@
 <template>
   <div>
-    <n-space justify="space-between" align="center" style="margin-bottom: 16px;">
-      <n-space>
-        <n-input v-model:value="searchName" placeholder="搜索配件名称" clearable style="width: 200px;" @update:value="load" />
-        <n-input v-model:value="searchCategory" placeholder="筛选类目" clearable style="width: 160px;" @update:value="load" />
-      </n-space>
-      <n-button type="primary" @click="openCreate">新增配件</n-button>
-    </n-space>
+    <div class="page-header">
+      <div class="page-breadcrumb">商品 / 配件管理</div>
+      <h2 class="page-title">配件管理</h2>
+      <div class="page-divider"></div>
+    </div>
+
+    <div class="filter-bar">
+      <n-input v-model:value="searchName" placeholder="搜索配件名称" clearable style="width: 200px;" @update:value="load" />
+      <n-input v-model:value="searchCategory" placeholder="筛选类目" clearable style="width: 160px;" @update:value="load" />
+      <div class="filter-bar-end">
+        <n-button type="primary" @click="openCreate">新增配件</n-button>
+      </div>
+    </div>
 
     <n-spin :show="loading">
       <n-data-table v-if="rows.length > 0" :columns="columns" :data="rows" :bordered="false" />
@@ -82,7 +88,7 @@ import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
   NSpace, NButton, NInput, NInputNumber, NForm, NFormItem,
-  NModal, NDataTable, NSpin, NEmpty, NPopconfirm, NImage,
+  NModal, NDataTable, NSpin, NEmpty, NDropdown, NImage,
 } from 'naive-ui'
 import { listParts, createPart, updatePart, deletePart } from '@/api/parts'
 import { uploadImageToOss } from '@/api/uploads'
@@ -214,6 +220,16 @@ const doDelete = async (id) => {
   await load()
 }
 
+const confirmDelete = (row) => {
+  window.$dialog.warning({
+    title: '确认删除',
+    content: `确认删除 ${row.name}？`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: () => doDelete(row.id),
+  })
+}
+
 const columns = [
   { title: '编号', key: 'id', width: 100 },
   {
@@ -230,26 +246,39 @@ const columns = [
     title: '当前库存',
     key: 'stock',
     width: 90,
-    render: (r) => h('span', { style: { color: r.stock < 10 ? '#d03050' : undefined } }, r.stock),
+    render: (r) => r.stock < 10
+      ? h('span', { class: 'badge badge-red' }, ['• ', r.stock])
+      : r.stock,
   },
   { title: '默认电镀', key: 'plating_process' },
   {
     title: '操作',
     key: 'actions',
-    width: 220,
+    width: 160,
     render: (row) =>
-      h(NSpace, null, () => [
-        h(NButton, { size: 'small', onClick: () => openEdit(row) }, () => '编辑'),
-        h(NButton, { size: 'small', onClick: () => router.push(`/parts/${row.id}`) }, () => '详情'),
-        h(NButton, { size: 'small', type: 'info', onClick: () => openStock(row) }, () => '入库'),
-        h(
-          NPopconfirm,
-          { onPositiveClick: () => doDelete(row.id) },
-          {
-            trigger: () => h(NButton, { size: 'small', type: 'error' }, () => '删除'),
-            default: () => `确认删除 ${row.name}？`,
-          }
-        ),
+      h(NSpace, { size: 6 }, () => [
+        h('button', {
+          class: 'icon-btn',
+          title: '详情',
+          onClick: () => router.push(`/parts/${row.id}`),
+        }, '→'),
+        h('button', {
+          class: 'icon-btn',
+          title: '编辑',
+          onClick: () => openEdit(row),
+        }, '✎'),
+        h(NDropdown, {
+          options: [
+            { label: '入库', key: 'stock' },
+            { label: '删除', key: 'delete' },
+          ],
+          onSelect: (key) => {
+            if (key === 'stock') openStock(row)
+            if (key === 'delete') confirmDelete(row)
+          },
+        }, {
+          default: () => h('button', { class: 'icon-btn', title: '更多' }, '⋮'),
+        }),
       ]),
   },
 ]

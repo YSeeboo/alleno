@@ -1,6 +1,11 @@
 <template>
   <div>
-    <n-space justify="space-between" align="center" style="margin-bottom: 16px;">
+    <div class="page-header">
+      <div class="page-breadcrumb">生产 / 订单管理</div>
+      <h2 class="page-title">订单管理</h2>
+      <div class="page-divider"></div>
+    </div>
+    <div class="filter-bar">
       <n-select
         v-model:value="filterStatus"
         :options="statusOptions"
@@ -9,8 +14,10 @@
         style="width: 140px;"
         @update:value="load"
       />
-      <n-button type="primary" @click="router.push('/orders/create')">新建订单</n-button>
-    </n-space>
+      <div class="filter-bar-end">
+        <n-button type="primary" @click="router.push('/orders/create')">新建订单</n-button>
+      </div>
+    </div>
     <n-spin :show="loading">
       <n-data-table v-if="orders.length > 0" :columns="columns" :data="orders" :bordered="false" :row-props="rowProps" />
       <n-empty v-else-if="!loading" description="暂无订单" style="margin-top: 24px;" />
@@ -21,7 +28,7 @@
 <script setup>
 import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { NSpace, NButton, NSelect, NDataTable, NSpin, NTag, NEmpty } from 'naive-ui'
+import { NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
 import { listOrders } from '@/api/orders'
 
 const router = useRouter()
@@ -33,8 +40,6 @@ const statusOptions = [
   { label: '生产中', value: '生产中' },
   { label: '已完成', value: '已完成' },
 ]
-
-const statusColor = { '待生产': 'default', '生产中': 'info', '已完成': 'success' }
 
 const load = async () => {
   loading.value = true
@@ -56,7 +61,15 @@ const columns = [
   {
     title: '状态',
     key: 'status',
-    render: (r) => h(NTag, { type: statusColor[r.status] || 'default' }, () => r.status),
+    render: (r) => {
+      const map = {
+        '待生产': 'badge-amber',
+        '生产中': 'badge-indigo',
+        '已完成': 'badge-green',
+      }
+      const cls = map[r.status] || 'badge-gray'
+      return h('span', { class: `badge ${cls}` }, `• ${r.status}`)
+    },
   },
   { title: '总金额', key: 'total_amount', render: (r) => r.total_amount?.toFixed(2) ?? '-' },
   { title: '创建时间', key: 'created_at', render: (r) => new Date(r.created_at).toLocaleString('zh-CN') },
