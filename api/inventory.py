@@ -1,13 +1,13 @@
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api._errors import service_errors
 from database import get_db
-from schemas.inventory import LogEntryResponse, StockResponse
-from services.inventory import add_stock, deduct_stock, get_stock, get_stock_log
+from schemas.inventory import InventoryOverviewItem, LogEntryResponse, StockResponse
+from services.inventory import add_stock, deduct_stock, get_inventory_overview, get_stock, get_stock_log
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
@@ -39,6 +39,17 @@ def api_get_stock(item_type: str, item_id: str, db: Session = Depends(get_db)):
     with service_errors():
         stock = get_stock(db, item_type, item_id)
     return StockResponse(item_type=item_type, item_id=item_id, current=stock)
+
+
+@router.get("/overview", response_model=List[InventoryOverviewItem])
+def api_get_inventory_overview(
+    item_type: Optional[str] = Query(None),
+    name: Optional[str] = Query(None),
+    in_stock_only: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    with service_errors():
+        return get_inventory_overview(db, item_type=item_type, name=name, in_stock_only=in_stock_only)
 
 
 @router.get("/{item_type}/{item_id}/log", response_model=List[LogEntryResponse])

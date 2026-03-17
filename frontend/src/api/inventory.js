@@ -8,3 +8,5 @@ export const addStock = (itemType, itemId, data) =>
   api.post(`/inventory/${itemType}/${itemId}/add`, data)
 export const deductStock = (itemType, itemId, data) =>
   api.post(`/inventory/${itemType}/${itemId}/deduct`, data)
+export const getInventoryOverview = (params) =>
+  api.get('/inventory/overview', { params })

@@ -2,6 +2,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models.inventory_log import InventoryLog
+from models.jewelry import Jewelry
+from models.part import Part
 
 
 def get_stock(db: Session, item_type: str, item_id: str) -> float:
@@ -40,3 +42,68 @@ def get_stock_log(db: Session, item_type: str, item_id: str) -> list:
         .order_by(InventoryLog.created_at.desc(), InventoryLog.id.desc())
         .all()
     )
+
+
+def get_inventory_overview(
+    db: Session,
+    item_type: str | None = None,
+    name: str | None = None,
+    in_stock_only: bool = False,
+) -> list[dict]:
+    stock_sq = (
+        db.query(
+            InventoryLog.item_type,
+            InventoryLog.item_id,
+            func.sum(InventoryLog.change_qty).label("current"),
+            func.max(InventoryLog.created_at).label("updated_at"),
+        )
+        .group_by(InventoryLog.item_type, InventoryLog.item_id)
+        .subquery()
+    )
+
+    results = []
+
+    if item_type in (None, "part"):
+        q = db.query(Part, stock_sq.c.current, stock_sq.c.updated_at).outerjoin(
+            stock_sq,
+            (stock_sq.c.item_type == "part") & (stock_sq.c.item_id == Part.id),
+        )
+        if name:
+            q = q.filter(Part.name.ilike(f"%{name}%") | Part.id.ilike(f"%{name}%"))
+        for part, current, updated_at in q.all():
+            current = float(current) if current is not None else 0.0
+            if in_stock_only and current <= 0:
+                continue
+            results.append({
+                "item_type": "part",
+                "item_id": part.id,
+                "name": part.name,
+                "image": part.image,
+                "category": part.category,
+                "current": current,
+                "updated_at": updated_at,
+            })
+
+    if item_type in (None, "jewelry"):
+        q = db.query(Jewelry, stock_sq.c.current, stock_sq.c.updated_at).outerjoin(
+            stock_sq,
+            (stock_sq.c.item_type == "jewelry") & (stock_sq.c.item_id == Jewelry.id),
+        )
+        if name:
+            q = q.filter(Jewelry.name.ilike(f"%{name}%") | Jewelry.id.ilike(f"%{name}%"))
+        for jewelry, current, updated_at in q.all():
+            current = float(current) if current is not None else 0.0
+            if in_stock_only and current <= 0:
+                continue
+            results.append({
+                "item_type": "jewelry",
+                "item_id": jewelry.id,
+                "name": jewelry.name,
+                "image": jewelry.image,
+                "category": jewelry.category,
+                "current": current,
+                "updated_at": updated_at,
+            })
+
+    results.sort(key=lambda x: x["item_id"])
+    return results

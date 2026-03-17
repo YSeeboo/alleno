@@ -36,6 +36,18 @@
           </n-radio-group>
         </n-form-item>
 
+        <!-- 订单 -->
+        <n-form-item label="订单">
+          <n-select
+            v-model:value="form.order_id"
+            :options="orderOptions"
+            :loading="orderLoading"
+            :disabled="!form.vendor_name"
+            placeholder="选择订单号..."
+            clearable
+          />
+        </n-form-item>
+
         <!-- 收回明细 -->
         <n-form-item label="明细">
           <div style="width: 100%;">
@@ -96,7 +108,7 @@ import {
   NSpace, useMessage,
 } from 'naive-ui'
 import { CloseOutline } from '@vicons/ionicons5'
-import { submitReturn, searchVendors, searchParts, searchJewelries } from '@/api/kanban'
+import { submitReturn, searchVendors, searchParts, searchJewelries, getVendorOrders } from '@/api/kanban'
 
 const props = defineProps({ show: Boolean })
 const emit = defineEmits(['update:show', 'success'])
@@ -107,7 +119,7 @@ const visible = computed({
 })
 
 const message = useMessage()
-const form = reactive({ vendor_name: null, order_type: 'plating' })
+const form = reactive({ vendor_name: null, order_type: 'plating', order_id: null })
 const submitting = ref(false)
 
 // 厂家搜索
@@ -132,6 +144,27 @@ const handleVendorSearch = async (q) => {
   }
 }
 
+// 订单列表
+const orderOptions = ref([])
+const orderLoading = ref(false)
+
+const loadOrders = async () => {
+  if (!form.vendor_name) { orderOptions.value = []; form.order_id = null; return }
+  orderLoading.value = true
+  try {
+    const { data } = await getVendorOrders({ vendor_name: form.vendor_name, order_type: form.order_type })
+    orderOptions.value = (Array.isArray(data) ? data : []).map((o) => ({
+      label: `${o.order_id}`,
+      value: o.order_id,
+    }))
+    form.order_id = null
+  } finally {
+    orderLoading.value = false
+  }
+}
+
+watch(() => [form.vendor_name, form.order_type], loadOrders)
+
 // 明细行
 const createRow = () => ({ selectorValue: null, qty: null, options: [], searching: false })
 const detailRows = ref([createRow()])
@@ -143,7 +176,9 @@ const handleTypeChange = () => {
   _vendorSearchVersion++
   detailRows.value = [createRow()]
   vendorOptions.value = []
+  orderOptions.value = []
   form.vendor_name = null
+  form.order_id = null
 }
 
 // 编号搜索（per-row，版本号挂在 row 上防止乱序）
@@ -189,6 +224,8 @@ const handleItemSearch = async (q, index) => {
 
 // 提交
 const handleSubmit = async () => {
+  if (!form.vendor_name) { message.warning('请选择厂家'); return }
+  if (!form.order_id) { message.warning('请选择订单'); return }
   const items = detailRows.value
     .filter((r) => r.selectorValue && r.qty)
     .map((r) => {
@@ -205,6 +242,7 @@ const handleSubmit = async () => {
     ;({ data } = await submitReturn({
       vendor_name: form.vendor_name,
       order_type: form.order_type,
+      order_id: form.order_id,
       items,
     }))
   } finally {

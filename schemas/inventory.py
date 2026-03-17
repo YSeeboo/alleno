@@ -17,6 +17,16 @@ class StockResponse(BaseModel):
     current: float
 
 
+class InventoryOverviewItem(BaseModel):
+    item_type: str
+    item_id: str
+    name: str
+    image: Optional[str] = None
+    category: Optional[str] = None
+    current: float
+    updated_at: Optional[datetime] = None
+
+
 class LogEntryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
