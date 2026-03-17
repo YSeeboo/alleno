@@ -108,7 +108,7 @@ import {
   NSpace, useMessage,
 } from 'naive-ui'
 import { CloseOutline } from '@vicons/ionicons5'
-import { submitReturn, searchVendors, searchParts, searchJewelries, getVendorOrders } from '@/api/kanban'
+import { submitReturn, searchVendors, searchParts, searchJewelries, getVendorOrders, getOrderItems } from '@/api/kanban'
 
 const props = defineProps({ show: Boolean })
 const emit = defineEmits(['update:show', 'success'])
@@ -164,6 +164,28 @@ const loadOrders = async () => {
 }
 
 watch(() => [form.vendor_name, form.order_type], loadOrders)
+
+// 订单明细预填
+const orderItemsLoading = ref(false)
+
+const loadOrderItems = async (order_id) => {
+  if (!order_id) { detailRows.value = [createRow()]; return }
+  orderItemsLoading.value = true
+  try {
+    const { data } = await getOrderItems({ order_id, order_type: form.order_type })
+    const hints = (data?.items || []).filter((h) => h.remaining_qty > 0)
+    if (hints.length === 0) { detailRows.value = [createRow()]; return }
+    detailRows.value = hints.map((h) => {
+      const selectorValue = form.order_type === 'plating' ? h.item_id : `${h.item_type}:${h.item_id}`
+      const label = h.item_name ? `${h.item_id} ${h.item_name}` : h.item_id
+      return { selectorValue, qty: h.remaining_qty, options: [{ label, value: selectorValue }], searching: false }
+    })
+  } finally {
+    orderItemsLoading.value = false
+  }
+}
+
+watch(() => form.order_id, loadOrderItems)
 
 // 明细行
 const createRow = () => ({ selectorValue: null, qty: null, options: [], searching: false })
@@ -269,7 +291,9 @@ watch(
       detailRows.value = [createRow()]
       form.vendor_name = null
       form.order_type = 'plating'
+      form.order_id = null
       vendorOptions.value = []
+      orderOptions.value = []
     }
   },
 )

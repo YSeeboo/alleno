@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     DATABASE_URL: str = "postgresql://allen:allen@localhost:5432/allen_shop"
+    DASHSCOPE_API_KEY: str = ""
     DEEPSEEK_API_KEY: str = ""
     FEISHU_APP_ID: str = ""
     FEISHU_APP_SECRET: str = ""

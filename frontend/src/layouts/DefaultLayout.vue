@@ -41,7 +41,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { NLayout, NLayoutHeader, NLayoutSider, NLayoutContent, NMenu } from 'naive-ui'
 import {
   HomeOutline, ExtensionPuzzleOutline, DiamondOutline, ReceiptOutline,
-  ColorWandOutline, HammerOutline, ListOutline, GridOutline,
+  ColorWandOutline, HammerOutline, ListOutline, GridOutline, ArchiveOutline,
 } from '@vicons/ionicons5'
 
 const router = useRouter()
@@ -57,6 +57,7 @@ const menuOptions = [
   { label: '订单管理', key: 'orders', icon: icon(ReceiptOutline) },
   { label: '电镀单', key: 'plating', icon: icon(ColorWandOutline) },
   { label: '手工单', key: 'handcraft', icon: icon(HammerOutline) },
+  { label: '库存总表', key: 'inventory', icon: icon(ArchiveOutline) },
   { label: '库存流水', key: 'inventory-log', icon: icon(ListOutline) },
   { label: '进度看板', key: 'kanban', icon: icon(GridOutline) },
 ]

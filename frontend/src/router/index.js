@@ -22,6 +22,7 @@ export default createRouter({
         { path: 'handcraft', component: () => import('@/views/handcraft/HandcraftList.vue') },
         { path: 'handcraft/create', component: () => import('@/views/handcraft/HandcraftCreate.vue') },
         { path: 'handcraft/:id', component: () => import('@/views/handcraft/HandcraftDetail.vue') },
+        { path: 'inventory', component: () => import('@/views/InventoryOverview.vue') },
         { path: 'inventory-log', component: () => import('@/views/InventoryLog.vue') },
         { path: 'kanban', component: () => import('@/views/kanban/KanbanBoard.vue') },
       ],
