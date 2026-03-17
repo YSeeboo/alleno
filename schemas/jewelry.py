@@ -4,9 +4,10 @@ from pydantic import BaseModel, ConfigDict
 
 class JewelryCreate(BaseModel):
     name: str
+    category: str
     image: Optional[str] = None
-    category: Optional[str] = None
     color: Optional[str] = None
+    unit: Optional[str] = None
     retail_price: Optional[float] = None
     wholesale_price: Optional[float] = None
     status: Optional[str] = "active"

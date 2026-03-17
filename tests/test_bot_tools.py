@@ -29,17 +29,17 @@ def test_tools_have_required_keys(db):
 
 def test_execute_tool_get_stock(db):
     from bot.agent.tools import execute_tool
-    create_part(db, {"name": "铜扣"})
-    add_stock(db, "part", "PJ-0001", 100.0, "入库")
-    result = execute_tool("get_stock", {"item_type": "part", "item_id": "PJ-0001"}, db)
+    part = create_part(db, {"name": "铜扣", "category": "小配件"})
+    add_stock(db, "part", part.id, 100.0, "入库")
+    result = execute_tool("get_stock", {"item_type": "part", "item_id": part.id}, db)
     assert "100" in result
 
 
 def test_execute_tool_get_stock_log(db):
     from bot.agent.tools import execute_tool
-    create_part(db, {"name": "铜扣"})
-    add_stock(db, "part", "PJ-0001", 100.0, "入库")
-    result = execute_tool("get_stock_log", {"item_type": "part", "item_id": "PJ-0001"}, db)
+    part = create_part(db, {"name": "铜扣", "category": "小配件"})
+    add_stock(db, "part", part.id, 100.0, "入库")
+    result = execute_tool("get_stock_log", {"item_type": "part", "item_id": part.id}, db)
     assert "入库" in result
 
 
@@ -52,9 +52,9 @@ def test_execute_tool_unknown_tool(db):
 def test_execute_tool_handles_service_error(db):
     """deduct_stock from empty inventory returns error string, not exception."""
     from bot.agent.tools import execute_tool
-    create_part(db, {"name": "铜扣"})
+    part = create_part(db, {"name": "铜扣", "category": "小配件"})
     result = execute_tool("deduct_stock", {
-        "item_type": "part", "item_id": "PJ-0001", "qty": 999.0, "reason": "出库"
+        "item_type": "part", "item_id": part.id, "qty": 999.0, "reason": "出库"
     }, db)
     assert isinstance(result, str)
     # Should be an error message, not raise

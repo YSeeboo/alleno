@@ -13,9 +13,9 @@ from services.handcraft import (
 
 @pytest.fixture
 def setup(db):
-    p1 = create_part(db, {"name": "铜扣"})
-    p2 = create_part(db, {"name": "链条"})
-    j1 = create_jewelry(db, {"name": "玫瑰戒指"})
+    p1 = create_part(db, {"name": "铜扣", "category": "小配件"})
+    p2 = create_part(db, {"name": "银链", "category": "链条"})
+    j1 = create_jewelry(db, {"name": "玫瑰戒指", "category": "单件"})
     add_stock(db, "part", p1.id, 200.0, "入库")
     add_stock(db, "part", p2.id, 100.0, "入库")
     return db, p1, p2, j1

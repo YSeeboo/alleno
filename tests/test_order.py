@@ -10,10 +10,10 @@ from services.order import create_order, get_order, get_order_items, get_parts_s
 
 @pytest.fixture
 def setup(db):
-    p1 = create_part(db, {"name": "铜扣"})
-    p2 = create_part(db, {"name": "链条"})
-    j1 = create_jewelry(db, {"name": "玫瑰戒指"})
-    j2 = create_jewelry(db, {"name": "银耳环"})
+    p1 = create_part(db, {"name": "铜扣", "category": "小配件"})
+    p2 = create_part(db, {"name": "银链", "category": "链条"})
+    j1 = create_jewelry(db, {"name": "玫瑰戒指", "category": "单件"})
+    j2 = create_jewelry(db, {"name": "银耳环", "category": "单对"})
     set_bom(db, j1.id, p1.id, 2.0)
     set_bom(db, j1.id, p2.id, 1.0)
     set_bom(db, j2.id, p1.id, 1.0)
@@ -67,7 +67,7 @@ def test_get_parts_summary(setup):
 def test_get_parts_summary_no_bom(setup):
     """Jewelry without BOM should be silently skipped."""
     db, p1, p2, j1, j2 = setup
-    j3 = create_jewelry(db, {"name": "无BOM饰品"})
+    j3 = create_jewelry(db, {"name": "无BOM饰品", "category": "单件"})
     order = create_order(db, "王五", [
         {"jewelry_id": j3.id, "quantity": 1, "unit_price": 10.0},
     ])

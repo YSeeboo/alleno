@@ -59,20 +59,20 @@ async def test_runner_tool_use_loop(db):
     from bot.agent.runner import run_agent
     from services.inventory import add_stock
     from services.part import create_part
-    create_part(db, {"name": "铜扣"})
-    add_stock(db, "part", "PJ-0001", 100.0, "入库")
+    part = create_part(db, {"name": "铜扣", "category": "小配件"})
+    add_stock(db, "part", part.id, 100.0, "入库")
 
     tool_resp, final_resp = _make_tool_response(
         "get_stock", "tool_1",
-        {"item_type": "part", "item_id": "PJ-0001"},
-        "PJ-0001 当前库存为 100.00"
+        {"item_type": "part", "item_id": part.id},
+        f"{part.id} 当前库存为 100.00"
     )
     mock_client = MagicMock()
     mock_client.messages = MagicMock()
     mock_client.messages.create = AsyncMock(side_effect=[tool_resp, final_resp])
 
     with patch("bot.agent.runner.anthropic.AsyncAnthropic", return_value=mock_client):
-        result = await run_agent("PJ-0001 还有多少？", db)
+        result = await run_agent(f"{part.id} 还有多少？", db)
 
     assert "100" in result
     assert mock_client.messages.create.call_count == 2

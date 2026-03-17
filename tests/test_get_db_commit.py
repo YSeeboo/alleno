@@ -13,7 +13,7 @@ def test_write_visible_in_next_request(client_real_get_db):
     This proves that get_db() committed after the POST completed.
     If commit() were missing, the GET would return 404.
     """
-    resp = client_real_get_db.post("/api/parts/", json={"name": "CommitCheck"})
+    resp = client_real_get_db.post("/api/parts/", json={"name": "CommitCheck", "category": "小配件"})
     assert resp.status_code == 201
     part_id = resp.json()["id"]
 
@@ -58,8 +58,8 @@ def test_service_exception_mid_loop_rolls_back_flush(client_real_get_db):
     c = client_real_get_db
 
     # --- setup (each request commits independently) ---
-    part1_id = c.post("/api/parts/", json={"name": "RollbackPart1"}).json()["id"]
-    part2_id = c.post("/api/parts/", json={"name": "RollbackPart2"}).json()["id"]
+    part1_id = c.post("/api/parts/", json={"name": "RollbackPart1", "category": "小配件"}).json()["id"]
+    part2_id = c.post("/api/parts/", json={"name": "RollbackPart2", "category": "链条"}).json()["id"]
 
     c.post(f"/api/inventory/part/{part1_id}/add", json={"qty": 30.0, "reason": "init"})
     c.post(f"/api/inventory/part/{part2_id}/add", json={"qty": 30.0, "reason": "init"})

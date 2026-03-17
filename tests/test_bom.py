@@ -9,9 +9,9 @@ from services.bom import set_bom, get_bom, delete_bom_item, calculate_parts_need
 
 @pytest.fixture
 def seeded(db):
-    p1 = create_part(db, {"name": "铜扣"})
-    p2 = create_part(db, {"name": "链条"})
-    j = create_jewelry(db, {"name": "玫瑰戒指"})
+    p1 = create_part(db, {"name": "铜扣", "category": "小配件"})
+    p2 = create_part(db, {"name": "银链", "category": "链条"})
+    j = create_jewelry(db, {"name": "玫瑰戒指", "category": "单件"})
     return db, p1, p2, j
 
 
@@ -40,7 +40,7 @@ def test_set_bom_multiple_parts(seeded):
 
 
 def test_get_bom_empty(db):
-    j = create_jewelry(db, {"name": "X"})
+    j = create_jewelry(db, {"name": "X", "category": "单件"})
     assert get_bom(db, j.id) == []
 
 

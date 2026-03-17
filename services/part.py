@@ -4,11 +4,23 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from models.part import Part
-from services._helpers import _next_id
+from services._helpers import _next_id_by_category
+
+PART_CATEGORIES = {
+    "吊坠": "PJ-DZ",
+    "链条": "PJ-LT",
+    "小配件": "PJ-X",
+}
 
 
 def create_part(db: Session, data: dict) -> Part:
-    part = Part(id=_next_id(db, Part, "PJ"), **data)
+    category = data.get("category")
+    if category not in PART_CATEGORIES:
+        raise ValueError(
+            f"Invalid category '{category}'. Must be one of: {list(PART_CATEGORIES.keys())}"
+        )
+    prefix = PART_CATEGORIES[category]
+    part = Part(id=_next_id_by_category(db, Part, prefix), **data)
     db.add(part)
     db.flush()
     return part
@@ -31,6 +43,11 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
     part = get_part(db, part_id)
     if part is None:
         raise ValueError(f"Part not found: {part_id}")
+    if "category" in data and data["category"] is not None:
+        if data["category"] not in PART_CATEGORIES:
+            raise ValueError(
+                f"Invalid category '{data['category']}'. Must be one of: {list(PART_CATEGORIES.keys())}"
+            )
     for key, value in data.items():
         setattr(part, key, value)
     db.flush()
