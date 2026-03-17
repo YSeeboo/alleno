@@ -7,7 +7,7 @@ class PlatingItemCreate(BaseModel):
     part_id: str
     qty: float = Field(gt=0)
     plating_method: Optional[str] = None
-    unit: Optional[str] = None
+    unit: Optional[str] = "个"
     note: Optional[str] = None
 
 
