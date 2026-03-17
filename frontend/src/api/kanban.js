@@ -17,6 +17,10 @@ export const submitReturn = (data) =>
 export const searchVendors = (params) =>
   api.get('/kanban/vendors', { params }) // order_type?, q?
 
+// 获取厂家在途订单列表（收回弹窗选单用）
+export const getVendorOrders = (params) =>
+  api.get('/kanban/vendor-orders', { params }) // vendor_name, order_type
+
 // 搜索配件编号（模糊搜索）
 export const searchParts = (params) =>
   api.get('/parts/', { params })
