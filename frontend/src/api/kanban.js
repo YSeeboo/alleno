@@ -21,6 +21,10 @@ export const searchVendors = (params) =>
 export const getVendorOrders = (params) =>
   api.get('/kanban/vendor-orders', { params }) // vendor_name, order_type
 
+// 获取订单待收明细（含剩余量提示，收回弹窗预填用）
+export const getOrderItems = (params) =>
+  api.get('/kanban/order-items', { params }) // order_id, order_type
+
 // 搜索配件编号（模糊搜索）
 export const searchParts = (params) =>
   api.get('/parts/', { params })
