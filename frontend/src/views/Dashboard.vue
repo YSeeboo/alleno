@@ -1,6 +1,9 @@
 <template>
   <div>
-    <n-h2>仪表盘</n-h2>
+    <div class="page-header">
+      <h2 class="page-title">仪表盘</h2>
+      <div class="page-divider"></div>
+    </div>
     <n-grid :cols="4" :x-gap="16" :y-gap="16">
       <n-gi v-for="card in cards" :key="card.key">
         <n-card
@@ -11,7 +14,7 @@
           <n-spin :show="card.loading">
             <div style="text-align: center; padding: 8px 0;">
               <n-text depth="3" style="font-size: 14px;">{{ card.title }}</n-text>
-              <n-h1 style="margin: 8px 0; color: #FF0000;">{{ card.value ?? '-' }}</n-h1>
+              <n-h1 :style="{ margin: '8px 0', color: card.color }">{{ card.value ?? '-' }}</n-h1>
             </div>
           </n-spin>
         </n-card>
@@ -23,7 +26,7 @@
 <script setup>
 import { reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { NGrid, NGi, NCard, NSpin, NH2, NH1, NText } from 'naive-ui'
+import { NGrid, NGi, NCard, NSpin, NH1, NText } from 'naive-ui'
 import { listParts } from '@/api/parts'
 import { getStock } from '@/api/inventory'
 import { listOrders } from '@/api/orders'
@@ -33,10 +36,10 @@ import { listHandcraft } from '@/api/handcraft'
 const router = useRouter()
 
 const cards = reactive([
-  { key: 'low-stock', title: '低库存配件（< 10）', value: null, loading: true, route: '/parts' },
-  { key: 'pending-orders', title: '待处理订单', value: null, loading: true, route: '/orders' },
-  { key: 'plating', title: '进行中电镀单', value: null, loading: true, route: '/plating' },
-  { key: 'handcraft', title: '进行中手工单', value: null, loading: true, route: '/handcraft' },
+  { key: 'low-stock', title: '低库存配件（< 10）', value: null, loading: true, route: '/parts', color: '#F59E0B' },
+  { key: 'pending-orders', title: '待处理订单', value: null, loading: true, route: '/orders', color: '#6366F1' },
+  { key: 'plating', title: '进行中电镀单', value: null, loading: true, route: '/plating', color: '#8B5CF6' },
+  { key: 'handcraft', title: '进行中手工单', value: null, loading: true, route: '/handcraft', color: '#10B981' },
 ])
 
 const loadCard = (key, fn) => {
