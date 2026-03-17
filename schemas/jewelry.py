@@ -18,6 +18,7 @@ class JewelryUpdate(BaseModel):
     image: Optional[str] = None
     category: Optional[str] = None
     color: Optional[str] = None
+    unit: Optional[str] = None
     retail_price: Optional[float] = None
     wholesale_price: Optional[float] = None
 
@@ -34,6 +35,7 @@ class JewelryResponse(BaseModel):
     image: Optional[str] = None
     category: Optional[str] = None
     color: Optional[str] = None
+    unit: Optional[str] = None
     retail_price: Optional[float] = None
     wholesale_price: Optional[float] = None
     status: str
