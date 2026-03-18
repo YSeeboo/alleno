@@ -26,13 +26,19 @@
                 filterable
                 placeholder="选择配件"
                 style="width: 190px;"
+                @update:value="(val) => onPartSelect(item, val)"
               />
-              <n-input-number v-model:value="item.qty" :min="0.01" placeholder="实际发出" style="width: 100px;" />
-              <n-input-number v-model:value="item.bom_qty" :min="0" placeholder="BOM理论(选填)" style="width: 120px;" />
+              <n-input-number v-model:value="item.qty" :min="1" :precision="0" :step="1" placeholder="实际发出" style="width: 100px;" />
+              <n-select
+                v-model:value="item.unit"
+                :options="partUnitOptions"
+                style="width: 80px;"
+              />
+              <n-input-number v-model:value="item.bom_qty" :min="0" :precision="0" :step="1" placeholder="BOM理论(选填)" style="width: 120px;" />
               <n-button type="error" size="small" @click="parts.splice(idx, 1)">删</n-button>
             </n-space>
           </div>
-          <n-button dashed style="width: 100%;" @click="parts.push({ part_id: null, qty: 1, bom_qty: null, note: '' })">
+          <n-button dashed style="width: 100%;" @click="parts.push({ part_id: null, qty: 1, unit: '个', bom_qty: null, note: '' })">
             + 添加配件行
           </n-button>
         </n-card>
@@ -47,13 +53,19 @@
                 :render-label="renderOptionWithImage"
                 filterable
                 placeholder="选择饰品"
-                style="width: 220px;"
+                style="width: 190px;"
+                @update:value="(val) => onJewelrySelect(item, val)"
               />
-              <n-input-number v-model:value="item.qty" :min="1" placeholder="预期数量" style="width: 100px;" />
+              <n-input-number v-model:value="item.qty" :min="1" :precision="0" :step="1" placeholder="预期数量" style="width: 100px;" />
+              <n-select
+                v-model:value="item.unit"
+                :options="jewelryUnitOptions"
+                style="width: 80px;"
+              />
               <n-button type="error" size="small" @click="jewelries.splice(idx, 1)">删</n-button>
             </n-space>
           </div>
-          <n-button dashed style="width: 100%;" @click="jewelries.push({ jewelry_id: null, qty: 1, note: '' })">
+          <n-button dashed style="width: 100%;" @click="jewelries.push({ jewelry_id: null, qty: 1, unit: '个', note: '' })">
             + 添加饰品行
           </n-button>
         </n-card>
@@ -80,11 +92,43 @@ const router = useRouter()
 const message = useMessage()
 const supplierName = ref('')
 const note = ref('')
-const parts = reactive([{ part_id: null, qty: 1, bom_qty: null, note: '' }])
-const jewelries = reactive([{ jewelry_id: null, qty: 1, note: '' }])
+const parts = reactive([{ part_id: null, qty: 1, unit: '个', bom_qty: null, note: '' }])
+const jewelries = reactive([{ jewelry_id: null, qty: 1, unit: '个', note: '' }])
 const submitting = ref(false)
 const partOptions = ref([])
 const jewelryOptions = ref([])
+
+const partUnitOptions = [
+  { label: '个', value: '个' },
+  { label: '条', value: '条' },
+  { label: '米', value: '米' },
+  { label: 'g', value: 'g' },
+  { label: 'kg', value: 'kg' },
+]
+
+const jewelryUnitOptions = [
+  { label: '个', value: '个' },
+  { label: '套', value: '套' },
+  { label: '对', value: '对' },
+]
+
+const onPartSelect = (item, val) => {
+  const found = partOptions.value.find((p) => p.value === val)
+  if (found && found.unit) {
+    item.unit = found.unit
+  } else {
+    item.unit = '个'
+  }
+}
+
+const onJewelrySelect = (item, val) => {
+  const found = jewelryOptions.value.find((j) => j.value === val)
+  if (found && found.unit) {
+    item.unit = found.unit
+  } else {
+    item.unit = '个'
+  }
+}
 
 const submit = async () => {
   if (!supplierName.value) { message.warning('请输入手工商家名称'); return }
@@ -116,6 +160,7 @@ onMounted(async () => {
       code: p.id,
       name: p.name,
       image: p.image,
+      unit: p.unit,
     }))
     jewelryOptions.value = jRes.data.map((j) => ({
       label: `${j.id} ${j.name}`,
@@ -123,6 +168,7 @@ onMounted(async () => {
       code: j.id,
       name: j.name,
       image: j.image,
+      unit: j.unit,
     }))
   } catch (_) {
     // error already shown by axios interceptor

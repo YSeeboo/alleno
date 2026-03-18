@@ -24,14 +24,24 @@
             filterable
             placeholder="选择配件"
             style="width: 220px;"
+            @update:value="(val) => onPartSelect(item, val)"
           />
-          <n-input-number v-model:value="item.qty" :min="0.01" placeholder="发出数量" style="width: 110px;" />
-          <n-input v-model:value="item.plating_method" placeholder="电镀方式" style="width: 120px;" />
+          <n-input-number v-model:value="item.qty" :min="1" :precision="0" :step="1" placeholder="发出数量" style="width: 110px;" />
+          <n-select
+            v-model:value="item.unit"
+            :options="unitOptions"
+            style="width: 90px;"
+          />
+          <n-select
+            v-model:value="item.plating_method"
+            :options="platingMethodOptions"
+            style="width: 110px;"
+          />
           <n-input v-model:value="item.note" placeholder="备注" style="width: 140px;" />
           <n-button type="error" size="small" @click="items.splice(idx, 1)">删除</n-button>
         </n-space>
       </div>
-      <n-button dashed style="width: 100%;" @click="items.push({ part_id: null, qty: 1, plating_method: '', note: '' })">
+      <n-button dashed style="width: 100%;" @click="items.push({ part_id: null, qty: 1, unit: '个', plating_method: '金', note: '' })">
         + 添加明细行
       </n-button>
     </n-card>
@@ -55,9 +65,33 @@ const router = useRouter()
 const message = useMessage()
 const supplierName = ref('')
 const note = ref('')
-const items = reactive([{ part_id: null, qty: 1, plating_method: '', note: '' }])
+const items = reactive([{ part_id: null, qty: 1, unit: '个', plating_method: '金', note: '' }])
 const submitting = ref(false)
 const partOptions = ref([])
+
+const platingMethodOptions = [
+  { label: '金', value: '金' },
+  { label: '白K', value: '白K' },
+  { label: '玫瑰金', value: '玫瑰金' },
+  { label: '银色', value: '银色' },
+]
+
+const unitOptions = [
+  { label: '个', value: '个' },
+  { label: '条', value: '条' },
+  { label: '米', value: '米' },
+  { label: 'g', value: 'g' },
+  { label: 'kg', value: 'kg' },
+]
+
+const onPartSelect = (item, val) => {
+  const found = partOptions.value.find((p) => p.value === val)
+  if (found && found.unit) {
+    item.unit = found.unit
+  } else {
+    item.unit = '个'
+  }
+}
 
 const submit = async () => {
   if (!supplierName.value) { message.warning('请输入电镀厂名称'); return }
@@ -82,6 +116,7 @@ onMounted(async () => {
       code: p.id,
       name: p.name,
       image: p.image,
+      unit: p.unit,
     }))
   } catch (_) {
     // error already shown by axios interceptor
