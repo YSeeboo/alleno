@@ -130,3 +130,111 @@ def get_handcraft_jewelries(db: Session, order_id: str) -> list:
     return db.query(HandcraftJewelryItem).filter(
         HandcraftJewelryItem.handcraft_order_id == order_id
     ).all()
+
+
+def add_handcraft_part(db: Session, order_id: str, item: dict) -> HandcraftPartItem:
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise ValueError(f"HandcraftOrder not found: {order_id}")
+    if order.status != "pending":
+        raise ValueError(f"Cannot add part: order {order_id} status is '{order.status}', must be 'pending'")
+    new_item = HandcraftPartItem(
+        handcraft_order_id=order_id,
+        part_id=item["part_id"],
+        qty=item["qty"],
+        bom_qty=item.get("bom_qty"),
+        unit=item.get("unit", "个"),
+        note=item.get("note"),
+    )
+    db.add(new_item)
+    db.flush()
+    return new_item
+
+
+def update_handcraft_part(db: Session, order_id: str, item_id: int, data: dict) -> HandcraftPartItem:
+    item = db.query(HandcraftPartItem).filter(
+        HandcraftPartItem.id == item_id,
+        HandcraftPartItem.handcraft_order_id == order_id,
+    ).first()
+    if item is None:
+        raise ValueError(f"HandcraftPartItem {item_id} not found in order {order_id}")
+    for field in ("qty", "unit", "note", "bom_qty"):
+        if field in data and data[field] is not None:
+            setattr(item, field, data[field])
+    db.flush()
+    return item
+
+
+def delete_handcraft_part(db: Session, order_id: str, item_id: int) -> None:
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise ValueError(f"HandcraftOrder not found: {order_id}")
+    if order.status != "pending":
+        raise ValueError(f"Cannot delete part: order {order_id} status is '{order.status}', must be 'pending'")
+    item = db.query(HandcraftPartItem).filter(
+        HandcraftPartItem.id == item_id,
+        HandcraftPartItem.handcraft_order_id == order_id,
+    ).first()
+    if item is None:
+        raise ValueError(f"HandcraftPartItem {item_id} not found in order {order_id}")
+    db.delete(item)
+    db.flush()
+
+
+def add_handcraft_jewelry(db: Session, order_id: str, item: dict) -> HandcraftJewelryItem:
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise ValueError(f"HandcraftOrder not found: {order_id}")
+    if order.status != "pending":
+        raise ValueError(f"Cannot add jewelry: order {order_id} status is '{order.status}', must be 'pending'")
+    new_item = HandcraftJewelryItem(
+        handcraft_order_id=order_id,
+        jewelry_id=item["jewelry_id"],
+        qty=item["qty"],
+        received_qty=0,
+        status="未送出",
+        unit=item.get("unit", "套"),
+        note=item.get("note"),
+    )
+    db.add(new_item)
+    db.flush()
+    return new_item
+
+
+def update_handcraft_jewelry(db: Session, order_id: str, item_id: int, data: dict) -> HandcraftJewelryItem:
+    item = db.query(HandcraftJewelryItem).filter(
+        HandcraftJewelryItem.id == item_id,
+        HandcraftJewelryItem.handcraft_order_id == order_id,
+    ).first()
+    if item is None:
+        raise ValueError(f"HandcraftJewelryItem {item_id} not found in order {order_id}")
+    for field in ("qty", "unit", "note"):
+        if field in data and data[field] is not None:
+            setattr(item, field, data[field])
+    db.flush()
+    return item
+
+
+def delete_handcraft_jewelry(db: Session, order_id: str, item_id: int) -> None:
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise ValueError(f"HandcraftOrder not found: {order_id}")
+    if order.status != "pending":
+        raise ValueError(f"Cannot delete jewelry: order {order_id} status is '{order.status}', must be 'pending'")
+    item = db.query(HandcraftJewelryItem).filter(
+        HandcraftJewelryItem.id == item_id,
+        HandcraftJewelryItem.handcraft_order_id == order_id,
+    ).first()
+    if item is None:
+        raise ValueError(f"HandcraftJewelryItem {item_id} not found in order {order_id}")
+    db.delete(item)
+    db.flush()
+
+
+def update_handcraft_order_status(db: Session, order_id: str, status: str) -> HandcraftOrder:
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise ValueError(f"HandcraftOrder not found: {order_id}")
+    order.status = status
+    db.flush()
+    return order

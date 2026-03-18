@@ -107,3 +107,63 @@ def get_plating_items(db: Session, order_id: str) -> list:
     return db.query(PlatingOrderItem).filter(
         PlatingOrderItem.plating_order_id == order_id
     ).all()
+
+
+def add_plating_item(db: Session, order_id: str, item: dict) -> PlatingOrderItem:
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise ValueError(f"PlatingOrder not found: {order_id}")
+    if order.status != "pending":
+        raise ValueError(f"Cannot add item: order {order_id} status is '{order.status}', must be 'pending'")
+    new_item = PlatingOrderItem(
+        plating_order_id=order_id,
+        part_id=item["part_id"],
+        qty=item["qty"],
+        received_qty=0,
+        status="未送出",
+        plating_method=item.get("plating_method"),
+        unit=item.get("unit", "个"),
+        note=item.get("note"),
+    )
+    db.add(new_item)
+    db.flush()
+    return new_item
+
+
+def update_plating_item(db: Session, order_id: str, item_id: int, data: dict) -> PlatingOrderItem:
+    item = db.query(PlatingOrderItem).filter(
+        PlatingOrderItem.id == item_id,
+        PlatingOrderItem.plating_order_id == order_id,
+    ).first()
+    if item is None:
+        raise ValueError(f"PlatingOrderItem {item_id} not found in order {order_id}")
+    for field in ("qty", "unit", "plating_method", "note"):
+        if field in data and data[field] is not None:
+            setattr(item, field, data[field])
+    db.flush()
+    return item
+
+
+def delete_plating_item(db: Session, order_id: str, item_id: int) -> None:
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise ValueError(f"PlatingOrder not found: {order_id}")
+    if order.status != "pending":
+        raise ValueError(f"Cannot delete item: order {order_id} status is '{order.status}', must be 'pending'")
+    item = db.query(PlatingOrderItem).filter(
+        PlatingOrderItem.id == item_id,
+        PlatingOrderItem.plating_order_id == order_id,
+    ).first()
+    if item is None:
+        raise ValueError(f"PlatingOrderItem {item_id} not found in order {order_id}")
+    db.delete(item)
+    db.flush()
+
+
+def update_plating_order_status(db: Session, order_id: str, status: str) -> PlatingOrder:
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise ValueError(f"PlatingOrder not found: {order_id}")
+    order.status = status
+    db.flush()
+    return order
