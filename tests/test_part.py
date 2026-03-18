@@ -2,9 +2,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import pytest
-from sqlalchemy import create_engine, inspect, text
 from services.part import create_part, get_part, list_parts, update_part, delete_part, PART_CATEGORIES
-from database import ensure_optional_columns
 
 
 # ---------------------------------------------------------------------------
@@ -131,16 +129,3 @@ def test_delete_part_not_found(db):
     with pytest.raises(ValueError):
         delete_part(db, "PJ-DZ-99999")
 
-
-def test_ensure_optional_columns_adds_missing_image(monkeypatch):
-    engine = create_engine("sqlite:///:memory:")
-    with engine.begin() as conn:
-        conn.execute(text('CREATE TABLE part (id TEXT PRIMARY KEY, name TEXT NOT NULL)'))
-        conn.execute(text('CREATE TABLE jewelry (id TEXT PRIMARY KEY, name TEXT NOT NULL)'))
-
-    monkeypatch.setattr("database.engine", engine)
-    ensure_optional_columns()
-
-    inspector = inspect(engine)
-    assert "image" in {column["name"] for column in inspector.get_columns("part")}
-    assert "image" in {column["name"] for column in inspector.get_columns("jewelry")}

@@ -16,7 +16,7 @@ Two access channels:
 |-------|-----------|
 | Backend | FastAPI |
 | ORM | SQLAlchemy |
-| Database | SQLite (dev) → PostgreSQL (prod) |
+| Database | PostgreSQL |
 | Bot | python-telegram-bot v20+ |
 | AI | Anthropic Claude API |
 
@@ -65,7 +65,7 @@ Four-tier architecture:
 1. **Entry Layer** — Frontend UI + Telegram Bot
 2. **API Layer** — FastAPI REST endpoints shared by both entry channels
 3. **Service Layer** — Business logic (`part_service`, `jewelry_service`, `bom_service`, `inventory_service`, `order_service`)
-4. **Data Layer** — SQLite/PostgreSQL via SQLAlchemy
+4. **Data Layer** — PostgreSQL via SQLAlchemy
 
 ## Key Domain Concepts
 
