@@ -17,7 +17,10 @@
         @update:value="load"
       />
       <div class="filter-bar-end">
-        <n-button type="primary" @click="openCreate">新增配件</n-button>
+        <n-space>
+          <n-button @click="openImportModal">导入配件</n-button>
+          <n-button type="primary" @click="openCreate">新增配件</n-button>
+        </n-space>
       </div>
     </div>
 
@@ -92,11 +95,47 @@
       </template>
     </n-modal>
 
+    <n-modal v-model:show="showImportModal" preset="card" title="导入配件" style="width: 560px;">
+      <n-space vertical :size="16" style="width: 100%;">
+        <div style="padding: 14px 16px; border-radius: 14px; background: #fff9ec; color: #6f5214; line-height: 1.75;">
+          仅支持 `.xlsx` 文件。系统按首个工作表导入，表头建议使用：
+          名称、类目、颜色、单位、单件成本、默认电镀工艺、入库数量。
+          配件编号会由系统自动生成；如果系统里已存在同名同类目的配件，会自动更新该配件并追加入库数量。
+        </div>
+        <n-space align="center" justify="space-between">
+          <div style="color: #6b7280;">
+            {{ importFile ? `已选择：${importFile.name}` : '尚未选择文件' }}
+          </div>
+          <n-space>
+            <n-button class="template-download-btn" @click="downloadTemplate">下载模板</n-button>
+            <n-button @click="triggerImportFileSelect">选择 Excel</n-button>
+          </n-space>
+        </n-space>
+        <div v-if="importError" style="padding: 12px 14px; border-radius: 12px; background: #fff1f2; color: #b42318; white-space: pre-wrap;">
+          {{ importError }}
+        </div>
+      </n-space>
+      <template #footer>
+        <n-space justify="end">
+          <n-button :disabled="importing" @click="closeImportModal">取消</n-button>
+          <n-button type="primary" :loading="importing" @click="doImport">开始导入</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
     <ImageUploadModal
       v-model:show="showImageModal"
       kind="part"
       :entity-id="currentUploadItemId"
       @uploaded="onImageUploaded"
+    />
+
+    <input
+      ref="importFileInputRef"
+      type="file"
+      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      style="display: none;"
+      @change="handleImportFileChange"
     />
   </div>
 </template>
@@ -109,7 +148,7 @@ import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
   NModal, NDataTable, NSpin, NEmpty, NDropdown, NImage,
 } from 'naive-ui'
-import { listParts, createPart, updatePart, deletePart } from '@/api/parts'
+import { listParts, createPart, updatePart, deletePart, importPartsExcel, downloadPartsImportTemplate } from '@/api/parts'
 import { getStock, addStock } from '@/api/inventory'
 import { renderNamedImage } from '@/utils/ui'
 import ImageUploadModal from '../../components/ImageUploadModal.vue'
@@ -154,6 +193,13 @@ const stockQty = ref(1)
 const stockNote = ref('')
 const stocking = ref(false)
 
+// Import modal state
+const showImportModal = ref(false)
+const importFileInputRef = ref(null)
+const importFile = ref(null)
+const importing = ref(false)
+const importError = ref('')
+
 const load = async () => {
   loading.value = true
   try {
@@ -176,6 +222,18 @@ const openCreate = () => {
   editingId.value = null
   Object.assign(form, { name: '', image: '', category: null, color: '', unit: '个', unit_cost: null, plating_process: '' })
   showModal.value = true
+}
+
+const openImportModal = () => {
+  importError.value = ''
+  showImportModal.value = true
+}
+
+const closeImportModal = () => {
+  showImportModal.value = false
+  importError.value = ''
+  importFile.value = null
+  if (importFileInputRef.value) importFileInputRef.value.value = ''
 }
 
 const openEdit = (row) => {
@@ -237,6 +295,52 @@ const doStock = async () => {
     await load()
   } finally {
     stocking.value = false
+  }
+}
+
+const triggerImportFileSelect = () => {
+  importFileInputRef.value?.click()
+}
+
+const downloadTemplate = async () => {
+  try {
+    const { data } = await downloadPartsImportTemplate()
+    const url = window.URL.createObjectURL(data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'parts-import-template.xlsx'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+  } catch {
+    message.error('模板下载失败')
+  }
+}
+
+const handleImportFileChange = (event) => {
+  const [file] = event.target.files || []
+  event.target.value = ''
+  importError.value = ''
+  importFile.value = file || null
+}
+
+const doImport = async () => {
+  if (!importFile.value) {
+    message.warning('请先选择 Excel 文件')
+    return
+  }
+  importing.value = true
+  importError.value = ''
+  try {
+    const { data } = await importPartsExcel(importFile.value)
+    message.success(`导入成功：新增 ${data.created_count} 条，更新 ${data.updated_count} 条，入库 ${data.stock_entry_count} 条`)
+    closeImportModal()
+    await load()
+  } catch (error) {
+    importError.value = error.response?.data?.detail || error.message || '导入失败'
+  } finally {
+    importing.value = false
   }
 }
 
@@ -311,3 +415,17 @@ const columns = [
 
 onMounted(load)
 </script>
+
+<style scoped>
+.template-download-btn {
+  background: #f6efe2;
+  border-color: #d6b98d;
+  color: #7a5321;
+}
+
+.template-download-btn:hover {
+  background: #efe1c7;
+  border-color: #c89b5a;
+  color: #603d15;
+}
+</style>

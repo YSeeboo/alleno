@@ -33,3 +33,19 @@ class PartResponse(BaseModel):
     unit: Optional[str] = None
     unit_cost: Optional[float] = None
     plating_process: Optional[str] = None
+
+
+class PartImportRowResult(BaseModel):
+    row_number: int
+    part_id: str
+    name: str
+    action: str
+    stock_added: float
+
+
+class PartImportResponse(BaseModel):
+    imported_count: int
+    created_count: int
+    updated_count: int
+    stock_entry_count: int
+    results: list[PartImportRowResult]

@@ -5,3 +5,14 @@ export const getPart = (id) => api.get(`/parts/${id}`)
 export const createPart = (data) => api.post('/parts/', data)
 export const updatePart = (id, data) => api.patch(`/parts/${id}`, data)
 export const deletePart = (id) => api.delete(`/parts/${id}`)
+export const importPartsExcel = (file) =>
+  api.post('/parts/import', file, {
+    params: { filename: file.name },
+    headers: {
+      'Content-Type': file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    },
+  })
+export const downloadPartsImportTemplate = () =>
+  api.get('/parts/import-template', {
+    responseType: 'blob',
+  })
