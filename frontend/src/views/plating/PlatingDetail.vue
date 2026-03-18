@@ -36,7 +36,7 @@
       <n-card title="电镀明细">
         <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" />
         <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
-        <div style="margin-top: 12px;">
+        <div v-if="order?.status === 'pending'" style="margin-top: 12px;">
           <n-button dashed style="width: 100%;" @click="openAddModal">+ 添加明细行</n-button>
         </div>
       </n-card>

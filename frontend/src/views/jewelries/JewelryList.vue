@@ -186,7 +186,8 @@ const save = async () => {
   saving.value = true
   try {
     if (editingId.value) {
-      await updateJewelry(editingId.value, form)
+      const { category, ...updateData } = form
+      await updateJewelry(editingId.value, updateData)
     } else {
       await createJewelry(form)
     }

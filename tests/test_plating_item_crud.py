@@ -121,16 +121,15 @@ def test_edit_item_pending_order(client, pending_order):
     assert data["note"] == "updated note"
 
 
-def test_edit_item_sent_order_allowed(client, sent_order):
-    """Editing is allowed regardless of order status (note corrections etc.)."""
+def test_edit_item_sent_order_rejected(client, sent_order):
+    """Editing is blocked when order is not pending."""
     order_id = sent_order["id"]
     item_id = _get_first_item_id(client, order_id)
 
     resp = client.put(f"/api/plating/{order_id}/items/{item_id}", json={
         "note": "corrected note",
     })
-    assert resp.status_code == 200
-    assert resp.json()["note"] == "corrected note"
+    assert resp.status_code == 400
 
 
 def test_edit_item_not_found(client, pending_order):

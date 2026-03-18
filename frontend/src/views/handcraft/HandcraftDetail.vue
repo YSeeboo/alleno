@@ -38,7 +38,7 @@
           <n-card title="配件明细">
             <n-data-table v-if="partItems.length > 0" :columns="partColumns" :data="partItems" :bordered="false" size="small" />
             <n-empty v-else description="暂无配件明细" style="margin-top: 16px;" />
-            <div style="margin-top: 12px;">
+            <div v-if="order?.status === 'pending'" style="margin-top: 12px;">
               <n-button dashed style="width: 100%;" @click="openAddPartModal">+ 添加配件行</n-button>
             </div>
           </n-card>
@@ -47,7 +47,7 @@
           <n-card title="成品明细">
             <n-data-table v-if="jewelryItems.length > 0" :columns="jewelryColumns" :data="jewelryItems" :bordered="false" size="small" />
             <n-empty v-else description="暂无成品明细" style="margin-top: 16px;" />
-            <div style="margin-top: 12px;">
+            <div v-if="order?.status === 'pending'" style="margin-top: 12px;">
               <n-button dashed style="width: 100%;" @click="openAddJewelryModal">+ 添加饰品行</n-button>
             </div>
           </n-card>

@@ -25,6 +25,7 @@ def create_handcraft_order(
             part_id=p["part_id"],
             qty=p["qty"],
             bom_qty=p.get("bom_qty"),
+            unit=p.get("unit", "个"),
             note=p.get("note"),
         ))
     for j in jewelries:
@@ -34,6 +35,7 @@ def create_handcraft_order(
             qty=j["qty"],
             received_qty=0,
             status="未送出",
+            unit=j.get("unit", "套"),
             note=j.get("note"),
         ))
     db.flush()
@@ -152,6 +154,11 @@ def add_handcraft_part(db: Session, order_id: str, item: dict) -> HandcraftPartI
 
 
 def update_handcraft_part(db: Session, order_id: str, item_id: int, data: dict) -> HandcraftPartItem:
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise ValueError(f"HandcraftOrder not found: {order_id}")
+    if order.status != "pending":
+        raise ValueError(f"Cannot update part: order {order_id} status is '{order.status}', must be 'pending'")
     item = db.query(HandcraftPartItem).filter(
         HandcraftPartItem.id == item_id,
         HandcraftPartItem.handcraft_order_id == order_id,
@@ -202,6 +209,11 @@ def add_handcraft_jewelry(db: Session, order_id: str, item: dict) -> HandcraftJe
 
 
 def update_handcraft_jewelry(db: Session, order_id: str, item_id: int, data: dict) -> HandcraftJewelryItem:
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise ValueError(f"HandcraftOrder not found: {order_id}")
+    if order.status != "pending":
+        raise ValueError(f"Cannot update jewelry: order {order_id} status is '{order.status}', must be 'pending'")
     item = db.query(HandcraftJewelryItem).filter(
         HandcraftJewelryItem.id == item_id,
         HandcraftJewelryItem.handcraft_order_id == order_id,

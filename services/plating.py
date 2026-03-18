@@ -21,6 +21,7 @@ def create_plating_order(db: Session, supplier_name: str, items: list, note: str
             received_qty=0,
             status="未送出",
             plating_method=item.get("plating_method"),
+            unit=item.get("unit", "个"),
             note=item.get("note"),
         ))
     db.flush()
@@ -131,6 +132,11 @@ def add_plating_item(db: Session, order_id: str, item: dict) -> PlatingOrderItem
 
 
 def update_plating_item(db: Session, order_id: str, item_id: int, data: dict) -> PlatingOrderItem:
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise ValueError(f"PlatingOrder not found: {order_id}")
+    if order.status != "pending":
+        raise ValueError(f"Cannot update item: order {order_id} status is '{order.status}', must be 'pending'")
     item = db.query(PlatingOrderItem).filter(
         PlatingOrderItem.id == item_id,
         PlatingOrderItem.plating_order_id == order_id,

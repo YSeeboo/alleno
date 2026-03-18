@@ -203,7 +203,8 @@ const save = async () => {
   saving.value = true
   try {
     if (editingId.value) {
-      await updatePart(editingId.value, form)
+      const { category, ...updateData } = form
+      await updatePart(editingId.value, updateData)
     } else {
       await createPart(form)
     }

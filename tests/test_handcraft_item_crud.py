@@ -143,16 +143,15 @@ def test_edit_part_pending_order(client, pending_order):
     assert data["note"] == "updated"
 
 
-def test_edit_part_sent_order_allowed(client, sent_order):
-    """Editing part rows is allowed regardless of order status."""
+def test_edit_part_sent_order_rejected(client, sent_order):
+    """Editing part rows is blocked when order is not pending."""
     order_id = sent_order["id"]
     item_id = _get_first_part_id(client, order_id)
 
     resp = client.put(f"/api/handcraft/{order_id}/parts/{item_id}", json={
         "note": "corrected",
     })
-    assert resp.status_code == 200
-    assert resp.json()["note"] == "corrected"
+    assert resp.status_code == 400
 
 
 def test_edit_part_not_found(client, pending_order):
@@ -270,16 +269,15 @@ def test_edit_jewelry_pending_order(client, pending_order):
     assert data["note"] == "increased order"
 
 
-def test_edit_jewelry_sent_order_allowed(client, sent_order):
-    """Editing jewelry rows is allowed regardless of order status."""
+def test_edit_jewelry_sent_order_rejected(client, sent_order):
+    """Editing jewelry rows is blocked when order is not pending."""
     order_id = sent_order["id"]
     item_id = _get_first_jewelry_id(client, order_id)
 
     resp = client.put(f"/api/handcraft/{order_id}/jewelries/{item_id}", json={
         "note": "corrected note",
     })
-    assert resp.status_code == 200
-    assert resp.json()["note"] == "corrected note"
+    assert resp.status_code == 400
 
 
 def test_edit_jewelry_not_found(client, pending_order):
