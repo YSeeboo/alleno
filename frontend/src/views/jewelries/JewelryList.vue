@@ -47,7 +47,11 @@
             />
           </n-space>
         </n-form-item>
-        <n-form-item label="类目">
+        <n-form-item
+          label="类目"
+          path="category"
+          :rule="editingId ? undefined : { required: true, message: '请选择类目', trigger: 'change' }"
+        >
           <n-select v-model:value="form.category" :options="categoryOptions" clearable placeholder="请选择类目" :disabled="!!editingId" />
           <span v-if="!!editingId" style="color: #999; font-size: 12px; margin-left: 8px;">类目不可修改</span>
         </n-form-item>
