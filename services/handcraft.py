@@ -169,9 +169,11 @@ def update_handcraft_part(db: Session, order_id: str, item_id: int, data: dict) 
     ).first()
     if item is None:
         raise ValueError(f"HandcraftPartItem {item_id} not found in order {order_id}")
-    for field in ("qty", "unit", "note", "bom_qty"):
+    for field in ("qty", "unit", "note"):
         if field in data and data[field] is not None:
             setattr(item, field, data[field])
+    if "bom_qty" in data:
+        item.bom_qty = data["bom_qty"]  # allow setting to None to clear
     db.flush()
     return item
 
@@ -274,8 +276,8 @@ def update_handcraft_order_status(db: Session, order_id: str, status: str) -> Ha
         raise ValueError(f"Cannot change status from '{current}' to '{status}': only forward transitions are allowed")
     if current == "pending" and status == "processing":
         raise ValueError("Use POST /send to dispatch a pending order; it deducts inventory and updates item statuses")
-    if status == "completed" and order.completed_at is None:
-        order.completed_at = datetime.now(timezone.utc)
+    if current == "processing" and status == "completed":
+        raise ValueError("Use POST /receive to complete a processing order; items must be fully received first")
     order.status = status
     db.flush()
     return order

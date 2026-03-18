@@ -335,14 +335,11 @@ def test_delete_jewelry_order_not_found(client):
 # PATCH /api/handcraft/{order_id}/status — change order status
 # ──────────────────────────────────────────────────────────────
 
-def test_patch_status_processing_to_completed(client, sent_order):
-    """processing -> completed is the only valid PATCH /status transition."""
+def test_patch_status_processing_to_completed_rejected(client, sent_order):
+    """processing -> completed must go through POST /receive, not PATCH /status."""
     order_id = sent_order["id"]
     resp = client.patch(f"/api/handcraft/{order_id}/status", json={"status": "completed"})
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["status"] == "completed"
-    assert data["completed_at"] is not None
+    assert resp.status_code == 400
 
 
 def test_patch_status_pending_to_processing_rejected(client, pending_order):

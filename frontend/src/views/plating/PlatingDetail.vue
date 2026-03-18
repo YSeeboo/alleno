@@ -138,10 +138,8 @@ const statusType = { pending: 'default', processing: 'info', completed: 'success
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
 // Only processing -> completed is a valid PATCH /status transition.
 // pending -> processing must go through POST /send (deducts inventory).
-const statusOptions = computed(() => {
-  if (order.value?.status === 'processing') return [{ label: '已完成', value: 'completed' }]
-  return []  // pending and completed have no valid manual transitions
-})
+// All status transitions go through dedicated endpoints (POST /send, POST /receive)
+const statusOptions = computed(() => [])
 const fmt = (dt) => new Date(dt).toLocaleString('zh-CN')
 
 const platingMethodOptions = [

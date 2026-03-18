@@ -37,7 +37,7 @@ class HandcraftPartUpdate(BaseModel):
     qty: Optional[float] = Field(None, gt=0)
     unit: Optional[str] = None
     note: Optional[str] = None
-    bom_qty: Optional[float] = Field(None, gt=0)
+    bom_qty: Optional[float] = None
 
 
 class HandcraftJewelryUpdate(BaseModel):
