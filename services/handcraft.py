@@ -53,11 +53,15 @@ def send_handcraft_order(db: Session, handcraft_order_id: str) -> HandcraftOrder
         .filter(HandcraftPartItem.handcraft_order_id == handcraft_order_id)
         .all()
     )
+    if not part_items:
+        raise ValueError(f"HandcraftOrder {handcraft_order_id} has no part items and cannot be sent")
     jewelry_items = (
         db.query(HandcraftJewelryItem)
         .filter(HandcraftJewelryItem.handcraft_order_id == handcraft_order_id)
         .all()
     )
+    if not jewelry_items:
+        raise ValueError(f"HandcraftOrder {handcraft_order_id} has no jewelry items and cannot be sent")
     deducted = []
     try:
         for item in part_items:
@@ -184,6 +188,12 @@ def delete_handcraft_part(db: Session, order_id: str, item_id: int) -> None:
     ).first()
     if item is None:
         raise ValueError(f"HandcraftPartItem {item_id} not found in order {order_id}")
+    remaining = db.query(HandcraftPartItem).filter(
+        HandcraftPartItem.handcraft_order_id == order_id,
+        HandcraftPartItem.id != item_id,
+    ).count()
+    if remaining == 0:
+        raise ValueError(f"Cannot delete the last part from order {order_id}; an order must have at least one part item")
     db.delete(item)
     db.flush()
 
@@ -239,14 +249,33 @@ def delete_handcraft_jewelry(db: Session, order_id: str, item_id: int) -> None:
     ).first()
     if item is None:
         raise ValueError(f"HandcraftJewelryItem {item_id} not found in order {order_id}")
+    remaining = db.query(HandcraftJewelryItem).filter(
+        HandcraftJewelryItem.handcraft_order_id == order_id,
+        HandcraftJewelryItem.id != item_id,
+    ).count()
+    if remaining == 0:
+        raise ValueError(f"Cannot delete the last jewelry from order {order_id}; an order must have at least one jewelry item")
     db.delete(item)
     db.flush()
 
 
+_HANDCRAFT_VALID_STATUSES = {"pending", "processing", "completed"}
+_HANDCRAFT_STATUS_RANK = {"pending": 0, "processing": 1, "completed": 2}
+
+
 def update_handcraft_order_status(db: Session, order_id: str, status: str) -> HandcraftOrder:
+    if status not in _HANDCRAFT_VALID_STATUSES:
+        raise ValueError(f"Invalid status '{status}'. Valid values: {', '.join(sorted(_HANDCRAFT_VALID_STATUSES))}")
     order = get_handcraft_order(db, order_id)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
+    current = order.status
+    if _HANDCRAFT_STATUS_RANK.get(status, -1) <= _HANDCRAFT_STATUS_RANK.get(current, 99):
+        raise ValueError(f"Cannot change status from '{current}' to '{status}': only forward transitions are allowed")
+    if current == "pending" and status == "processing":
+        raise ValueError("Use POST /send to dispatch a pending order; it deducts inventory and updates item statuses")
+    if status == "completed" and order.completed_at is None:
+        order.completed_at = datetime.now(timezone.utc)
     order.status = status
     db.flush()
     return order

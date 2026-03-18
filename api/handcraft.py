@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from api._errors import service_errors
@@ -34,14 +34,14 @@ from services.handcraft import (
 
 
 class HandcraftPartUpdate(BaseModel):
-    qty: Optional[float] = None
+    qty: Optional[float] = Field(None, gt=0)
     unit: Optional[str] = None
     note: Optional[str] = None
-    bom_qty: Optional[float] = None
+    bom_qty: Optional[float] = Field(None, gt=0)
 
 
 class HandcraftJewelryUpdate(BaseModel):
-    qty: Optional[int] = None
+    qty: Optional[int] = Field(None, gt=0)
     unit: Optional[str] = None
     note: Optional[str] = None
 

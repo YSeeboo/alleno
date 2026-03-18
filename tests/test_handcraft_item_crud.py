@@ -335,13 +335,68 @@ def test_delete_jewelry_order_not_found(client):
 # PATCH /api/handcraft/{order_id}/status — change order status
 # ──────────────────────────────────────────────────────────────
 
-def test_patch_status(client, pending_order):
+def test_patch_status_processing_to_completed(client, sent_order):
+    """processing -> completed is the only valid PATCH /status transition."""
+    order_id = sent_order["id"]
+    resp = client.patch(f"/api/handcraft/{order_id}/status", json={"status": "completed"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "completed"
+    assert data["completed_at"] is not None
+
+
+def test_patch_status_pending_to_processing_rejected(client, pending_order):
+    """pending -> processing must go through POST /send, not PATCH /status."""
     order_id = pending_order["id"]
     resp = client.patch(f"/api/handcraft/{order_id}/status", json={"status": "processing"})
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "processing"
+    assert resp.status_code == 400
+
+
+def test_patch_status_invalid_value_rejected(client, pending_order):
+    """Non-enum status values are rejected."""
+    order_id = pending_order["id"]
+    resp = client.patch(f"/api/handcraft/{order_id}/status", json={"status": "garbage"})
+    assert resp.status_code == 400
 
 
 def test_patch_status_order_not_found(client):
     resp = client.patch("/api/handcraft/HC-9999/status", json={"status": "processing"})
     assert resp.status_code == 404
+
+
+# ──────────────────────────────────────────────────────────────
+# qty > 0 validation
+# ──────────────────────────────────────────────────────────────
+
+def test_edit_part_zero_qty_rejected(client, pending_order):
+    order_id = pending_order["id"]
+    item_id = _get_first_part_id(client, order_id)
+    resp = client.put(f"/api/handcraft/{order_id}/parts/{item_id}", json={"qty": 0})
+    assert resp.status_code == 422
+
+
+def test_edit_jewelry_negative_qty_rejected(client, pending_order):
+    order_id = pending_order["id"]
+    item_id = _get_first_jewelry_id(client, order_id)
+    resp = client.put(f"/api/handcraft/{order_id}/jewelries/{item_id}", json={"qty": -1})
+    assert resp.status_code == 422
+
+
+# ──────────────────────────────────────────────────────────────
+# Empty-order prevention
+# ──────────────────────────────────────────────────────────────
+
+def test_delete_last_part_rejected(client, pending_order):
+    """Cannot delete the only remaining part in an order."""
+    order_id = pending_order["id"]
+    item_id = _get_first_part_id(client, order_id)
+    resp = client.delete(f"/api/handcraft/{order_id}/parts/{item_id}")
+    assert resp.status_code == 400
+
+
+def test_delete_last_jewelry_rejected(client, pending_order):
+    """Cannot delete the only remaining jewelry in an order."""
+    order_id = pending_order["id"]
+    item_id = _get_first_jewelry_id(client, order_id)
+    resp = client.delete(f"/api/handcraft/{order_id}/jewelries/{item_id}")
+    assert resp.status_code == 400

@@ -188,13 +188,62 @@ def test_delete_item_order_not_found(client):
 # PATCH /api/plating/{order_id}/status — change order status
 # ──────────────────────────────────────────────────────────────
 
-def test_patch_status(client, pending_order):
+def test_patch_status_processing_to_completed(client, sent_order):
+    """processing -> completed is the only valid PATCH /status transition."""
+    order_id = sent_order["id"]
+    resp = client.patch(f"/api/plating/{order_id}/status", json={"status": "completed"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "completed"
+    assert data["completed_at"] is not None
+
+
+def test_patch_status_pending_to_processing_rejected(client, pending_order):
+    """pending -> processing must go through POST /send, not PATCH /status."""
     order_id = pending_order["id"]
     resp = client.patch(f"/api/plating/{order_id}/status", json={"status": "processing"})
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "processing"
+    assert resp.status_code == 400
+
+
+def test_patch_status_invalid_value_rejected(client, pending_order):
+    """Non-enum status values are rejected."""
+    order_id = pending_order["id"]
+    resp = client.patch(f"/api/plating/{order_id}/status", json={"status": "garbage"})
+    assert resp.status_code == 400
 
 
 def test_patch_status_order_not_found(client):
     resp = client.patch("/api/plating/EP-9999/status", json={"status": "processing"})
     assert resp.status_code == 404
+
+
+# ──────────────────────────────────────────────────────────────
+# qty > 0 validation
+# ──────────────────────────────────────────────────────────────
+
+def test_edit_item_zero_qty_rejected(client, pending_order):
+    """qty=0 must be rejected by the update schema."""
+    order_id = pending_order["id"]
+    item_id = _get_first_item_id(client, order_id)
+    resp = client.put(f"/api/plating/{order_id}/items/{item_id}", json={"qty": 0})
+    assert resp.status_code == 422
+
+
+def test_edit_item_negative_qty_rejected(client, pending_order):
+    """Negative qty must be rejected by the update schema."""
+    order_id = pending_order["id"]
+    item_id = _get_first_item_id(client, order_id)
+    resp = client.put(f"/api/plating/{order_id}/items/{item_id}", json={"qty": -5})
+    assert resp.status_code == 422
+
+
+# ──────────────────────────────────────────────────────────────
+# Empty-order prevention
+# ──────────────────────────────────────────────────────────────
+
+def test_delete_last_item_rejected(client, pending_order):
+    """Cannot delete the only remaining item in an order."""
+    order_id = pending_order["id"]
+    item_id = _get_first_item_id(client, order_id)
+    resp = client.delete(f"/api/plating/{order_id}/items/{item_id}")
+    assert resp.status_code == 400

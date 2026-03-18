@@ -39,6 +39,8 @@ def send_plating_order(db: Session, plating_order_id: str) -> PlatingOrder:
         .filter(PlatingOrderItem.plating_order_id == plating_order_id)
         .all()
     )
+    if not items:
+        raise ValueError(f"PlatingOrder {plating_order_id} has no items and cannot be sent")
     deducted = []
     try:
         for item in items:
@@ -162,14 +164,33 @@ def delete_plating_item(db: Session, order_id: str, item_id: int) -> None:
     ).first()
     if item is None:
         raise ValueError(f"PlatingOrderItem {item_id} not found in order {order_id}")
+    remaining = db.query(PlatingOrderItem).filter(
+        PlatingOrderItem.plating_order_id == order_id,
+        PlatingOrderItem.id != item_id,
+    ).count()
+    if remaining == 0:
+        raise ValueError(f"Cannot delete the last item from order {order_id}; an order must have at least one item")
     db.delete(item)
     db.flush()
 
 
+_PLATING_VALID_STATUSES = {"pending", "processing", "completed"}
+_PLATING_STATUS_RANK = {"pending": 0, "processing": 1, "completed": 2}
+
+
 def update_plating_order_status(db: Session, order_id: str, status: str) -> PlatingOrder:
+    if status not in _PLATING_VALID_STATUSES:
+        raise ValueError(f"Invalid status '{status}'. Valid values: {', '.join(sorted(_PLATING_VALID_STATUSES))}")
     order = get_plating_order(db, order_id)
     if order is None:
         raise ValueError(f"PlatingOrder not found: {order_id}")
+    current = order.status
+    if _PLATING_STATUS_RANK.get(status, -1) <= _PLATING_STATUS_RANK.get(current, 99):
+        raise ValueError(f"Cannot change status from '{current}' to '{status}': only forward transitions are allowed")
+    if current == "pending" and status == "processing":
+        raise ValueError("Use POST /send to dispatch a pending order; it deducts inventory and updates item statuses")
+    if status == "completed" and order.completed_at is None:
+        order.completed_at = datetime.now(timezone.utc)
     order.status = status
     db.flush()
     return order

@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from api._errors import service_errors
@@ -22,7 +22,7 @@ from services.plating import (
 
 
 class PlatingItemUpdate(BaseModel):
-    qty: Optional[float] = None
+    qty: Optional[float] = Field(None, gt=0)
     unit: Optional[str] = None
     plating_method: Optional[str] = None
     note: Optional[str] = None

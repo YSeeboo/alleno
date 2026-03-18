@@ -15,10 +15,14 @@
               v-model:value="order.status"
               :options="statusOptions"
               trigger="click"
+              :disabled="statusOptions.length === 0"
               @update:value="doChangeStatus"
             >
-              <n-tag :type="statusType[order.status]" style="cursor: pointer;">
-                {{ statusLabel[order.status] }} ▾
+              <n-tag
+                :type="statusType[order.status]"
+                :style="statusOptions.length > 0 ? 'cursor: pointer;' : ''"
+              >
+                {{ statusLabel[order.status] }}{{ statusOptions.length > 0 ? ' ▾' : '' }}
               </n-tag>
             </n-popselect>
           </n-descriptions-item>
@@ -168,7 +172,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, h } from 'vue'
+import { ref, computed, onMounted, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import {
@@ -203,11 +207,10 @@ const jewelryOptions = ref([])
 
 const statusType = { pending: 'default', processing: 'info', completed: 'success' }
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
-const statusOptions = [
-  { label: '待发出', value: 'pending' },
-  { label: '进行中', value: 'processing' },
-  { label: '已完成', value: 'completed' },
-]
+const statusOptions = computed(() => {
+  if (order.value?.status === 'processing') return [{ label: '已完成', value: 'completed' }]
+  return []
+})
 const fmt = (dt) => new Date(dt).toLocaleString('zh-CN')
 
 const partUnitOptions = [
