@@ -4,8 +4,20 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
+from models.jewelry import Jewelry
+from models.part import Part
 from services._helpers import _next_id
 from services.inventory import add_stock, deduct_stock
+
+
+def _require_part(db: Session, part_id: str) -> None:
+    if db.get(Part, part_id) is None:
+        raise ValueError(f"Part not found: {part_id}")
+
+
+def _require_jewelry(db: Session, jewelry_id: str) -> None:
+    if db.get(Jewelry, jewelry_id) is None:
+        raise ValueError(f"Jewelry not found: {jewelry_id}")
 
 
 def create_handcraft_order(
@@ -15,6 +27,10 @@ def create_handcraft_order(
     jewelries: list,
     note: str = None,
 ) -> HandcraftOrder:
+    for p in parts:
+        _require_part(db, p["part_id"])
+    for j in jewelries:
+        _require_jewelry(db, j["jewelry_id"])
     order_id = _next_id(db, HandcraftOrder, "HC")
     order = HandcraftOrder(id=order_id, supplier_name=supplier_name, status="pending", note=note)
     db.add(order)
@@ -144,6 +160,7 @@ def add_handcraft_part(db: Session, order_id: str, item: dict) -> HandcraftPartI
         raise ValueError(f"HandcraftOrder not found: {order_id}")
     if order.status != "pending":
         raise ValueError(f"Cannot add part: order {order_id} status is '{order.status}', must be 'pending'")
+    _require_part(db, item["part_id"])
     new_item = HandcraftPartItem(
         handcraft_order_id=order_id,
         part_id=item["part_id"],
@@ -206,6 +223,7 @@ def add_handcraft_jewelry(db: Session, order_id: str, item: dict) -> HandcraftJe
         raise ValueError(f"HandcraftOrder not found: {order_id}")
     if order.status != "pending":
         raise ValueError(f"Cannot add jewelry: order {order_id} status is '{order.status}', must be 'pending'")
+    _require_jewelry(db, item["jewelry_id"])
     new_item = HandcraftJewelryItem(
         handcraft_order_id=order_id,
         jewelry_id=item["jewelry_id"],

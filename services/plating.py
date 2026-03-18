@@ -3,12 +3,20 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from models.part import Part
 from models.plating_order import PlatingOrder, PlatingOrderItem
 from services._helpers import _next_id
 from services.inventory import add_stock, deduct_stock
 
 
+def _require_part(db: Session, part_id: str) -> None:
+    if db.get(Part, part_id) is None:
+        raise ValueError(f"Part not found: {part_id}")
+
+
 def create_plating_order(db: Session, supplier_name: str, items: list, note: str = None) -> PlatingOrder:
+    for item in items:
+        _require_part(db, item["part_id"])
     order_id = _next_id(db, PlatingOrder, "EP")
     order = PlatingOrder(id=order_id, supplier_name=supplier_name, status="pending", note=note)
     db.add(order)
@@ -118,6 +126,7 @@ def add_plating_item(db: Session, order_id: str, item: dict) -> PlatingOrderItem
         raise ValueError(f"PlatingOrder not found: {order_id}")
     if order.status != "pending":
         raise ValueError(f"Cannot add item: order {order_id} status is '{order.status}', must be 'pending'")
+    _require_part(db, item["part_id"])
     new_item = PlatingOrderItem(
         plating_order_id=order_id,
         part_id=item["part_id"],
