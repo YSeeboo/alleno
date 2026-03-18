@@ -306,7 +306,7 @@ def test_cross_order_item_rejection(db, part):
     # book part (from order_a) against order_b → must be rejected.
     from services.part import create_part
     from services.inventory import add_stock as _add
-    part2 = create_part(db, {"name": "银扣"})
+    part2 = create_part(db, {"name": "银扣", "category": "小配件"})
     _add(db, "part", part2.id, 50.0, "入库")
     order_b = create_plating_order(db, "电镀厂A", [
         {"part_id": part2.id, "qty": 8, "plating_method": "银色"},
