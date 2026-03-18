@@ -32,3 +32,8 @@ export const searchParts = (params) =>
 // 搜索饰品编号
 export const searchJewelries = (params) =>
   api.get('/jewelries/', { params })
+
+// 变更订单状态（看板双向流转）
+export const changeOrderStatus = (data) =>
+  api.post('/kanban/order-status', data)
+  // data: { order_id: string, order_type: 'plating'|'handcraft', new_status: 'pending'|'processing'|'completed' }
