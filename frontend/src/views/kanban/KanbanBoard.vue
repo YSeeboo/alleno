@@ -54,6 +54,7 @@
     <VendorDetailModal
       v-model:show="detailVisible"
       :vendor="selectedVendor"
+      @refresh="reloadAll"
     />
 
     <!-- 收回弹窗 -->
