@@ -174,7 +174,7 @@ import { useMessage, useDialog } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NGrid, NGi, NEmpty, NModal, NForm, NFormItem,
-  NSelect, NInputNumber, NInput, NPopselect,
+  NSelect, NInputNumber, NInput, NPopselect, NTooltip,
 } from 'naive-ui'
 import {
   getHandcraft, getHandcraftParts, getHandcraftJewelries, sendHandcraft,
@@ -458,7 +458,7 @@ const partColumns = [
     render: (row) => {
       const pending = isPending()
       const editBtn = h(
-        'n-tooltip',
+        NTooltip,
         { disabled: pending, trigger: 'hover' },
         {
           trigger: () =>
@@ -476,7 +476,7 @@ const partColumns = [
         },
       )
       const deleteBtn = h(
-        'n-tooltip',
+        NTooltip,
         { disabled: pending, trigger: 'hover' },
         {
           trigger: () =>
@@ -516,7 +516,7 @@ const jewelryColumns = [
     render: (row) => {
       const pending = isPending()
       const editBtn = h(
-        'n-tooltip',
+        NTooltip,
         { disabled: pending, trigger: 'hover' },
         {
           trigger: () =>
@@ -534,7 +534,7 @@ const jewelryColumns = [
         },
       )
       const deleteBtn = h(
-        'n-tooltip',
+        NTooltip,
         { disabled: pending, trigger: 'hover' },
         {
           trigger: () =>

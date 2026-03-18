@@ -109,7 +109,7 @@ import { useMessage, useDialog } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
-  NSelect, NInputNumber, NInput, NPopselect,
+  NSelect, NInputNumber, NInput, NPopselect, NTooltip,
 } from 'naive-ui'
 import {
   getPlating, getPlatingItems, sendPlating,
@@ -292,7 +292,7 @@ const itemColumns = [
     render: (row) => {
       const pending = isPending()
       const editBtn = h(
-        'n-tooltip',
+        NTooltip,
         { disabled: pending, trigger: 'hover' },
         {
           trigger: () =>
@@ -310,7 +310,7 @@ const itemColumns = [
         },
       )
       const deleteBtn = h(
-        'n-tooltip',
+        NTooltip,
         { disabled: pending, trigger: 'hover' },
         {
           trigger: () =>
