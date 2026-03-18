@@ -12,7 +12,7 @@
           <n-descriptions-item label="手工商家">{{ order.supplier_name }}</n-descriptions-item>
           <n-descriptions-item label="状态">
             <n-popselect
-              v-model:value="order.status"
+              :value="order?.status"
               :options="statusOptions"
               trigger="click"
               :disabled="statusOptions.length === 0"
@@ -184,8 +184,8 @@ import {
   getHandcraft, getHandcraftParts, getHandcraftJewelries, sendHandcraft,
   addHandcraftPart, updateHandcraftPart, deleteHandcraftPart,
   addHandcraftJewelry, updateHandcraftJewelry, deleteHandcraftJewelry,
-  updateHandcraftStatus,
 } from '@/api/handcraft'
+import { changeOrderStatus } from '@/api/kanban'
 import { listParts } from '@/api/parts'
 import { listJewelries } from '@/api/jewelries'
 import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
@@ -207,8 +207,17 @@ const jewelryOptions = ref([])
 
 const statusType = { pending: 'default', processing: 'info', completed: 'success' }
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
-// All status transitions go through dedicated endpoints (POST /send, POST /receive)
-const statusOptions = computed(() => [])
+const statusOptions = computed(() => {
+  if (!order.value) return []
+  const s = order.value.status
+  if (s === 'pending') return [{ label: '进行中', value: 'processing' }]
+  if (s === 'processing') return [
+    { label: '待发出', value: 'pending' },
+    { label: '已完成', value: 'completed' },
+  ]
+  if (s === 'completed') return [{ label: '进行中', value: 'processing' }]
+  return []
+})
 const fmt = (dt) => new Date(dt).toLocaleString('zh-CN')
 
 const partUnitOptions = [
@@ -274,15 +283,25 @@ const doSend = async () => {
   }
 }
 
-const doChangeStatus = async (newStatus) => {
-  try {
-    await updateHandcraftStatus(route.params.id, newStatus)
-    message.success('状态已更新')
-    await loadData()
-  } catch (_) {
-    // error shown by axios interceptor; reload to restore displayed value
-    await loadData()
-  }
+const doChangeStatus = (newStatus) => {
+  const currentLabel = statusLabel[order.value?.status] || order.value?.status
+  const newLabel = statusLabel[newStatus] || newStatus
+  dialog.warning({
+    title: '确认状态变更',
+    content: `请确认将「${order.value?.supplier_name}」的订单「${order.value?.id}」状态从「${currentLabel}」转为「${newLabel}」`,
+    positiveText: '确认',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await changeOrderStatus({ order_id: order.value.id, order_type: 'handcraft', new_status: newStatus })
+        message.success('状态已更新')
+        await loadData()
+      } catch (_) {
+        // errors shown by axios interceptor
+        await loadData()
+      }
+    },
+  })
 }
 
 // --- Part CRUD ---
