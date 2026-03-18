@@ -39,15 +39,15 @@
 <script setup>
 import { ref, reactive, computed, watch, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { NModal, NCard, NButton, NIcon, NSpin, NDataTable, NTag } from 'naive-ui'
+import { NModal, NCard, NButton, NIcon, NSpin, NDataTable, NTag, NDropdown, useDialog } from 'naive-ui'
 import { CloseOutline } from '@vicons/ionicons5'
-import { getVendorDetail } from '@/api/kanban'
+import { getVendorDetail, changeOrderStatus } from '@/api/kanban'
 
 const props = defineProps({
   show: Boolean,
   vendor: Object, // { vendor_name, order_type }
 })
-const emit = defineEmits(['update:show'])
+const emit = defineEmits(['update:show', 'refresh'])
 
 const visible = computed({
   get: () => props.show,
@@ -55,11 +55,46 @@ const visible = computed({
 })
 
 const router = useRouter()
+const dialog = useDialog()
 const loading = ref(false)
 const detail = reactive({ items: [], orders: [] })
 
 const statusTypeMap = { pending: 'default', processing: 'info', completed: 'success' }
 const statusLabelMap = { pending: '待发出', processing: '进行中', completed: '已完成' }
+
+const statusOptions = (currentStatus) => {
+  if (currentStatus === 'pending') return [{ label: '进行中', key: 'processing' }]
+  if (currentStatus === 'processing') return [
+    { label: '待发出', key: 'pending' },
+    { label: '已完成', key: 'completed' },
+  ]
+  if (currentStatus === 'completed') return [{ label: '进行中', key: 'processing' }]
+  return []
+}
+
+const handleOrderStatusChange = (row, newStatus) => {
+  const currentLabel = statusLabelMap[row.status] || row.status
+  const newLabel = statusLabelMap[newStatus] || newStatus
+  dialog.warning({
+    title: '确认状态变更',
+    content: `请确认将「${props.vendor.vendor_name}」的订单「${row.order_id}」状态从「${currentLabel}」转为「${newLabel}」`,
+    positiveText: '确认',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await changeOrderStatus({
+          order_id: row.order_id,
+          order_type: row.order_type,
+          new_status: newStatus,
+        })
+        await fetchDetail()
+        emit('refresh')
+      } catch (_) {
+        // errors shown by axios interceptor
+      }
+    },
+  })
+}
 
 const itemColumns = computed(() => {
   const cols = [
@@ -96,6 +131,7 @@ const orderColumns = [
         {
           style: { color: '#C4952A', cursor: 'pointer', fontWeight: 500 },
           onClick: () => {
+            visible.value = false
             router.push(`/${r.order_type}/${r.order_id}`)
           },
         },
@@ -111,9 +147,26 @@ const orderColumns = [
   {
     title: '状态',
     key: 'status',
-    width: 90,
-    render: (r) =>
-      h(NTag, { type: statusTypeMap[r.status] || 'default', size: 'small' }, () => statusLabelMap[r.status] || r.status),
+    width: 110,
+    render: (r) => {
+      const opts = statusOptions(r.status)
+      if (opts.length === 0) {
+        return h(NTag, { type: statusTypeMap[r.status] || 'default', size: 'small' }, () => statusLabelMap[r.status] || r.status)
+      }
+      return h(
+        NDropdown,
+        {
+          options: opts,
+          trigger: 'click',
+          onSelect: (key) => handleOrderStatusChange(r, key),
+        },
+        () => h(
+          NTag,
+          { type: statusTypeMap[r.status] || 'default', size: 'small', style: 'cursor: pointer;' },
+          () => (statusLabelMap[r.status] || r.status) + ' ▾',
+        ),
+      )
+    },
   },
   {
     title: '创建时间',
