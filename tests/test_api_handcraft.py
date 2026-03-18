@@ -5,8 +5,8 @@ from services.inventory import add_stock
 
 
 def _setup(db):
-    part = create_part(db, {"name": "P1"})
-    jewelry = create_jewelry(db, {"name": "J1"})
+    part = create_part(db, {"name": "P1", "category": "小配件"})
+    jewelry = create_jewelry(db, {"name": "J1", "category": "单件"})
     # Add stock for the part so we can send it
     add_stock(db, "part", part.id, 100.0, "初始入库")
     return part, jewelry
@@ -115,8 +115,8 @@ def test_send_handcraft_order_not_found(client, db):
 
 
 def test_send_handcraft_order_insufficient_stock(client, db):
-    part = create_part(db, {"name": "P2"})
-    jewelry = create_jewelry(db, {"name": "J2"})
+    part = create_part(db, {"name": "P2", "category": "小配件"})
+    jewelry = create_jewelry(db, {"name": "J2", "category": "单件"})
     # No stock added for part
     created = client.post("/api/handcraft/", json={
         "supplier_name": "Supplier C",
@@ -139,12 +139,7 @@ def test_receive_handcraft_jewelries(client, db):
     # Send first
     client.post(f"/api/handcraft/{order_id}/send")
 
-    # Get jewelry item id - need to check what we need
-    # The receive endpoint needs handcraft_jewelry_item_id
-    # We need to query it; use the service layer via db fixture
     from models.handcraft_order import HandcraftJewelryItem
-    from database import get_db
-    # Access through the test db fixture
     ji = db.query(HandcraftJewelryItem).filter(
         HandcraftJewelryItem.handcraft_order_id == order_id
     ).first()

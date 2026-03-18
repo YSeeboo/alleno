@@ -13,10 +13,6 @@ build/
 venv/
 env/
 
-# Database files
-*.db
-*.sqlite
-*.sqlite3
 
 # Environment & secrets
 .env

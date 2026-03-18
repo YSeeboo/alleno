@@ -4,8 +4,8 @@ from pydantic import BaseModel, ConfigDict
 
 class PartCreate(BaseModel):
     name: str
+    category: str
     image: Optional[str] = None
-    category: Optional[str] = None
     color: Optional[str] = None
     unit: Optional[str] = None
     unit_cost: Optional[float] = None
@@ -28,7 +28,7 @@ class PartResponse(BaseModel):
     id: str
     name: str
     image: Optional[str] = None
-    category: Optional[str] = None
+    category: str
     color: Optional[str] = None
     unit: Optional[str] = None
     unit_cost: Optional[float] = None

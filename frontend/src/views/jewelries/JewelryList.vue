@@ -34,9 +34,7 @@
           <n-space vertical style="width: 100%;">
             <n-space align="center" style="width: 100%;">
               <n-input v-model:value="form.image" placeholder="上传后自动填充，也可手动输入 URL" />
-              <n-button :loading="uploadingImage" @click="triggerImageUpload">
-                {{ uploadingImage ? '上传中' : '上传图片' }}
-              </n-button>
+              <n-button @click="openImageModal(editingId)">上传图片</n-button>
             </n-space>
             <n-image
               v-if="form.image"
@@ -49,8 +47,14 @@
             />
           </n-space>
         </n-form-item>
-        <n-form-item label="类目"><n-input v-model:value="form.category" /></n-form-item>
+        <n-form-item label="类目">
+          <n-select v-model:value="form.category" :options="categoryOptions" clearable placeholder="请选择类目" :disabled="!!editingId" />
+          <span v-if="!!editingId" style="color: #999; font-size: 12px; margin-left: 8px;">类目不可修改</span>
+        </n-form-item>
         <n-form-item label="颜色"><n-input v-model:value="form.color" /></n-form-item>
+        <n-form-item label="单位">
+          <n-select v-model:value="form.unit" :options="unitOptions" placeholder="请选择单位" />
+        </n-form-item>
         <n-form-item label="零售价">
           <n-input-number v-model:value="form.retail_price" :min="0" :precision="2" style="width: 100%;" />
         </n-form-item>
@@ -66,12 +70,17 @@
       </template>
     </n-modal>
 
-    <input ref="imageInputRef" type="file" accept="image/*" style="display: none;" @change="onImageSelected" />
+    <ImageUploadModal
+      v-model:show="showImageModal"
+      kind="jewelry"
+      :entity-id="currentUploadItemId"
+      @uploaded="onImageUploaded"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, h } from 'vue'
+import { ref, reactive, onMounted, watch, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
@@ -79,9 +88,9 @@ import {
   NModal, NDataTable, NSpin, NEmpty, NImage, NDropdown,
 } from 'naive-ui'
 import { listJewelries, createJewelry, updateJewelry, updateJewelryStatus, deleteJewelry } from '@/api/jewelries'
-import { uploadImageToOss } from '@/api/uploads'
 import { getStock } from '@/api/inventory'
 import { renderNamedImage } from '@/utils/ui'
+import ImageUploadModal from '../../components/ImageUploadModal.vue'
 
 const router = useRouter()
 const message = useMessage()
@@ -93,13 +102,39 @@ const statusOptions = [
   { label: '停用', value: 'inactive' },
 ]
 
+const categoryOptions = [
+  { label: '套装', value: '套装' },
+  { label: '单件', value: '单件' },
+  { label: '单对', value: '单对' },
+]
+
+const unitOptions = [
+  { label: '个', value: '个' },
+  { label: '套', value: '套' },
+  { label: '对', value: '对' },
+]
+
+const VALID_CATEGORIES = categoryOptions.map((o) => o.value)
+
 const showModal = ref(false)
 const editingId = ref(null)
 const saving = ref(false)
-const uploadingImage = ref(false)
-const imageInputRef = ref(null)
 const formRef = ref(null)
-const form = reactive({ name: '', image: '', category: '', color: '', retail_price: null, wholesale_price: null })
+const form = reactive({ name: '', image: '', category: null, color: '', unit: null, retail_price: null, wholesale_price: null })
+
+// Image upload modal state
+const showImageModal = ref(false)
+const currentUploadItemId = ref(null)
+
+// Auto-fill unit based on category
+watch(
+  () => form.category,
+  (cat) => {
+    if (cat === '套装') form.unit = '套'
+    else if (cat === '单件') form.unit = '个'
+    else if (cat === '单对') form.unit = '对'
+  }
+)
 
 const load = async () => {
   loading.value = true
@@ -118,40 +153,33 @@ const load = async () => {
 
 const openCreate = () => {
   editingId.value = null
-  Object.assign(form, { name: '', image: '', category: '', color: '', retail_price: null, wholesale_price: null })
+  Object.assign(form, { name: '', image: '', category: null, color: '', unit: null, retail_price: null, wholesale_price: null })
   showModal.value = true
 }
 
 const openEdit = (row) => {
   editingId.value = row.id
+  const cat = row.category && VALID_CATEGORIES.includes(row.category) ? row.category : null
   Object.assign(form, {
-    name: row.name, image: row.image || '', category: row.category || '', color: row.color || '',
-    retail_price: row.retail_price ?? null, wholesale_price: row.wholesale_price ?? null,
+    name: row.name,
+    image: row.image || '',
+    category: cat,
+    color: row.color || '',
+    unit: row.unit || null,
+    retail_price: row.retail_price ?? null,
+    wholesale_price: row.wholesale_price ?? null,
   })
   showModal.value = true
 }
 
-const triggerImageUpload = () => {
-  imageInputRef.value?.click()
+const openImageModal = (id) => {
+  currentUploadItemId.value = id
+  showImageModal.value = true
 }
 
-const onImageSelected = async (event) => {
-  const file = event.target.files?.[0]
-  event.target.value = ''
-  if (!file) return
-  uploadingImage.value = true
-  try {
-    form.image = await uploadImageToOss({
-      kind: 'jewelry',
-      file,
-      entityId: editingId.value,
-    })
-    message.success('图片上传成功')
-  } catch (error) {
-    message.error(error.response?.data || error.message || '图片上传失败')
-  } finally {
-    uploadingImage.value = false
-  }
+const onImageUploaded = (url) => {
+  form.image = url
+  load()
 }
 
 const save = async () => {
@@ -159,7 +187,8 @@ const save = async () => {
   saving.value = true
   try {
     if (editingId.value) {
-      await updateJewelry(editingId.value, form)
+      const { category, ...updateData } = form
+      await updateJewelry(editingId.value, updateData)
     } else {
       await createJewelry(form)
     }
@@ -208,6 +237,7 @@ const columns = [
   },
   { title: '类目', key: 'category' },
   { title: '颜色', key: 'color' },
+  { title: '单位', key: 'unit', width: 60 },
   { title: '零售价', key: 'retail_price', render: (r) => r.retail_price?.toFixed(2) ?? '-' },
   { title: '批发价', key: 'wholesale_price', render: (r) => r.wholesale_price?.toFixed(2) ?? '-' },
   { title: '当前库存', key: 'stock' },

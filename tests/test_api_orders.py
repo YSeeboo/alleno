@@ -5,8 +5,8 @@ from services.bom import set_bom
 
 
 def _setup(db):
-    part = create_part(db, {"name": "P1"})
-    jewelry = create_jewelry(db, {"name": "J1", "retail_price": 100.0})
+    part = create_part(db, {"name": "P1", "category": "小配件"})
+    jewelry = create_jewelry(db, {"name": "J1", "retail_price": 100.0, "category": "单件"})
     return part, jewelry
 
 

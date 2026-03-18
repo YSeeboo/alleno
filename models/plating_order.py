@@ -25,4 +25,5 @@ class PlatingOrderItem(Base):
     received_qty = Column(Numeric(10, 4), nullable=True, default=0)
     status = Column(String, nullable=False, default="未送出")
     plating_method = Column(String, nullable=True)
+    unit = Column(String, nullable=True, default="个")
     note = Column(Text, nullable=True)

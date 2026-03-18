@@ -8,7 +8,14 @@
 
     <div class="filter-bar">
       <n-input v-model:value="searchName" placeholder="搜索配件名称" clearable style="width: 200px;" @update:value="load" />
-      <n-input v-model:value="searchCategory" placeholder="筛选类目" clearable style="width: 160px;" @update:value="load" />
+      <n-select
+        v-model:value="searchCategory"
+        :options="categoryOptions"
+        clearable
+        placeholder="筛选类目"
+        style="width: 160px;"
+        @update:value="load"
+      />
       <div class="filter-bar-end">
         <n-button type="primary" @click="openCreate">新增配件</n-button>
       </div>
@@ -29,9 +36,7 @@
           <n-space vertical style="width: 100%;">
             <n-space align="center" style="width: 100%;">
               <n-input v-model:value="form.image" placeholder="上传后自动填充，也可手动输入 URL" />
-              <n-button :loading="uploadingImage" @click="triggerImageUpload">
-                {{ uploadingImage ? '上传中' : '上传图片' }}
-              </n-button>
+              <n-button @click="openImageModal(editingId)">上传图片</n-button>
             </n-space>
             <n-image
               v-if="form.image"
@@ -44,9 +49,14 @@
             />
           </n-space>
         </n-form-item>
-        <n-form-item label="类目"><n-input v-model:value="form.category" /></n-form-item>
+        <n-form-item label="类目">
+          <n-select v-model:value="form.category" :options="categoryOptions" clearable placeholder="请选择类目" :disabled="!!editingId" />
+          <span v-if="!!editingId" style="color: #999; font-size: 12px; margin-left: 8px;">类目不可修改</span>
+        </n-form-item>
         <n-form-item label="颜色"><n-input v-model:value="form.color" /></n-form-item>
-        <n-form-item label="单位"><n-input v-model:value="form.unit" /></n-form-item>
+        <n-form-item label="单位">
+          <n-select v-model:value="form.unit" :options="unitOptions" placeholder="请选择单位" />
+        </n-form-item>
         <n-form-item label="单件成本">
           <n-input-number v-model:value="form.unit_cost" :min="0" :precision="2" style="width: 100%;" />
         </n-form-item>
@@ -59,8 +69,6 @@
         </n-space>
       </template>
     </n-modal>
-
-    <input ref="imageInputRef" type="file" accept="image/*" style="display: none;" @change="onImageSelected" />
 
     <!-- Quick Stock-In Modal -->
     <n-modal v-model:show="showStockModal" preset="card" title="快速入库" style="width: 360px;">
@@ -79,6 +87,13 @@
         </n-space>
       </template>
     </n-modal>
+
+    <ImageUploadModal
+      v-model:show="showImageModal"
+      kind="part"
+      :entity-id="currentUploadItemId"
+      @uploaded="onImageUploaded"
+    />
   </div>
 </template>
 
@@ -87,13 +102,13 @@ import { ref, reactive, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
-  NSpace, NButton, NInput, NInputNumber, NForm, NFormItem,
+  NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
   NModal, NDataTable, NSpin, NEmpty, NDropdown, NImage,
 } from 'naive-ui'
 import { listParts, createPart, updatePart, deletePart } from '@/api/parts'
-import { uploadImageToOss } from '@/api/uploads'
 import { getStock, addStock } from '@/api/inventory'
 import { renderNamedImage } from '@/utils/ui'
+import ImageUploadModal from '../../components/ImageUploadModal.vue'
 
 const router = useRouter()
 const message = useMessage()
@@ -101,16 +116,32 @@ const message = useMessage()
 const loading = ref(true)
 const rows = ref([])
 const searchName = ref('')
-const searchCategory = ref('')
+const searchCategory = ref(null)
+
+const categoryOptions = [
+  { label: '吊坠', value: '吊坠' },
+  { label: '链条', value: '链条' },
+  { label: '小配件', value: '小配件' },
+]
+
+const unitOptions = [
+  { label: '个', value: '个' },
+  { label: '条', value: '条' },
+  { label: '米', value: '米' },
+  { label: 'g', value: 'g' },
+  { label: 'kg', value: 'kg' },
+]
 
 // Modal state
 const showModal = ref(false)
 const editingId = ref(null)
 const saving = ref(false)
-const uploadingImage = ref(false)
-const imageInputRef = ref(null)
 const formRef = ref(null)
-const form = reactive({ name: '', image: '', category: '', color: '', unit: '', unit_cost: null, plating_process: '' })
+const form = reactive({ name: '', image: '', category: null, color: '', unit: '个', unit_cost: null, plating_process: '' })
+
+// Image upload modal state
+const showImageModal = ref(false)
+const currentUploadItemId = ref(null)
 
 // Stock modal state
 const showStockModal = ref(false)
@@ -135,47 +166,37 @@ const load = async () => {
   }
 }
 
+const VALID_CATEGORIES = categoryOptions.map((o) => o.value)
+
 const openCreate = () => {
   editingId.value = null
-  Object.assign(form, { name: '', image: '', category: '', color: '', unit: '', unit_cost: null, plating_process: '' })
+  Object.assign(form, { name: '', image: '', category: null, color: '', unit: '个', unit_cost: null, plating_process: '' })
   showModal.value = true
 }
 
 const openEdit = (row) => {
   editingId.value = row.id
+  const cat = row.category && VALID_CATEGORIES.includes(row.category) ? row.category : null
   Object.assign(form, {
     name: row.name,
     image: row.image || '',
-    category: row.category || '',
+    category: cat,
     color: row.color || '',
-    unit: row.unit || '',
+    unit: row.unit || '个',
     unit_cost: row.unit_cost ?? null,
     plating_process: row.plating_process || '',
   })
   showModal.value = true
 }
 
-const triggerImageUpload = () => {
-  imageInputRef.value?.click()
+const openImageModal = (id) => {
+  currentUploadItemId.value = id
+  showImageModal.value = true
 }
 
-const onImageSelected = async (event) => {
-  const file = event.target.files?.[0]
-  event.target.value = ''
-  if (!file) return
-  uploadingImage.value = true
-  try {
-    form.image = await uploadImageToOss({
-      kind: 'part',
-      file,
-      entityId: editingId.value,
-    })
-    message.success('图片上传成功')
-  } catch (error) {
-    message.error(error.response?.data || error.message || '图片上传失败')
-  } finally {
-    uploadingImage.value = false
-  }
+const onImageUploaded = (url) => {
+  form.image = url
+  load()
 }
 
 const save = async () => {
@@ -183,7 +204,8 @@ const save = async () => {
   saving.value = true
   try {
     if (editingId.value) {
-      await updatePart(editingId.value, form)
+      const { category, ...updateData } = form
+      await updatePart(editingId.value, updateData)
     } else {
       await createPart(form)
     }

@@ -4,13 +4,29 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from models.jewelry import Jewelry
-from services._helpers import _next_id
+from services._helpers import _next_id_by_category
 
 _VALID_STATUSES = {"active", "inactive"}
 
+JEWELRY_CATEGORIES = {
+    "套装": "SP-SET",
+    "单件": "SP-PCS",
+    "单对": "SP-PAIR",
+}
+
+
+_JEWELRY_MODEL_FIELDS = {c.key for c in Jewelry.__table__.columns}
+
 
 def create_jewelry(db: Session, data: dict) -> Jewelry:
-    jewelry = Jewelry(id=_next_id(db, Jewelry, "SP"), **data)
+    category = data.get("category")
+    if category not in JEWELRY_CATEGORIES:
+        raise ValueError(
+            f"Invalid category '{category}'. Must be one of: {list(JEWELRY_CATEGORIES.keys())}"
+        )
+    prefix = JEWELRY_CATEGORIES[category]
+    model_data = {k: v for k, v in data.items() if k in _JEWELRY_MODEL_FIELDS}
+    jewelry = Jewelry(id=_next_id_by_category(db, Jewelry, prefix), **model_data)
     db.add(jewelry)
     db.flush()
     return jewelry
@@ -35,8 +51,16 @@ def update_jewelry(db: Session, jewelry_id: str, data: dict) -> Jewelry:
     jewelry = get_jewelry(db, jewelry_id)
     if jewelry is None:
         raise ValueError(f"Jewelry not found: {jewelry_id}")
+    # Category changes are disallowed because the jewelry ID encodes the category
+    # (e.g. SP-SET-00001 means 套装). Allowing a category change would make the
+    # ID misleading and break the ID-format contract.
+    if "category" in data:
+        raise ValueError(
+            "Category cannot be changed after creation — the jewelry ID encodes the category."
+        )
     for key, value in data.items():
-        setattr(jewelry, key, value)
+        if key in _JEWELRY_MODEL_FIELDS:
+            setattr(jewelry, key, value)
     db.flush()
     return jewelry
 

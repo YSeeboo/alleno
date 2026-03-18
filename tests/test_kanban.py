@@ -20,14 +20,14 @@ from services.plating import create_plating_order, send_plating_order
 
 @pytest.fixture
 def part(db):
-    p = create_part(db, {"name": "铜扣"})
+    p = create_part(db, {"name": "铜扣", "category": "小配件"})
     add_stock(db, "part", p.id, 200.0, "入库")
     return p
 
 
 @pytest.fixture
 def jewelry(db):
-    return create_jewelry(db, {"name": "铜项链", "category": "项链"})
+    return create_jewelry(db, {"name": "铜项链", "category": "单件"})
 
 
 @pytest.fixture

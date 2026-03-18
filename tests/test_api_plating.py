@@ -5,7 +5,7 @@ from services.inventory import add_stock
 
 
 def test_create_plating_order(client, db):
-    part = create_part(db, {"name": "P1"})
+    part = create_part(db, {"name": "P1", "category": "小配件"})
     db.commit()
 
     resp = client.post("/api/plating/", json={
@@ -23,7 +23,7 @@ def test_create_plating_order(client, db):
 
 
 def test_list_plating_orders(client, db):
-    part = create_part(db, {"name": "P2"})
+    part = create_part(db, {"name": "P2", "category": "小配件"})
     db.commit()
 
     client.post("/api/plating/", json={
@@ -42,7 +42,7 @@ def test_list_plating_orders(client, db):
 
 
 def test_list_plating_orders_filter_by_status(client, db):
-    part = create_part(db, {"name": "P3"})
+    part = create_part(db, {"name": "P3", "category": "小配件"})
     db.commit()
 
     client.post("/api/plating/", json={
@@ -62,7 +62,7 @@ def test_list_plating_orders_filter_by_status(client, db):
 
 
 def test_get_plating_order(client, db):
-    part = create_part(db, {"name": "P4"})
+    part = create_part(db, {"name": "P4", "category": "小配件"})
     db.commit()
 
     create_resp = client.post("/api/plating/", json={
@@ -82,7 +82,7 @@ def test_get_plating_order_not_found(client, db):
 
 
 def test_send_plating_order(client, db):
-    part = create_part(db, {"name": "P5"})
+    part = create_part(db, {"name": "P5", "category": "小配件"})
     add_stock(db, "part", part.id, 20.0, "initial stock")
     db.commit()
 
@@ -99,7 +99,7 @@ def test_send_plating_order(client, db):
 
 
 def test_send_plating_order_insufficient_stock(client, db):
-    part = create_part(db, {"name": "P6"})
+    part = create_part(db, {"name": "P6", "category": "小配件"})
     db.commit()
     # No stock added
 
@@ -119,7 +119,7 @@ def test_send_plating_order_not_found(client, db):
 
 
 def test_receive_plating_items(client, db):
-    part = create_part(db, {"name": "P7"})
+    part = create_part(db, {"name": "P7", "category": "小配件"})
     add_stock(db, "part", part.id, 50.0, "initial stock")
     db.commit()
 
@@ -153,7 +153,7 @@ def test_receive_plating_items(client, db):
 
 
 def test_receive_plating_items_completes_order(client, db):
-    part = create_part(db, {"name": "P8"})
+    part = create_part(db, {"name": "P8", "category": "小配件"})
     add_stock(db, "part", part.id, 50.0, "initial stock")
     db.commit()
 
@@ -192,7 +192,7 @@ def test_receive_plating_items_order_not_found(client, db):
 
 
 def test_receive_plating_items_over_receive(client, db):
-    part = create_part(db, {"name": "P_over"})
+    part = create_part(db, {"name": "P_over", "category": "小配件"})
     add_stock(db, "part", part.id, 50.0, "initial stock")
     db.commit()
 
@@ -223,7 +223,7 @@ def test_create_plating_order_empty_items(client, db):
 
 
 def test_create_plating_order_zero_qty(client, db):
-    part = create_part(db, {"name": "P_zero"})
+    part = create_part(db, {"name": "P_zero", "category": "小配件"})
     db.commit()
     resp = client.post("/api/plating/", json={
         "supplier_name": "Supplier Z",
@@ -233,7 +233,7 @@ def test_create_plating_order_zero_qty(client, db):
 
 
 def test_create_plating_order_negative_qty(client, db):
-    part = create_part(db, {"name": "P_neg"})
+    part = create_part(db, {"name": "P_neg", "category": "小配件"})
     db.commit()
     resp = client.post("/api/plating/", json={
         "supplier_name": "Supplier N",

@@ -7,12 +7,14 @@ class HandcraftPartIn(BaseModel):
     part_id: str
     qty: float = Field(gt=0)
     bom_qty: Optional[float] = None
+    unit: Optional[str] = "个"
     note: Optional[str] = None
 
 
 class HandcraftJewelryIn(BaseModel):
     jewelry_id: str
     qty: int = Field(gt=0)
+    unit: Optional[str] = "套"
     note: Optional[str] = None
 
 
@@ -41,6 +43,7 @@ class HandcraftJewelryItemResponse(BaseModel):
     qty: int
     received_qty: Optional[int] = None
     status: str
+    unit: Optional[str] = None
     note: Optional[str] = None
 
 
@@ -52,6 +55,7 @@ class HandcraftPartItemResponse(BaseModel):
     part_id: str
     qty: float
     bom_qty: Optional[float] = None
+    unit: Optional[str] = None
     note: Optional[str] = None
 
 
