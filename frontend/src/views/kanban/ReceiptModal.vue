@@ -65,6 +65,7 @@
                 placeholder="搜索编号..."
                 style="flex: 1; min-width: 0;"
                 @search="(q) => handleItemSearch(q, index)"
+                @focus="() => { if (!row.options.length && !row.selectorValue) handleItemSearch('', index) }"
               />
               <n-input-number
                 v-model:value="row.qty"
@@ -286,7 +287,9 @@ const handleClose = () => {
 watch(
   () => props.show,
   (val) => {
-    if (!val) {
+    if (val) {
+      handleVendorSearch('')
+    } else {
       _vendorSearchVersion++
       detailRows.value = [createRow()]
       form.vendor_name = null
