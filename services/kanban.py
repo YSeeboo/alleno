@@ -247,6 +247,70 @@ def _received_for_vendor(db: Session, vendor_name: str, order_type: str) -> dict
     return {(r.item_id, r.item_type): float(r.qty) for r in rows}
 
 
+def _validate_order_ownership(
+    db: Session, order_id: str, order_type: str, vendor_name: str
+) -> None:
+    """Raise ValueError if order_id doesn't exist or doesn't belong to vendor_name."""
+    if order_type == "plating":
+        order = db.query(PlatingOrder).filter(PlatingOrder.id == order_id).first()
+    else:
+        order = db.query(HandcraftOrder).filter(HandcraftOrder.id == order_id).first()
+    if order is None:
+        raise ValueError(f"订单 {order_id} 不存在")
+    if order.supplier_name != vendor_name:
+        raise ValueError(f"订单 {order_id} 不属于厂家 {vendor_name}")
+
+
+def _dispatched_for_order(db: Session, order_id: str, order_type: str) -> dict[tuple, float]:
+    """(item_id, item_type) → dispatched qty for a specific order."""
+    result: dict[tuple, float] = {}
+    if order_type == "plating":
+        rows = (
+            db.query(PlatingOrderItem.part_id, func.sum(PlatingOrderItem.qty).label("qty"))
+            .filter(PlatingOrderItem.plating_order_id == order_id)
+            .group_by(PlatingOrderItem.part_id)
+            .all()
+        )
+        for r in rows:
+            result[(r.part_id, "part")] = float(r.qty)
+    elif order_type == "handcraft":
+        rows = (
+            db.query(HandcraftPartItem.part_id, func.sum(HandcraftPartItem.qty).label("qty"))
+            .filter(HandcraftPartItem.handcraft_order_id == order_id)
+            .group_by(HandcraftPartItem.part_id)
+            .all()
+        )
+        for r in rows:
+            result[(r.part_id, "part")] = float(r.qty)
+    return result
+
+
+def _received_for_order(db: Session, order_id: str, order_type: str) -> dict[tuple, float]:
+    """(item_id, item_type) → received qty for a specific order from vendor_receipt."""
+    rows = (
+        db.query(
+            VendorReceipt.item_id,
+            VendorReceipt.item_type,
+            func.sum(VendorReceipt.qty).label("qty"),
+        )
+        .filter(VendorReceipt.order_id == order_id, VendorReceipt.order_type == order_type)
+        .group_by(VendorReceipt.item_id, VendorReceipt.item_type)
+        .all()
+    )
+    return {(r.item_id, r.item_type): float(r.qty) for r in rows}
+
+
+def _expected_jewelry_for_order(db: Session, order_id: str) -> dict[str, float]:
+    """jewelry_id → expected return qty for a specific handcraft order."""
+    rows = (
+        db.query(HandcraftJewelryItem.jewelry_id, func.sum(HandcraftJewelryItem.qty).label("qty"))
+        .filter(HandcraftJewelryItem.handcraft_order_id == order_id)
+        .group_by(HandcraftJewelryItem.jewelry_id)
+        .all()
+    )
+    return {jid: float(qty) for jid, qty in rows}
+
+
 def _expected_jewelry_for_vendor(db: Session, vendor_name: str) -> dict[str, float]:
     """jewelry_id → expected return qty, *processing orders only*.
 
@@ -581,11 +645,14 @@ def record_vendor_receipt(
     items: list[ReceiptItemIn],
     note: str | None = None,
 ) -> tuple[list[VendorReceipt], list[str]]:
-    # Pre-compute caps once
-    dispatched_map = _dispatched_for_vendor(db, vendor_name, order_type)
-    received_map = _received_for_vendor(db, vendor_name, order_type)
+    # Validate order exists and belongs to this vendor
+    _validate_order_ownership(db, order_id, order_type, vendor_name)
+
+    # Pre-compute caps scoped to this specific order
+    dispatched_map = _dispatched_for_order(db, order_id, order_type)
+    received_map = _received_for_order(db, order_id, order_type)
     expected_jewelry_map = (
-        _expected_jewelry_for_vendor(db, vendor_name) if order_type == "handcraft" else {}
+        _expected_jewelry_for_order(db, order_id) if order_type == "handcraft" else {}
     )
 
     warnings: list[str] = []
@@ -608,6 +675,9 @@ def record_vendor_receipt(
             cap = expected_jewelry_map.get(item.item_id, 0.0)
         else:
             cap = dispatched_map.get(key, 0.0)
+
+        if cap == 0.0:
+            raise ValueError(f"{item.item_id} 不属于订单 {order_id} 或未发出")
 
         remaining = cap - total_so_far
         if item.qty > remaining:

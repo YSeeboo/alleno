@@ -36,7 +36,7 @@ const themeOverrides = {
     itemTextColorActiveHover: '#4F46E5',
     itemTextColorHover: '#E2E8F0',
     itemTextColorChildActive: '#6366F1',
-    itemIconColor: '#64748B',
+    itemIconColor: '#F2F5F9',
     itemIconColorActive: '#6366F1',
     itemIconColorHover: '#E2E8F0',
     itemIconColorChildActive: '#6366F1',

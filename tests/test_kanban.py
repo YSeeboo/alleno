@@ -268,3 +268,52 @@ def test_handcraft_autocomplete_accumulates_across_calls(db, handcraft_vendor):
     db.refresh(order)
     assert order.status == "completed"
     assert order.completed_at is not None
+
+
+# ──────────────────────────────────────────────────────────────
+# Service-layer: order ownership and item membership validation
+# ──────────────────────────────────────────────────────────────
+
+def test_cross_vendor_rejection(db, part):
+    """Receipt for a real order_id but wrong vendor_name must raise ValueError."""
+    order = create_plating_order(db, "电镀厂A", [
+        {"part_id": part.id, "qty": 10, "plating_method": "金色"},
+    ])
+    send_plating_order(db, order.id)
+
+    with pytest.raises(ValueError, match="不属于厂家"):
+        record_vendor_receipt(db, "电镀厂B", "plating", order.id, [
+            ReceiptItemIn(item_id=part.id, item_type="part", qty=5),
+        ])
+
+
+def test_nonexistent_order_rejection(db, part):
+    """Receipt for an order_id that does not exist must raise ValueError."""
+    with pytest.raises(ValueError, match="不存在"):
+        record_vendor_receipt(db, "电镀厂A", "plating", "EP-9999", [
+            ReceiptItemIn(item_id=part.id, item_type="part", qty=5),
+        ])
+
+
+def test_cross_order_item_rejection(db, part):
+    """Receipt for a part that belongs to a different order must raise ValueError."""
+    order_a = create_plating_order(db, "电镀厂A", [
+        {"part_id": part.id, "qty": 10, "plating_method": "金色"},
+    ])
+    send_plating_order(db, order_a.id)
+
+    # Create a second order; its part list is empty for part2, but we attempt to
+    # book part (from order_a) against order_b → must be rejected.
+    from services.part import create_part
+    from services.inventory import add_stock as _add
+    part2 = create_part(db, {"name": "银扣"})
+    _add(db, "part", part2.id, 50.0, "入库")
+    order_b = create_plating_order(db, "电镀厂A", [
+        {"part_id": part2.id, "qty": 8, "plating_method": "银色"},
+    ])
+    send_plating_order(db, order_b.id)
+
+    with pytest.raises(ValueError, match="不属于订单"):
+        record_vendor_receipt(db, "电镀厂A", "plating", order_b.id, [
+            ReceiptItemIn(item_id=part.id, item_type="part", qty=5),  # part belongs to order_a
+        ])

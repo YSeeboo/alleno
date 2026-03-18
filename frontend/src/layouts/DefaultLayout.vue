@@ -52,7 +52,19 @@ const collapsed = ref(false)
 
 const icon = (Comp) => () => h(Comp)
 
-const menuOptions = [
+const flatItems = [
+  { label: '进度看板', key: 'kanban', icon: icon(GridOutline) },
+  { label: '仪表盘', key: 'dashboard', icon: icon(HomeOutline) },
+  { label: '配件管理', key: 'parts', icon: icon(ExtensionPuzzleOutline) },
+  { label: '饰品管理', key: 'jewelries', icon: icon(DiamondOutline) },
+  { label: '订单管理', key: 'orders', icon: icon(ReceiptOutline) },
+  { label: '电镀单', key: 'plating', icon: icon(ColorWandOutline) },
+  { label: '手工单', key: 'handcraft', icon: icon(HammerOutline) },
+  { label: '库存总表', key: 'inventory', icon: icon(ArchiveOutline) },
+  { label: '库存流水', key: 'inventory-log', icon: icon(ListOutline) },
+]
+
+const groupedItems = [
   {
     type: 'group',
     label: '工作台',
@@ -91,6 +103,8 @@ const menuOptions = [
     ],
   },
 ]
+
+const menuOptions = computed(() => collapsed.value ? flatItems : groupedItems)
 
 const activeKey = computed(() => {
   const seg = route.path.split('/')[1]
@@ -145,5 +159,18 @@ const handleSelect = (key) => {
 
 :deep(.n-menu-item-content) {
   height: 36px !important;
+}
+
+</style>
+
+<style>
+.n-layout-sider .n-menu-item-content__icon {
+  color: rgb(242, 245, 249) !important;
+}
+.n-layout-sider .n-menu-item-content--selected .n-menu-item-content__icon {
+  color: #6366F1 !important;
+}
+.n-layout-sider .n-menu-item-content:hover .n-menu-item-content__icon {
+  color: #FFFFFF !important;
 }
 </style>
