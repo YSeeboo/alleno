@@ -31,7 +31,7 @@
             </span>
           </div>
           <div v-if="row.status !== 'pending_dispatch'" class="card-meta">
-            {{ card.order_type === 'plating' ? '配件种类' : '待收回种类' }}：{{ card.part_count ?? '-' }} 种
+            {{ getCardMetaLabel(row.status, card.order_type) }}：{{ card.part_count ?? '-' }} 种
           </div>
         </div>
       </div>
@@ -88,6 +88,16 @@ const kanbanRows = reactive([
   { status: 'pending_return',   label: '待收回', color: '#6366F1', cards: [], page: 1, hasMore: true, loading: false },
   { status: 'returned',         label: '已收回', color: '#10B981', cards: [], page: 1, hasMore: true, loading: false },
 ])
+
+const getCardMetaLabel = (rowStatus, orderType) => {
+  if (rowStatus === 'pending_return') {
+    return orderType === 'plating' ? '未收回配件种类' : '未收回种类'
+  }
+  if (rowStatus === 'returned') {
+    return orderType === 'plating' ? '已完成配件种类' : '已完成种类'
+  }
+  return orderType === 'plating' ? '配件种类' : '种类'
+}
 
 const loadMore = async (row, version = _filterVersion) => {
   if (row.loading || !row.hasMore) return

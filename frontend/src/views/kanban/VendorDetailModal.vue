@@ -39,7 +39,7 @@
 <script setup>
 import { ref, reactive, computed, watch, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { NModal, NCard, NButton, NIcon, NSpin, NDataTable, NTag, NDropdown, useDialog } from 'naive-ui'
+import { NModal, NCard, NButton, NIcon, NSpin, NDataTable, NTag, NDropdown, useDialog, useMessage } from 'naive-ui'
 import { CloseOutline } from '@vicons/ionicons5'
 import { getVendorDetail, changeOrderStatus } from '@/api/kanban'
 
@@ -56,6 +56,7 @@ const visible = computed({
 
 const router = useRouter()
 const dialog = useDialog()
+const message = useMessage()
 const loading = ref(false)
 const detail = reactive({ items: [], orders: [] })
 
@@ -81,15 +82,19 @@ const handleOrderStatusChange = (row, newStatus) => {
     positiveText: '确认',
     negativeText: '取消',
     onPositiveClick: async () => {
+      const loadingMsg = message.loading('正在更新状态...', { duration: 0 })
       try {
         await changeOrderStatus({
           order_id: row.order_id,
           order_type: row.order_type,
           new_status: newStatus,
         })
+        loadingMsg.destroy()
+        message.success(`订单状态已更新为${newLabel}`)
         await fetchDetail()
         emit('refresh')
       } catch (_) {
+        loadingMsg.destroy()
         // errors shown by axios interceptor
       }
     },

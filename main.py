@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import models  # noqa: F401 — ensures all models are registered with Base.metadata
-from database import Base, engine
+from database import Base, engine, ensure_schema_compat
 
 from api.bom import router as bom_router
 from api.parts import router as parts_router
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     try:
         Base.metadata.create_all(bind=engine)
+        ensure_schema_compat()
     except Exception as e:
         logger.warning("DB init skipped: %s", e)
     yield

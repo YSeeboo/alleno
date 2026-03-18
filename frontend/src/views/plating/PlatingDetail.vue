@@ -29,6 +29,55 @@
           <n-descriptions-item label="创建时间">{{ fmt(order.created_at) }}</n-descriptions-item>
           <n-descriptions-item label="完成时间">{{ order.completed_at ? fmt(order.completed_at) : '-' }}</n-descriptions-item>
           <n-descriptions-item label="备注">{{ order.note || '-' }}</n-descriptions-item>
+          <n-descriptions-item label="发货图片" :span="2">
+            <div class="delivery-images-block">
+              <div v-if="deliveryImages.length > 0" class="delivery-images-grid">
+                <div
+                  v-for="(image, index) in deliveryImages"
+                  :key="`${image}-${index}`"
+                  class="delivery-image-card"
+                >
+                  <n-image
+                    :src="image"
+                    alt="发货图片"
+                    :width="88"
+                    :height="88"
+                    object-fit="cover"
+                    class="delivery-image-preview"
+                  />
+                  <n-button
+                    class="delivery-image-delete"
+                    size="tiny"
+                    type="error"
+                    circle
+                    :disabled="deliveryImagesSaving"
+                    @click="removeDeliveryImage(index)"
+                  >
+                    ×
+                  </n-button>
+                </div>
+                <button
+                  v-if="canAddDeliveryImage"
+                  class="delivery-image-add"
+                  :disabled="deliveryImagesSaving"
+                  @click="openDeliveryImageModal"
+                >
+                  +
+                </button>
+              </div>
+              <button
+                v-else
+                class="delivery-image-add"
+                :disabled="deliveryImagesSaving"
+                @click="openDeliveryImageModal"
+              >
+                +
+              </button>
+              <div class="delivery-images-meta">
+                {{ deliveryImages.length }}/4 张
+              </div>
+            </div>
+          </n-descriptions-item>
         </n-descriptions>
         <n-space style="margin-top: 12px;">
           <n-button v-if="order.status === 'pending'" type="primary" :loading="sending" @click="doSend">
@@ -92,9 +141,6 @@
         <n-form-item label="电镀方式">
           <n-select v-model:value="editForm.plating_method" :options="platingMethodOptions" />
         </n-form-item>
-        <n-form-item label="备注">
-          <n-input v-model:value="editForm.note" placeholder="备注（可选）" />
-        </n-form-item>
       </n-form>
       <template #footer>
         <n-space justify="end">
@@ -103,25 +149,35 @@
         </n-space>
       </template>
     </n-modal>
+
+    <ImageUploadModal
+      v-model:show="showDeliveryImageModal"
+      kind="plating"
+      :entity-id="order?.id"
+      suppress-success
+      @uploaded="handleDeliveryImageUploaded"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, h } from 'vue'
+import { ref, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
-  NSelect, NInputNumber, NInput, NPopselect, NTooltip,
+  NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon, NImage,
 } from 'naive-ui'
+import { CreateOutline } from '@vicons/ionicons5'
 import {
   getPlating, getPlatingItems, sendPlating,
-  addPlatingItem, updatePlatingItem, deletePlatingItem,
+  addPlatingItem, updatePlatingItem, deletePlatingItem, updatePlatingDeliveryImages,
 } from '@/api/plating'
 import { changeOrderStatus } from '@/api/kanban'
 import { listParts } from '@/api/parts'
 import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
+import ImageUploadModal from '@/components/ImageUploadModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -134,9 +190,13 @@ const order = ref(null)
 const items = ref([])
 const partMap = ref({})
 const partOptions = ref([])
+const showDeliveryImageModal = ref(false)
+const deliveryImagesSaving = ref(false)
 
 const statusType = { pending: 'default', processing: 'info', completed: 'success' }
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
+const deliveryImages = computed(() => order.value?.delivery_images || [])
+const canAddDeliveryImage = computed(() => deliveryImages.value.length < 4)
 const statusOptions = computed(() => {
   if (!order.value) return []
   const s = order.value.status
@@ -173,7 +233,11 @@ const addForm = ref({ part_id: null, qty: 1, unit: '个', plating_method: '金',
 // Edit Item Modal
 const editModalVisible = ref(false)
 const editSubmitting = ref(false)
-const editForm = ref({ id: null, qty: 1, unit: '个', plating_method: '金', note: '' })
+const editForm = ref({ id: null, qty: 1, unit: '个', plating_method: '金' })
+const editingNoteItemId = ref(null)
+const editingNoteValue = ref('')
+const savingNoteItemId = ref(null)
+const noteInputRef = ref(null)
 
 const loadData = async () => {
   const id = route.params.id
@@ -184,6 +248,9 @@ const loadData = async () => {
     part_name: partMap.value[i.part_id]?.name || i.part_id,
     part_image: partMap.value[i.part_id]?.image || '',
   }))
+  if (!isPending()) {
+    stopEditNote()
+  }
 }
 
 const doSend = async () => {
@@ -206,11 +273,14 @@ const doChangeStatus = (newStatus) => {
     positiveText: '确认',
     negativeText: '取消',
     onPositiveClick: async () => {
+      const loadingMsg = message.loading('正在更新状态...', { duration: 0 })
       try {
         await changeOrderStatus({ order_id: order.value.id, order_type: 'plating', new_status: newStatus })
-        message.success('状态已更新')
+        loadingMsg.destroy()
+        message.success(`状态已更新为${newLabel}`)
         await loadData()
       } catch (_) {
+        loadingMsg.destroy()
         // errors shown by axios interceptor
         await loadData()
       }
@@ -252,7 +322,6 @@ const openEditModal = (row) => {
     qty: row.qty,
     unit: row.unit || '个',
     plating_method: row.plating_method || '金',
-    note: row.note || '',
   }
   editModalVisible.value = true
 }
@@ -289,6 +358,153 @@ const doDeleteItem = (row) => {
 }
 
 const isPending = () => order.value?.status === 'pending'
+const normalizeNote = (value) => (value || '').trim()
+
+const persistDeliveryImages = async (nextImages, successText) => {
+  if (!order.value) return
+  deliveryImagesSaving.value = true
+  try {
+    const { data } = await updatePlatingDeliveryImages(order.value.id, nextImages)
+    order.value = data
+    message.success(successText)
+  } finally {
+    deliveryImagesSaving.value = false
+  }
+}
+
+const openDeliveryImageModal = () => {
+  if (!canAddDeliveryImage.value) {
+    message.warning('发货图片最多上传 4 张')
+    return
+  }
+  showDeliveryImageModal.value = true
+}
+
+const handleDeliveryImageUploaded = async (url) => {
+  if (!url) return
+  if (!canAddDeliveryImage.value) {
+    message.warning('发货图片最多上传 4 张')
+    return
+  }
+  await persistDeliveryImages([...deliveryImages.value, url], '发货图片已上传')
+}
+
+const removeDeliveryImage = (index) => {
+  if (!order.value) return
+  dialog.warning({
+    title: '确认删除图片',
+    content: '删除后不可恢复，确认继续吗？',
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      const nextImages = deliveryImages.value.filter((_, currentIndex) => currentIndex !== index)
+      await persistDeliveryImages(nextImages, '发货图片已删除')
+    },
+  })
+}
+
+const focusEditingNoteInput = () => {
+  nextTick(() => {
+    noteInputRef.value?.focus?.()
+  })
+}
+
+const startEditNote = (row) => {
+  if (!isPending()) return
+  editingNoteItemId.value = row.id
+  editingNoteValue.value = row.note || ''
+  focusEditingNoteInput()
+}
+
+const stopEditNote = () => {
+  editingNoteItemId.value = null
+  editingNoteValue.value = ''
+}
+
+const saveNote = async (row) => {
+  if (editingNoteItemId.value !== row.id || savingNoteItemId.value === row.id) return
+
+  const nextNote = normalizeNote(editingNoteValue.value)
+  const currentNote = normalizeNote(row.note)
+  if (nextNote === currentNote) {
+    stopEditNote()
+    return
+  }
+
+  savingNoteItemId.value = row.id
+  try {
+    const { data } = await updatePlatingItem(route.params.id, row.id, { note: nextNote })
+    row.note = data.note || ''
+    message.success(nextNote ? '备注已保存' : '备注已清空')
+    stopEditNote()
+  } finally {
+    savingNoteItemId.value = null
+  }
+}
+
+const onNoteInputKeydown = (event, row) => {
+  if (event.key !== 'Enter') return
+  if (event.isComposing || event.keyCode === 229) return
+  event.preventDefault()
+  void saveNote(row)
+}
+
+const renderNoteCell = (row) => {
+  const isEditing = editingNoteItemId.value === row.id
+  const isSaving = savingNoteItemId.value === row.id
+  const noteText = row.note || ''
+
+  if (isEditing) {
+    return h(NInput, {
+      ref: noteInputRef,
+      value: editingNoteValue.value,
+      size: 'small',
+      placeholder: '输入备注后按回车或点击空白处保存',
+      disabled: isSaving,
+      autofocus: true,
+      'onUpdate:value': (value) => { editingNoteValue.value = value },
+      onBlur: () => { void saveNote(row) },
+      onKeydown: (event) => onNoteInputKeydown(event, row),
+    })
+  }
+
+  if (!noteText) {
+    if (!isPending()) {
+      return h('span', { style: 'color: #999;' }, '-')
+    }
+    return h(
+      NButton,
+      {
+        text: true,
+        type: 'primary',
+        size: 'small',
+        onClick: () => startEditNote(row),
+      },
+      {
+        icon: () => h(NIcon, null, { default: () => h(CreateOutline) }),
+        default: () => '添加备注',
+      },
+    )
+  }
+
+  return h(
+    'span',
+    {
+      title: noteText,
+      style: [
+        'display: inline-block',
+        'max-width: 220px',
+        'overflow: hidden',
+        'text-overflow: ellipsis',
+        'white-space: nowrap',
+        'vertical-align: bottom',
+        isPending() ? 'cursor: pointer; color: #2080f0;' : '',
+      ].join('; '),
+      onClick: isPending() ? () => startEditNote(row) : undefined,
+    },
+    noteText,
+  )
+}
 
 const itemColumns = [
   { title: '配件编号', key: 'part_id', width: 110 },
@@ -305,6 +521,12 @@ const itemColumns = [
     title: '状态',
     key: 'item_status',
     render: (r) => h('span', r.status),
+  },
+  {
+    title: '备注',
+    key: 'note',
+    minWidth: 240,
+    render: (row) => renderNoteCell(row),
   },
   {
     title: '操作',
@@ -371,3 +593,59 @@ onMounted(async () => {
   }
 })
 </script>
+
+<style scoped>
+.delivery-images-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.delivery-images-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.delivery-image-card {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid #eadbc1;
+  background: linear-gradient(180deg, #fffdf7, #f7f0e1);
+}
+
+.delivery-image-preview {
+  display: block;
+}
+
+.delivery-image-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+.delivery-image-add {
+  width: 88px;
+  height: 88px;
+  border: 1px dashed #d6b98d;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fffaf0, #f6eedc);
+  color: #8a5a17;
+  font-size: 30px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.delivery-image-add:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.delivery-images-meta {
+  color: #8a6b39;
+  font-size: 12px;
+}
+</style>

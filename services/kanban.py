@@ -197,6 +197,157 @@ def _pending_part_counts(db: Session, order_type: str | None) -> dict[tuple, int
     return counts
 
 
+def _processing_outstanding_counts(db: Session, order_type: str | None) -> dict[tuple, int]:
+    counts: dict[tuple, int] = {}
+    outstanding_items: dict[tuple, set[tuple]] = defaultdict(set)
+
+    if order_type is None or order_type == "plating":
+        dispatched_rows = (
+            db.query(
+                PlatingOrder.supplier_name,
+                PlatingOrderItem.part_id,
+                func.sum(PlatingOrderItem.qty).label("qty"),
+            )
+            .join(PlatingOrderItem, PlatingOrder.id == PlatingOrderItem.plating_order_id)
+            .filter(PlatingOrder.status == "processing")
+            .group_by(PlatingOrder.supplier_name, PlatingOrderItem.part_id)
+            .all()
+        )
+        received_rows = (
+            db.query(
+                PlatingOrder.supplier_name,
+                VendorReceipt.item_id,
+                func.sum(VendorReceipt.qty).label("qty"),
+            )
+            .join(PlatingOrder, PlatingOrder.id == VendorReceipt.order_id)
+            .filter(
+                VendorReceipt.order_type == "plating",
+                VendorReceipt.item_type == "part",
+                PlatingOrder.status == "processing",
+            )
+            .group_by(PlatingOrder.supplier_name, VendorReceipt.item_id)
+            .all()
+        )
+        received_map = {
+            (row.supplier_name, row.item_id, "part"): float(row.qty)
+            for row in received_rows
+        }
+        for row in dispatched_rows:
+            item_key = (row.supplier_name, row.part_id, "part")
+            if float(row.qty) > received_map.get(item_key, 0.0):
+                outstanding_items[(row.supplier_name, "plating")].add((row.part_id, "part"))
+
+    if order_type is None or order_type == "handcraft":
+        part_rows = (
+            db.query(
+                HandcraftOrder.supplier_name,
+                HandcraftPartItem.part_id,
+                func.sum(HandcraftPartItem.qty).label("qty"),
+            )
+            .join(HandcraftPartItem, HandcraftOrder.id == HandcraftPartItem.handcraft_order_id)
+            .filter(HandcraftOrder.status == "processing")
+            .group_by(HandcraftOrder.supplier_name, HandcraftPartItem.part_id)
+            .all()
+        )
+        jewelry_rows = (
+            db.query(
+                HandcraftOrder.supplier_name,
+                HandcraftJewelryItem.jewelry_id,
+                func.sum(HandcraftJewelryItem.qty).label("qty"),
+            )
+            .join(HandcraftJewelryItem, HandcraftOrder.id == HandcraftJewelryItem.handcraft_order_id)
+            .filter(HandcraftOrder.status == "processing")
+            .group_by(HandcraftOrder.supplier_name, HandcraftJewelryItem.jewelry_id)
+            .all()
+        )
+        received_rows = (
+            db.query(
+                HandcraftOrder.supplier_name,
+                VendorReceipt.item_id,
+                VendorReceipt.item_type,
+                func.sum(VendorReceipt.qty).label("qty"),
+            )
+            .join(HandcraftOrder, HandcraftOrder.id == VendorReceipt.order_id)
+            .filter(
+                VendorReceipt.order_type == "handcraft",
+                HandcraftOrder.status == "processing",
+            )
+            .group_by(
+                HandcraftOrder.supplier_name,
+                VendorReceipt.item_id,
+                VendorReceipt.item_type,
+            )
+            .all()
+        )
+        received_map = {
+            (row.supplier_name, row.item_id, row.item_type): float(row.qty)
+            for row in received_rows
+        }
+        for row in part_rows:
+            item_key = (row.supplier_name, row.part_id, "part")
+            if float(row.qty) > received_map.get(item_key, 0.0):
+                outstanding_items[(row.supplier_name, "handcraft")].add((row.part_id, "part"))
+        for row in jewelry_rows:
+            item_key = (row.supplier_name, row.jewelry_id, "jewelry")
+            if float(row.qty) > received_map.get(item_key, 0.0):
+                outstanding_items[(row.supplier_name, "handcraft")].add((row.jewelry_id, "jewelry"))
+
+    for key, items in outstanding_items.items():
+        counts[key] = len(items)
+
+    return counts
+
+
+def _completed_item_counts(db: Session, order_type: str | None) -> dict[tuple, int]:
+    counts: dict[tuple, int] = {}
+    completed_items: dict[tuple, set[tuple]] = defaultdict(set)
+
+    if order_type is None or order_type == "plating":
+        rows = (
+            db.query(
+                PlatingOrder.supplier_name,
+                PlatingOrderItem.part_id,
+            )
+            .join(PlatingOrderItem, PlatingOrder.id == PlatingOrderItem.plating_order_id)
+            .filter(PlatingOrder.status == "completed")
+            .group_by(PlatingOrder.supplier_name, PlatingOrderItem.part_id)
+            .all()
+        )
+        for row in rows:
+            completed_items[(row.supplier_name, "plating")].add((row.part_id, "part"))
+
+    if order_type is None or order_type == "handcraft":
+        part_rows = (
+            db.query(
+                HandcraftOrder.supplier_name,
+                HandcraftPartItem.part_id,
+            )
+            .join(HandcraftPartItem, HandcraftOrder.id == HandcraftPartItem.handcraft_order_id)
+            .filter(HandcraftOrder.status == "completed")
+            .group_by(HandcraftOrder.supplier_name, HandcraftPartItem.part_id)
+            .all()
+        )
+        jewelry_rows = (
+            db.query(
+                HandcraftOrder.supplier_name,
+                HandcraftJewelryItem.jewelry_id,
+            )
+            .join(HandcraftJewelryItem, HandcraftOrder.id == HandcraftJewelryItem.handcraft_order_id)
+            .filter(HandcraftOrder.status == "completed")
+            .group_by(HandcraftOrder.supplier_name, HandcraftJewelryItem.jewelry_id)
+            .all()
+        )
+        for row in part_rows:
+            completed_items[(row.supplier_name, "handcraft")].add((row.part_id, "part"))
+        for row in jewelry_rows:
+            completed_items[(row.supplier_name, "handcraft")].add((row.jewelry_id, "jewelry"))
+
+    for key, items in completed_items.items():
+        counts[key] = len(items)
+
+    return counts
+
+
 def _dispatched_for_vendor(db: Session, vendor_name: str, order_type: str) -> dict[tuple, float]:
     """(item_id, 'part') → dispatched qty for a specific vendor."""
     result: dict[tuple, float] = {}
@@ -300,6 +451,55 @@ def _received_for_order(db: Session, order_id: str, order_type: str) -> dict[tup
     return {(r.item_id, r.item_type): float(r.qty) for r in rows}
 
 
+def _sync_plating_item_receipts(db: Session, order_id: str) -> None:
+    received_rows = (
+        db.query(VendorReceipt.item_id, func.sum(VendorReceipt.qty).label("qty"))
+        .filter(
+            VendorReceipt.order_id == order_id,
+            VendorReceipt.order_type == "plating",
+            VendorReceipt.item_type == "part",
+        )
+        .group_by(VendorReceipt.item_id)
+        .all()
+    )
+    received_by_part = {row.item_id: float(row.qty) for row in received_rows}
+
+    items = (
+        db.query(PlatingOrderItem)
+        .filter(PlatingOrderItem.plating_order_id == order_id)
+        .order_by(PlatingOrderItem.id.asc())
+        .all()
+    )
+    for item in items:
+        remaining = received_by_part.get(item.part_id, 0.0)
+        applied = min(float(item.qty), max(remaining, 0.0))
+        item.received_qty = applied
+        item.status = "已收回" if applied >= float(item.qty) else "电镀中"
+        received_by_part[item.part_id] = max(0.0, remaining - applied)
+
+
+def _set_plating_items_pending(db: Session, order_id: str) -> None:
+    items = (
+        db.query(PlatingOrderItem)
+        .filter(PlatingOrderItem.plating_order_id == order_id)
+        .all()
+    )
+    for item in items:
+        item.received_qty = 0
+        item.status = "未送出"
+
+
+def _set_plating_items_processing(db: Session, order_id: str) -> None:
+    items = (
+        db.query(PlatingOrderItem)
+        .filter(PlatingOrderItem.plating_order_id == order_id)
+        .all()
+    )
+    for item in items:
+        item.received_qty = 0
+        item.status = "电镀中"
+
+
 def _expected_jewelry_for_order(db: Session, order_id: str) -> dict[str, float]:
     """jewelry_id → expected return qty for a specific handcraft order."""
     rows = (
@@ -309,6 +509,55 @@ def _expected_jewelry_for_order(db: Session, order_id: str) -> dict[str, float]:
         .all()
     )
     return {jid: float(qty) for jid, qty in rows}
+
+
+def _sync_handcraft_jewelry_receipts(db: Session, order_id: str) -> None:
+    received_rows = (
+        db.query(VendorReceipt.item_id, func.sum(VendorReceipt.qty).label("qty"))
+        .filter(
+            VendorReceipt.order_id == order_id,
+            VendorReceipt.order_type == "handcraft",
+            VendorReceipt.item_type == "jewelry",
+        )
+        .group_by(VendorReceipt.item_id)
+        .all()
+    )
+    received_by_jewelry = {row.item_id: float(row.qty) for row in received_rows}
+
+    items = (
+        db.query(HandcraftJewelryItem)
+        .filter(HandcraftJewelryItem.handcraft_order_id == order_id)
+        .order_by(HandcraftJewelryItem.id.asc())
+        .all()
+    )
+    for item in items:
+        remaining = received_by_jewelry.get(item.jewelry_id, 0.0)
+        applied = min(float(item.qty), max(remaining, 0.0))
+        item.received_qty = int(applied)
+        item.status = "已收回" if applied >= float(item.qty) else "制作中"
+        received_by_jewelry[item.jewelry_id] = max(0.0, remaining - applied)
+
+
+def _set_handcraft_jewelry_pending(db: Session, order_id: str) -> None:
+    items = (
+        db.query(HandcraftJewelryItem)
+        .filter(HandcraftJewelryItem.handcraft_order_id == order_id)
+        .all()
+    )
+    for item in items:
+        item.received_qty = 0
+        item.status = "未送出"
+
+
+def _set_handcraft_jewelry_processing(db: Session, order_id: str) -> None:
+    items = (
+        db.query(HandcraftJewelryItem)
+        .filter(HandcraftJewelryItem.handcraft_order_id == order_id)
+        .all()
+    )
+    for item in items:
+        item.received_qty = 0
+        item.status = "制作中"
 
 
 def _expected_jewelry_for_vendor(db: Session, vendor_name: str) -> dict[str, float]:
@@ -447,33 +696,25 @@ def get_kanban(
     page_size: int = 20,
 ) -> KanbanResponse:
     all_vnd = _all_vendors(db, order_type)
-    dispatched = _dispatched_global(db, order_type)
-    received = _received_global(db, order_type)
     pend_set = _pending_vendors(db, order_type)
     pend_counts = _pending_part_counts(db, order_type)
-
-    # Group dispatched / received by (vendor_name, order_type)
-    vnd_dispatched: dict[tuple, dict] = defaultdict(dict)
-    for (vn, ot, item_id, item_type), qty in dispatched.items():
-        vnd_dispatched[(vn, ot)][(item_id, item_type)] = qty
-
-    vnd_received: dict[tuple, dict] = defaultdict(dict)
-    for (vn, ot, item_id, item_type), qty in received.items():
-        vnd_received[(vn, ot)][(item_id, item_type)] = qty
+    processing_outstanding_counts = _processing_outstanding_counts(db, order_type)
+    completed_counts = _completed_item_counts(db, order_type)
 
     pending_dispatch_list: list[tuple] = []
     pending_return_list: list[tuple] = []
     returned_list: list[tuple] = []
 
-    all_keys = set(all_vnd.keys()) | pend_set
+    all_keys = (
+        set(all_vnd.keys())
+        | pend_set
+        | set(processing_outstanding_counts.keys())
+        | set(completed_counts.keys())
+    )
 
     for key in all_keys:
         vn, ot = key
         earliest = all_vnd.get(key, now_beijing())
-
-        d_items = vnd_dispatched.get(key, {})
-        r_items = vnd_received.get(key, {})
-        total_dispatched = sum(d_items.values())
 
         # 待发出：有 pending 订单
         if key in pend_set:
@@ -482,34 +723,33 @@ def get_kanban(
                 (earliest, VendorCard(vendor_name=vn, order_type=ot, part_count=part_count, created_at=earliest))
             )
 
-        if total_dispatched > 0:
-            outstanding = {k: v for k, v in d_items.items() if v > r_items.get(k, 0.0)}
-            if outstanding:
-                # 待收回：至少有一个 item 尚未完全收回
-                pending_return_list.append(
-                    (
-                        earliest,
-                        VendorCard(
-                            vendor_name=vn,
-                            order_type=ot,
-                            part_count=len(outstanding),
-                            created_at=earliest,
-                        ),
-                    )
+        outstanding_count = processing_outstanding_counts.get(key, 0)
+        if outstanding_count > 0:
+            pending_return_list.append(
+                (
+                    earliest,
+                    VendorCard(
+                        vendor_name=vn,
+                        order_type=ot,
+                        part_count=outstanding_count,
+                        created_at=earliest,
+                    ),
                 )
-            else:
-                # 已收回：全部 item 均已收回
-                returned_list.append(
-                    (
-                        earliest,
-                        VendorCard(
-                            vendor_name=vn,
-                            order_type=ot,
-                            part_count=len(d_items),
-                            created_at=earliest,
-                        ),
-                    )
+            )
+
+        completed_count = completed_counts.get(key, 0)
+        if completed_count > 0:
+            returned_list.append(
+                (
+                    earliest,
+                    VendorCard(
+                        vendor_name=vn,
+                        order_type=ot,
+                        part_count=completed_count,
+                        created_at=earliest,
+                    ),
                 )
+            )
 
     for lst in (pending_dispatch_list, pending_return_list, returned_list):
         lst.sort(key=lambda x: x[0])
@@ -705,6 +945,11 @@ def record_vendor_receipt(
         if reason:
             add_stock(db, item.item_type, item.item_id, item.qty, reason=reason)
 
+    if order_type == "plating":
+        _sync_plating_item_receipts(db, order_id)
+    else:
+        _sync_handcraft_jewelry_receipts(db, order_id)
+
     _try_complete_vendor_orders(db, vendor_name, order_type)
     return receipts, warnings
 
@@ -842,6 +1087,7 @@ def _force_complete_plating(db: Session, order: PlatingOrder, now) -> None:
             db.add(receipt)
             add_stock(db, "part", part_id, remaining, reason="电镀收回")
 
+    _sync_plating_item_receipts(db, order.id)
     order.status = "completed"
     order.completed_at = now
 
@@ -896,6 +1142,7 @@ def _force_complete_handcraft(db: Session, order: HandcraftOrder, now) -> None:
             ))
             add_stock(db, "jewelry", jewelry_id, remaining, reason="手工完成")
 
+    _sync_handcraft_jewelry_receipts(db, order.id)
     order.status = "completed"
     order.completed_at = now
 
@@ -922,7 +1169,6 @@ def change_order_status(
 
         elif current_status == "processing" and new_status == "pending":
             _undo_receipts_for_order(db, order_id, order_type)
-            # Return dispatched parts to inventory using direct query
             items = (
                 db.query(PlatingOrderItem)
                 .filter(PlatingOrderItem.plating_order_id == order_id)
@@ -930,7 +1176,7 @@ def change_order_status(
             )
             for item in items:
                 add_stock(db, "part", item.part_id, float(item.qty), reason="电镀发出撤回")
-                item.status = "未送出"
+            _set_plating_items_pending(db, order_id)
             order.status = "pending"
 
         elif current_status == "processing" and new_status == "completed":
@@ -938,6 +1184,7 @@ def change_order_status(
 
         elif current_status == "completed" and new_status == "processing":
             _undo_receipts_for_order(db, order_id, order_type)
+            _set_plating_items_processing(db, order_id)
             order.status = "processing"
             order.completed_at = None
 
@@ -958,7 +1205,6 @@ def change_order_status(
 
         elif current_status == "processing" and new_status == "pending":
             _undo_receipts_for_order(db, order_id, order_type)
-            # Return dispatched parts to inventory using direct query
             part_items = (
                 db.query(HandcraftPartItem)
                 .filter(HandcraftPartItem.handcraft_order_id == order_id)
@@ -966,14 +1212,7 @@ def change_order_status(
             )
             for item in part_items:
                 add_stock(db, "part", item.part_id, float(item.qty), reason="手工发出撤回")
-            # Reset jewelry item statuses back to 未送出
-            jewelry_items = (
-                db.query(HandcraftJewelryItem)
-                .filter(HandcraftJewelryItem.handcraft_order_id == order_id)
-                .all()
-            )
-            for ji in jewelry_items:
-                ji.status = "未送出"
+            _set_handcraft_jewelry_pending(db, order_id)
             order.status = "pending"
 
         elif current_status == "processing" and new_status == "completed":
@@ -981,11 +1220,14 @@ def change_order_status(
 
         elif current_status == "completed" and new_status == "processing":
             _undo_receipts_for_order(db, order_id, order_type)
+            _set_handcraft_jewelry_processing(db, order_id)
             order.status = "processing"
             order.completed_at = None
 
         else:
             raise ValueError(f"不支持的状态转换：{current_status} → {new_status}")
+
+    db.flush()
 
 
 def list_vendors(db: Session, order_type: str | None = None, q: str | None = None) -> list[str]:

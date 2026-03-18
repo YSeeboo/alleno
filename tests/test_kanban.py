@@ -3,13 +3,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import pytest
 from models.handcraft_order import HandcraftOrder
+from models.handcraft_order import HandcraftJewelryItem
 from models.plating_order import PlatingOrder
+from models.plating_order import PlatingOrderItem
 from models.vendor_receipt import VendorReceipt
 from schemas.kanban import ReceiptItemIn
 from services.handcraft import create_handcraft_order, send_handcraft_order
 from services.inventory import add_stock
 from services.jewelry import create_jewelry
-from services.kanban import get_vendor_detail, record_vendor_receipt
+from services.kanban import change_order_status, get_kanban, get_vendor_detail, record_vendor_receipt
 from services.part import create_part
 from services.plating import create_plating_order, send_plating_order
 
@@ -196,6 +198,82 @@ def test_handcraft_detail_jewelry_received_qty_updates(db, handcraft_vendor):
     assert j_item.received_qty == 5.0
 
 
+def test_kanban_vendor_can_appear_in_pending_return_and_returned_for_plating(db, part):
+    processing_order = create_plating_order(db, "电镀厂A", [
+        {"part_id": part.id, "qty": 10, "plating_method": "金色"},
+    ])
+    send_plating_order(db, processing_order.id)
+
+    completed_order = create_plating_order(db, "电镀厂A", [
+        {"part_id": part.id, "qty": 10, "plating_method": "银色"},
+    ])
+    send_plating_order(db, completed_order.id)
+    change_order_status(db, completed_order.id, "plating", "completed")
+
+    board = get_kanban(db, order_type="plating")
+
+    pending_vendors = {card.vendor_name: card.part_count for card in board.pending_return.vendors}
+    returned_vendors = {card.vendor_name: card.part_count for card in board.returned.vendors}
+
+    assert pending_vendors["电镀厂A"] == 1
+    assert returned_vendors["电镀厂A"] == 1
+
+
+def test_kanban_vendor_can_appear_in_pending_return_and_returned_for_handcraft(db, part, jewelry):
+    processing_order = create_handcraft_order(
+        db,
+        "手工厂A",
+        parts=[{"part_id": part.id, "qty": 50, "bom_qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 10}],
+    )
+    send_handcraft_order(db, processing_order.id)
+
+    completed_order = create_handcraft_order(
+        db,
+        "手工厂A",
+        parts=[{"part_id": part.id, "qty": 50, "bom_qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 10}],
+    )
+    send_handcraft_order(db, completed_order.id)
+    change_order_status(db, completed_order.id, "handcraft", "completed")
+
+    board = get_kanban(db, order_type="handcraft")
+
+    pending_vendors = {card.vendor_name: card.part_count for card in board.pending_return.vendors}
+    returned_vendors = {card.vendor_name: card.part_count for card in board.returned.vendors}
+
+    assert pending_vendors["手工厂A"] == 2
+    assert returned_vendors["手工厂A"] == 2
+
+
+def test_plating_receipt_updates_order_item_row(db, plating_vendor):
+    order, part = plating_vendor
+
+    record_vendor_receipt(db, "电镀厂A", "plating", order.id, [
+        ReceiptItemIn(item_id=part.id, item_type="part", qty=6),
+    ])
+
+    item = db.query(PlatingOrderItem).filter(PlatingOrderItem.plating_order_id == order.id).one()
+    assert float(item.received_qty) == 6.0
+    assert item.status == "电镀中"
+
+
+def test_handcraft_receipt_updates_jewelry_item_row(db, handcraft_vendor):
+    order, part, jewelry = handcraft_vendor
+
+    record_vendor_receipt(db, "手工厂A", "handcraft", order.id, [
+        ReceiptItemIn(item_id=jewelry.id, item_type="jewelry", qty=5),
+    ])
+
+    item = (
+        db.query(HandcraftJewelryItem)
+        .filter(HandcraftJewelryItem.handcraft_order_id == order.id)
+        .one()
+    )
+    assert item.received_qty == 5
+    assert item.status == "制作中"
+
+
 # ──────────────────────────────────────────────────────────────
 # Auto-complete orders on full receipt
 # ──────────────────────────────────────────────────────────────
@@ -317,3 +395,59 @@ def test_cross_order_item_rejection(db, part):
         record_vendor_receipt(db, "电镀厂A", "plating", order_b.id, [
             ReceiptItemIn(item_id=part.id, item_type="part", qty=5),  # part belongs to order_a
         ])
+
+
+def test_change_order_status_syncs_plating_item_rows(db, plating_vendor):
+    order, part = plating_vendor
+
+    change_order_status(db, order.id, "plating", "completed")
+
+    item = db.query(PlatingOrderItem).filter(PlatingOrderItem.plating_order_id == order.id).one()
+    db.refresh(order)
+    assert float(item.received_qty) == float(item.qty)
+    assert item.status == "已收回"
+    assert order.status == "completed"
+
+    change_order_status(db, order.id, "plating", "processing")
+
+    db.refresh(order)
+    assert float(item.received_qty) == 0.0
+    assert item.status == "电镀中"
+    assert order.status == "processing"
+    assert order.completed_at is None
+
+
+def test_api_change_order_status_syncs_handcraft_jewelry_rows(client, db, handcraft_vendor):
+    order, part, jewelry = handcraft_vendor
+
+    resp = client.post("/api/kanban/order-status", json={
+        "order_id": order.id,
+        "order_type": "handcraft",
+        "new_status": "completed",
+    })
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+    item = (
+        db.query(HandcraftJewelryItem)
+        .filter(HandcraftJewelryItem.handcraft_order_id == order.id)
+        .one()
+    )
+    db.refresh(order)
+    assert item.received_qty == item.qty
+    assert item.status == "已收回"
+    assert order.status == "completed"
+
+    resp = client.post("/api/kanban/order-status", json={
+        "order_id": order.id,
+        "order_type": "handcraft",
+        "new_status": "processing",
+    })
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+    db.refresh(order)
+    assert item.received_qty == 0
+    assert item.status == "制作中"
+    assert order.status == "processing"
+    assert order.completed_at is None

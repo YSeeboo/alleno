@@ -105,9 +105,6 @@
         <n-form-item label="BOM理论(选填)">
           <n-input-number v-model:value="editPartForm.bom_qty" :min="0" :precision="2" :step="1" style="width: 100%;" placeholder="可选" />
         </n-form-item>
-        <n-form-item label="备注">
-          <n-input v-model:value="editPartForm.note" placeholder="备注（可选）" />
-        </n-form-item>
       </n-form>
       <template #footer>
         <n-space justify="end">
@@ -157,9 +154,6 @@
         <n-form-item label="单位">
           <n-select v-model:value="editJewelryForm.unit" :options="jewelryUnitOptions" />
         </n-form-item>
-        <n-form-item label="备注">
-          <n-input v-model:value="editJewelryForm.note" placeholder="备注（可选）" />
-        </n-form-item>
       </n-form>
       <template #footer>
         <n-space justify="end">
@@ -172,14 +166,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, h } from 'vue'
+import { ref, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NGrid, NGi, NEmpty, NModal, NForm, NFormItem,
-  NSelect, NInputNumber, NInput, NPopselect, NTooltip,
+  NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon,
 } from 'naive-ui'
+import { CreateOutline } from '@vicons/ionicons5'
 import {
   getHandcraft, getHandcraftParts, getHandcraftJewelries, sendHandcraft,
   addHandcraftPart, updateHandcraftPart, deleteHandcraftPart,
@@ -242,7 +237,7 @@ const addPartForm = ref({ part_id: null, qty: 1, unit: '个', bom_qty: null, not
 // Edit Part Modal
 const editPartModalVisible = ref(false)
 const editPartSubmitting = ref(false)
-const editPartForm = ref({ id: null, qty: 1, unit: '个', bom_qty: null, note: '' })
+const editPartForm = ref({ id: null, qty: 1, unit: '个', bom_qty: null })
 
 // Add Jewelry Modal
 const addJewelryModalVisible = ref(false)
@@ -252,7 +247,11 @@ const addJewelryForm = ref({ jewelry_id: null, qty: 1, unit: '个', note: '' })
 // Edit Jewelry Modal
 const editJewelryModalVisible = ref(false)
 const editJewelrySubmitting = ref(false)
-const editJewelryForm = ref({ id: null, qty: 1, unit: '个', note: '' })
+const editJewelryForm = ref({ id: null, qty: 1, unit: '个' })
+const editingNoteKey = ref(null)
+const editingNoteValue = ref('')
+const savingNoteKey = ref(null)
+const noteInputRef = ref(null)
 
 const loadData = async () => {
   const id = route.params.id
@@ -270,6 +269,9 @@ const loadData = async () => {
     jewelry_name: jewelryMap.value[j.jewelry_id]?.name || j.jewelry_id,
     jewelry_image: jewelryMap.value[j.jewelry_id]?.image || '',
   }))
+  if (!isPending()) {
+    stopEditNote()
+  }
 }
 
 const doSend = async () => {
@@ -292,11 +294,14 @@ const doChangeStatus = (newStatus) => {
     positiveText: '确认',
     negativeText: '取消',
     onPositiveClick: async () => {
+      const loadingMsg = message.loading('正在更新状态...', { duration: 0 })
       try {
         await changeOrderStatus({ order_id: order.value.id, order_type: 'handcraft', new_status: newStatus })
-        message.success('状态已更新')
+        loadingMsg.destroy()
+        message.success(`状态已更新为${newLabel}`)
         await loadData()
       } catch (_) {
+        loadingMsg.destroy()
         // errors shown by axios interceptor
         await loadData()
       }
@@ -340,7 +345,6 @@ const openEditPartModal = (row) => {
     qty: row.qty,
     unit: row.unit || '个',
     bom_qty: row.bom_qty ?? null,
-    note: row.note || '',
   }
   editPartModalVisible.value = true
 }
@@ -411,7 +415,6 @@ const openEditJewelryModal = (row) => {
     id: row.id,
     qty: row.qty,
     unit: row.unit || '个',
-    note: row.note || '',
   }
   editJewelryModalVisible.value = true
 }
@@ -448,6 +451,116 @@ const doDeleteJewelry = (row) => {
 }
 
 const isPending = () => order.value?.status === 'pending'
+const noteKeyOf = (kind, id) => `${kind}:${id}`
+const normalizeNote = (value) => (value || '').trim()
+
+const focusEditingNoteInput = () => {
+  nextTick(() => {
+    noteInputRef.value?.focus?.()
+  })
+}
+
+const startEditNote = (kind, row) => {
+  if (!isPending()) return
+  editingNoteKey.value = noteKeyOf(kind, row.id)
+  editingNoteValue.value = row.note || ''
+  focusEditingNoteInput()
+}
+
+const stopEditNote = () => {
+  editingNoteKey.value = null
+  editingNoteValue.value = ''
+}
+
+const saveNote = async (kind, row) => {
+  const noteKey = noteKeyOf(kind, row.id)
+  if (editingNoteKey.value !== noteKey || savingNoteKey.value === noteKey) return
+
+  const nextNote = normalizeNote(editingNoteValue.value)
+  const currentNote = normalizeNote(row.note)
+  if (nextNote === currentNote) {
+    stopEditNote()
+    return
+  }
+
+  savingNoteKey.value = noteKey
+  try {
+    const request = kind === 'part'
+      ? updateHandcraftPart(route.params.id, row.id, { note: nextNote })
+      : updateHandcraftJewelry(route.params.id, row.id, { note: nextNote })
+    const { data } = await request
+    row.note = data.note || ''
+    message.success(nextNote ? '备注已保存' : '备注已清空')
+    stopEditNote()
+  } finally {
+    savingNoteKey.value = null
+  }
+}
+
+const onNoteInputKeydown = (event, kind, row) => {
+  if (event.key !== 'Enter') return
+  if (event.isComposing || event.keyCode === 229) return
+  event.preventDefault()
+  void saveNote(kind, row)
+}
+
+const renderNoteCell = (kind, row) => {
+  const noteKey = noteKeyOf(kind, row.id)
+  const isEditing = editingNoteKey.value === noteKey
+  const isSaving = savingNoteKey.value === noteKey
+  const noteText = row.note || ''
+
+  if (isEditing) {
+    return h(NInput, {
+      ref: noteInputRef,
+      value: editingNoteValue.value,
+      size: 'small',
+      placeholder: '输入备注后按回车或点击空白处保存',
+      disabled: isSaving,
+      autofocus: true,
+      'onUpdate:value': (value) => { editingNoteValue.value = value },
+      onBlur: () => { void saveNote(kind, row) },
+      onKeydown: (event) => onNoteInputKeydown(event, kind, row),
+    })
+  }
+
+  if (!noteText) {
+    if (!isPending()) {
+      return h('span', { style: 'color: #999;' }, '-')
+    }
+    return h(
+      NButton,
+      {
+        text: true,
+        type: 'primary',
+        size: 'small',
+        onClick: () => startEditNote(kind, row),
+      },
+      {
+        icon: () => h(NIcon, null, { default: () => h(CreateOutline) }),
+        default: () => '添加备注',
+      },
+    )
+  }
+
+  return h(
+    'span',
+    {
+      title: noteText,
+      style: [
+        'display: inline-block',
+        'max-width: 180px',
+        'overflow: hidden',
+        'text-overflow: ellipsis',
+        'white-space: nowrap',
+        'vertical-align: bottom',
+        isPending() ? 'cursor: pointer; color: #2080f0;' : '',
+      ].join('; '),
+      onClick: isPending() ? () => startEditNote(kind, row) : undefined,
+    },
+    noteText,
+  )
+}
 
 const partColumns = [
   { title: '配件编号', key: 'part_id', width: 110 },
@@ -470,6 +583,12 @@ const partColumns = [
         (diff > 0 ? '+' : '') + diff
       )
     },
+  },
+  {
+    title: '备注',
+    key: 'note',
+    minWidth: 200,
+    render: (row) => renderNoteCell('part', row),
   },
   {
     title: '操作',
@@ -529,6 +648,12 @@ const jewelryColumns = [
   { title: '预期数量', key: 'qty' },
   { title: '单位', key: 'unit', render: (r) => r.unit || '-' },
   { title: '状态', key: 'status' },
+  {
+    title: '备注',
+    key: 'note',
+    minWidth: 200,
+    render: (row) => renderNoteCell('jewelry', row),
+  },
   {
     title: '操作',
     key: 'actions',
