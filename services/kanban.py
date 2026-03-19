@@ -830,16 +830,31 @@ def get_vendor_detail(db: Session, vendor_name: str, order_type: str) -> VendorD
             else:
                 item_map[key] = {"dispatched_qty": 0.0, "received_qty": r_qty}
 
-    items = [
-        VendorItemSummary(
-            item_id=item_id,
-            item_type=item_type,
-            plating_method=pm,
-            dispatched_qty=vals["dispatched_qty"],
-            received_qty=vals["received_qty"],
+    part_ids = {item_id for (item_id, item_type, _) in item_map if item_type == "part"}
+    jewelry_ids = {item_id for (item_id, item_type, _) in item_map if item_type == "jewelry"}
+    parts_by_id = {
+        part.id: part
+        for part in db.query(Part).filter(Part.id.in_(part_ids)).all()
+    } if part_ids else {}
+    jewelries_by_id = {
+        jewelry.id: jewelry
+        for jewelry in db.query(Jewelry).filter(Jewelry.id.in_(jewelry_ids)).all()
+    } if jewelry_ids else {}
+
+    items = []
+    for (item_id, item_type, pm), vals in item_map.items():
+        item_obj = parts_by_id.get(item_id) if item_type == "part" else jewelries_by_id.get(item_id)
+        items.append(
+            VendorItemSummary(
+                item_id=item_id,
+                item_type=item_type,
+                item_name=item_obj.name if item_obj else None,
+                image=item_obj.image if item_obj else None,
+                plating_method=pm,
+                dispatched_qty=vals["dispatched_qty"],
+                received_qty=vals["received_qty"],
+            )
         )
-        for (item_id, item_type, pm), vals in item_map.items()
-    ]
 
     # Orders
     if order_type == "plating":

@@ -64,12 +64,12 @@ def create_handcraft_order(
     db: Session,
     supplier_name: str,
     parts: list,
-    jewelries: list,
+    jewelries: Optional[list] = None,
     note: str = None,
 ) -> HandcraftOrder:
     for p in parts:
         _require_part(db, p["part_id"])
-    for j in jewelries:
+    for j in jewelries or []:
         _require_jewelry(db, j["jewelry_id"])
     order_id = _next_id(db, HandcraftOrder, "HC")
     order = HandcraftOrder(id=order_id, supplier_name=supplier_name, status="pending", note=note)
@@ -84,7 +84,7 @@ def create_handcraft_order(
             unit=p.get("unit", "个"),
             note=p.get("note"),
         ))
-    for j in jewelries:
+    for j in jewelries or []:
         db.add(HandcraftJewelryItem(
             handcraft_order_id=order_id,
             jewelry_id=j["jewelry_id"],
@@ -116,8 +116,6 @@ def send_handcraft_order(db: Session, handcraft_order_id: str) -> HandcraftOrder
         .filter(HandcraftJewelryItem.handcraft_order_id == handcraft_order_id)
         .all()
     )
-    if not jewelry_items:
-        raise ValueError(f"HandcraftOrder {handcraft_order_id} has no jewelry items and cannot be sent")
     deducted = []
     try:
         for item in part_items:
@@ -135,6 +133,13 @@ def send_handcraft_order(db: Session, handcraft_order_id: str) -> HandcraftOrder
 
 
 def receive_handcraft_jewelries(db: Session, handcraft_order_id: str, receipts: list) -> list:
+    all_jewelry_items = (
+        db.query(HandcraftJewelryItem)
+        .filter(HandcraftJewelryItem.handcraft_order_id == handcraft_order_id)
+        .all()
+    )
+    if not all_jewelry_items:
+        raise ValueError(f"HandcraftOrder {handcraft_order_id} has no jewelry items to receive")
     updated = []
     for receipt in receipts:
         ji = db.query(HandcraftJewelryItem).filter(
@@ -158,11 +163,6 @@ def receive_handcraft_jewelries(db: Session, handcraft_order_id: str, receipts: 
             ji.status = "已收回"
         updated.append(ji)
     db.flush()
-    all_jewelry_items = (
-        db.query(HandcraftJewelryItem)
-        .filter(HandcraftJewelryItem.handcraft_order_id == handcraft_order_id)
-        .all()
-    )
     if all(ji.status == "已收回" for ji in all_jewelry_items):
         order = get_handcraft_order(db, handcraft_order_id)
         order.status = "completed"

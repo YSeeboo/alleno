@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 class StockAdjust(BaseModel):
     qty: float
     reason: str
-    note: str = None
+    note: Optional[str] = None
 
 
 @router.post("/{item_type}/{item_id}/add", response_model=StockResponse)

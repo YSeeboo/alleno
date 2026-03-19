@@ -66,6 +66,8 @@ class KanbanResponse(BaseModel):
 class VendorItemSummary(BaseModel):
     item_id: str
     item_type: str           # "part" | "jewelry"
+    item_name: str | None = None
+    image: str | None = None
     plating_method: str | None
     dispatched_qty: float
     received_qty: float

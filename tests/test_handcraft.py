@@ -63,6 +63,18 @@ def test_send_handcraft_order_jewelry_status(setup):
     assert all(i.status == "制作中" for i in items)
 
 
+def test_send_handcraft_order_without_expected_jewelries(setup):
+    db, p1, _, _ = setup
+    order = create_handcraft_order(
+        db, "手工坊",
+        parts=[{"part_id": p1.id, "qty": 50, "bom_qty": 48.0}],
+        jewelries=[],
+    )
+    send_handcraft_order(db, order.id)
+    assert get_stock(db, "part", p1.id) == 150.0
+    assert get_handcraft_order(db, order.id).status == "processing"
+
+
 def test_send_handcraft_order_insufficient_stock(setup):
     db, p1, p2, j1 = setup
     order = create_handcraft_order(

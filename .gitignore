@@ -54,3 +54,6 @@ frontend/.vite/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Local deploy helpers
+deploy_aliyun_update.sh

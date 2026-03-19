@@ -198,6 +198,27 @@ def test_handcraft_detail_jewelry_received_qty_updates(db, handcraft_vendor):
     assert j_item.received_qty == 5.0
 
 
+def test_handcraft_detail_includes_item_name_and_image(db):
+    part = create_part(db, {"name": "铜扣", "category": "小配件", "image": "https://img.example.com/part.png"})
+    jewelry = create_jewelry(db, {"name": "铜项链", "category": "单件", "image": "https://img.example.com/jewelry.png"})
+    add_stock(db, "part", part.id, 200.0, "入库")
+    order = create_handcraft_order(
+        db, "手工厂A",
+        parts=[{"part_id": part.id, "qty": 50, "bom_qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 10}],
+    )
+    send_handcraft_order(db, order.id)
+
+    detail = get_vendor_detail(db, "手工厂A", "handcraft")
+    part_item = next(i for i in detail.items if i.item_type == "part")
+    jewelry_item = next(i for i in detail.items if i.item_type == "jewelry")
+
+    assert part_item.item_name == "铜扣"
+    assert part_item.image == "https://img.example.com/part.png"
+    assert jewelry_item.item_name == "铜项链"
+    assert jewelry_item.image == "https://img.example.com/jewelry.png"
+
+
 def test_kanban_vendor_can_appear_in_pending_return_and_returned_for_plating(db, part):
     processing_order = create_plating_order(db, "电镀厂A", [
         {"part_id": part.id, "qty": 10, "plating_method": "金色"},

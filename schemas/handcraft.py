@@ -21,7 +21,7 @@ class HandcraftJewelryIn(BaseModel):
 class HandcraftCreate(BaseModel):
     supplier_name: str
     parts: List[HandcraftPartIn] = Field(min_length=1)
-    jewelries: List[HandcraftJewelryIn] = Field(min_length=1)
+    jewelries: List[HandcraftJewelryIn] = Field(default_factory=list)
     note: Optional[str] = None
 
 

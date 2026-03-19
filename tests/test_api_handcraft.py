@@ -364,7 +364,20 @@ def test_create_handcraft_order_empty_jewelries(client, db):
         "parts": [{"part_id": part.id, "qty": 5.0}],
         "jewelries": [],
     })
-    assert resp.status_code == 422
+    assert resp.status_code == 201
+    assert resp.json()["status"] == "pending"
+
+
+def test_send_handcraft_order_without_expected_jewelries(client, db):
+    part, _ = _setup(db)
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier No Jewelry",
+        "parts": [{"part_id": part.id, "qty": 10.0}],
+        "jewelries": [],
+    }).json()
+    resp = client.post(f"/api/handcraft/{created['id']}/send")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "processing"
 
 
 def test_create_handcraft_order_zero_part_qty(client, db):

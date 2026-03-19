@@ -130,18 +130,20 @@ const onJewelrySelect = (item, val) => {
   }
 }
 
+const normalizedParts = () => parts.filter((item) => item.part_id)
+const normalizedJewelries = () => jewelries.filter((item) => item.jewelry_id)
+
 const submit = async () => {
+  const validParts = normalizedParts()
+  const validJewelries = normalizedJewelries()
   if (!supplierName.value) { message.warning('请输入手工商家名称'); return }
-  if (parts.length === 0) { message.warning('请至少添加一条配件'); return }
-  if (jewelries.length === 0) { message.warning('请至少添加一条成品'); return }
-  if (parts.some((p) => !p.part_id)) { message.warning('请选择配件'); return }
-  if (jewelries.some((j) => !j.jewelry_id)) { message.warning('请选择饰品'); return }
+  if (validParts.length === 0) { message.warning('请至少添加一条配件'); return }
   submitting.value = true
   try {
     const { data } = await createHandcraft({
       supplier_name: supplierName.value,
-      parts,
-      jewelries,
+      parts: validParts,
+      jewelries: validJewelries,
       note: note.value,
     })
     message.success('创建成功')

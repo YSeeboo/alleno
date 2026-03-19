@@ -42,6 +42,7 @@ import { useRouter } from 'vue-router'
 import { NModal, NCard, NButton, NIcon, NSpin, NDataTable, NTag, NDropdown, useDialog, useMessage } from 'naive-ui'
 import { CloseOutline } from '@vicons/ionicons5'
 import { getVendorDetail, changeOrderStatus } from '@/api/kanban'
+import { renderImageThumb } from '@/utils/ui'
 
 const props = defineProps({
   show: Boolean,
@@ -103,8 +104,19 @@ const handleOrderStatusChange = (row, newStatus) => {
 
 const itemColumns = computed(() => {
   const cols = [
-    { title: '编号', key: 'item_id', width: 120 },
+    {
+      title: '图片',
+      key: 'image',
+      width: 76,
+      render: (r) => renderImageThumb(r.image, r.item_name || r.item_id, 40),
+    },
     { title: '类型', key: 'item_type', width: 80, render: (r) => r.item_type === 'part' ? '配件' : '饰品' },
+    {
+      title: props.vendor?.order_type === 'plating' ? '配件名称' : '名称',
+      key: 'item_name',
+      minWidth: 180,
+      render: (r) => r.item_name || r.item_id,
+    },
   ]
   if (props.vendor?.order_type === 'plating') {
     cols.push({ title: '电镀工艺', key: 'plating_method', width: 100 })
