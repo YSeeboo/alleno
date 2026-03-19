@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from models.part import Part
 from models.plating_order import PlatingOrderItem
+from services.image_processing import prepare_pdf_image_bytes
 from services.plating import get_plating_order
 
 
@@ -85,6 +86,10 @@ def download_image_bytes(source: str) -> bytes | None:
             return response.read()
     except Exception:
         return None
+
+
+def download_pdf_image_bytes(source: str) -> bytes | None:
+    return prepare_pdf_image_bytes(download_image_bytes(source))
 
 
 def format_qty_text(value: float | None) -> str:

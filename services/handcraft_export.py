@@ -6,6 +6,7 @@ from services.handcraft import get_handcraft_order
 from services.plating_export import (
     build_export_filename,
     download_image_bytes,
+    download_pdf_image_bytes,
     format_excel_date,
     format_qty_text,
     format_short_date,
@@ -57,6 +58,7 @@ def get_handcraft_export_payload(db: Session, order_id: str) -> dict:
 __all__ = [
     "build_export_filename",
     "download_image_bytes",
+    "download_pdf_image_bytes",
     "format_excel_date",
     "format_short_date",
     "get_handcraft_export_payload",

@@ -11,7 +11,12 @@ from reportlab.pdfbase.pdfmetrics import registerFont, stringWidth
 from reportlab.pdfgen import canvas
 
 from services.plating_excel import _TEMPLATE_PATH
-from services.plating_export import build_export_filename, download_image_bytes, format_excel_date, get_plating_export_payload
+from services.plating_export import (
+    build_export_filename,
+    download_pdf_image_bytes as download_image_bytes,
+    format_excel_date,
+    get_plating_export_payload,
+)
 
 _PAGE_WIDTH, _PAGE_HEIGHT = A4
 _MARGIN_X = 48

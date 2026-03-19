@@ -12,7 +12,7 @@ from reportlab.pdfgen import canvas
 
 from services.handcraft_export import (
     build_export_filename,
-    download_image_bytes,
+    download_pdf_image_bytes as download_image_bytes,
     format_excel_date,
     get_handcraft_export_payload,
 )
