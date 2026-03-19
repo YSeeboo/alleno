@@ -3,11 +3,15 @@ uvicorn[standard]
 sqlalchemy
 psycopg2-binary
 openai
+openpyxl
+pillow
 pydantic-settings
 python-dotenv
+reportlab
 oss2
 
 # dev / test
+pypdf
 pytest
 pytest-asyncio
 httpx

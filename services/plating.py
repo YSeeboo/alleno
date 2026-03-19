@@ -122,9 +122,12 @@ def list_plating_orders(db: Session, status: str = None) -> list:
 
 
 def get_plating_items(db: Session, order_id: str) -> list:
-    return db.query(PlatingOrderItem).filter(
-        PlatingOrderItem.plating_order_id == order_id
-    ).all()
+    return (
+        db.query(PlatingOrderItem)
+        .filter(PlatingOrderItem.plating_order_id == order_id)
+        .order_by(PlatingOrderItem.id.asc())
+        .all()
+    )
 
 
 def add_plating_item(db: Session, order_id: str, item: dict) -> PlatingOrderItem:

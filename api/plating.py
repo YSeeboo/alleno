@@ -1,6 +1,8 @@
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,8 @@ from schemas.plating import (
     PlatingResponse,
     ReceiptRequest,
 )
+from services.plating_excel import build_plating_order_excel
+from services.plating_pdf import build_plating_order_pdf
 from services.plating import (
     add_plating_item,
     create_plating_order,
@@ -74,6 +78,40 @@ def api_get_plating_items(order_id: str, db: Session = Depends(get_db)):
     if order is None:
         raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
     return get_plating_items(db, order_id)
+
+
+@router.get("/{order_id}/excel")
+def api_download_plating_excel(order_id: str, db: Session = Depends(get_db)):
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
+    file_bytes, filename = build_plating_order_excel(db, order_id)
+    return Response(
+        content=file_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="plating-export.xlsx"; filename*=UTF-8\'\'{quote(filename)}'
+            )
+        },
+    )
+
+
+@router.get("/{order_id}/pdf")
+def api_download_plating_pdf(order_id: str, db: Session = Depends(get_db)):
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
+    file_bytes, filename = build_plating_order_pdf(db, order_id)
+    return Response(
+        content=file_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="plating-export.pdf"; filename*=UTF-8\'\'{quote(filename)}'
+            )
+        },
+    )
 
 
 @router.post("/{order_id}/send", response_model=PlatingResponse)

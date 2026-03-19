@@ -7,6 +7,24 @@
 
     <n-spin :show="loading">
       <n-card v-if="order" title="基本信息" style="margin-bottom: 16px;">
+        <template #header-extra>
+          <n-space size="small">
+            <n-button
+              :loading="downloadingExcel"
+              class="export-excel-btn"
+              @click="doDownloadExcel"
+            >
+              导出Excel
+            </n-button>
+            <n-button
+              :loading="downloadingPdf"
+              class="export-pdf-btn"
+              @click="doDownloadPdf"
+            >
+              导出PDF
+            </n-button>
+          </n-space>
+        </template>
         <n-descriptions :column="3" bordered>
           <n-descriptions-item label="电镀单号">{{ order.id }}</n-descriptions-item>
           <n-descriptions-item label="电镀厂">{{ order.supplier_name }}</n-descriptions-item>
@@ -214,7 +232,8 @@ import {
 import { CreateOutline } from '@vicons/ionicons5'
 import {
   getPlating, getPlatingItems, sendPlating,
-  addPlatingItem, updatePlatingItem, deletePlatingItem, updatePlatingDeliveryImages,
+  addPlatingItem, updatePlatingItem, deletePlatingItem,
+  updatePlatingDeliveryImages, downloadPlatingExcel, downloadPlatingPdf,
 } from '@/api/plating'
 import { changeOrderStatus } from '@/api/kanban'
 import { listParts } from '@/api/parts'
@@ -228,6 +247,8 @@ const dialog = useDialog()
 
 const loading = ref(true)
 const sending = ref(false)
+const downloadingExcel = ref(false)
+const downloadingPdf = ref(false)
 const order = ref(null)
 const items = ref([])
 const partMap = ref({})
@@ -308,6 +329,76 @@ const doSend = async () => {
   } finally {
     sending.value = false
   }
+}
+
+const doDownloadExcel = async () => {
+  await downloadExportFile('xlsx', downloadingExcel, downloadPlatingExcel, 'Excel 下载失败')
+}
+
+const doDownloadPdf = async () => {
+  await downloadExportFile('pdf', downloadingPdf, downloadPlatingPdf, 'PDF 下载失败')
+}
+
+const downloadExportFile = async (extension, loadingRef, request, errorText) => {
+  if (!order.value) return
+  loadingRef.value = true
+  try {
+    const { data, headers } = await request(order.value.id)
+    const url = window.URL.createObjectURL(data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = buildExportFilename(order.value, extension)
+      || extractDownloadFilename(headers?.['content-disposition'])
+      || `发出_${order.value.id}.${extension}`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+  } catch (_) {
+    message.error(errorText)
+  } finally {
+    loadingRef.value = false
+  }
+}
+
+const extractDownloadFilename = (contentDisposition) => {
+  if (!contentDisposition) return ''
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    } catch {
+      return utf8Match[1]
+    }
+  }
+  const plainMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i)
+  return plainMatch?.[1] || ''
+}
+
+const buildExportFilename = (currentOrder, extension) => {
+  if (!currentOrder) return ''
+  const supplierName = sanitizeFilenamePart(currentOrder.supplier_name) || '未命名电镀厂'
+  const shortDate = formatShortDate(currentOrder.created_at)
+  return `发出_${supplierName}_${shortDate}.${extension}`
+}
+
+const sanitizeFilenamePart = (value) => {
+  if (!value) return ''
+  return String(value)
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/g, '')
+}
+
+const formatShortDate = (value) => {
+  if (!value) return '000000'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '000000'
+  const year = String(date.getFullYear() % 100).padStart(2, '0')
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}${month}${day}`
 }
 
 const doChangeStatus = (newStatus) => {
@@ -765,5 +856,31 @@ onMounted(async () => {
 .delivery-images-meta {
   color: #8a6b39;
   font-size: 12px;
+}
+
+.export-excel-btn {
+  background: #469c66;
+  color: #fff;
+  border-color: #469c66;
+}
+
+.export-excel-btn:hover,
+.export-excel-btn:focus {
+  background: #3d8959;
+  color: #fff;
+  border-color: #3d8959;
+}
+
+.export-pdf-btn {
+  background: #d84243;
+  color: #fff;
+  border-color: #d84243;
+}
+
+.export-pdf-btn:hover,
+.export-pdf-btn:focus {
+  background: #bf3a3b;
+  color: #fff;
+  border-color: #bf3a3b;
 }
 </style>

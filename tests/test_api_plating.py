@@ -287,3 +287,33 @@ def test_update_plating_delivery_images_rejects_more_than_four(client, db):
         "delivery_images": ["1.png", "2.png", "3.png", "4.png", "5.png"],
     })
     assert resp.status_code == 422
+
+
+def test_get_plating_items_keeps_id_order_after_update(client, db):
+    parts = []
+    for index in range(3):
+        part = create_part(db, {"name": f"排序配件{index + 1}", "category": "小配件"})
+        parts.append(part)
+    db.commit()
+
+    create_resp = client.post("/api/plating/", json={
+        "supplier_name": "排序测试电镀厂",
+        "items": [
+            {"part_id": parts[0].id, "qty": 1, "unit": "个"},
+            {"part_id": parts[1].id, "qty": 2, "unit": "个"},
+            {"part_id": parts[2].id, "qty": 3, "unit": "个"},
+        ],
+    })
+    order_id = create_resp.json()["id"]
+
+    before_resp = client.get(f"/api/plating/{order_id}/items")
+    assert before_resp.status_code == 200
+    before_ids = [item["id"] for item in before_resp.json()]
+
+    client.put(f"/api/plating/{order_id}/items/{before_ids[1]}", json={"unit": "条"})
+
+    after_resp = client.get(f"/api/plating/{order_id}/items")
+    assert after_resp.status_code == 200
+    after_ids = [item["id"] for item in after_resp.json()]
+
+    assert after_ids == before_ids
