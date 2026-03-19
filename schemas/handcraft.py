@@ -55,6 +55,7 @@ class HandcraftPartItemResponse(BaseModel):
     part_id: str
     qty: float
     bom_qty: Optional[float] = None
+    color: Optional[str] = None
     unit: Optional[str] = None
     note: Optional[str] = None
 
@@ -68,3 +69,8 @@ class HandcraftResponse(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime] = None
     note: Optional[str] = None
+    delivery_images: List[str] = Field(default_factory=list)
+
+
+class HandcraftDeliveryImagesUpdate(BaseModel):
+    delivery_images: List[str] = Field(default_factory=list, max_length=4)

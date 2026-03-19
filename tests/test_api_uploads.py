@@ -60,3 +60,24 @@ def test_upload_policy_rejects_invalid_extension(client):
         json={"kind": "part", "filename": "sample.pdf", "content_type": "application/pdf"},
     )
     assert resp.status_code == 400
+
+
+def test_upload_policy_supports_handcraft(client, monkeypatch):
+    monkeypatch.setattr(settings, "OSS_BUCKET", "allenop-images")
+    monkeypatch.setattr(settings, "OSS_ENDPOINT", "oss-cn-guangzhou.aliyuncs.com")
+    monkeypatch.setattr(settings, "OSS_ACCESS_KEY_ID", "test-id")
+    monkeypatch.setattr(settings, "OSS_ACCESS_KEY_SECRET", "test-secret")
+    monkeypatch.setattr(settings, "OSS_PUBLIC_BASE_URL", "https://img.ycbhomeland.top")
+
+    resp = client.post(
+        "/api/uploads/policy",
+        json={
+            "kind": "handcraft",
+            "filename": "delivery.jpg",
+            "content_type": "image/jpeg",
+            "entity_id": "HC-0001",
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["public_url"].startswith("https://img.ycbhomeland.top/handcraft-orders/hc-0001/")

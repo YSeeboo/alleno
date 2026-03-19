@@ -7,6 +7,24 @@
 
     <n-spin :show="loading">
       <n-card v-if="order" title="基本信息" style="margin-bottom: 16px;">
+        <template #header-extra>
+          <n-space size="small">
+            <n-button
+              :loading="downloadingExcel"
+              class="export-excel-btn"
+              @click="doDownloadExcel"
+            >
+              导出Excel
+            </n-button>
+            <n-button
+              :loading="downloadingPdf"
+              class="export-pdf-btn"
+              @click="doDownloadPdf"
+            >
+              导出PDF
+            </n-button>
+          </n-space>
+        </template>
         <n-descriptions :column="3" bordered>
           <n-descriptions-item label="手工单号">{{ order.id }}</n-descriptions-item>
           <n-descriptions-item label="手工商家">{{ order.supplier_name }}</n-descriptions-item>
@@ -29,6 +47,97 @@
           <n-descriptions-item label="创建时间">{{ fmt(order.created_at) }}</n-descriptions-item>
           <n-descriptions-item label="完成时间">{{ order.completed_at ? fmt(order.completed_at) : '-' }}</n-descriptions-item>
           <n-descriptions-item label="备注">{{ order.note || '-' }}</n-descriptions-item>
+          <n-descriptions-item label="发货图片" :span="2">
+            <div class="delivery-images-block">
+              <div v-if="pendingDeliveryImages.length > 0" class="delivery-images-warning">
+                <div class="delivery-images-warning-title">
+                  有 {{ pendingDeliveryImages.length }} 张图片已上传，但还没保存到手工单
+                </div>
+                <div class="delivery-images-pending-list">
+                  <div
+                    v-for="image in pendingDeliveryImages"
+                    :key="`pending-${image}`"
+                    class="delivery-pending-item"
+                  >
+                    <n-image
+                      :src="image"
+                      alt="待保存发货图片"
+                      :width="56"
+                      :height="56"
+                      object-fit="cover"
+                      class="delivery-pending-preview"
+                    />
+                    <div class="delivery-pending-actions">
+                      <n-button
+                        size="tiny"
+                        type="warning"
+                        ghost
+                        :loading="retryingPendingImage === image"
+                        :disabled="deliveryImagesSaving"
+                        @click="retryPendingDeliveryImage(image)"
+                      >
+                        重试保存
+                      </n-button>
+                      <n-button
+                        size="tiny"
+                        quaternary
+                        :disabled="deliveryImagesSaving || retryingPendingImage === image"
+                        @click="dropPendingDeliveryImage(image)"
+                      >
+                        移除记录
+                      </n-button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="deliveryImages.length > 0" class="delivery-images-grid">
+                <div
+                  v-for="(image, index) in deliveryImages"
+                  :key="`${image}-${index}`"
+                  class="delivery-image-card"
+                >
+                  <n-image
+                    :src="image"
+                    alt="发货图片"
+                    :width="88"
+                    :height="88"
+                    object-fit="cover"
+                    class="delivery-image-preview"
+                  />
+                  <n-button
+                    class="delivery-image-delete"
+                    size="tiny"
+                    type="error"
+                    circle
+                    :disabled="deliveryImagesSaving"
+                    @click="removeDeliveryImage(index)"
+                  >
+                    ×
+                  </n-button>
+                </div>
+                <button
+                  v-if="canAddDeliveryImage"
+                  class="delivery-image-add"
+                  :disabled="deliveryImagesSaving"
+                  @click="openDeliveryImageModal"
+                >
+                  +
+                </button>
+              </div>
+              <button
+                v-else
+                class="delivery-image-add"
+                :disabled="deliveryImagesSaving"
+                @click="openDeliveryImageModal"
+              >
+                +
+              </button>
+              <div class="delivery-images-meta">
+                {{ totalDeliveryImageCount }}/4 张
+                <span v-if="pendingDeliveryImages.length > 0">（待保存 {{ pendingDeliveryImages.length }} 张）</span>
+              </div>
+            </div>
+          </n-descriptions-item>
         </n-descriptions>
         <n-space style="margin-top: 12px;">
           <n-button v-if="order.status === 'pending'" type="primary" :loading="sending" @click="doSend">
@@ -37,34 +146,20 @@
         </n-space>
       </n-card>
 
-      <n-grid :cols="2" :x-gap="16">
-        <n-gi>
-          <n-card title="配件明细">
-            <n-data-table v-if="partItems.length > 0" :columns="partColumns" :data="partItems" :bordered="false" size="small" />
-            <n-empty v-else description="暂无配件明细" style="margin-top: 16px;" />
-            <div v-if="order?.status === 'pending'" style="margin-top: 12px;">
-              <n-button dashed style="width: 100%;" @click="openAddPartModal">+ 添加配件行</n-button>
-            </div>
-          </n-card>
-        </n-gi>
-        <n-gi>
-          <n-card title="成品明细">
-            <n-data-table v-if="jewelryItems.length > 0" :columns="jewelryColumns" :data="jewelryItems" :bordered="false" size="small" />
-            <n-empty v-else description="暂无成品明细" style="margin-top: 16px;" />
-            <div v-if="order?.status === 'pending'" style="margin-top: 12px;">
-              <n-button dashed style="width: 100%;" @click="openAddJewelryModal">+ 添加饰品行</n-button>
-            </div>
-          </n-card>
-        </n-gi>
-      </n-grid>
+      <n-card title="配件明细">
+        <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" />
+        <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
+        <div v-if="order?.status === 'pending'" style="margin-top: 12px;">
+          <n-button dashed style="width: 100%;" @click="openAddModal">+ 添加明细行</n-button>
+        </div>
+      </n-card>
     </n-spin>
 
-    <!-- Add Part Modal -->
-    <n-modal v-model:show="addPartModalVisible" preset="card" title="添加配件明细" style="width: 500px;">
-      <n-form label-placement="left" label-width="100">
+    <n-modal v-model:show="addModalVisible" preset="card" title="添加配件明细" style="width: 500px;">
+      <n-form label-placement="left" label-width="90">
         <n-form-item label="配件">
           <n-select
-            v-model:value="addPartForm.part_id"
+            v-model:value="addForm.part_id"
             :options="partOptions"
             :render-label="renderOptionWithImage"
             filterable
@@ -72,96 +167,48 @@
             @update:value="onAddPartSelect"
           />
         </n-form-item>
-        <n-form-item label="实际发出">
-          <n-input-number v-model:value="addPartForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
+        <n-form-item label="数量">
+          <n-input-number v-model:value="addForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
         </n-form-item>
         <n-form-item label="单位">
-          <n-select v-model:value="addPartForm.unit" :options="partUnitOptions" />
-        </n-form-item>
-        <n-form-item label="BOM理论(选填)">
-          <n-input-number v-model:value="addPartForm.bom_qty" :min="0" :precision="2" :step="1" style="width: 100%;" placeholder="可选" />
+          <n-select v-model:value="addForm.unit" :options="unitOptions" />
         </n-form-item>
         <n-form-item label="备注">
-          <n-input v-model:value="addPartForm.note" placeholder="备注（可选）" />
+          <n-input v-model:value="addForm.note" placeholder="备注（可选）" />
         </n-form-item>
       </n-form>
       <template #footer>
         <n-space justify="end">
-          <n-button @click="addPartModalVisible = false">取消</n-button>
-          <n-button type="primary" :loading="addPartSubmitting" @click="doAddPart">确认添加</n-button>
+          <n-button @click="addModalVisible = false">取消</n-button>
+          <n-button type="primary" :loading="addSubmitting" @click="doAddItem">确认添加</n-button>
         </n-space>
       </template>
     </n-modal>
 
-    <!-- Edit Part Modal -->
-    <n-modal v-model:show="editPartModalVisible" preset="card" title="修改配件明细" style="width: 500px;">
-      <n-form label-placement="left" label-width="100">
-        <n-form-item label="实际发出">
-          <n-input-number v-model:value="editPartForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
+    <n-modal v-model:show="editModalVisible" preset="card" title="修改配件明细" style="width: 500px;">
+      <n-form label-placement="left" label-width="90">
+        <n-form-item label="数量">
+          <n-input-number v-model:value="editForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
         </n-form-item>
         <n-form-item label="单位">
-          <n-select v-model:value="editPartForm.unit" :options="partUnitOptions" />
-        </n-form-item>
-        <n-form-item label="BOM理论(选填)">
-          <n-input-number v-model:value="editPartForm.bom_qty" :min="0" :precision="2" :step="1" style="width: 100%;" placeholder="可选" />
+          <n-select v-model:value="editForm.unit" :options="unitOptions" />
         </n-form-item>
       </n-form>
       <template #footer>
         <n-space justify="end">
-          <n-button @click="editPartModalVisible = false">取消</n-button>
-          <n-button type="primary" :loading="editPartSubmitting" @click="doEditPart">保存修改</n-button>
+          <n-button @click="editModalVisible = false">取消</n-button>
+          <n-button type="primary" :loading="editSubmitting" @click="doEditItem">保存修改</n-button>
         </n-space>
       </template>
     </n-modal>
 
-    <!-- Add Jewelry Modal -->
-    <n-modal v-model:show="addJewelryModalVisible" preset="card" title="添加饰品明细" style="width: 500px;">
-      <n-form label-placement="left" label-width="100">
-        <n-form-item label="饰品">
-          <n-select
-            v-model:value="addJewelryForm.jewelry_id"
-            :options="jewelryOptions"
-            :render-label="renderOptionWithImage"
-            filterable
-            placeholder="选择饰品"
-            @update:value="onAddJewelrySelect"
-          />
-        </n-form-item>
-        <n-form-item label="预期数量">
-          <n-input-number v-model:value="addJewelryForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
-        </n-form-item>
-        <n-form-item label="单位">
-          <n-select v-model:value="addJewelryForm.unit" :options="jewelryUnitOptions" />
-        </n-form-item>
-        <n-form-item label="备注">
-          <n-input v-model:value="addJewelryForm.note" placeholder="备注（可选）" />
-        </n-form-item>
-      </n-form>
-      <template #footer>
-        <n-space justify="end">
-          <n-button @click="addJewelryModalVisible = false">取消</n-button>
-          <n-button type="primary" :loading="addJewelrySubmitting" @click="doAddJewelry">确认添加</n-button>
-        </n-space>
-      </template>
-    </n-modal>
-
-    <!-- Edit Jewelry Modal -->
-    <n-modal v-model:show="editJewelryModalVisible" preset="card" title="修改饰品明细" style="width: 500px;">
-      <n-form label-placement="left" label-width="100">
-        <n-form-item label="预期数量">
-          <n-input-number v-model:value="editJewelryForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
-        </n-form-item>
-        <n-form-item label="单位">
-          <n-select v-model:value="editJewelryForm.unit" :options="jewelryUnitOptions" />
-        </n-form-item>
-      </n-form>
-      <template #footer>
-        <n-space justify="end">
-          <n-button @click="editJewelryModalVisible = false">取消</n-button>
-          <n-button type="primary" :loading="editJewelrySubmitting" @click="doEditJewelry">保存修改</n-button>
-        </n-space>
-      </template>
-    </n-modal>
+    <ImageUploadModal
+      v-model:show="showDeliveryImageModal"
+      kind="handcraft"
+      :entity-id="order?.id"
+      suppress-success
+      @uploaded="handleDeliveryImageUploaded"
+    />
   </div>
 </template>
 
@@ -171,19 +218,19 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
-  NSpace, NButton, NH2, NTag, NGrid, NGi, NEmpty, NModal, NForm, NFormItem,
-  NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon,
+  NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
+  NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon, NImage,
 } from 'naive-ui'
 import { CreateOutline } from '@vicons/ionicons5'
 import {
-  getHandcraft, getHandcraftParts, getHandcraftJewelries, sendHandcraft,
+  getHandcraft, getHandcraftParts, sendHandcraft,
   addHandcraftPart, updateHandcraftPart, deleteHandcraftPart,
-  addHandcraftJewelry, updateHandcraftJewelry, deleteHandcraftJewelry,
+  updateHandcraftDeliveryImages, downloadHandcraftExcel, downloadHandcraftPdf,
 } from '@/api/handcraft'
 import { changeOrderStatus } from '@/api/kanban'
-import { listParts } from '@/api/parts'
-import { listJewelries } from '@/api/jewelries'
+import { listParts, updatePart } from '@/api/parts'
 import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
+import ImageUploadModal from '@/components/ImageUploadModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -192,16 +239,22 @@ const dialog = useDialog()
 
 const loading = ref(true)
 const sending = ref(false)
+const downloadingExcel = ref(false)
+const downloadingPdf = ref(false)
 const order = ref(null)
-const partItems = ref([])
-const jewelryItems = ref([])
+const items = ref([])
 const partMap = ref({})
-const jewelryMap = ref({})
 const partOptions = ref([])
-const jewelryOptions = ref([])
+const showDeliveryImageModal = ref(false)
+const deliveryImagesSaving = ref(false)
+const pendingDeliveryImages = ref([])
+const retryingPendingImage = ref('')
 
 const statusType = { pending: 'default', processing: 'info', completed: 'success' }
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
+const deliveryImages = computed(() => order.value?.delivery_images || [])
+const totalDeliveryImageCount = computed(() => deliveryImages.value.length + pendingDeliveryImages.value.length)
+const canAddDeliveryImage = computed(() => totalDeliveryImageCount.value < 4)
 const statusOptions = computed(() => {
   if (!order.value) return []
   const s = order.value.status
@@ -215,7 +268,7 @@ const statusOptions = computed(() => {
 })
 const fmt = (dt) => new Date(dt).toLocaleString('zh-CN')
 
-const partUnitOptions = [
+const unitOptions = [
   { label: '个', value: '个' },
   { label: '条', value: '条' },
   { label: '米', value: '米' },
@@ -223,54 +276,46 @@ const partUnitOptions = [
   { label: 'kg', value: 'kg' },
 ]
 
-const jewelryUnitOptions = [
-  { label: '个', value: '个' },
-  { label: '套', value: '套' },
-  { label: '对', value: '对' },
-]
+const addModalVisible = ref(false)
+const addSubmitting = ref(false)
+const addForm = ref({ part_id: null, qty: 1, unit: '个', note: '' })
 
-// Add Part Modal
-const addPartModalVisible = ref(false)
-const addPartSubmitting = ref(false)
-const addPartForm = ref({ part_id: null, qty: 1, unit: '个', bom_qty: null, note: '' })
+const editModalVisible = ref(false)
+const editSubmitting = ref(false)
+const editForm = ref({ id: null, qty: 1, unit: '个' })
+const editingCellKey = ref('')
+const editingCellValue = ref('')
+const savingCellKey = ref('')
+const cellInputRef = ref(null)
 
-// Edit Part Modal
-const editPartModalVisible = ref(false)
-const editPartSubmitting = ref(false)
-const editPartForm = ref({ id: null, qty: 1, unit: '个', bom_qty: null })
-
-// Add Jewelry Modal
-const addJewelryModalVisible = ref(false)
-const addJewelrySubmitting = ref(false)
-const addJewelryForm = ref({ jewelry_id: null, qty: 1, unit: '个', note: '' })
-
-// Edit Jewelry Modal
-const editJewelryModalVisible = ref(false)
-const editJewelrySubmitting = ref(false)
-const editJewelryForm = ref({ id: null, qty: 1, unit: '个' })
-const editingNoteKey = ref(null)
-const editingNoteValue = ref('')
-const savingNoteKey = ref(null)
-const noteInputRef = ref(null)
+const loadParts = async () => {
+  const { data: parts } = await listParts()
+  partMap.value = Object.fromEntries(parts.map((part) => [part.id, part]))
+  partOptions.value = parts.map((p) => ({
+    label: `${p.id} ${p.name}`,
+    value: p.id,
+    code: p.id,
+    name: p.name,
+    image: p.image,
+    unit: p.unit,
+  }))
+}
 
 const loadData = async () => {
   const id = route.params.id
-  const [oRes, pRes, jRes] = await Promise.all([
-    getHandcraft(id), getHandcraftParts(id), getHandcraftJewelries(id),
-  ])
+  const results = await Promise.all([loadParts(), getHandcraft(id), getHandcraftParts(id)])
+  const oRes = results[1]
+  const iRes = results[2]
   order.value = oRes.data
-  partItems.value = pRes.data.map((p) => ({
-    ...p,
-    part_name: partMap.value[p.part_id]?.name || p.part_id,
-    part_image: partMap.value[p.part_id]?.image || '',
+  items.value = iRes.data.map((i) => ({
+    ...i,
+    part_name: partMap.value[i.part_id]?.name || i.part_id,
+    part_image: partMap.value[i.part_id]?.image || '',
+    color: partMap.value[i.part_id]?.color || '',
   }))
-  jewelryItems.value = jRes.data.map((j) => ({
-    ...j,
-    jewelry_name: jewelryMap.value[j.jewelry_id]?.name || j.jewelry_id,
-    jewelry_image: jewelryMap.value[j.jewelry_id]?.image || '',
-  }))
+  pendingDeliveryImages.value = pendingDeliveryImages.value.filter((image) => !order.value.delivery_images.includes(image))
   if (!isPending()) {
-    stopEditNote()
+    stopEditingCell()
   }
 }
 
@@ -283,6 +328,76 @@ const doSend = async () => {
   } finally {
     sending.value = false
   }
+}
+
+const doDownloadExcel = async () => {
+  await downloadExportFile('xlsx', downloadingExcel, downloadHandcraftExcel, 'Excel 下载失败')
+}
+
+const doDownloadPdf = async () => {
+  await downloadExportFile('pdf', downloadingPdf, downloadHandcraftPdf, 'PDF 下载失败')
+}
+
+const downloadExportFile = async (extension, loadingRef, request, errorText) => {
+  if (!order.value) return
+  loadingRef.value = true
+  try {
+    const { data, headers } = await request(order.value.id)
+    const url = window.URL.createObjectURL(data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = buildExportFilename(order.value, extension)
+      || extractDownloadFilename(headers?.['content-disposition'])
+      || `发出_${order.value.id}.${extension}`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+  } catch (_) {
+    message.error(errorText)
+  } finally {
+    loadingRef.value = false
+  }
+}
+
+const extractDownloadFilename = (contentDisposition) => {
+  if (!contentDisposition) return ''
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    } catch {
+      return utf8Match[1]
+    }
+  }
+  const plainMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i)
+  return plainMatch?.[1] || ''
+}
+
+const buildExportFilename = (currentOrder, extension) => {
+  if (!currentOrder) return ''
+  const supplierName = sanitizeFilenamePart(currentOrder.supplier_name) || '未命名手工厂'
+  const shortDate = formatShortDate(currentOrder.created_at)
+  return `发出_${supplierName}_${shortDate}.${extension}`
+}
+
+const sanitizeFilenamePart = (value) => {
+  if (!value) return ''
+  return String(value)
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/g, '')
+}
+
+const formatShortDate = (value) => {
+  if (!value) return '000000'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '000000'
+  const year = String(date.getFullYear() % 100).padStart(2, '0')
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}${month}${day}`
 }
 
 const doChangeStatus = (newStatus) => {
@@ -302,67 +417,63 @@ const doChangeStatus = (newStatus) => {
         await loadData()
       } catch (_) {
         loadingMsg.destroy()
-        // errors shown by axios interceptor
         await loadData()
       }
     },
   })
 }
 
-// --- Part CRUD ---
-
-const openAddPartModal = () => {
-  addPartForm.value = { part_id: null, qty: 1, unit: '个', bom_qty: null, note: '' }
-  addPartModalVisible.value = true
+const openAddModal = () => {
+  addForm.value = { part_id: null, qty: 1, unit: '个', note: '' }
+  addModalVisible.value = true
 }
 
 const onAddPartSelect = (val) => {
   const found = partOptions.value.find((p) => p.value === val)
   if (found && found.unit) {
-    addPartForm.value.unit = found.unit
+    addForm.value.unit = found.unit
   } else {
-    addPartForm.value.unit = '个'
+    addForm.value.unit = '个'
   }
 }
 
-const doAddPart = async () => {
-  if (!addPartForm.value.part_id) { message.warning('请选择配件'); return }
-  if (!addPartForm.value.qty || addPartForm.value.qty < 1) { message.warning('数量不能小于 1'); return }
-  addPartSubmitting.value = true
+const doAddItem = async () => {
+  if (!addForm.value.part_id) { message.warning('请选择配件'); return }
+  if (!addForm.value.qty || addForm.value.qty < 1) { message.warning('数量不能小于 1'); return }
+  addSubmitting.value = true
   try {
-    await addHandcraftPart(route.params.id, addPartForm.value)
-    message.success('配件明细已添加')
-    addPartModalVisible.value = false
+    await addHandcraftPart(route.params.id, addForm.value)
+    message.success('明细已添加')
+    addModalVisible.value = false
     await loadData()
   } finally {
-    addPartSubmitting.value = false
+    addSubmitting.value = false
   }
 }
 
-const openEditPartModal = (row) => {
-  editPartForm.value = {
+const openEditModal = (row) => {
+  editForm.value = {
     id: row.id,
     qty: row.qty,
     unit: row.unit || '个',
-    bom_qty: row.bom_qty ?? null,
   }
-  editPartModalVisible.value = true
+  editModalVisible.value = true
 }
 
-const doEditPart = async () => {
-  editPartSubmitting.value = true
+const doEditItem = async () => {
+  editSubmitting.value = true
   try {
-    const { id, ...body } = editPartForm.value
+    const { id, ...body } = editForm.value
     await updateHandcraftPart(route.params.id, id, body)
     message.success('修改已保存')
-    editPartModalVisible.value = false
+    editModalVisible.value = false
     await loadData()
   } finally {
-    editPartSubmitting.value = false
+    editSubmitting.value = false
   }
 }
 
-const doDeletePart = (row) => {
+const doDeleteItem = (row) => {
   dialog.warning({
     title: '确认删除',
     content: `确认删除配件 ${row.part_name || row.part_id} 的明细行？`,
@@ -374,160 +485,173 @@ const doDeletePart = (row) => {
         message.success('已删除')
         await loadData()
       } catch (_) {
-        // error shown by axios interceptor
-      }
-    },
-  })
-}
-
-// --- Jewelry CRUD ---
-
-const openAddJewelryModal = () => {
-  addJewelryForm.value = { jewelry_id: null, qty: 1, unit: '个', note: '' }
-  addJewelryModalVisible.value = true
-}
-
-const onAddJewelrySelect = (val) => {
-  const found = jewelryOptions.value.find((j) => j.value === val)
-  if (found && found.unit) {
-    addJewelryForm.value.unit = found.unit
-  } else {
-    addJewelryForm.value.unit = '个'
-  }
-}
-
-const doAddJewelry = async () => {
-  if (!addJewelryForm.value.jewelry_id) { message.warning('请选择饰品'); return }
-  if (!addJewelryForm.value.qty || addJewelryForm.value.qty < 1) { message.warning('数量不能小于 1'); return }
-  addJewelrySubmitting.value = true
-  try {
-    await addHandcraftJewelry(route.params.id, addJewelryForm.value)
-    message.success('饰品明细已添加')
-    addJewelryModalVisible.value = false
-    await loadData()
-  } finally {
-    addJewelrySubmitting.value = false
-  }
-}
-
-const openEditJewelryModal = (row) => {
-  editJewelryForm.value = {
-    id: row.id,
-    qty: row.qty,
-    unit: row.unit || '个',
-  }
-  editJewelryModalVisible.value = true
-}
-
-const doEditJewelry = async () => {
-  editJewelrySubmitting.value = true
-  try {
-    const { id, ...body } = editJewelryForm.value
-    await updateHandcraftJewelry(route.params.id, id, body)
-    message.success('修改已保存')
-    editJewelryModalVisible.value = false
-    await loadData()
-  } finally {
-    editJewelrySubmitting.value = false
-  }
-}
-
-const doDeleteJewelry = (row) => {
-  dialog.warning({
-    title: '确认删除',
-    content: `确认删除饰品 ${row.jewelry_name || row.jewelry_id} 的明细行？`,
-    positiveText: '删除',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      try {
-        await deleteHandcraftJewelry(route.params.id, row.id)
-        message.success('已删除')
-        await loadData()
-      } catch (_) {
-        // error shown by axios interceptor
       }
     },
   })
 }
 
 const isPending = () => order.value?.status === 'pending'
-const noteKeyOf = (kind, id) => `${kind}:${id}`
-const normalizeNote = (value) => (value || '').trim()
+const normalizeEditableValue = (value) => (value || '').trim()
+const mergeDeliveryImages = (...groups) => [...new Set(groups.flat().filter(Boolean))]
 
-const focusEditingNoteInput = () => {
-  nextTick(() => {
-    noteInputRef.value?.focus?.()
+const persistDeliveryImages = async (nextImages, successText) => {
+  if (!order.value) return
+  deliveryImagesSaving.value = true
+  try {
+    const { data } = await updateHandcraftDeliveryImages(order.value.id, nextImages)
+    order.value = data
+    pendingDeliveryImages.value = pendingDeliveryImages.value.filter((image) => !data.delivery_images.includes(image))
+    message.success(successText)
+    return data
+  } finally {
+    deliveryImagesSaving.value = false
+  }
+}
+
+const openDeliveryImageModal = () => {
+  if (!canAddDeliveryImage.value) {
+    message.warning('发货图片最多上传 4 张')
+    return
+  }
+  showDeliveryImageModal.value = true
+}
+
+const handleDeliveryImageUploaded = async (url) => {
+  if (!url) return
+  if (!canAddDeliveryImage.value) {
+    message.warning('发货图片最多上传 4 张')
+    return
+  }
+  try {
+    await persistDeliveryImages(mergeDeliveryImages(deliveryImages.value, [url]), '发货图片已上传')
+  } catch (_) {
+    if (!pendingDeliveryImages.value.includes(url)) {
+      pendingDeliveryImages.value.push(url)
+    }
+    message.warning('图片已上传，但写入手工单失败，可点击“重试保存”继续')
+  }
+}
+
+const removeDeliveryImage = (index) => {
+  if (!order.value) return
+  dialog.warning({
+    title: '确认删除图片',
+    content: '删除后不可恢复，确认继续吗？',
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      const nextImages = deliveryImages.value.filter((_, currentIndex) => currentIndex !== index)
+      await persistDeliveryImages(nextImages, '发货图片已删除')
+    },
   })
 }
 
-const startEditNote = (kind, row) => {
+const retryPendingDeliveryImage = async (image) => {
+  if (!pendingDeliveryImages.value.includes(image)) return
+  retryingPendingImage.value = image
+  try {
+    await persistDeliveryImages(
+      mergeDeliveryImages(deliveryImages.value, pendingDeliveryImages.value),
+      '待保存图片已写入手工单',
+    )
+  } catch (_) {
+    message.warning('重试保存失败，请稍后再试')
+  } finally {
+    retryingPendingImage.value = ''
+  }
+}
+
+const dropPendingDeliveryImage = (image) => {
+  pendingDeliveryImages.value = pendingDeliveryImages.value.filter((item) => item !== image)
+  message.success('已移除待保存记录')
+}
+
+const cellKeyOf = (field, row) => `${field}:${row.id}`
+
+const focusEditingCellInput = () => {
+  nextTick(() => {
+    cellInputRef.value?.focus?.()
+  })
+}
+
+const startEditCell = (field, row) => {
   if (!isPending()) return
-  editingNoteKey.value = noteKeyOf(kind, row.id)
-  editingNoteValue.value = row.note || ''
-  focusEditingNoteInput()
+  editingCellKey.value = cellKeyOf(field, row)
+  editingCellValue.value = row[field] || ''
+  focusEditingCellInput()
 }
 
-const stopEditNote = (noteKey = null) => {
-  if (noteKey !== null && editingNoteKey.value !== noteKey) return
-  editingNoteKey.value = null
-  editingNoteValue.value = ''
+const stopEditingCell = (field = null, row = null) => {
+  if (field && row && editingCellKey.value !== cellKeyOf(field, row)) return
+  editingCellKey.value = ''
+  editingCellValue.value = ''
 }
 
-const saveNote = async (kind, row) => {
-  const noteKey = noteKeyOf(kind, row.id)
-  if (editingNoteKey.value !== noteKey || savingNoteKey.value === noteKey) return
+const saveCell = async (field, row) => {
+  const currentCellKey = cellKeyOf(field, row)
+  if (editingCellKey.value !== currentCellKey || savingCellKey.value === currentCellKey) return
 
-  const nextNote = normalizeNote(editingNoteValue.value)
-  const currentNote = normalizeNote(row.note)
-  if (nextNote === currentNote) {
-    stopEditNote(noteKey)
+  const nextValue = normalizeEditableValue(editingCellValue.value)
+  const currentValue = normalizeEditableValue(row[field])
+  if (nextValue === currentValue) {
+    stopEditingCell(field, row)
     return
   }
 
-  savingNoteKey.value = noteKey
+  savingCellKey.value = currentCellKey
   try {
-    const request = kind === 'part'
-      ? updateHandcraftPart(route.params.id, row.id, { note: nextNote })
-      : updateHandcraftJewelry(route.params.id, row.id, { note: nextNote })
-    const { data } = await request
-    row.note = data.note || ''
-    message.success(nextNote ? '备注已保存' : '备注已清空')
-    stopEditNote(noteKey)
+    if (field === 'color') {
+      const { data } = await updatePart(row.part_id, { color: nextValue || null })
+      partMap.value = {
+        ...partMap.value,
+        [row.part_id]: data,
+      }
+      items.value.forEach((item) => {
+        if (item.part_id === row.part_id) {
+          item.color = data.color || ''
+        }
+      })
+    } else {
+      const { data } = await updateHandcraftPart(route.params.id, row.id, { [field]: nextValue })
+      row[field] = data[field] || ''
+    }
+    message.success(nextValue ? `${field === 'color' ? '颜色' : '备注'}已保存` : `${field === 'color' ? '颜色' : '备注'}已清空`)
+    stopEditingCell(field, row)
   } finally {
-    if (savingNoteKey.value === noteKey) {
-      savingNoteKey.value = null
+    if (savingCellKey.value === currentCellKey) {
+      savingCellKey.value = ''
     }
   }
 }
 
-const onNoteInputKeydown = (event, kind, row) => {
+const onCellInputKeydown = (event, field, row) => {
   if (event.key !== 'Enter') return
   if (event.isComposing || event.keyCode === 229) return
   event.preventDefault()
-  void saveNote(kind, row)
+  void saveCell(field, row)
 }
 
-const renderNoteCell = (kind, row) => {
-  const noteKey = noteKeyOf(kind, row.id)
-  const isEditing = editingNoteKey.value === noteKey
-  const isSaving = savingNoteKey.value === noteKey
-  const noteText = row.note || ''
+const renderEditableCell = (field, row, emptyLabel) => {
+  const currentCellKey = cellKeyOf(field, row)
+  const isEditing = editingCellKey.value === currentCellKey
+  const isSaving = savingCellKey.value === currentCellKey
+  const text = row[field] || ''
 
   if (isEditing) {
     return h(NInput, {
-      ref: noteInputRef,
-      value: editingNoteValue.value,
+      ref: cellInputRef,
+      value: editingCellValue.value,
       size: 'small',
-      placeholder: '输入备注后按回车或点击空白处保存',
+      placeholder: '输入内容后按回车或点击空白处保存',
       disabled: isSaving,
       autofocus: true,
-      'onUpdate:value': (value) => { editingNoteValue.value = value },
-      onBlur: () => { void saveNote(kind, row) },
-      onKeydown: (event) => onNoteInputKeydown(event, kind, row),
+      'onUpdate:value': (value) => { editingCellValue.value = value },
+      onBlur: () => { void saveCell(field, row) },
+      onKeydown: (event) => onCellInputKeydown(event, field, row),
     })
   }
 
-  if (!noteText) {
+  if (!text) {
     if (!isPending()) {
       return h('span', { style: 'color: #999;' }, '-')
     }
@@ -537,11 +661,11 @@ const renderNoteCell = (kind, row) => {
         text: true,
         type: 'primary',
         size: 'small',
-        onClick: () => startEditNote(kind, row),
+        onClick: () => startEditCell(field, row),
       },
       {
         icon: () => h(NIcon, null, { default: () => h(CreateOutline) }),
-        default: () => '添加备注',
+        default: () => emptyLabel,
       },
     )
   }
@@ -549,49 +673,43 @@ const renderNoteCell = (kind, row) => {
   return h(
     'span',
     {
-      title: noteText,
+      title: text,
       style: [
         'display: inline-block',
-        'max-width: 180px',
+        'max-width: 220px',
         'overflow: hidden',
         'text-overflow: ellipsis',
         'white-space: nowrap',
         'vertical-align: bottom',
         isPending() ? 'cursor: pointer; color: #2080f0;' : '',
       ].join('; '),
-      onClick: isPending() ? () => startEditNote(kind, row) : undefined,
+      onClick: isPending() ? () => startEditCell(field, row) : undefined,
     },
-    noteText,
+    text,
   )
 }
 
-const partColumns = [
+const itemColumns = [
   { title: '配件编号', key: 'part_id', width: 110 },
   {
     title: '配件',
     key: 'part_name',
-    minWidth: 160,
+    minWidth: 180,
     render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name),
   },
-  { title: '实际发出', key: 'qty' },
-  { title: '单位', key: 'unit', render: (r) => r.unit || '-' },
-  { title: 'BOM理论', key: 'bom_qty', render: (r) => r.bom_qty ?? '-' },
   {
-    title: '差异',
-    key: 'diff',
-    render: (r) => {
-      if (r.bom_qty == null) return '-'
-      const diff = r.qty - r.bom_qty
-      return h('span', { style: { color: diff > 0 ? '#d03050' : diff < 0 ? '#18a058' : undefined } },
-        (diff > 0 ? '+' : '') + diff
-      )
-    },
+    title: '颜色',
+    key: 'color',
+    minWidth: 140,
+    render: (row) => renderEditableCell('color', row, '添加颜色'),
   },
+  { title: '发出数量', key: 'qty' },
+  { title: '单位', key: 'unit', render: (r) => r.unit || '-' },
   {
     title: '备注',
     key: 'note',
-    minWidth: 200,
-    render: (row) => renderNoteCell('part', row),
+    minWidth: 240,
+    render: (row) => renderEditableCell('note', row, '添加备注'),
   },
   {
     title: '操作',
@@ -610,11 +728,11 @@ const partColumns = [
                 size: 'small',
                 disabled: !pending,
                 style: 'margin-right: 6px;',
-                onClick: pending ? () => openEditPartModal(row) : undefined,
+                onClick: pending ? () => openEditModal(row) : undefined,
               },
               { default: () => '修改' },
             ),
-          default: () => '当前单子进行中/已完成，不允许修改/删除',
+          default: () => '当前单子进行中/已完成，不允许修改',
         },
       )
       const deleteBtn = h(
@@ -628,75 +746,11 @@ const partColumns = [
                 size: 'small',
                 type: 'error',
                 disabled: !pending,
-                onClick: pending ? () => doDeletePart(row) : undefined,
+                onClick: pending ? () => doDeleteItem(row) : undefined,
               },
               { default: () => '删除' },
             ),
-          default: () => '当前单子进行中/已完成，不允许修改/删除',
-        },
-      )
-      return h(NSpace, { size: 'small' }, { default: () => [editBtn, deleteBtn] })
-    },
-  },
-]
-
-const jewelryColumns = [
-  { title: '饰品编号', key: 'jewelry_id', width: 110 },
-  {
-    title: '饰品',
-    key: 'jewelry_name',
-    minWidth: 160,
-    render: (row) => renderNamedImage(row.jewelry_name, row.jewelry_image, row.jewelry_name),
-  },
-  { title: '预期数量', key: 'qty' },
-  { title: '单位', key: 'unit', render: (r) => r.unit || '-' },
-  { title: '状态', key: 'status' },
-  {
-    title: '备注',
-    key: 'note',
-    minWidth: 200,
-    render: (row) => renderNoteCell('jewelry', row),
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 140,
-    render: (row) => {
-      const pending = isPending()
-      const editBtn = h(
-        NTooltip,
-        { disabled: pending, trigger: 'hover' },
-        {
-          trigger: () =>
-            h(
-              NButton,
-              {
-                size: 'small',
-                disabled: !pending,
-                style: 'margin-right: 6px;',
-                onClick: pending ? () => openEditJewelryModal(row) : undefined,
-              },
-              { default: () => '修改' },
-            ),
-          default: () => '当前单子进行中/已完成，不允许修改/删除',
-        },
-      )
-      const deleteBtn = h(
-        NTooltip,
-        { disabled: pending, trigger: 'hover' },
-        {
-          trigger: () =>
-            h(
-              NButton,
-              {
-                size: 'small',
-                type: 'error',
-                disabled: !pending,
-                onClick: pending ? () => doDeleteJewelry(row) : undefined,
-              },
-              { default: () => '删除' },
-            ),
-          default: () => '当前单子进行中/已完成，不允许修改/删除',
+          default: () => '当前单子进行中/已完成，不允许删除',
         },
       )
       return h(NSpace, { size: 'small' }, { default: () => [editBtn, deleteBtn] })
@@ -706,28 +760,129 @@ const jewelryColumns = [
 
 onMounted(async () => {
   try {
-    const [pRes, jRes] = await Promise.all([listParts(), listJewelries()])
-    pRes.data.forEach((p) => { partMap.value[p.id] = p })
-    jRes.data.forEach((j) => { jewelryMap.value[j.id] = j })
-    partOptions.value = pRes.data.map((p) => ({
-      label: `${p.id} ${p.name}`,
-      value: p.id,
-      code: p.id,
-      name: p.name,
-      image: p.image,
-      unit: p.unit,
-    }))
-    jewelryOptions.value = jRes.data.map((j) => ({
-      label: `${j.id} ${j.name}`,
-      value: j.id,
-      code: j.id,
-      name: j.name,
-      image: j.image,
-      unit: j.unit,
-    }))
     await loadData()
   } finally {
     loading.value = false
   }
 })
 </script>
+
+<style scoped>
+.delivery-images-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.delivery-images-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.delivery-images-warning {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #f3d08a;
+  background: #fff8e8;
+}
+
+.delivery-images-warning-title {
+  color: #8a5a17;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.delivery-images-pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.delivery-pending-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.delivery-pending-preview {
+  display: block;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.delivery-pending-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.delivery-image-card {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid #eadbc1;
+  background: linear-gradient(180deg, #fffdf7, #f7f0e1);
+}
+
+.delivery-image-preview {
+  display: block;
+}
+
+.delivery-image-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+.delivery-image-add {
+  width: 88px;
+  height: 88px;
+  border: 1px dashed #d6b98d;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fffaf0, #f6eedc);
+  color: #8a5a17;
+  font-size: 30px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.delivery-image-add:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.delivery-images-meta {
+  color: #8a6b39;
+  font-size: 12px;
+}
+
+.export-excel-btn {
+  background: #469c66;
+  color: #fff;
+  border-color: #469c66;
+}
+
+.export-excel-btn:hover,
+.export-excel-btn:focus {
+  background: #3d8959;
+  color: #fff;
+  border-color: #3d8959;
+}
+
+.export-pdf-btn {
+  background: #d84243;
+  color: #fff;
+  border-color: #d84243;
+}
+
+.export-pdf-btn:hover,
+.export-pdf-btn:focus {
+  background: #bf3a3b;
+  color: #fff;
+  border-color: #bf3a3b;
+}
+</style>

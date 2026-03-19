@@ -32,6 +32,11 @@ def ensure_schema_compat(target_engine=None):
                 conn.execute(text("ALTER TABLE plating_order ADD COLUMN delivery_images TEXT NULL"))
                 logger.warning("Added missing plating_order.delivery_images column")
 
+        if inspector.has_table("handcraft_order"):
+            columns = {col["name"] for col in inspector.get_columns("handcraft_order")}
+            if "delivery_images" not in columns:
+                conn.execute(text("ALTER TABLE handcraft_order ADD COLUMN delivery_images TEXT NULL"))
+                logger.warning("Added missing handcraft_order.delivery_images column")
 
 def get_db():
     db = SessionLocal()
