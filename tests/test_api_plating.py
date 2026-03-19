@@ -1,7 +1,9 @@
 import pytest
 
 from services.part import create_part
-from services.inventory import add_stock
+from services.inventory import add_stock, get_stock
+from services.kanban import record_vendor_receipt
+from schemas.kanban import ReceiptItemIn
 
 
 def test_create_plating_order(client, db):
@@ -80,6 +82,58 @@ def test_get_plating_order(client, db):
 def test_get_plating_order_not_found(client, db):
     resp = client.get("/api/plating/EP-9999")
     assert resp.status_code == 404
+
+
+def test_delete_plating_order(client, db):
+    part = create_part(db, {"name": "P_delete", "category": "小配件"})
+    db.commit()
+
+    create_resp = client.post("/api/plating/", json={
+        "supplier_name": "Supplier Delete",
+        "items": [{"part_id": part.id, "qty": 8.0}],
+    })
+    order_id = create_resp.json()["id"]
+
+    resp = client.delete(f"/api/plating/{order_id}")
+    assert resp.status_code == 204
+
+    from models.plating_order import PlatingOrder, PlatingOrderItem
+    assert db.query(PlatingOrder).filter(PlatingOrder.id == order_id).first() is None
+    assert db.query(PlatingOrderItem).filter(PlatingOrderItem.plating_order_id == order_id).count() == 0
+
+
+def test_delete_completed_plating_order_restores_stock_and_clears_receipts(client, db):
+    part = create_part(db, {"name": "P_delete_completed", "category": "小配件"})
+    add_stock(db, "part", part.id, 30.0, "initial stock")
+    db.commit()
+
+    create_resp = client.post("/api/plating/", json={
+        "supplier_name": "Supplier Delete Completed",
+        "items": [{"part_id": part.id, "qty": 10.0}],
+    })
+    order_id = create_resp.json()["id"]
+
+    send_resp = client.post(f"/api/plating/{order_id}/send")
+    assert send_resp.status_code == 200
+
+    record_vendor_receipt(db, "Supplier Delete Completed", "plating", order_id, [
+        ReceiptItemIn(item_id=part.id, item_type="part", qty=10.0),
+    ])
+
+    from models.plating_order import PlatingOrder, PlatingOrderItem
+    from models.vendor_receipt import VendorReceipt
+
+    assert get_stock(db, "part", part.id) == pytest.approx(30.0)
+    assert db.query(VendorReceipt).filter(VendorReceipt.order_id == order_id).count() == 1
+    assert db.query(PlatingOrder).filter(PlatingOrder.id == order_id).first().status == "completed"
+
+    resp = client.delete(f"/api/plating/{order_id}")
+    assert resp.status_code == 204
+
+    assert get_stock(db, "part", part.id) == pytest.approx(30.0)
+    assert db.query(PlatingOrder).filter(PlatingOrder.id == order_id).first() is None
+    assert db.query(PlatingOrderItem).filter(PlatingOrderItem.plating_order_id == order_id).count() == 0
+    assert db.query(VendorReceipt).filter(VendorReceipt.order_id == order_id).count() == 0
 
 
 def test_send_plating_order(client, db):

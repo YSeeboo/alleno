@@ -1,11 +1,13 @@
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
 from models.jewelry import Jewelry
 from models.part import Part
+from models.vendor_receipt import VendorReceipt
 from services._helpers import _next_id
 from services.inventory import add_stock, deduct_stock
 
@@ -18,6 +20,44 @@ def _require_part(db: Session, part_id: str) -> None:
 def _require_jewelry(db: Session, jewelry_id: str) -> None:
     if db.get(Jewelry, jewelry_id) is None:
         raise ValueError(f"Jewelry not found: {jewelry_id}")
+
+
+def _normalize_delivery_images(delivery_images: Optional[list]) -> list[str]:
+    cleaned = [str(item).strip() for item in (delivery_images or []) if str(item).strip()]
+    if len(cleaned) > 4:
+        raise ValueError("发货图片最多上传 4 张")
+    return cleaned
+
+
+def _vendor_receipt_totals_for_handcraft(db: Session, order_id: str) -> dict[tuple[str, str], float]:
+    rows = (
+        db.query(
+            VendorReceipt.item_id,
+            VendorReceipt.item_type,
+            func.sum(VendorReceipt.qty).label("qty"),
+        )
+        .filter(
+            VendorReceipt.order_id == order_id,
+            VendorReceipt.order_type == "handcraft",
+        )
+        .group_by(VendorReceipt.item_id, VendorReceipt.item_type)
+        .all()
+    )
+    return {(row.item_id, row.item_type): float(row.qty) for row in rows}
+
+
+def _attach_part_colors(db: Session, items: list[HandcraftPartItem]) -> list[HandcraftPartItem]:
+    if not items:
+        return items
+    part_ids = {item.part_id for item in items}
+    parts = {
+        part.id: part
+        for part in db.query(Part).filter(Part.id.in_(part_ids)).all()
+    }
+    for item in items:
+        part = parts.get(item.part_id)
+        item.color = part.color if part else None
+    return items
 
 
 def create_handcraft_order(
@@ -143,15 +183,28 @@ def list_handcraft_orders(db: Session, status: str = None) -> list:
 
 
 def get_handcraft_parts(db: Session, order_id: str) -> list:
-    return db.query(HandcraftPartItem).filter(
-        HandcraftPartItem.handcraft_order_id == order_id
-    ).all()
+    items = (
+        db.query(HandcraftPartItem)
+        .filter(HandcraftPartItem.handcraft_order_id == order_id)
+        .order_by(HandcraftPartItem.id.asc())
+        .all()
+    )
+    return _attach_part_colors(db, items)
 
 
 def get_handcraft_jewelries(db: Session, order_id: str) -> list:
     return db.query(HandcraftJewelryItem).filter(
         HandcraftJewelryItem.handcraft_order_id == order_id
     ).all()
+
+
+def update_handcraft_delivery_images(db: Session, order_id: str, delivery_images: Optional[list]) -> HandcraftOrder:
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise ValueError(f"HandcraftOrder not found: {order_id}")
+    order.delivery_images = _normalize_delivery_images(delivery_images)
+    db.flush()
+    return order
 
 
 def add_handcraft_part(db: Session, order_id: str, item: dict) -> HandcraftPartItem:
@@ -171,7 +224,7 @@ def add_handcraft_part(db: Session, order_id: str, item: dict) -> HandcraftPartI
     )
     db.add(new_item)
     db.flush()
-    return new_item
+    return _attach_part_colors(db, [new_item])[0]
 
 
 def update_handcraft_part(db: Session, order_id: str, item_id: int, data: dict) -> HandcraftPartItem:
@@ -192,7 +245,7 @@ def update_handcraft_part(db: Session, order_id: str, item_id: int, data: dict) 
     if "bom_qty" in data:
         item.bom_qty = data["bom_qty"]  # allow setting to None to clear
     db.flush()
-    return item
+    return _attach_part_colors(db, [item])[0]
 
 
 def delete_handcraft_part(db: Session, order_id: str, item_id: int) -> None:
@@ -276,6 +329,50 @@ def delete_handcraft_jewelry(db: Session, order_id: str, item_id: int) -> None:
     if remaining == 0:
         raise ValueError(f"Cannot delete the last jewelry from order {order_id}; an order must have at least one jewelry item")
     db.delete(item)
+    db.flush()
+
+
+def delete_handcraft_order(db: Session, order_id: str) -> None:
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise ValueError(f"HandcraftOrder not found: {order_id}")
+
+    part_items = get_handcraft_parts(db, order_id)
+    jewelry_items = get_handcraft_jewelries(db, order_id)
+    vendor_received = _vendor_receipt_totals_for_handcraft(db, order_id)
+
+    jewelry_received_totals: dict[str, float] = {}
+    for jewelry_item in jewelry_items:
+        jewelry_received_totals[jewelry_item.jewelry_id] = jewelry_received_totals.get(
+            jewelry_item.jewelry_id,
+            0.0,
+        ) + float(jewelry_item.received_qty or 0)
+
+    for jewelry_id, total_received in jewelry_received_totals.items():
+        legacy_received = total_received - vendor_received.get((jewelry_id, "jewelry"), 0.0)
+        if legacy_received > 0:
+            deduct_stock(db, "jewelry", jewelry_id, legacy_received, "手工完成撤回")
+
+    receipts = db.query(VendorReceipt).filter(
+        VendorReceipt.order_id == order_id,
+        VendorReceipt.order_type == "handcraft",
+    ).all()
+    for receipt in receipts:
+        reason = "手工完成撤回" if receipt.item_type == "jewelry" else "手工退回撤回"
+        deduct_stock(db, receipt.item_type, receipt.item_id, float(receipt.qty), reason)
+        db.delete(receipt)
+
+    if order.status != "pending":
+        part_totals: dict[str, float] = {}
+        for part_item in part_items:
+            part_totals[part_item.part_id] = part_totals.get(part_item.part_id, 0.0) + float(part_item.qty)
+        for part_id, total_sent in part_totals.items():
+            add_stock(db, "part", part_id, total_sent, "手工发出撤回")
+
+    db.query(HandcraftPartItem).filter(HandcraftPartItem.handcraft_order_id == order_id).delete(synchronize_session=False)
+    db.query(HandcraftJewelryItem).filter(HandcraftJewelryItem.handcraft_order_id == order_id).delete(synchronize_session=False)
+    db.flush()
+    db.delete(order)
     db.flush()
 
 

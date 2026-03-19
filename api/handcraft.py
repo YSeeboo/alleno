@@ -1,6 +1,8 @@
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -8,6 +10,7 @@ from api._errors import service_errors
 from database import get_db
 from schemas.handcraft import (
     HandcraftCreate,
+    HandcraftDeliveryImagesUpdate,
     HandcraftJewelryIn,
     HandcraftJewelryItemResponse,
     HandcraftPartIn,
@@ -15,10 +18,13 @@ from schemas.handcraft import (
     HandcraftResponse,
     ReceiptRequest,
 )
+from services.handcraft_excel import build_handcraft_order_excel
+from services.handcraft_pdf import build_handcraft_order_pdf
 from services.handcraft import (
     add_handcraft_jewelry,
     add_handcraft_part,
     create_handcraft_order,
+    delete_handcraft_order,
     delete_handcraft_jewelry,
     delete_handcraft_part,
     get_handcraft_jewelries,
@@ -27,6 +33,7 @@ from services.handcraft import (
     list_handcraft_orders,
     receive_handcraft_jewelries,
     send_handcraft_order,
+    update_handcraft_delivery_images,
     update_handcraft_jewelry,
     update_handcraft_order_status,
     update_handcraft_part,
@@ -79,6 +86,15 @@ def api_get_handcraft_order(order_id: str, db: Session = Depends(get_db)):
     return order
 
 
+@router.delete("/{order_id}", status_code=204)
+def api_delete_handcraft_order(order_id: str, db: Session = Depends(get_db)):
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
+    with service_errors():
+        delete_handcraft_order(db, order_id)
+
+
 @router.get("/{order_id}/parts", response_model=list[HandcraftPartItemResponse])
 def api_get_handcraft_parts(order_id: str, db: Session = Depends(get_db)):
     order = get_handcraft_order(db, order_id)
@@ -93,6 +109,40 @@ def api_get_handcraft_jewelries(order_id: str, db: Session = Depends(get_db)):
     if order is None:
         raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
     return get_handcraft_jewelries(db, order_id)
+
+
+@router.get("/{order_id}/excel")
+def api_download_handcraft_excel(order_id: str, db: Session = Depends(get_db)):
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
+    file_bytes, filename = build_handcraft_order_excel(db, order_id)
+    return Response(
+        content=file_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="handcraft-export.xlsx"; filename*=UTF-8\'\'{quote(filename)}'
+            )
+        },
+    )
+
+
+@router.get("/{order_id}/pdf")
+def api_download_handcraft_pdf(order_id: str, db: Session = Depends(get_db)):
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
+    file_bytes, filename = build_handcraft_order_pdf(db, order_id)
+    return Response(
+        content=file_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="handcraft-export.pdf"; filename*=UTF-8\'\'{quote(filename)}'
+            )
+        },
+    )
 
 
 @router.post("/{order_id}/send", response_model=HandcraftResponse)
@@ -184,4 +234,14 @@ def api_update_handcraft_status(order_id: str, body: StatusUpdate, db: Session =
         raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
     with service_errors():
         order = update_handcraft_order_status(db, order_id, body.status)
+    return order
+
+
+@router.patch("/{order_id}/delivery-images", response_model=HandcraftResponse)
+def api_update_handcraft_delivery_images(order_id: str, body: HandcraftDeliveryImagesUpdate, db: Session = Depends(get_db)):
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
+    with service_errors():
+        order = update_handcraft_delivery_images(db, order_id, body.delivery_images)
     return order

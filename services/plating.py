@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models.part import Part
 from models.plating_order import PlatingOrder, PlatingOrderItem
+from models.vendor_receipt import VendorReceipt
 from services._helpers import _next_id
 from services.inventory import add_stock, deduct_stock
 
@@ -19,6 +21,20 @@ def _normalize_delivery_images(delivery_images: Optional[list]) -> list[str]:
     if len(cleaned) > 4:
         raise ValueError("发货图片最多上传 4 张")
     return cleaned
+
+
+def _vendor_receipt_totals_for_plating(db: Session, order_id: str) -> dict[str, float]:
+    rows = (
+        db.query(VendorReceipt.item_id, func.sum(VendorReceipt.qty).label("qty"))
+        .filter(
+            VendorReceipt.order_id == order_id,
+            VendorReceipt.order_type == "plating",
+            VendorReceipt.item_type == "part",
+        )
+        .group_by(VendorReceipt.item_id)
+        .all()
+    )
+    return {row.item_id: float(row.qty) for row in rows}
 
 
 def create_plating_order(db: Session, supplier_name: str, items: list, note: str = None) -> PlatingOrder:
@@ -190,6 +206,43 @@ def delete_plating_item(db: Session, order_id: str, item_id: int) -> None:
     if remaining == 0:
         raise ValueError(f"Cannot delete the last item from order {order_id}; an order must have at least one item")
     db.delete(item)
+    db.flush()
+
+
+def delete_plating_order(db: Session, order_id: str) -> None:
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise ValueError(f"PlatingOrder not found: {order_id}")
+
+    items = get_plating_items(db, order_id)
+    vendor_received = _vendor_receipt_totals_for_plating(db, order_id)
+
+    sent_by_part: dict[str, float] = {}
+    received_by_part: dict[str, float] = {}
+    for item in items:
+        sent_by_part[item.part_id] = sent_by_part.get(item.part_id, 0.0) + float(item.qty)
+        received_by_part[item.part_id] = received_by_part.get(item.part_id, 0.0) + float(item.received_qty or 0)
+
+    for part_id, total_received in received_by_part.items():
+        legacy_received = total_received - vendor_received.get(part_id, 0.0)
+        if legacy_received > 0:
+            deduct_stock(db, "part", part_id, legacy_received, "电镀收回撤回")
+
+    receipts = db.query(VendorReceipt).filter(
+        VendorReceipt.order_id == order_id,
+        VendorReceipt.order_type == "plating",
+    ).all()
+    for receipt in receipts:
+        deduct_stock(db, receipt.item_type, receipt.item_id, float(receipt.qty), "电镀收回撤回")
+        db.delete(receipt)
+
+    if order.status != "pending":
+        for part_id, total_sent in sent_by_part.items():
+            add_stock(db, "part", part_id, total_sent, "电镀发出撤回")
+
+    db.query(PlatingOrderItem).filter(PlatingOrderItem.plating_order_id == order_id).delete(synchronize_session=False)
+    db.flush()
+    db.delete(order)
     db.flush()
 
 

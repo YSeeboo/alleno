@@ -22,11 +22,14 @@
 <script setup>
 import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
-import { listHandcraft } from '@/api/handcraft'
+import { useDialog, useMessage, NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
+import { listHandcraft, deleteHandcraft } from '@/api/handcraft'
 
 const router = useRouter()
+const dialog = useDialog()
+const message = useMessage()
 const loading = ref(true)
+const deletingId = ref(null)
 const rows = ref([])
 const filterStatus = ref(null)
 const statusOptions = [
@@ -48,6 +51,27 @@ const load = async () => {
   }
 }
 
+const doDeleteOrder = (row) => {
+  if (!row?.id || deletingId.value) return
+  dialog.warning({
+    title: '确认删除手工单',
+    content: `确认删除手工单「${row.id}」吗？删除后不可恢复。`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      deletingId.value = row.id
+      try {
+        await deleteHandcraft(row.id)
+        rows.value = rows.value.filter((item) => item.id !== row.id)
+        message.success('手工单已删除')
+        await load()
+      } finally {
+        deletingId.value = null
+      }
+    },
+  })
+}
+
 const rowProps = (row) => ({ style: 'cursor: pointer;', onClick: () => router.push(`/handcraft/${row.id}`) })
 
 const columns = [
@@ -59,6 +83,24 @@ const columns = [
     render: (r) => h('span', { class: `badge ${statusBadge[r.status] || 'badge-gray'}` }, `• ${statusLabel[r.status] || r.status}`),
   },
   { title: '创建时间', key: 'created_at', render: (r) => new Date(r.created_at).toLocaleString('zh-CN') },
+  {
+    title: '',
+    key: 'actions',
+    width: 96,
+    render: (row) => h(
+      NButton,
+      {
+        size: 'small',
+        type: 'error',
+        loading: deletingId.value === row.id,
+        onClick: (event) => {
+          event.stopPropagation()
+          doDeleteOrder(row)
+        },
+      },
+      { default: () => '删除' },
+    ),
+  },
 ]
 
 onMounted(load)

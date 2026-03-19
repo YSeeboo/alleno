@@ -21,6 +21,7 @@ from services.plating_pdf import build_plating_order_pdf
 from services.plating import (
     add_plating_item,
     create_plating_order,
+    delete_plating_order,
     delete_plating_item,
     get_plating_order,
     get_plating_items,
@@ -70,6 +71,15 @@ def api_get_plating_order(order_id: str, db: Session = Depends(get_db)):
     if order is None:
         raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
     return order
+
+
+@router.delete("/{order_id}", status_code=204)
+def api_delete_plating_order(order_id: str, db: Session = Depends(get_db)):
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
+    with service_errors():
+        delete_plating_order(db, order_id)
 
 
 @router.get("/{order_id}/items", response_model=list[PlatingItemResponse])
