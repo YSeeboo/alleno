@@ -20,6 +20,7 @@ def test_create_plating_order(client, db):
     assert data["supplier_name"] == "Supplier A"
     assert data["status"] == "pending"
     assert data["id"].startswith("EP-")
+    assert data["delivery_images"] == []
 
 
 def test_list_plating_orders(client, db):
@@ -238,5 +239,51 @@ def test_create_plating_order_negative_qty(client, db):
     resp = client.post("/api/plating/", json={
         "supplier_name": "Supplier N",
         "items": [{"part_id": part.id, "qty": -5.0}],
+    })
+    assert resp.status_code == 422
+
+
+def test_update_plating_delivery_images(client, db):
+    part = create_part(db, {"name": "P_img", "category": "小配件"})
+    db.commit()
+
+    create_resp = client.post("/api/plating/", json={
+        "supplier_name": "Supplier IMG",
+        "items": [{"part_id": part.id, "qty": 8.0}],
+    })
+    order_id = create_resp.json()["id"]
+
+    resp = client.patch(f"/api/plating/{order_id}/delivery-images", json={
+        "delivery_images": [
+            "https://img.example.com/a.png",
+            "https://img.example.com/b.png",
+        ],
+    })
+    assert resp.status_code == 200
+    assert resp.json()["delivery_images"] == [
+        "https://img.example.com/a.png",
+        "https://img.example.com/b.png",
+    ]
+
+    detail_resp = client.get(f"/api/plating/{order_id}")
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["delivery_images"] == [
+        "https://img.example.com/a.png",
+        "https://img.example.com/b.png",
+    ]
+
+
+def test_update_plating_delivery_images_rejects_more_than_four(client, db):
+    part = create_part(db, {"name": "P_img_limit", "category": "小配件"})
+    db.commit()
+
+    create_resp = client.post("/api/plating/", json={
+        "supplier_name": "Supplier IMG LIMIT",
+        "items": [{"part_id": part.id, "qty": 6.0}],
+    })
+    order_id = create_resp.json()["id"]
+
+    resp = client.patch(f"/api/plating/{order_id}/delivery-images", json={
+        "delivery_images": ["1.png", "2.png", "3.png", "4.png", "5.png"],
     })
     assert resp.status_code == 422

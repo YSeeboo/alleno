@@ -14,6 +14,13 @@ def _require_part(db: Session, part_id: str) -> None:
         raise ValueError(f"Part not found: {part_id}")
 
 
+def _normalize_delivery_images(delivery_images: Optional[list]) -> list[str]:
+    cleaned = [str(item).strip() for item in (delivery_images or []) if str(item).strip()]
+    if len(cleaned) > 4:
+        raise ValueError("发货图片最多上传 4 张")
+    return cleaned
+
+
 def create_plating_order(db: Session, supplier_name: str, items: list, note: str = None) -> PlatingOrder:
     for item in items:
         _require_part(db, item["part_id"])
@@ -201,5 +208,14 @@ def update_plating_order_status(db: Session, order_id: str, status: str) -> Plat
     if current == "processing" and status == "completed":
         raise ValueError("Use POST /receive to complete a processing order; items must be fully received first")
     order.status = status
+    db.flush()
+    return order
+
+
+def update_plating_delivery_images(db: Session, order_id: str, delivery_images: Optional[list]) -> PlatingOrder:
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise ValueError(f"PlatingOrder not found: {order_id}")
+    order.delivery_images = _normalize_delivery_images(delivery_images)
     db.flush()
     return order

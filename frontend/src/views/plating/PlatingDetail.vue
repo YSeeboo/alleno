@@ -31,6 +31,47 @@
           <n-descriptions-item label="备注">{{ order.note || '-' }}</n-descriptions-item>
           <n-descriptions-item label="发货图片" :span="2">
             <div class="delivery-images-block">
+              <div v-if="pendingDeliveryImages.length > 0" class="delivery-images-warning">
+                <div class="delivery-images-warning-title">
+                  有 {{ pendingDeliveryImages.length }} 张图片已上传，但还没保存到电镀单
+                </div>
+                <div class="delivery-images-pending-list">
+                  <div
+                    v-for="image in pendingDeliveryImages"
+                    :key="`pending-${image}`"
+                    class="delivery-pending-item"
+                  >
+                    <n-image
+                      :src="image"
+                      alt="待保存发货图片"
+                      :width="56"
+                      :height="56"
+                      object-fit="cover"
+                      class="delivery-pending-preview"
+                    />
+                    <div class="delivery-pending-actions">
+                      <n-button
+                        size="tiny"
+                        type="warning"
+                        ghost
+                        :loading="retryingPendingImage === image"
+                        :disabled="deliveryImagesSaving"
+                        @click="retryPendingDeliveryImage(image)"
+                      >
+                        重试保存
+                      </n-button>
+                      <n-button
+                        size="tiny"
+                        quaternary
+                        :disabled="deliveryImagesSaving || retryingPendingImage === image"
+                        @click="dropPendingDeliveryImage(image)"
+                      >
+                        移除记录
+                      </n-button>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <div v-if="deliveryImages.length > 0" class="delivery-images-grid">
                 <div
                   v-for="(image, index) in deliveryImages"
@@ -74,7 +115,8 @@
                 +
               </button>
               <div class="delivery-images-meta">
-                {{ deliveryImages.length }}/4 张
+                {{ totalDeliveryImageCount }}/4 张
+                <span v-if="pendingDeliveryImages.length > 0">（待保存 {{ pendingDeliveryImages.length }} 张）</span>
               </div>
             </div>
           </n-descriptions-item>
@@ -192,11 +234,14 @@ const partMap = ref({})
 const partOptions = ref([])
 const showDeliveryImageModal = ref(false)
 const deliveryImagesSaving = ref(false)
+const pendingDeliveryImages = ref([])
+const retryingPendingImage = ref('')
 
 const statusType = { pending: 'default', processing: 'info', completed: 'success' }
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
 const deliveryImages = computed(() => order.value?.delivery_images || [])
-const canAddDeliveryImage = computed(() => deliveryImages.value.length < 4)
+const totalDeliveryImageCount = computed(() => deliveryImages.value.length + pendingDeliveryImages.value.length)
+const canAddDeliveryImage = computed(() => totalDeliveryImageCount.value < 4)
 const statusOptions = computed(() => {
   if (!order.value) return []
   const s = order.value.status
@@ -248,6 +293,7 @@ const loadData = async () => {
     part_name: partMap.value[i.part_id]?.name || i.part_id,
     part_image: partMap.value[i.part_id]?.image || '',
   }))
+  pendingDeliveryImages.value = pendingDeliveryImages.value.filter((image) => !order.value.delivery_images.includes(image))
   if (!isPending()) {
     stopEditNote()
   }
@@ -359,6 +405,7 @@ const doDeleteItem = (row) => {
 
 const isPending = () => order.value?.status === 'pending'
 const normalizeNote = (value) => (value || '').trim()
+const mergeDeliveryImages = (...groups) => [...new Set(groups.flat().filter(Boolean))]
 
 const persistDeliveryImages = async (nextImages, successText) => {
   if (!order.value) return
@@ -366,7 +413,9 @@ const persistDeliveryImages = async (nextImages, successText) => {
   try {
     const { data } = await updatePlatingDeliveryImages(order.value.id, nextImages)
     order.value = data
+    pendingDeliveryImages.value = pendingDeliveryImages.value.filter((image) => !data.delivery_images.includes(image))
     message.success(successText)
+    return data
   } finally {
     deliveryImagesSaving.value = false
   }
@@ -386,7 +435,14 @@ const handleDeliveryImageUploaded = async (url) => {
     message.warning('发货图片最多上传 4 张')
     return
   }
-  await persistDeliveryImages([...deliveryImages.value, url], '发货图片已上传')
+  try {
+    await persistDeliveryImages(mergeDeliveryImages(deliveryImages.value, [url]), '发货图片已上传')
+  } catch (_) {
+    if (!pendingDeliveryImages.value.includes(url)) {
+      pendingDeliveryImages.value.push(url)
+    }
+    message.warning('图片已上传，但写入电镀单失败，可点击“重试保存”继续')
+  }
 }
 
 const removeDeliveryImage = (index) => {
@@ -403,6 +459,26 @@ const removeDeliveryImage = (index) => {
   })
 }
 
+const retryPendingDeliveryImage = async (image) => {
+  if (!pendingDeliveryImages.value.includes(image)) return
+  retryingPendingImage.value = image
+  try {
+    await persistDeliveryImages(
+      mergeDeliveryImages(deliveryImages.value, pendingDeliveryImages.value),
+      '待保存图片已写入电镀单',
+    )
+  } catch (_) {
+    message.warning('重试保存失败，请稍后再试')
+  } finally {
+    retryingPendingImage.value = ''
+  }
+}
+
+const dropPendingDeliveryImage = (image) => {
+  pendingDeliveryImages.value = pendingDeliveryImages.value.filter((item) => item !== image)
+  message.success('已移除待保存记录')
+}
+
 const focusEditingNoteInput = () => {
   nextTick(() => {
     noteInputRef.value?.focus?.()
@@ -416,7 +492,8 @@ const startEditNote = (row) => {
   focusEditingNoteInput()
 }
 
-const stopEditNote = () => {
+const stopEditNote = (itemId = null) => {
+  if (itemId !== null && editingNoteItemId.value !== itemId) return
   editingNoteItemId.value = null
   editingNoteValue.value = ''
 }
@@ -424,21 +501,24 @@ const stopEditNote = () => {
 const saveNote = async (row) => {
   if (editingNoteItemId.value !== row.id || savingNoteItemId.value === row.id) return
 
+  const itemId = row.id
   const nextNote = normalizeNote(editingNoteValue.value)
   const currentNote = normalizeNote(row.note)
   if (nextNote === currentNote) {
-    stopEditNote()
+    stopEditNote(itemId)
     return
   }
 
-  savingNoteItemId.value = row.id
+  savingNoteItemId.value = itemId
   try {
-    const { data } = await updatePlatingItem(route.params.id, row.id, { note: nextNote })
+    const { data } = await updatePlatingItem(route.params.id, itemId, { note: nextNote })
     row.note = data.note || ''
     message.success(nextNote ? '备注已保存' : '备注已清空')
-    stopEditNote()
+    stopEditNote(itemId)
   } finally {
-    savingNoteItemId.value = null
+    if (savingNoteItemId.value === itemId) {
+      savingNoteItemId.value = null
+    }
   }
 }
 
@@ -605,6 +685,44 @@ onMounted(async () => {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.delivery-images-warning {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #f3d08a;
+  background: #fff8e8;
+}
+
+.delivery-images-warning-title {
+  color: #8a5a17;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.delivery-images-pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.delivery-pending-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.delivery-pending-preview {
+  display: block;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.delivery-pending-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .delivery-image-card {

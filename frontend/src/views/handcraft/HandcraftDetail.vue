@@ -467,7 +467,8 @@ const startEditNote = (kind, row) => {
   focusEditingNoteInput()
 }
 
-const stopEditNote = () => {
+const stopEditNote = (noteKey = null) => {
+  if (noteKey !== null && editingNoteKey.value !== noteKey) return
   editingNoteKey.value = null
   editingNoteValue.value = ''
 }
@@ -479,7 +480,7 @@ const saveNote = async (kind, row) => {
   const nextNote = normalizeNote(editingNoteValue.value)
   const currentNote = normalizeNote(row.note)
   if (nextNote === currentNote) {
-    stopEditNote()
+    stopEditNote(noteKey)
     return
   }
 
@@ -491,9 +492,11 @@ const saveNote = async (kind, row) => {
     const { data } = await request
     row.note = data.note || ''
     message.success(nextNote ? '备注已保存' : '备注已清空')
-    stopEditNote()
+    stopEditNote(noteKey)
   } finally {
-    savingNoteKey.value = null
+    if (savingNoteKey.value === noteKey) {
+      savingNoteKey.value = null
+    }
   }
 }
 

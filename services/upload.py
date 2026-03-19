@@ -12,7 +12,7 @@ from typing import Optional
 from config import settings
 from schemas.upload import UploadPolicyResponse
 
-ALLOWED_KINDS = {"part": "parts", "jewelry": "jewelries"}
+ALLOWED_KINDS = {"part": "parts", "jewelry": "jewelries", "plating": "plating-orders"}
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 
@@ -42,7 +42,7 @@ def build_upload_policy(kind: str, filename: str, content_type: str = "", entity
     if not settings.oss_enabled:
         raise ValueError("OSS 未配置完成")
     if kind not in ALLOWED_KINDS:
-        raise ValueError("仅支持配件和饰品图片上传")
+        raise ValueError("仅支持配件、饰品和电镀单图片上传")
 
     ext = _normalize_extension(filename, content_type)
     now = datetime.now(timezone.utc)

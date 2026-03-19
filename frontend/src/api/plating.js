@@ -11,3 +11,5 @@ export const addPlatingItem = (id, data) => api.post(`/plating/${id}/items`, dat
 export const updatePlatingItem = (id, itemId, data) => api.put(`/plating/${id}/items/${itemId}`, data)
 export const deletePlatingItem = (id, itemId) => api.delete(`/plating/${id}/items/${itemId}`)
 export const updatePlatingStatus = (id, status) => api.patch(`/plating/${id}/status`, { status })
+export const updatePlatingDeliveryImages = (id, deliveryImages) =>
+  api.patch(`/plating/${id}/delivery-images`, { delivery_images: deliveryImages })

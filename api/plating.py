@@ -6,7 +6,14 @@ from sqlalchemy.orm import Session
 
 from api._errors import service_errors
 from database import get_db
-from schemas.plating import PlatingCreate, PlatingItemCreate, PlatingItemResponse, PlatingResponse, ReceiptRequest
+from schemas.plating import (
+    PlatingCreate,
+    PlatingDeliveryImagesUpdate,
+    PlatingItemCreate,
+    PlatingItemResponse,
+    PlatingResponse,
+    ReceiptRequest,
+)
 from services.plating import (
     add_plating_item,
     create_plating_order,
@@ -16,6 +23,7 @@ from services.plating import (
     list_plating_orders,
     receive_plating_items,
     send_plating_order,
+    update_plating_delivery_images,
     update_plating_item,
     update_plating_order_status,
 )
@@ -128,4 +136,14 @@ def api_update_plating_status(order_id: str, body: StatusUpdate, db: Session = D
         raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
     with service_errors():
         order = update_plating_order_status(db, order_id, body.status)
+    return order
+
+
+@router.patch("/{order_id}/delivery-images", response_model=PlatingResponse)
+def api_update_plating_delivery_images(order_id: str, body: PlatingDeliveryImagesUpdate, db: Session = Depends(get_db)):
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
+    with service_errors():
+        order = update_plating_delivery_images(db, order_id, body.delivery_images)
     return order

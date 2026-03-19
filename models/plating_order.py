@@ -1,3 +1,5 @@
+import json
+
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text
 
 from database import Base
@@ -13,6 +15,22 @@ class PlatingOrder(Base):
     created_at = Column(DateTime, default=now_beijing)
     completed_at = Column(DateTime, nullable=True)
     note = Column(Text, nullable=True)
+    delivery_images_raw = Column("delivery_images", Text, nullable=True)
+
+    @property
+    def delivery_images(self):
+        if not self.delivery_images_raw:
+            return []
+        try:
+            value = json.loads(self.delivery_images_raw)
+        except (TypeError, ValueError):
+            return []
+        return value if isinstance(value, list) else []
+
+    @delivery_images.setter
+    def delivery_images(self, value):
+        cleaned = [str(item).strip() for item in (value or []) if str(item).strip()]
+        self.delivery_images_raw = json.dumps(cleaned, ensure_ascii=True) if cleaned else None
 
 
 class PlatingOrderItem(Base):

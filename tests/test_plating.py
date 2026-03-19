@@ -6,7 +6,7 @@ from services.part import create_part
 from services.inventory import add_stock, get_stock
 from services.plating import (
     create_plating_order, send_plating_order, receive_plating_items,
-    get_plating_order, list_plating_orders,
+    get_plating_order, list_plating_orders, update_plating_delivery_images,
 )
 
 
@@ -134,3 +134,27 @@ def test_send_plating_order_twice_raises(setup):
         send_plating_order(db, order.id)
     # Stock should only be deducted once
     assert get_stock(db, "part", p1.id) == 150.0  # 200 - 50
+
+
+def test_update_plating_delivery_images(setup):
+    db, p1, _ = setup
+    order = create_plating_order(db, "厂A", [
+        {"part_id": p1.id, "qty": 20, "plating_method": "金色"},
+    ])
+
+    update_plating_delivery_images(db, order.id, ["https://img.test/a.png", " https://img.test/b.png "])
+    db.refresh(order)
+
+    assert order.delivery_images == ["https://img.test/a.png", "https://img.test/b.png"]
+
+
+def test_update_plating_delivery_images_rejects_more_than_four(setup):
+    db, p1, _ = setup
+    order = create_plating_order(db, "厂A", [
+        {"part_id": p1.id, "qty": 20, "plating_method": "金色"},
+    ])
+
+    with pytest.raises(ValueError, match="最多上传 4 张"):
+        update_plating_delivery_images(db, order.id, [
+            "1.png", "2.png", "3.png", "4.png", "5.png",
+        ])

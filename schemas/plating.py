@@ -49,3 +49,8 @@ class PlatingResponse(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime] = None
     note: Optional[str] = None
+    delivery_images: List[str] = Field(default_factory=list)
+
+
+class PlatingDeliveryImagesUpdate(BaseModel):
+    delivery_images: List[str] = Field(default_factory=list, max_length=4)

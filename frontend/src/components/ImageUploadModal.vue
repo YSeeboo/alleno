@@ -41,6 +41,7 @@ const props = defineProps({
   show: Boolean,
   kind: { type: String, required: true },
   entityId: { type: [String, Number], default: null },
+  suppressSuccess: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:show', 'uploaded'])
@@ -64,7 +65,9 @@ const uploadFile = async (file) => {
       entityId: props.entityId,
     })
     emit('uploaded', url)
-    message.success('图片上传成功')
+    if (!props.suppressSuccess) {
+      message.success('图片上传成功')
+    }
     visible.value = false
   } catch (error) {
     message.error(error.response?.data || error.message || '图片上传失败')
