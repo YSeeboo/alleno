@@ -18,6 +18,7 @@ from api.handcraft import router as handcraft_router
 from api.uploads import router as uploads_router
 from api.feishu import router as feishu_router
 from api.kanban import router as kanban_router
+from api.purchase_order import router as purchase_order_router
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ app.include_router(handcraft_router)
 app.include_router(uploads_router)
 app.include_router(feishu_router)
 app.include_router(kanban_router, prefix="/api/kanban", tags=["kanban"])
+app.include_router(purchase_order_router)
 
 
 @app.get("/")

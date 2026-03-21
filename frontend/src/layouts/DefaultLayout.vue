@@ -43,7 +43,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { NLayout, NLayoutHeader, NLayoutSider, NLayoutContent, NMenu } from 'naive-ui'
 import {
   HomeOutline, ExtensionPuzzleOutline, DiamondOutline, ReceiptOutline,
-  ColorWandOutline, HammerOutline, ListOutline, GridOutline, ArchiveOutline,
+  CartOutline, ColorWandOutline, HammerOutline, ListOutline, GridOutline, ArchiveOutline,
 } from '@vicons/ionicons5'
 
 const router = useRouter()
@@ -58,6 +58,7 @@ const flatItems = [
   { label: '配件管理', key: 'parts', icon: icon(ExtensionPuzzleOutline) },
   { label: '饰品管理', key: 'jewelries', icon: icon(DiamondOutline) },
   { label: '订单管理', key: 'orders', icon: icon(ReceiptOutline) },
+  { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline) },
   { label: '电镀单', key: 'plating', icon: icon(ColorWandOutline) },
   { label: '手工单', key: 'handcraft', icon: icon(HammerOutline) },
   { label: '库存总表', key: 'inventory', icon: icon(ArchiveOutline) },
@@ -89,6 +90,7 @@ const groupedItems = [
     key: 'group-production',
     children: [
       { label: '订单管理', key: 'orders', icon: icon(ReceiptOutline) },
+      { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline) },
       { label: '电镀单', key: 'plating', icon: icon(ColorWandOutline) },
       { label: '手工单', key: 'handcraft', icon: icon(HammerOutline) },
     ],

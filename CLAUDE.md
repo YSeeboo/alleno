@@ -11,10 +11,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Layer | Technology |
 |-------|-----------|
 | Backend | FastAPI + SQLAlchemy |
-| Database | PostgreSQL |
-| Frontend | Vue 3 + Vite + Naive UI |
-| Bot | python-telegram-bot v20+ (Telegram) + Feishu Bot |
-| AI | Anthropic Claude API |
+| Database | PostgreSQL (docker-compose provides PG 16) |
+| Frontend | Vue 3.5 + Vite 7 + Naive UI + Pinia |
+| Bot | Feishu Bot + python-telegram-bot v20+ |
+| AI Agent | DeepSeek API (agentic loop with tool calling in `bot/agent/`) |
+| AI Vision | Anthropic Claude API (image analysis in `bot/vision.py`) |
+| File/Export | openpyxl (Excel), ReportLab (PDF), oss2 (Aliyun OSS uploads) |
 
 ## Commands
 
@@ -22,19 +24,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 python main.py                # start dev server (uvicorn, port 8000, --reload)
 pytest                        # run all tests
-pytest tests/test_part.py     # run a single test file
-pytest tests/test_part.py::test_create_part_valid_category_generates_prefixed_id  # single test
+pytest tests/test_api_parts.py                                              # single file
+pytest tests/test_api_parts.py::test_create_part_valid_category_generates_prefixed_id  # single test
 ```
 
 ### Frontend
 ```bash
 cd frontend
+npm install      # first time setup
 npm run dev      # dev server (port 5173)
-npm run build    # production build
+npm run build    # production build → dist/
 ```
 
 ### Database
-Tests require a separate test DB. Set `TEST_DATABASE_URL` in the environment (default: `postgresql://allen:allen@localhost:5432/allen_shop_test`). The test fixture calls `create_all()` and `TRUNCATE ... RESTART IDENTITY CASCADE` between tests automatically.
+```bash
+docker-compose up -d   # start PostgreSQL (localhost:5432, db: allen_shop, user/pass: allen)
+```
+Tests require a separate test DB. Set `TEST_DATABASE_URL` (default: `postgresql://allen:allen@localhost:5432/allen_shop_test`). The test fixture calls `create_all()` and `TRUNCATE ... RESTART IDENTITY CASCADE` between tests.
+
+### Deployment
+```bash
+./deploy_aliyun_update.sh   # rsync → remote venv + pip install → DB migrate → frontend build → systemd restart
+```
+Configurable via env vars: `REMOTE_HOST`, `REMOTE_DIR`, `BACKEND_SERVICE`, `FRONTEND_DEPLOY_DIR`.
 
 ## Architecture
 
@@ -42,8 +54,8 @@ Tests require a separate test DB. Set `TEST_DATABASE_URL` in the environment (de
 Entry (Frontend / Telegram Bot / Feishu Bot) → FastAPI router → service function → SQLAlchemy session
 
 ### Key Files
-- `main.py` — lifespan calls `Base.metadata.create_all()` then `ensure_optional_columns()` on startup
-- `database.py` — engine, `SessionLocal`, `Base`, `get_db()`, `ensure_optional_columns()`
+- `main.py` — lifespan calls `Base.metadata.create_all()` then `ensure_schema_compat()` on startup
+- `database.py` — engine, `SessionLocal`, `Base`, `get_db()`, `ensure_schema_compat()`
 - `config.py` — Pydantic `BaseSettings`; validates `DATABASE_URL` must be PostgreSQL
 - `time_utils.py` — `now_beijing()` returns naive datetime in Asia/Shanghai; used as column defaults
 - `api/_errors.py` — `service_errors()` context manager: `ValueError` → HTTP 400, `RuntimeError` → HTTP 500
@@ -72,14 +84,22 @@ There is **no stock column**. Current stock is always `SELECT SUM(change_qty) FR
 
 **State machine rule**: all transitions go through dedicated endpoints (`POST /send`, `POST /receive`). `PATCH /{id}/status` rejects all transitions to enforce this.
 
+### Bot / Agent Architecture
+- `bot/agent/runner.py` — DeepSeek agentic loop (`run_agent()`), max 10 tool-call iterations
+- `bot/agent/tools.py` — ~15 callable tools (stock_check, create_order, send_plating, etc.) with `execute_tool()` dispatcher
+- `bot/handlers.py` — Telegram message routing and command parsing
+- `bot/vision.py` — Image analysis via Claude API
+- Feishu webhook (`api/feishu.py`) runs `run_agent()` as a background task, sends result back
+- User whitelist enforced via `FEISHU_WHITELIST` env var
+
 ### Schema Conventions
 - Pydantic schemas live in `schemas/` with `ConfigDict(from_attributes=True)`
 - `Optional[float] = Field(None, gt=0)` for qty fields that must be positive when provided
 - `bom_qty` on handcraft parts is `Optional[float] = None` (reference value, 0 and null both valid)
 - All response schemas include `id` and any timestamp fields
 
-### Optional Columns
-`ensure_optional_columns()` in `database.py` runs at startup and adds columns that exist in `OPTIONAL_COLUMNS` but are missing from the live table. Currently covers `part.image` and `jewelry.image`. Use this pattern for additive schema migrations instead of full Alembic migrations.
+### Additive Migrations
+`ensure_schema_compat()` in `database.py` runs at startup and adds columns that exist in the model definitions but are missing from the live table (e.g. `delivery_images`, `image`). Use this pattern for additive schema changes instead of full Alembic migrations.
 
 ### Test Fixtures
 In `tests/conftest.py`:

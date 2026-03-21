@@ -17,6 +17,7 @@ ALLOWED_KINDS = {
     "jewelry": "jewelries",
     "plating": "plating-orders",
     "handcraft": "handcraft-orders",
+    "purchase-orders": "purchase-orders",
 }
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024
@@ -47,7 +48,7 @@ def build_upload_policy(kind: str, filename: str, content_type: str = "", entity
     if not settings.oss_enabled:
         raise ValueError("OSS 未配置完成")
     if kind not in ALLOWED_KINDS:
-        raise ValueError("仅支持配件、饰品、电镀单和手工单图片上传")
+        raise ValueError("仅支持配件、饰品、电镀单、手工单和采购单图片上传")
 
     ext = _normalize_extension(filename, content_type)
     now = datetime.now(timezone.utc)
