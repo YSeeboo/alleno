@@ -1,34 +1,115 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 
-export default createRouter({
+const ROUTE_PERMISSION_MAP = {
+  kanban: 'kanban',
+  dashboard: 'dashboard',
+  parts: 'parts',
+  jewelries: 'jewelries',
+  orders: 'orders',
+  'purchase-orders': 'purchase_orders',
+  plating: 'plating',
+  handcraft: 'handcraft',
+  inventory: 'inventory',
+  'inventory-log': 'inventory_log',
+  users: 'users',
+}
+
+const PERMISSION_ROUTE_ORDER = [
+  'kanban', 'dashboard', 'parts', 'jewelries', 'orders',
+  'purchase-orders', 'plating', 'handcraft', 'inventory', 'inventory-log', 'users',
+]
+
+export function getFirstPermittedRoute(authStore) {
+  for (const routeKey of PERMISSION_ROUTE_ORDER) {
+    const perm = ROUTE_PERMISSION_MAP[routeKey]
+    if (authStore.hasPermission(perm)) {
+      return routeKey === 'dashboard' ? '/' : `/${routeKey}`
+    }
+  }
+  return null
+}
+
+const router = createRouter({
   history: createWebHistory(),
   routes: [
+    {
+      path: '/login',
+      name: 'Login',
+      component: () => import('@/views/login/LoginPage.vue'),
+    },
     {
       path: '/',
       component: DefaultLayout,
       children: [
-        { path: '', name: 'Dashboard', component: () => import('@/views/Dashboard.vue') },
-        { path: 'parts', component: () => import('@/views/parts/PartList.vue') },
-        { path: 'parts/:id', component: () => import('@/views/parts/PartDetail.vue') },
-        { path: 'jewelries', component: () => import('@/views/jewelries/JewelryList.vue') },
-        { path: 'jewelries/:id', component: () => import('@/views/jewelries/JewelryDetail.vue') },
-        { path: 'orders', component: () => import('@/views/orders/OrderList.vue') },
-        { path: 'orders/create', component: () => import('@/views/orders/OrderCreate.vue') },
-        { path: 'orders/:id', component: () => import('@/views/orders/OrderDetail.vue') },
-        { path: 'purchase-orders', component: () => import('@/views/purchase-orders/PurchaseOrderList.vue') },
-        { path: 'purchase-orders/create', component: () => import('@/views/purchase-orders/PurchaseOrderCreate.vue') },
-        { path: 'purchase-orders/:id', component: () => import('@/views/purchase-orders/PurchaseOrderDetail.vue') },
-        { path: 'plating', component: () => import('@/views/plating/PlatingList.vue') },
-        { path: 'plating/create', component: () => import('@/views/plating/PlatingCreate.vue') },
-        { path: 'plating/:id', component: () => import('@/views/plating/PlatingDetail.vue') },
-        { path: 'handcraft', component: () => import('@/views/handcraft/HandcraftList.vue') },
-        { path: 'handcraft/create', component: () => import('@/views/handcraft/HandcraftCreate.vue') },
-        { path: 'handcraft/:id', component: () => import('@/views/handcraft/HandcraftDetail.vue') },
-        { path: 'inventory', component: () => import('@/views/InventoryOverview.vue') },
-        { path: 'inventory-log', component: () => import('@/views/InventoryLog.vue') },
-        { path: 'kanban', component: () => import('@/views/kanban/KanbanBoard.vue') },
+        { path: '', name: 'Dashboard', component: () => import('@/views/Dashboard.vue'), meta: { perm: 'dashboard' } },
+        { path: 'parts', component: () => import('@/views/parts/PartList.vue'), meta: { perm: 'parts' } },
+        { path: 'parts/:id', component: () => import('@/views/parts/PartDetail.vue'), meta: { perm: 'parts' } },
+        { path: 'jewelries', component: () => import('@/views/jewelries/JewelryList.vue'), meta: { perm: 'jewelries' } },
+        { path: 'jewelries/:id', component: () => import('@/views/jewelries/JewelryDetail.vue'), meta: { perm: 'jewelries' } },
+        { path: 'orders', component: () => import('@/views/orders/OrderList.vue'), meta: { perm: 'orders' } },
+        { path: 'orders/create', component: () => import('@/views/orders/OrderCreate.vue'), meta: { perm: 'orders' } },
+        { path: 'orders/:id', component: () => import('@/views/orders/OrderDetail.vue'), meta: { perm: 'orders' } },
+        { path: 'purchase-orders', component: () => import('@/views/purchase-orders/PurchaseOrderList.vue'), meta: { perm: 'purchase_orders' } },
+        { path: 'purchase-orders/create', component: () => import('@/views/purchase-orders/PurchaseOrderCreate.vue'), meta: { perm: 'purchase_orders' } },
+        { path: 'purchase-orders/:id', component: () => import('@/views/purchase-orders/PurchaseOrderDetail.vue'), meta: { perm: 'purchase_orders' } },
+        { path: 'plating', component: () => import('@/views/plating/PlatingList.vue'), meta: { perm: 'plating' } },
+        { path: 'plating/create', component: () => import('@/views/plating/PlatingCreate.vue'), meta: { perm: 'plating' } },
+        { path: 'plating/:id', component: () => import('@/views/plating/PlatingDetail.vue'), meta: { perm: 'plating' } },
+        { path: 'handcraft', component: () => import('@/views/handcraft/HandcraftList.vue'), meta: { perm: 'handcraft' } },
+        { path: 'handcraft/create', component: () => import('@/views/handcraft/HandcraftCreate.vue'), meta: { perm: 'handcraft' } },
+        { path: 'handcraft/:id', component: () => import('@/views/handcraft/HandcraftDetail.vue'), meta: { perm: 'handcraft' } },
+        { path: 'inventory', component: () => import('@/views/InventoryOverview.vue'), meta: { perm: 'inventory' } },
+        { path: 'inventory-log', component: () => import('@/views/InventoryLog.vue'), meta: { perm: 'inventory_log' } },
+        { path: 'kanban', component: () => import('@/views/kanban/KanbanBoard.vue'), meta: { perm: 'kanban' } },
+        { path: 'users', component: () => import('@/views/users/UserList.vue'), meta: { perm: 'users' } },
       ],
     },
   ],
 })
+
+let userFetched = false
+
+router.beforeEach(async (to) => {
+  const { useAuthStore } = await import('@/stores/auth')
+  const authStore = useAuthStore()
+
+  if (to.path === '/login') {
+    if (!authStore.isLoggedIn) return true
+    if (!authStore.user) {
+      await authStore.fetchUser()
+      userFetched = true
+      if (!authStore.isLoggedIn) return true
+    }
+    const target = getFirstPermittedRoute(authStore)
+    if (!target) {
+      authStore.logout()
+      return true // stay on /login
+    }
+    return target
+  }
+
+  if (!authStore.isLoggedIn) {
+    return '/login'
+  }
+
+  if (!userFetched) {
+    await authStore.fetchUser()
+    userFetched = true
+    if (!authStore.isLoggedIn) return '/login'
+  }
+
+  const perm = to.meta.perm
+  if (perm && !authStore.hasPermission(perm)) {
+    const target = getFirstPermittedRoute(authStore)
+    if (!target) {
+      authStore.logout()
+      return '/login'
+    }
+    return target
+  }
+
+  return true
+})
+
+export default router

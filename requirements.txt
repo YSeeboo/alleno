@@ -9,6 +9,8 @@ pydantic-settings
 python-dotenv
 reportlab
 oss2
+PyJWT
+bcrypt
 
 # dev / test
 pypdf

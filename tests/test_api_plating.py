@@ -2,8 +2,7 @@ import pytest
 
 from services.part import create_part
 from services.inventory import add_stock, get_stock
-from services.kanban import record_vendor_receipt
-from schemas.kanban import ReceiptItemIn
+from services.plating import receive_plating_items
 
 
 def test_create_plating_order(client, db):
@@ -116,15 +115,15 @@ def test_delete_completed_plating_order_restores_stock_and_clears_receipts(clien
     send_resp = client.post(f"/api/plating/{order_id}/send")
     assert send_resp.status_code == 200
 
-    record_vendor_receipt(db, "Supplier Delete Completed", "plating", order_id, [
-        ReceiptItemIn(item_id=part.id, item_type="part", qty=10.0),
-    ])
-
     from models.plating_order import PlatingOrder, PlatingOrderItem
     from models.vendor_receipt import VendorReceipt
 
+    item_id = db.query(PlatingOrderItem).filter(
+        PlatingOrderItem.plating_order_id == order_id
+    ).first().id
+    receive_plating_items(db, order_id, [{"plating_order_item_id": item_id, "qty": 10.0}])
+
     assert get_stock(db, "part", part.id) == pytest.approx(30.0)
-    assert db.query(VendorReceipt).filter(VendorReceipt.order_id == order_id).count() == 1
     assert db.query(PlatingOrder).filter(PlatingOrder.id == order_id).first().status == "completed"
 
     resp = client.delete(f"/api/plating/{order_id}")
@@ -371,3 +370,123 @@ def test_get_plating_items_keeps_id_order_after_update(client, db):
     after_ids = [item["id"] for item in after_resp.json()]
 
     assert after_ids == before_ids
+
+
+# ──────────────────────────────────────────────────────────────
+# receive_part_id: receive to a different part
+# ──────────────────────────────────────────────────────────────
+
+def test_receive_with_receive_part_id_adds_stock_to_target(client, db):
+    """When receive_part_id is set, received stock goes to that part, not part_id."""
+    part_a = create_part(db, {"name": "原色扣", "category": "小配件"})
+    part_b = create_part(db, {"name": "金色扣", "category": "小配件", "parent_part_id": part_a.id})
+    add_stock(db, "part", part_a.id, 100.0, "入库")
+    db.commit()
+
+    resp = client.post("/api/plating/", json={
+        "supplier_name": "电镀厂R",
+        "items": [{"part_id": part_a.id, "qty": 20.0, "receive_part_id": part_b.id}],
+    })
+    order_id = resp.json()["id"]
+    client.post(f"/api/plating/{order_id}/send")
+
+    from models.plating_order import PlatingOrderItem
+    item = db.query(PlatingOrderItem).filter(
+        PlatingOrderItem.plating_order_id == order_id
+    ).first()
+    assert item.receive_part_id == part_b.id
+
+    # Receive full qty
+    client.post(f"/api/plating/{order_id}/receive", json={
+        "receipts": [{"plating_order_item_id": item.id, "qty": 20.0}],
+    })
+
+    # Stock: part_a sent 20, part_b received 20
+    assert get_stock(db, "part", part_a.id) == pytest.approx(80.0)
+    assert get_stock(db, "part", part_b.id) == pytest.approx(20.0)
+
+
+def test_receive_part_id_roundtrip_processing_to_pending(client, db):
+    """processing→pending rollback correctly reverses receive_part_id stock."""
+    from services.kanban import change_order_status
+
+    part_a = create_part(db, {"name": "原色链", "category": "链条"})
+    part_b = create_part(db, {"name": "金色链", "category": "链条", "parent_part_id": part_a.id})
+    add_stock(db, "part", part_a.id, 50.0, "入库")
+    db.commit()
+
+    resp = client.post("/api/plating/", json={
+        "supplier_name": "电镀厂RT",
+        "items": [{"part_id": part_a.id, "qty": 10.0, "receive_part_id": part_b.id}],
+    })
+    order_id = resp.json()["id"]
+    client.post(f"/api/plating/{order_id}/send")
+
+    from models.plating_order import PlatingOrderItem
+    item = db.query(PlatingOrderItem).filter(
+        PlatingOrderItem.plating_order_id == order_id
+    ).first()
+    receive_plating_items(db, order_id, [{"plating_order_item_id": item.id, "qty": 5.0}])
+
+    assert get_stock(db, "part", part_a.id) == pytest.approx(40.0)
+    assert get_stock(db, "part", part_b.id) == pytest.approx(5.0)
+
+    # Rollback to pending: receive_part_id stock reversed, sent stock restored
+    change_order_status(db, order_id, "plating", "pending")
+    assert get_stock(db, "part", part_a.id) == pytest.approx(50.0)
+    assert get_stock(db, "part", part_b.id) == pytest.approx(0.0)
+
+
+def test_receive_part_id_force_complete(client, db):
+    """Force complete fills remaining to receive_part_id, not part_id."""
+    from services.kanban import change_order_status
+
+    part_a = create_part(db, {"name": "原色吊坠", "category": "吊坠"})
+    part_b = create_part(db, {"name": "银色吊坠", "category": "吊坠", "parent_part_id": part_a.id})
+    add_stock(db, "part", part_a.id, 30.0, "入库")
+    db.commit()
+
+    resp = client.post("/api/plating/", json={
+        "supplier_name": "电镀厂FC",
+        "items": [{"part_id": part_a.id, "qty": 10.0, "receive_part_id": part_b.id}],
+    })
+    order_id = resp.json()["id"]
+    client.post(f"/api/plating/{order_id}/send")
+
+    # Force complete via kanban status change
+    change_order_status(db, order_id, "plating", "completed")
+
+    # All 10 should go to part_b
+    assert get_stock(db, "part", part_a.id) == pytest.approx(20.0)
+    assert get_stock(db, "part", part_b.id) == pytest.approx(10.0)
+
+
+def test_delete_plating_order_with_receive_part_id_restores_stock(client, db):
+    """Delete rollback deducts from receive_part_id, adds back to part_id."""
+    part_a = create_part(db, {"name": "原色X", "category": "小配件"})
+    part_b = create_part(db, {"name": "金色X", "category": "小配件", "parent_part_id": part_a.id})
+    add_stock(db, "part", part_a.id, 50.0, "入库")
+    db.commit()
+
+    resp = client.post("/api/plating/", json={
+        "supplier_name": "电镀厂DEL",
+        "items": [{"part_id": part_a.id, "qty": 10.0, "receive_part_id": part_b.id}],
+    })
+    order_id = resp.json()["id"]
+    client.post(f"/api/plating/{order_id}/send")
+
+    from models.plating_order import PlatingOrderItem
+    item = db.query(PlatingOrderItem).filter(
+        PlatingOrderItem.plating_order_id == order_id
+    ).first()
+    receive_plating_items(db, order_id, [{"plating_order_item_id": item.id, "qty": 10.0}])
+
+    assert get_stock(db, "part", part_a.id) == pytest.approx(40.0)
+    assert get_stock(db, "part", part_b.id) == pytest.approx(10.0)
+
+    resp = client.delete(f"/api/plating/{order_id}")
+    assert resp.status_code == 204
+
+    # Everything restored: sent from A comes back, received to B reversed
+    assert get_stock(db, "part", part_a.id) == pytest.approx(50.0)
+    assert get_stock(db, "part", part_b.id) == pytest.approx(0.0)

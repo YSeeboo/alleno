@@ -68,6 +68,15 @@
           <n-input-number v-model:value="form.unit_cost" :min="0" :precision="2" style="width: 100%;" />
         </n-form-item>
         <n-form-item label="默认电镀工艺"><n-input v-model:value="form.plating_process" /></n-form-item>
+        <n-form-item label="关联原色配件">
+          <n-select
+            v-model:value="form.parent_part_id"
+            :options="parentPartOptions"
+            filterable
+            clearable
+            placeholder="选填，选择原色配件"
+          />
+        </n-form-item>
       </n-form>
       <template #footer>
         <n-space justify="end">
@@ -141,7 +150,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, h } from 'vue'
+import { ref, reactive, computed, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
@@ -180,7 +189,7 @@ const showModal = ref(false)
 const editingId = ref(null)
 const saving = ref(false)
 const formRef = ref(null)
-const form = reactive({ name: '', image: '', category: null, color: '', unit: '个', unit_cost: null, plating_process: '' })
+const form = reactive({ name: '', image: '', category: null, color: '', unit: '个', unit_cost: null, plating_process: '', parent_part_id: null })
 
 // Image upload modal state
 const showImageModal = ref(false)
@@ -203,10 +212,17 @@ const importError = ref('')
 const load = async () => {
   loading.value = true
   try {
-    const params = {}
-    if (searchName.value) params.name = searchName.value
-    if (searchCategory.value) params.category = searchCategory.value
-    const { data: parts } = await listParts(params)
+    const [filteredRes, allRes] = await Promise.all([
+      listParts((() => {
+        const params = {}
+        if (searchName.value) params.name = searchName.value
+        if (searchCategory.value) params.category = searchCategory.value
+        return params
+      })()),
+      listParts(),
+    ])
+    allPartsForSelect.value = allRes.data
+    const parts = filteredRes.data
     const stocks = await Promise.all(
       parts.map((p) => getStock('part', p.id).then((r) => r.data.current).catch(() => 0))
     )
@@ -218,9 +234,31 @@ const load = async () => {
 
 const VALID_CATEGORIES = categoryOptions.map((o) => o.value)
 
+const allPartsForSelect = ref([])
+
+const parentPartOptions = computed(() => {
+  const currentId = editingId.value
+  if (!currentId) {
+    return allPartsForSelect.value.map((p) => ({ label: `${p.id} ${p.name}`, value: p.id }))
+  }
+  // Collect all descendants to prevent circular references
+  const excluded = new Set([currentId])
+  let frontier = [currentId]
+  while (frontier.length > 0) {
+    const children = allPartsForSelect.value
+      .filter((p) => p.parent_part_id && frontier.includes(p.parent_part_id) && !excluded.has(p.id))
+      .map((p) => p.id)
+    children.forEach((id) => excluded.add(id))
+    frontier = children
+  }
+  return allPartsForSelect.value
+    .filter((p) => !excluded.has(p.id))
+    .map((p) => ({ label: `${p.id} ${p.name}`, value: p.id }))
+})
+
 const openCreate = () => {
   editingId.value = null
-  Object.assign(form, { name: '', image: '', category: null, color: '', unit: '个', unit_cost: null, plating_process: '' })
+  Object.assign(form, { name: '', image: '', category: null, color: '', unit: '个', unit_cost: null, plating_process: '', parent_part_id: null })
   showModal.value = true
 }
 
@@ -247,6 +285,7 @@ const openEdit = (row) => {
     unit: row.unit || '个',
     unit_cost: row.unit_cost ?? null,
     plating_process: row.plating_process || '',
+    parent_part_id: row.parent_part_id || null,
   })
   showModal.value = true
 }

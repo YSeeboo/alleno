@@ -5,7 +5,6 @@
       <h2 class="page-title">进度看板</h2>
       <div class="toolbar-right">
         <n-select v-model:value="filterType" :options="filterOptions" style="width: 120px;" @update:value="reloadAll" />
-        <n-button type="primary" @click="receiptVisible = true">收回</n-button>
       </div>
     </div>
     <div class="page-divider" style="margin-bottom: 24px;"></div>
@@ -57,19 +56,13 @@
       @refresh="reloadAll"
     />
 
-    <!-- 收回弹窗 -->
-    <ReceiptModal
-      v-model:show="receiptVisible"
-      @success="reloadAll"
-    />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
-import { NButton, NSelect, NSpin, NEmpty } from 'naive-ui'
+import { NSelect, NSpin, NEmpty } from 'naive-ui'
 import VendorDetailModal from './VendorDetailModal.vue'
-import ReceiptModal from './ReceiptModal.vue'
 import { getKanban } from '@/api/kanban'
 
 const PAGE_SIZE = 20
@@ -159,8 +152,6 @@ const openDetail = (card) => {
   detailVisible.value = true
 }
 
-// 收回弹窗
-const receiptVisible = ref(false)
 </script>
 
 <style scoped>

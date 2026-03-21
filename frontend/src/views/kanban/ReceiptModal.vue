@@ -28,10 +28,9 @@
           />
         </n-form-item>
 
-        <!-- 类型 -->
+        <!-- 类型（电镀收回已移至电镀单详情页） -->
         <n-form-item label="类型">
           <n-radio-group v-model:value="form.order_type" @update:value="handleTypeChange">
-            <n-radio-button value="plating">电镀收回</n-radio-button>
             <n-radio-button value="handcraft">手工收回</n-radio-button>
           </n-radio-group>
         </n-form-item>
@@ -120,7 +119,7 @@ const visible = computed({
 })
 
 const message = useMessage()
-const form = reactive({ vendor_name: null, order_type: 'plating', order_id: null })
+const form = reactive({ vendor_name: null, order_type: 'handcraft', order_id: null })
 const submitting = ref(false)
 
 // 厂家搜索
@@ -177,7 +176,7 @@ const loadOrderItems = async (order_id) => {
     const hints = (data?.items || []).filter((h) => h.remaining_qty > 0)
     if (hints.length === 0) { detailRows.value = [createRow()]; return }
     detailRows.value = hints.map((h) => {
-      const selectorValue = form.order_type === 'plating' ? h.item_id : `${h.item_type}:${h.item_id}`
+      const selectorValue = `${h.item_type}:${h.item_id}`
       const label = h.item_name ? `${h.item_id} ${h.item_name}` : h.item_id
       return { selectorValue, qty: h.remaining_qty, options: [{ label, value: selectorValue }], searching: false }
     })
@@ -211,33 +210,26 @@ const handleItemSearch = async (q, index) => {
   const myVersion = row._searchVersion
   row.searching = true
   try {
-    let newOptions
-    if (form.order_type === 'plating') {
-      const { data } = await searchParts({ name: q })
-      const list = Array.isArray(data) ? data : (data.items || [])
-      newOptions = list.map((p) => ({ label: `${p.id} ${p.name}`, value: p.id }))
-    } else {
-      const [partsRes, jewelriesRes] = await Promise.all([
-        searchParts({ name: q }),
-        searchJewelries({ name: q }),
-      ])
-      const parts = Array.isArray(partsRes.data) ? partsRes.data : (partsRes.data.items || [])
-      const jewelries = Array.isArray(jewelriesRes.data) ? jewelriesRes.data : (jewelriesRes.data.items || [])
-      newOptions = [
-        {
-          type: 'group',
-          label: '配件',
-          key: 'parts',
-          children: parts.map((p) => ({ label: `${p.id} ${p.name}`, value: `part:${p.id}` })),
-        },
-        {
-          type: 'group',
-          label: '饰品',
-          key: 'jewelries',
-          children: jewelries.map((j) => ({ label: `${j.id} ${j.name}`, value: `jewelry:${j.id}` })),
-        },
-      ]
-    }
+    const [partsRes, jewelriesRes] = await Promise.all([
+      searchParts({ name: q }),
+      searchJewelries({ name: q }),
+    ])
+    const parts = Array.isArray(partsRes.data) ? partsRes.data : (partsRes.data.items || [])
+    const jewelries = Array.isArray(jewelriesRes.data) ? jewelriesRes.data : (jewelriesRes.data.items || [])
+    const newOptions = [
+      {
+        type: 'group',
+        label: '配件',
+        key: 'parts',
+        children: parts.map((p) => ({ label: `${p.id} ${p.name}`, value: `part:${p.id}` })),
+      },
+      {
+        type: 'group',
+        label: '饰品',
+        key: 'jewelries',
+        children: jewelries.map((j) => ({ label: `${j.id} ${j.name}`, value: `jewelry:${j.id}` })),
+      },
+    ]
     if (myVersion !== row._searchVersion) return
     row.options = newOptions
   } finally {
@@ -252,9 +244,6 @@ const handleSubmit = async () => {
   const items = detailRows.value
     .filter((r) => r.selectorValue && r.qty)
     .map((r) => {
-      if (form.order_type === 'plating') {
-        return { item_id: r.selectorValue, item_type: 'part', qty: r.qty }
-      }
       const [type, id] = r.selectorValue.split(':')
       return { item_id: id, item_type: type, qty: r.qty }
     })
@@ -293,7 +282,7 @@ watch(
       _vendorSearchVersion++
       detailRows.value = [createRow()]
       form.vendor_name = null
-      form.order_type = 'plating'
+      form.order_type = 'handcraft'
       form.order_id = null
       vendorOptions.value = []
       orderOptions.value = []

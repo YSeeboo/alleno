@@ -202,39 +202,20 @@ def _processing_outstanding_counts(db: Session, order_type: str | None) -> dict[
     outstanding_items: dict[tuple, set[tuple]] = defaultdict(set)
 
     if order_type is None or order_type == "plating":
-        dispatched_rows = (
+        rows = (
             db.query(
                 PlatingOrder.supplier_name,
                 PlatingOrderItem.part_id,
-                func.sum(PlatingOrderItem.qty).label("qty"),
+                func.sum(PlatingOrderItem.qty).label("dispatched"),
+                func.sum(func.coalesce(PlatingOrderItem.received_qty, 0)).label("received"),
             )
             .join(PlatingOrderItem, PlatingOrder.id == PlatingOrderItem.plating_order_id)
             .filter(PlatingOrder.status == "processing")
             .group_by(PlatingOrder.supplier_name, PlatingOrderItem.part_id)
             .all()
         )
-        received_rows = (
-            db.query(
-                PlatingOrder.supplier_name,
-                VendorReceipt.item_id,
-                func.sum(VendorReceipt.qty).label("qty"),
-            )
-            .join(PlatingOrder, PlatingOrder.id == VendorReceipt.order_id)
-            .filter(
-                VendorReceipt.order_type == "plating",
-                VendorReceipt.item_type == "part",
-                PlatingOrder.status == "processing",
-            )
-            .group_by(PlatingOrder.supplier_name, VendorReceipt.item_id)
-            .all()
-        )
-        received_map = {
-            (row.supplier_name, row.item_id, "part"): float(row.qty)
-            for row in received_rows
-        }
-        for row in dispatched_rows:
-            item_key = (row.supplier_name, row.part_id, "part")
-            if float(row.qty) > received_map.get(item_key, 0.0):
+        for row in rows:
+            if float(row.dispatched) > float(row.received):
                 outstanding_items[(row.supplier_name, "plating")].add((row.part_id, "part"))
 
     if order_type is None or order_type == "handcraft":
@@ -615,33 +596,23 @@ def _try_complete_vendor_orders(db: Session, vendor_name: str, order_type: str) 
     now = datetime.now(timezone.utc)
 
     if order_type == "plating":
-        dispatched_rows = (
-            db.query(PlatingOrderItem.part_id, func.sum(PlatingOrderItem.qty))
+        # Plating completion is handled by receive_plating_items in services/plating.py
+        # This branch is kept for completeness but should not be reached via record_vendor_receipt
+        rows = (
+            db.query(
+                func.sum(PlatingOrderItem.qty).label("dispatched"),
+                func.sum(func.coalesce(PlatingOrderItem.received_qty, 0)).label("received"),
+            )
             .join(PlatingOrder, PlatingOrder.id == PlatingOrderItem.plating_order_id)
             .filter(
                 PlatingOrder.supplier_name == vendor_name,
                 PlatingOrder.status == "processing",
             )
-            .group_by(PlatingOrderItem.part_id)
-            .all()
+            .first()
         )
-        if not dispatched_rows:
+        if rows is None or rows.dispatched is None:
             return
-        dispatched = {pid: float(qty) for pid, qty in dispatched_rows}
-
-        received_rows = (
-            db.query(VendorReceipt.item_id, func.sum(VendorReceipt.qty))
-            .filter(
-                VendorReceipt.vendor_name == vendor_name,
-                VendorReceipt.order_type == "plating",
-                VendorReceipt.item_type == "part",
-            )
-            .group_by(VendorReceipt.item_id)
-            .all()
-        )
-        received = {iid: float(qty) for iid, qty in received_rows}
-
-        if not all(received.get(pid, 0.0) >= dqty for pid, dqty in dispatched.items()):
+        if float(rows.received) < float(rows.dispatched):
             return
 
         db.query(PlatingOrder).filter(
@@ -771,19 +742,18 @@ def get_kanban(
 
 
 def get_vendor_detail(db: Session, vendor_name: str, order_type: str) -> VendorDetailResponse:
-    dispatched = _dispatched_for_vendor(db, vendor_name, order_type)
-    received = _received_for_vendor(db, vendor_name, order_type)
-
     # Merge dispatched + received into a unified item map
     # key: (item_id, item_type, plating_method)
     item_map: dict[tuple, dict] = {}
 
     if order_type == "plating":
+        # Read dispatched + received directly from PlatingOrderItem (no VendorReceipt)
         rows = (
             db.query(
                 PlatingOrderItem.part_id,
                 PlatingOrderItem.plating_method,
-                func.sum(PlatingOrderItem.qty).label("qty"),
+                func.sum(PlatingOrderItem.qty).label("dispatched"),
+                func.sum(func.coalesce(PlatingOrderItem.received_qty, 0)).label("received"),
             )
             .join(PlatingOrder, PlatingOrder.id == PlatingOrderItem.plating_order_id)
             .filter(
@@ -795,24 +765,12 @@ def get_vendor_detail(db: Session, vendor_name: str, order_type: str) -> VendorD
         )
         for r in rows:
             key = (r.part_id, "part", r.plating_method)
-            item_map[key] = {"dispatched_qty": float(r.qty), "received_qty": 0.0}
-
-        # Distribute received qty proportionally across plating methods for the same part
-        for (item_id, item_type), recv_qty in received.items():
-            matched = [k for k in item_map if k[0] == item_id and k[1] == item_type]
-            if matched:
-                total_dispatched_for_part = sum(item_map[k]["dispatched_qty"] for k in matched)
-                for k in matched:
-                    ratio = (
-                        item_map[k]["dispatched_qty"] / total_dispatched_for_part
-                        if total_dispatched_for_part > 0
-                        else 1 / len(matched)
-                    )
-                    item_map[k]["received_qty"] += round(recv_qty * ratio, 4)
-            else:
-                item_map[(item_id, item_type, None)] = {"dispatched_qty": 0.0, "received_qty": recv_qty}
+            item_map[key] = {"dispatched_qty": float(r.dispatched), "received_qty": float(r.received or 0)}
 
     else:  # handcraft
+        dispatched = _dispatched_for_vendor(db, vendor_name, order_type)
+        received = _received_for_vendor(db, vendor_name, order_type)
+
         # Parts: from HandcraftPartItem (actual dispatched qty)
         for (item_id, item_type), d_qty in dispatched.items():
             item_map[(item_id, item_type, None)] = {"dispatched_qty": d_qty, "received_qty": 0.0}
@@ -900,6 +858,9 @@ def record_vendor_receipt(
     items: list[ReceiptItemIn],
     note: str | None = None,
 ) -> tuple[list[VendorReceipt], list[str]]:
+    if order_type == "plating":
+        raise ValueError("电镀单收回请使用电镀单收回接口（POST /api/plating/{id}/receive）")
+
     # Validate order exists and belongs to this vendor
     _validate_order_ownership(db, order_id, order_type, vendor_name)
 
@@ -973,13 +934,7 @@ def get_orders_for_vendor(
     db: Session, vendor_name: str, order_type: str
 ) -> list[VendorOrderOption]:
     if order_type == "plating":
-        rows = (
-            db.query(PlatingOrder)
-            .filter(PlatingOrder.supplier_name == vendor_name, PlatingOrder.status == "processing")
-            .order_by(PlatingOrder.created_at.desc())
-            .all()
-        )
-        return [VendorOrderOption(order_id=o.id, status=o.status, created_at=o.created_at) for o in rows]
+        raise ValueError("电镀单收回请使用电镀单收回接口（POST /api/plating/{id}/receive）")
     else:
         rows = (
             db.query(HandcraftOrder)
@@ -993,42 +948,33 @@ def get_orders_for_vendor(
 def get_order_items_for_receipt(
     db: Session, order_id: str, order_type: str
 ) -> OrderItemsForReceiptResponse:
-    # Query already-received qty (aggregated by order_id)
+    if order_type == "plating":
+        raise ValueError("电镀单收回请使用电镀单收回接口（POST /api/plating/{id}/receive）")
+
+    # Handcraft only — plating is blocked above
     received_rows = (
         db.query(VendorReceipt.item_id, VendorReceipt.item_type, func.sum(VendorReceipt.qty).label("qty"))
         .filter(VendorReceipt.order_id == order_id)
         .group_by(VendorReceipt.item_id, VendorReceipt.item_type)
         .all()
     )
-    received: dict[tuple, float] = {(r.item_id, r.item_type): float(r.qty) for r in received_rows}
-
-    raw_items: list[tuple[str, str, float]] = []  # (item_id, item_type, dispatched_qty)
-
-    if order_type == "plating":
-        rows = (
-            db.query(PlatingOrderItem.part_id, func.sum(PlatingOrderItem.qty).label("qty"))
-            .filter(PlatingOrderItem.plating_order_id == order_id)
-            .group_by(PlatingOrderItem.part_id)
-            .all()
-        )
-        raw_items = [(r.part_id, "part", float(r.qty)) for r in rows]
-    else:  # handcraft
-        part_rows = (
-            db.query(HandcraftPartItem.part_id, func.sum(HandcraftPartItem.qty).label("qty"))
-            .filter(HandcraftPartItem.handcraft_order_id == order_id)
-            .group_by(HandcraftPartItem.part_id)
-            .all()
-        )
-        jewelry_rows = (
-            db.query(HandcraftJewelryItem.jewelry_id, func.sum(HandcraftJewelryItem.qty).label("qty"))
-            .filter(HandcraftJewelryItem.handcraft_order_id == order_id)
-            .group_by(HandcraftJewelryItem.jewelry_id)
-            .all()
-        )
-        raw_items = (
-            [(r.part_id, "part", float(r.qty)) for r in part_rows]
-            + [(r.jewelry_id, "jewelry", float(r.qty)) for r in jewelry_rows]
-        )
+    received = {(r.item_id, r.item_type): float(r.qty) for r in received_rows}
+    part_rows = (
+        db.query(HandcraftPartItem.part_id, func.sum(HandcraftPartItem.qty).label("qty"))
+        .filter(HandcraftPartItem.handcraft_order_id == order_id)
+        .group_by(HandcraftPartItem.part_id)
+        .all()
+    )
+    jewelry_rows = (
+        db.query(HandcraftJewelryItem.jewelry_id, func.sum(HandcraftJewelryItem.qty).label("qty"))
+        .filter(HandcraftJewelryItem.handcraft_order_id == order_id)
+        .group_by(HandcraftJewelryItem.jewelry_id)
+        .all()
+    )
+    raw_items = (
+        [(r.part_id, "part", float(r.qty)) for r in part_rows]
+        + [(r.jewelry_id, "jewelry", float(r.qty)) for r in jewelry_rows]
+    )
 
     hints: list[OrderItemHint] = []
     for item_id, item_type, dispatched_qty in raw_items:
@@ -1066,43 +1012,39 @@ def _undo_receipts_for_order(db: Session, order_id: str, order_type: str) -> Non
         db.delete(r)
 
 
+def _undo_plating_receipts(db: Session, order_id: str) -> None:
+    """Reverse all received stock for a plating order using PlatingOrderItem as source of truth."""
+    items = (
+        db.query(PlatingOrderItem)
+        .filter(PlatingOrderItem.plating_order_id == order_id)
+        .all()
+    )
+    for item in items:
+        recv = float(item.received_qty or 0)
+        if recv > 0:
+            receive_id = item.receive_part_id or item.part_id
+            deduct_stock(db, "part", receive_id, recv, reason="电镀收回撤回")
+    # Clean up legacy VendorReceipts (from old kanban path) without double-deducting
+    db.query(VendorReceipt).filter(
+        VendorReceipt.order_id == order_id,
+        VendorReceipt.order_type == "plating",
+    ).delete(synchronize_session=False)
+
+
 def _force_complete_plating(db: Session, order: PlatingOrder, now) -> None:
     """For plating order, supplement missing receipts to force completion."""
-    received_rows = (
-        db.query(VendorReceipt.item_id, func.sum(VendorReceipt.qty).label("qty"))
-        .filter(VendorReceipt.order_id == order.id, VendorReceipt.item_type == "part")
-        .group_by(VendorReceipt.item_id)
-        .all()
-    )
-    received = {r.item_id: float(r.qty) for r in received_rows}
-
-    # Aggregate dispatched qty per part_id using direct query (no relationship)
     items = (
-        db.query(PlatingOrderItem.part_id, func.sum(PlatingOrderItem.qty).label("qty"))
+        db.query(PlatingOrderItem)
         .filter(PlatingOrderItem.plating_order_id == order.id)
-        .group_by(PlatingOrderItem.part_id)
         .all()
     )
-    dispatched: dict[str, float] = {r.part_id: float(r.qty) for r in items}
-
-    for part_id, d_qty in dispatched.items():
-        r_qty = received.get(part_id, 0.0)
-        remaining = d_qty - r_qty
+    for item in items:
+        remaining = float(item.qty) - float(item.received_qty or 0)
         if remaining > 0:
-            receipt = VendorReceipt(
-                vendor_name=order.supplier_name,
-                order_type="plating",
-                order_id=order.id,
-                item_type="part",
-                item_id=part_id,
-                qty=remaining,
-                note="强制完成",
-                created_at=now_beijing(),
-            )
-            db.add(receipt)
-            add_stock(db, "part", part_id, remaining, reason="电镀收回")
-
-    _sync_plating_item_receipts(db, order.id)
+            receive_id = item.receive_part_id or item.part_id
+            add_stock(db, "part", receive_id, remaining, reason="电镀收回")
+            item.received_qty = item.qty
+        item.status = "已收回"
     order.status = "completed"
     order.completed_at = now
 
@@ -1183,7 +1125,7 @@ def change_order_status(
             send_plating_order(db, order_id)
 
         elif current_status == "processing" and new_status == "pending":
-            _undo_receipts_for_order(db, order_id, order_type)
+            _undo_plating_receipts(db, order_id)
             items = (
                 db.query(PlatingOrderItem)
                 .filter(PlatingOrderItem.plating_order_id == order_id)
@@ -1198,7 +1140,7 @@ def change_order_status(
             _force_complete_plating(db, order, now)
 
         elif current_status == "completed" and new_status == "processing":
-            _undo_receipts_for_order(db, order_id, order_type)
+            _undo_plating_receipts(db, order_id)
             _set_plating_items_processing(db, order_id)
             order.status = "processing"
             order.completed_at = None

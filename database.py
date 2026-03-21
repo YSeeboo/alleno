@@ -38,6 +38,18 @@ def ensure_schema_compat(target_engine=None):
                 conn.execute(text("ALTER TABLE handcraft_order ADD COLUMN delivery_images TEXT NULL"))
                 logger.warning("Added missing handcraft_order.delivery_images column")
 
+        if inspector.has_table("part"):
+            columns = {col["name"] for col in inspector.get_columns("part")}
+            if "parent_part_id" not in columns:
+                conn.execute(text("ALTER TABLE part ADD COLUMN parent_part_id VARCHAR NULL REFERENCES part(id)"))
+                logger.warning("Added missing part.parent_part_id column")
+
+        if inspector.has_table("plating_order_item"):
+            columns = {col["name"] for col in inspector.get_columns("plating_order_item")}
+            if "receive_part_id" not in columns:
+                conn.execute(text("ALTER TABLE plating_order_item ADD COLUMN receive_part_id VARCHAR NULL REFERENCES part(id)"))
+                logger.warning("Added missing plating_order_item.receive_part_id column")
+
 def get_db():
     db = SessionLocal()
     try:

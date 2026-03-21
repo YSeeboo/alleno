@@ -45,3 +45,4 @@ class PlatingOrderItem(Base):
     plating_method = Column(String, nullable=True)
     unit = Column(String, nullable=True, default="个")
     note = Column(Text, nullable=True)
+    receive_part_id = Column(String, ForeignKey("part.id"), nullable=True)

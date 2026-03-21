@@ -10,6 +10,7 @@ class PartCreate(BaseModel):
     unit: Optional[str] = None
     unit_cost: Optional[float] = None
     plating_process: Optional[str] = None
+    parent_part_id: Optional[str] = None
 
 
 class PartUpdate(BaseModel):
@@ -20,6 +21,7 @@ class PartUpdate(BaseModel):
     unit: Optional[str] = None
     unit_cost: Optional[float] = None
     plating_process: Optional[str] = None
+    parent_part_id: Optional[str] = None
 
 
 class PartResponse(BaseModel):
@@ -33,6 +35,7 @@ class PartResponse(BaseModel):
     unit: Optional[str] = None
     unit_cost: Optional[float] = None
     plating_process: Optional[str] = None
+    parent_part_id: Optional[str] = None
 
 
 class PartImportRowResult(BaseModel):

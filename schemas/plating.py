@@ -9,6 +9,7 @@ class PlatingItemCreate(BaseModel):
     plating_method: Optional[str] = None
     unit: Optional[str] = "个"
     note: Optional[str] = None
+    receive_part_id: Optional[str] = None
 
 
 class PlatingCreate(BaseModel):
@@ -38,6 +39,7 @@ class PlatingItemResponse(BaseModel):
     plating_method: Optional[str] = None
     unit: Optional[str] = None
     note: Optional[str] = None
+    receive_part_id: Optional[str] = None
 
 
 class PlatingResponse(BaseModel):

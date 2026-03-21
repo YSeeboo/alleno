@@ -22,9 +22,18 @@
             :options="partOptions"
             :render-label="renderOptionWithImage"
             filterable
-            placeholder="选择配件"
+            placeholder="发出配件"
             style="width: 220px;"
             @update:value="(val) => onPartSelect(item, val)"
+          />
+          <n-select
+            v-model:value="item.receive_part_id"
+            :options="getReceivePartOptions(item.part_id)"
+            :render-label="renderOptionWithImage"
+            filterable
+            clearable
+            placeholder="收回配件（默认同发出）"
+            style="width: 220px;"
           />
           <n-input-number v-model:value="item.qty" :min="1" :precision="0" :step="1" placeholder="发出数量" style="width: 110px;" />
           <n-select
@@ -41,7 +50,7 @@
           <n-button type="error" size="small" @click="items.splice(idx, 1)">删除</n-button>
         </n-space>
       </div>
-      <n-button dashed style="width: 100%;" @click="items.push({ part_id: null, qty: 1, unit: '个', plating_method: '金', note: '' })">
+      <n-button dashed style="width: 100%;" @click="items.push({ part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金', note: '' })">
         + 添加明细行
       </n-button>
     </n-card>
@@ -65,9 +74,36 @@ const router = useRouter()
 const message = useMessage()
 const supplierName = ref('')
 const note = ref('')
-const items = reactive([{ part_id: null, qty: 1, unit: '个', plating_method: '金', note: '' }])
+const items = reactive([{ part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金', note: '' }])
 const submitting = ref(false)
 const partOptions = ref([])
+const allParts = ref([])
+
+const getReceivePartOptions = (sendPartId) => {
+  if (!sendPartId) return partOptions.value
+  const sendPart = allParts.value.find((p) => p.id === sendPartId)
+  if (!sendPart) return partOptions.value
+  // Find the "root" parent: either the part's parent or itself
+  const rootId = sendPart.parent_part_id || sendPart.id
+  // Collect all variants sharing the same root (siblings + parent + self)
+  const variantIds = new Set(
+    allParts.value
+      .filter((p) => p.id === rootId || p.parent_part_id === rootId)
+      .map((p) => p.id)
+  )
+  if (variantIds.size <= 1) return partOptions.value
+  // Put variants first, then the rest
+  const variants = []
+  const rest = []
+  for (const opt of partOptions.value) {
+    if (variantIds.has(opt.value)) {
+      variants.push(opt)
+    } else {
+      rest.push(opt)
+    }
+  }
+  return [...variants, ...rest]
+}
 
 const platingMethodOptions = [
   { label: '金', value: '金' },
@@ -91,6 +127,7 @@ const onPartSelect = (item, val) => {
   } else {
     item.unit = '个'
   }
+  item.receive_part_id = null
 }
 
 const submit = async () => {
@@ -110,6 +147,7 @@ const submit = async () => {
 onMounted(async () => {
   try {
     const { data } = await listParts()
+    allParts.value = data
     partOptions.value = data.map((p) => ({
       label: `${p.id} ${p.name}`,
       value: p.id,

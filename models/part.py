@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Numeric, String
+from sqlalchemy import Column, ForeignKey, Numeric, String
 
 from database import Base
 
@@ -14,3 +14,4 @@ class Part(Base):
     unit = Column(String, nullable=True)
     unit_cost = Column(Numeric(10, 2), nullable=True)
     plating_process = Column(String, nullable=True)
+    parent_part_id = Column(String, ForeignKey("part.id"), nullable=True)

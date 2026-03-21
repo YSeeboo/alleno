@@ -21,9 +21,9 @@ def api_create_part(body: PartCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=List[PartResponse])
-def api_list_parts(category: str = None, name: str = None, db: Session = Depends(get_db)):
+def api_list_parts(category: str = None, name: str = None, parent_part_id: str = None, db: Session = Depends(get_db)):
     with service_errors():
-        return list_parts(db, category=category, name=name)
+        return list_parts(db, category=category, name=name, parent_part_id=parent_part_id)
 
 
 @router.post("/import", response_model=PartImportResponse)

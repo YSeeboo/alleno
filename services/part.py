@@ -19,6 +19,13 @@ def create_part(db: Session, data: dict) -> Part:
         raise ValueError(
             f"Invalid category '{category}'. Must be one of: {list(PART_CATEGORIES.keys())}"
         )
+    parent_part_id = data.get("parent_part_id")
+    if parent_part_id is not None:
+        parent = db.get(Part, parent_part_id)
+        if parent is None:
+            raise ValueError(f"Parent part not found: {parent_part_id}")
+        if parent.parent_part_id is not None:
+            raise ValueError("不支持多层嵌套：目标配件已有父配件")
     prefix = PART_CATEGORIES[category]
     part = Part(id=_next_id_by_category(db, Part, prefix), **data)
     db.add(part)
@@ -30,12 +37,14 @@ def get_part(db: Session, part_id: str) -> Optional[Part]:
     return db.query(Part).filter(Part.id == part_id).first()
 
 
-def list_parts(db: Session, category: str = None, name: str = None) -> List[Part]:
+def list_parts(db: Session, category: str = None, name: str = None, parent_part_id: str = None) -> List[Part]:
     q = db.query(Part)
     if category is not None:
         q = q.filter(Part.category == category)
     if name is not None:
         q = q.filter(or_(Part.name.ilike(f"%{name}%"), Part.id.ilike(f"%{name}%")))
+    if parent_part_id is not None:
+        q = q.filter(Part.parent_part_id == parent_part_id)
     return q.order_by(Part.id.desc()).all()
 
 
@@ -50,6 +59,17 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
         raise ValueError(
             "Category cannot be changed after creation — the part ID encodes the category."
         )
+    if "parent_part_id" in data and data["parent_part_id"] is not None:
+        if data["parent_part_id"] == part_id:
+            raise ValueError("配件不能指向自身作为父配件")
+        parent = db.get(Part, data["parent_part_id"])
+        if parent is None:
+            raise ValueError(f"Parent part not found: {data['parent_part_id']}")
+        if parent.parent_part_id is not None:
+            raise ValueError("不支持多层嵌套：目标配件已有父配件")
+        has_children = db.query(Part).filter(Part.parent_part_id == part_id).first() is not None
+        if has_children:
+            raise ValueError("不支持多层嵌套：当前配件已有子配件，不能再挂到其他配件下")
     for key, value in data.items():
         setattr(part, key, value)
     db.flush()

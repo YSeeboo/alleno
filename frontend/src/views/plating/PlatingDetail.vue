@@ -158,14 +158,24 @@
     <!-- Add Item Modal -->
     <n-modal v-model:show="addModalVisible" preset="card" title="添加电镀明细" style="width: 500px;">
       <n-form label-placement="left" label-width="90">
-        <n-form-item label="配件">
+        <n-form-item label="发出配件">
           <n-select
             v-model:value="addForm.part_id"
             :options="partOptions"
             :render-label="renderOptionWithImage"
             filterable
-            placeholder="选择配件"
+            placeholder="选择发出配件"
             @update:value="onAddPartSelect"
+          />
+        </n-form-item>
+        <n-form-item label="收回配件">
+          <n-select
+            v-model:value="addForm.receive_part_id"
+            :options="getReceivePartOptions(addForm.part_id)"
+            :render-label="renderOptionWithImage"
+            filterable
+            clearable
+            placeholder="默认同发出配件"
           />
         </n-form-item>
         <n-form-item label="数量">
@@ -192,6 +202,16 @@
     <!-- Edit Item Modal -->
     <n-modal v-model:show="editModalVisible" preset="card" title="修改明细" style="width: 500px;">
       <n-form label-placement="left" label-width="90">
+        <n-form-item label="收回配件">
+          <n-select
+            v-model:value="editForm.receive_part_id"
+            :options="getReceivePartOptions(editForm.part_id)"
+            :render-label="renderOptionWithImage"
+            filterable
+            clearable
+            placeholder="默认同发出配件"
+          />
+        </n-form-item>
         <n-form-item label="数量">
           <n-input-number v-model:value="editForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
         </n-form-item>
@@ -253,6 +273,7 @@ const order = ref(null)
 const items = ref([])
 const partMap = ref({})
 const partOptions = ref([])
+const allParts = ref([])
 const showDeliveryImageModal = ref(false)
 const deliveryImagesSaving = ref(false)
 const pendingDeliveryImages = ref([])
@@ -291,15 +312,38 @@ const unitOptions = [
   { label: 'kg', value: 'kg' },
 ]
 
+const getReceivePartOptions = (sendPartId) => {
+  if (!sendPartId) return partOptions.value
+  const sendPart = allParts.value.find((p) => p.id === sendPartId)
+  if (!sendPart) return partOptions.value
+  const rootId = sendPart.parent_part_id || sendPart.id
+  const variantIds = new Set(
+    allParts.value
+      .filter((p) => p.id === rootId || p.parent_part_id === rootId)
+      .map((p) => p.id)
+  )
+  if (variantIds.size <= 1) return partOptions.value
+  const variants = []
+  const rest = []
+  for (const opt of partOptions.value) {
+    if (variantIds.has(opt.value)) {
+      variants.push(opt)
+    } else {
+      rest.push(opt)
+    }
+  }
+  return [...variants, ...rest]
+}
+
 // Add Item Modal
 const addModalVisible = ref(false)
 const addSubmitting = ref(false)
-const addForm = ref({ part_id: null, qty: 1, unit: '个', plating_method: '金', note: '' })
+const addForm = ref({ part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金', note: '' })
 
 // Edit Item Modal
 const editModalVisible = ref(false)
 const editSubmitting = ref(false)
-const editForm = ref({ id: null, qty: 1, unit: '个', plating_method: '金' })
+const editForm = ref({ id: null, part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金' })
 const editingNoteItemId = ref(null)
 const editingNoteValue = ref('')
 const savingNoteItemId = ref(null)
@@ -313,6 +357,7 @@ const loadData = async () => {
     ...i,
     part_name: partMap.value[i.part_id]?.name || i.part_id,
     part_image: partMap.value[i.part_id]?.image || '',
+    receive_part_name: i.receive_part_id ? (partMap.value[i.receive_part_id]?.name || i.receive_part_id) : null,
   }))
   pendingDeliveryImages.value = pendingDeliveryImages.value.filter((image) => !order.value.delivery_images.includes(image))
   if (!isPending()) {
@@ -426,7 +471,7 @@ const doChangeStatus = (newStatus) => {
 }
 
 const openAddModal = () => {
-  addForm.value = { part_id: null, qty: 1, unit: '个', plating_method: '金', note: '' }
+  addForm.value = { part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金', note: '' }
   addModalVisible.value = true
 }
 
@@ -437,6 +482,7 @@ const onAddPartSelect = (val) => {
   } else {
     addForm.value.unit = '个'
   }
+  addForm.value.receive_part_id = null
 }
 
 const doAddItem = async () => {
@@ -456,6 +502,8 @@ const doAddItem = async () => {
 const openEditModal = (row) => {
   editForm.value = {
     id: row.id,
+    part_id: row.part_id,
+    receive_part_id: row.receive_part_id || null,
     qty: row.qty,
     unit: row.unit || '个',
     plating_method: row.plating_method || '金',
@@ -466,7 +514,7 @@ const openEditModal = (row) => {
 const doEditItem = async () => {
   editSubmitting.value = true
   try {
-    const { id, ...body } = editForm.value
+    const { id, part_id: _partId, ...body } = editForm.value
     await updatePlatingItem(route.params.id, id, body)
     message.success('修改已保存')
     editModalVisible.value = false
@@ -680,10 +728,16 @@ const renderNoteCell = (row) => {
 const itemColumns = [
   { title: '配件编号', key: 'part_id', width: 110 },
   {
-    title: '配件',
+    title: '发出配件',
     key: 'part_name',
     minWidth: 180,
     render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name),
+  },
+  {
+    title: '收回配件',
+    key: 'receive_part_name',
+    minWidth: 120,
+    render: (row) => row.receive_part_name || '同发出配件',
   },
   { title: '发出数量', key: 'qty' },
   { title: '单位', key: 'unit', render: (r) => r.unit || '-' },
@@ -749,6 +803,7 @@ const itemColumns = [
 onMounted(async () => {
   try {
     const { data: parts } = await listParts()
+    allParts.value = parts
     parts.forEach((p) => { partMap.value[p.id] = p })
     partOptions.value = parts.map((p) => ({
       label: `${p.id} ${p.name}`,

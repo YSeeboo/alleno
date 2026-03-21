@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     OSS_ACCESS_KEY_ID: str = ""
     OSS_ACCESS_KEY_SECRET: str = ""
     OSS_PUBLIC_BASE_URL: str = ""
+    JWT_SECRET_KEY: str = "allen-shop-jwt-secret-change-in-prod"
 
     @field_validator("DATABASE_URL")
     @classmethod

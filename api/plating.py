@@ -39,6 +39,7 @@ class PlatingItemUpdate(BaseModel):
     unit: Optional[str] = None
     plating_method: Optional[str] = None
     note: Optional[str] = None
+    receive_part_id: Optional[str] = None
 
 
 class StatusUpdate(BaseModel):

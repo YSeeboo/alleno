@@ -125,38 +125,38 @@ def test_422_items_empty(client):
 # Duplicate item warning (pending_in_request accumulator)
 # ──────────────────────────────────────────────────────────────
 
-def test_duplicate_item_second_row_warns(db, plating_vendor):
-    """Two rows for the same part in one request; combined qty exceeds cap.
+def test_duplicate_item_second_row_warns(db, handcraft_vendor):
+    """Two rows for the same jewelry in one request; combined qty exceeds cap.
 
     cap=10, row1=6 (ok, no warn), row2=6 (total 12 > 10, warns).
     Both VendorReceipt rows must still be written.
     """
-    order, part = plating_vendor
+    order, part, jewelry = handcraft_vendor
     items = [
-        ReceiptItemIn(item_id=part.id, item_type="part", qty=6),
-        ReceiptItemIn(item_id=part.id, item_type="part", qty=6),
+        ReceiptItemIn(item_id=jewelry.id, item_type="jewelry", qty=6),
+        ReceiptItemIn(item_id=jewelry.id, item_type="jewelry", qty=6),
     ]
-    _, warnings = record_vendor_receipt(db, "电镀厂A", "plating", order.id, items)
+    _, warnings = record_vendor_receipt(db, "手工厂A", "handcraft", order.id, items)
 
     assert len(warnings) == 1
-    assert part.id in warnings[0]
+    assert jewelry.id in warnings[0]
 
-    receipts = db.query(VendorReceipt).filter(VendorReceipt.vendor_name == "电镀厂A").all()
+    receipts = db.query(VendorReceipt).filter(VendorReceipt.vendor_name == "手工厂A").all()
     assert len(receipts) == 2
     assert sum(r.qty for r in receipts) == 12.0
 
 
-def test_duplicate_item_no_warn_within_cap(db, plating_vendor):
-    """Two rows for the same part, combined qty still within cap — no warnings."""
-    order, part = plating_vendor
+def test_duplicate_item_no_warn_within_cap(db, handcraft_vendor):
+    """Two rows for the same jewelry, combined qty still within cap — no warnings."""
+    order, part, jewelry = handcraft_vendor
     items = [
-        ReceiptItemIn(item_id=part.id, item_type="part", qty=4),
-        ReceiptItemIn(item_id=part.id, item_type="part", qty=4),
+        ReceiptItemIn(item_id=jewelry.id, item_type="jewelry", qty=4),
+        ReceiptItemIn(item_id=jewelry.id, item_type="jewelry", qty=4),
     ]
-    _, warnings = record_vendor_receipt(db, "电镀厂A", "plating", order.id, items)
+    _, warnings = record_vendor_receipt(db, "手工厂A", "handcraft", order.id, items)
 
     assert warnings == []
-    receipts = db.query(VendorReceipt).filter(VendorReceipt.vendor_name == "电镀厂A").all()
+    receipts = db.query(VendorReceipt).filter(VendorReceipt.vendor_name == "手工厂A").all()
     assert len(receipts) == 2
 
 
@@ -268,13 +268,13 @@ def test_kanban_vendor_can_appear_in_pending_return_and_returned_for_handcraft(d
 
 
 def test_plating_receipt_updates_order_item_row(db, plating_vendor):
+    from services.plating import receive_plating_items
     order, part = plating_vendor
 
-    record_vendor_receipt(db, "电镀厂A", "plating", order.id, [
-        ReceiptItemIn(item_id=part.id, item_type="part", qty=6),
-    ])
-
     item = db.query(PlatingOrderItem).filter(PlatingOrderItem.plating_order_id == order.id).one()
+    receive_plating_items(db, order.id, [{"plating_order_item_id": item.id, "qty": 6}])
+
+    db.refresh(item)
     assert float(item.received_qty) == 6.0
     assert item.status == "电镀中"
 
@@ -301,11 +301,11 @@ def test_handcraft_receipt_updates_jewelry_item_row(db, handcraft_vendor):
 
 def test_plating_autocomplete_on_full_receipt(db, plating_vendor):
     """Receiving all dispatched parts triggers PlatingOrder → completed."""
+    from services.plating import receive_plating_items
     order, part = plating_vendor
 
-    record_vendor_receipt(db, "电镀厂A", "plating", order.id, [
-        ReceiptItemIn(item_id=part.id, item_type="part", qty=10),
-    ])
+    item = db.query(PlatingOrderItem).filter(PlatingOrderItem.plating_order_id == order.id).one()
+    receive_plating_items(db, order.id, [{"plating_order_item_id": item.id, "qty": 10}])
 
     db.refresh(order)
     assert order.status == "completed"
@@ -314,11 +314,11 @@ def test_plating_autocomplete_on_full_receipt(db, plating_vendor):
 
 def test_plating_no_autocomplete_on_partial_receipt(db, plating_vendor):
     """Partial receipt must NOT auto-complete the order."""
+    from services.plating import receive_plating_items
     order, part = plating_vendor
 
-    record_vendor_receipt(db, "电镀厂A", "plating", order.id, [
-        ReceiptItemIn(item_id=part.id, item_type="part", qty=9),
-    ])
+    item = db.query(PlatingOrderItem).filter(PlatingOrderItem.plating_order_id == order.id).one()
+    receive_plating_items(db, order.id, [{"plating_order_item_id": item.id, "qty": 9}])
 
     db.refresh(order)
     assert order.status == "processing"
@@ -373,48 +373,51 @@ def test_handcraft_autocomplete_accumulates_across_calls(db, handcraft_vendor):
 # Service-layer: order ownership and item membership validation
 # ──────────────────────────────────────────────────────────────
 
-def test_cross_vendor_rejection(db, part):
+def test_cross_vendor_rejection(db, part, jewelry):
     """Receipt for a real order_id but wrong vendor_name must raise ValueError."""
-    order = create_plating_order(db, "电镀厂A", [
-        {"part_id": part.id, "qty": 10, "plating_method": "金色"},
-    ])
-    send_plating_order(db, order.id)
+    order = create_handcraft_order(
+        db, "手工厂A",
+        parts=[{"part_id": part.id, "qty": 10, "bom_qty": 1}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 5}],
+    )
+    send_handcraft_order(db, order.id)
 
     with pytest.raises(ValueError, match="不属于厂家"):
-        record_vendor_receipt(db, "电镀厂B", "plating", order.id, [
-            ReceiptItemIn(item_id=part.id, item_type="part", qty=5),
+        record_vendor_receipt(db, "手工厂B", "handcraft", order.id, [
+            ReceiptItemIn(item_id=jewelry.id, item_type="jewelry", qty=3),
         ])
 
 
 def test_nonexistent_order_rejection(db, part):
     """Receipt for an order_id that does not exist must raise ValueError."""
     with pytest.raises(ValueError, match="不存在"):
-        record_vendor_receipt(db, "电镀厂A", "plating", "EP-9999", [
+        record_vendor_receipt(db, "手工厂A", "handcraft", "HC-9999", [
             ReceiptItemIn(item_id=part.id, item_type="part", qty=5),
         ])
 
 
-def test_cross_order_item_rejection(db, part):
-    """Receipt for a part that belongs to a different order must raise ValueError."""
-    order_a = create_plating_order(db, "电镀厂A", [
-        {"part_id": part.id, "qty": 10, "plating_method": "金色"},
-    ])
-    send_plating_order(db, order_a.id)
+def test_cross_order_item_rejection(db, part, jewelry):
+    """Receipt for a jewelry that belongs to a different order must raise ValueError."""
+    order_a = create_handcraft_order(
+        db, "手工厂A",
+        parts=[{"part_id": part.id, "qty": 10, "bom_qty": 1}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 5}],
+    )
+    send_handcraft_order(db, order_a.id)
 
-    # Create a second order; its part list is empty for part2, but we attempt to
-    # book part (from order_a) against order_b → must be rejected.
-    from services.part import create_part
-    from services.inventory import add_stock as _add
-    part2 = create_part(db, {"name": "银扣", "category": "小配件"})
-    _add(db, "part", part2.id, 50.0, "入库")
-    order_b = create_plating_order(db, "电镀厂A", [
-        {"part_id": part2.id, "qty": 8, "plating_method": "银色"},
-    ])
-    send_plating_order(db, order_b.id)
+    # Create a second order with a different jewelry; we attempt to book
+    # jewelry (from order_a) against order_b → must be rejected.
+    jewelry2 = create_jewelry(db, {"name": "银耳环", "category": "单件"})
+    order_b = create_handcraft_order(
+        db, "手工厂A",
+        parts=[{"part_id": part.id, "qty": 10, "bom_qty": 1}],
+        jewelries=[{"jewelry_id": jewelry2.id, "qty": 5}],
+    )
+    send_handcraft_order(db, order_b.id)
 
     with pytest.raises(ValueError, match="不属于订单"):
-        record_vendor_receipt(db, "电镀厂A", "plating", order_b.id, [
-            ReceiptItemIn(item_id=part.id, item_type="part", qty=5),  # part belongs to order_a
+        record_vendor_receipt(db, "手工厂A", "handcraft", order_b.id, [
+            ReceiptItemIn(item_id=jewelry.id, item_type="jewelry", qty=3),  # jewelry belongs to order_a
         ])
 
 
@@ -472,3 +475,30 @@ def test_api_change_order_status_syncs_handcraft_jewelry_rows(client, db, handcr
     assert item.status == "制作中"
     assert order.status == "processing"
     assert order.completed_at is None
+
+
+# ──────────────────────────────────────────────────────────────
+# Kanban plating receipt is disabled
+# ──────────────────────────────────────────────────────────────
+
+def test_kanban_plating_record_vendor_receipt_blocked(db, plating_vendor):
+    """record_vendor_receipt rejects plating order_type."""
+    order, part = plating_vendor
+    items = [ReceiptItemIn(item_id=part.id, item_type="part", qty=5)]
+    with pytest.raises(ValueError, match="电镀单收回请使用电镀单收回接口"):
+        record_vendor_receipt(db, "电镀厂A", "plating", order.id, items)
+
+
+def test_kanban_plating_get_orders_for_vendor_blocked(db, plating_vendor):
+    """get_orders_for_vendor rejects plating order_type."""
+    from services.kanban import get_orders_for_vendor
+    with pytest.raises(ValueError, match="电镀单收回请使用电镀单收回接口"):
+        get_orders_for_vendor(db, "电镀厂A", "plating")
+
+
+def test_kanban_plating_get_order_items_for_receipt_blocked(db, plating_vendor):
+    """get_order_items_for_receipt rejects plating order_type."""
+    from services.kanban import get_order_items_for_receipt
+    order, _ = plating_vendor
+    with pytest.raises(ValueError, match="电镀单收回请使用电镀单收回接口"):
+        get_order_items_for_receipt(db, order.id, "plating")

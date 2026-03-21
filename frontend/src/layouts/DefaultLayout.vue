@@ -5,9 +5,9 @@
         <span class="brand-icon">◈</span>
         <span class="brand-en">ALLENOP</span>
       </div>
-      <div class="actions">
-        <span class="action-icon">?</span>
-        <span class="action-icon">⚙</span>
+      <div class="header-right">
+        <span class="username-text">{{ authStore.user?.owner || authStore.user?.username }}</span>
+        <n-button text style="color: #94A3B8; font-size: 13px;" @click="authStore.logout()">退出登录</n-button>
       </div>
     </n-layout-header>
     <n-layout has-sider style="height: calc(100vh - 52px)">
@@ -40,73 +40,87 @@
 <script setup>
 import { ref, computed, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NLayout, NLayoutHeader, NLayoutSider, NLayoutContent, NMenu } from 'naive-ui'
+import { NLayout, NLayoutHeader, NLayoutSider, NLayoutContent, NMenu, NButton } from 'naive-ui'
 import {
   HomeOutline, ExtensionPuzzleOutline, DiamondOutline, ReceiptOutline,
   CartOutline, ColorWandOutline, HammerOutline, ListOutline, GridOutline, ArchiveOutline,
+  PeopleOutline,
 } from '@vicons/ionicons5'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const route = useRoute()
 const collapsed = ref(false)
+const authStore = useAuthStore()
 
 const icon = (Comp) => () => h(Comp)
 
-const flatItems = [
-  { label: '进度看板', key: 'kanban', icon: icon(GridOutline) },
-  { label: '仪表盘', key: 'dashboard', icon: icon(HomeOutline) },
-  { label: '配件管理', key: 'parts', icon: icon(ExtensionPuzzleOutline) },
-  { label: '饰品管理', key: 'jewelries', icon: icon(DiamondOutline) },
-  { label: '订单管理', key: 'orders', icon: icon(ReceiptOutline) },
-  { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline) },
-  { label: '电镀单', key: 'plating', icon: icon(ColorWandOutline) },
-  { label: '手工单', key: 'handcraft', icon: icon(HammerOutline) },
-  { label: '库存总表', key: 'inventory', icon: icon(ArchiveOutline) },
-  { label: '库存流水', key: 'inventory-log', icon: icon(ListOutline) },
+const hasPerm = (key) => authStore.hasPermission(key)
+
+const allFlatItems = [
+  { label: '进度看板', key: 'kanban', icon: icon(GridOutline), perm: 'kanban' },
+  { label: '仪表盘', key: 'dashboard', icon: icon(HomeOutline), perm: 'dashboard' },
+  { label: '配件管理', key: 'parts', icon: icon(ExtensionPuzzleOutline), perm: 'parts' },
+  { label: '饰品管理', key: 'jewelries', icon: icon(DiamondOutline), perm: 'jewelries' },
+  { label: '订单管理', key: 'orders', icon: icon(ReceiptOutline), perm: 'orders' },
+  { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
+  { label: '电镀单', key: 'plating', icon: icon(ColorWandOutline), perm: 'plating' },
+  { label: '手工单', key: 'handcraft', icon: icon(HammerOutline), perm: 'handcraft' },
+  { label: '库存总表', key: 'inventory', icon: icon(ArchiveOutline), perm: 'inventory' },
+  { label: '库存流水', key: 'inventory-log', icon: icon(ListOutline), perm: 'inventory_log' },
+  { label: '用户管理', key: 'users', icon: icon(PeopleOutline), perm: 'users' },
 ]
 
-const groupedItems = [
+const filterChildren = (children) => children.filter((c) => hasPerm(c.perm))
+
+const allGroupedItems = [
   {
-    type: 'group',
-    label: '工作台',
-    key: 'group-workbench',
+    type: 'group', label: '工作台', key: 'group-workbench',
     children: [
-      { label: '进度看板', key: 'kanban', icon: icon(GridOutline) },
-      { label: '仪表盘', key: 'dashboard', icon: icon(HomeOutline) },
+      { label: '进度看板', key: 'kanban', icon: icon(GridOutline), perm: 'kanban' },
+      { label: '仪表盘', key: 'dashboard', icon: icon(HomeOutline), perm: 'dashboard' },
     ],
   },
   {
-    type: 'group',
-    label: '商品',
-    key: 'group-products',
+    type: 'group', label: '商品', key: 'group-products',
     children: [
-      { label: '配件管理', key: 'parts', icon: icon(ExtensionPuzzleOutline) },
-      { label: '饰品管理', key: 'jewelries', icon: icon(DiamondOutline) },
+      { label: '配件管理', key: 'parts', icon: icon(ExtensionPuzzleOutline), perm: 'parts' },
+      { label: '饰品管理', key: 'jewelries', icon: icon(DiamondOutline), perm: 'jewelries' },
     ],
   },
   {
-    type: 'group',
-    label: '生产',
-    key: 'group-production',
+    type: 'group', label: '生产', key: 'group-production',
     children: [
-      { label: '订单管理', key: 'orders', icon: icon(ReceiptOutline) },
-      { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline) },
-      { label: '电镀单', key: 'plating', icon: icon(ColorWandOutline) },
-      { label: '手工单', key: 'handcraft', icon: icon(HammerOutline) },
+      { label: '订单管理', key: 'orders', icon: icon(ReceiptOutline), perm: 'orders' },
+      { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
+      { label: '电镀单', key: 'plating', icon: icon(ColorWandOutline), perm: 'plating' },
+      { label: '手工单', key: 'handcraft', icon: icon(HammerOutline), perm: 'handcraft' },
     ],
   },
   {
-    type: 'group',
-    label: '库存',
-    key: 'group-inventory',
+    type: 'group', label: '库存', key: 'group-inventory',
     children: [
-      { label: '库存总表', key: 'inventory', icon: icon(ArchiveOutline) },
-      { label: '库存流水', key: 'inventory-log', icon: icon(ListOutline) },
+      { label: '库存总表', key: 'inventory', icon: icon(ArchiveOutline), perm: 'inventory' },
+      { label: '库存流水', key: 'inventory-log', icon: icon(ListOutline), perm: 'inventory_log' },
+    ],
+  },
+  {
+    type: 'group', label: '管理', key: 'group-admin',
+    children: [
+      { label: '用户管理', key: 'users', icon: icon(PeopleOutline), perm: 'users' },
     ],
   },
 ]
 
-const menuOptions = computed(() => collapsed.value ? flatItems : groupedItems)
+const flatItems = computed(() => allFlatItems.filter((i) => hasPerm(i.perm)))
+
+const groupedItems = computed(() =>
+  allGroupedItems
+    .map((g) => ({ ...g, children: filterChildren(g.children) }))
+    .filter((g) => g.children.length > 0)
+)
+
+const menuOptions = computed(() => collapsed.value ? flatItems.value : groupedItems.value)
 
 const activeKey = computed(() => {
   const seg = route.path.split('/')[1]
@@ -138,17 +152,15 @@ const handleSelect = (key) => {
   letter-spacing: 0.1em;
 }
 
-.actions {
+.header-right {
   display: flex;
   align-items: center;
   gap: 16px;
 }
 
-.action-icon {
-  color: #475569;
-  font-size: 16px;
-  cursor: default;
-  user-select: none;
+.username-text {
+  color: #CBD5E1;
+  font-size: 13px;
 }
 
 :deep(.n-menu-item-group-title) {

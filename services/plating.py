@@ -40,6 +40,8 @@ def _vendor_receipt_totals_for_plating(db: Session, order_id: str) -> dict[str, 
 def create_plating_order(db: Session, supplier_name: str, items: list, note: str = None) -> PlatingOrder:
     for item in items:
         _require_part(db, item["part_id"])
+        if item.get("receive_part_id"):
+            _require_part(db, item["receive_part_id"])
     order_id = _next_id(db, PlatingOrder, "EP")
     order = PlatingOrder(id=order_id, supplier_name=supplier_name, status="pending", note=note)
     db.add(order)
@@ -54,6 +56,7 @@ def create_plating_order(db: Session, supplier_name: str, items: list, note: str
             plating_method=item.get("plating_method"),
             unit=item.get("unit", "个"),
             note=item.get("note"),
+            receive_part_id=item.get("receive_part_id"),
         ))
     db.flush()
     return order
@@ -107,7 +110,8 @@ def receive_plating_items(db: Session, plating_order_id: str, receipts: list) ->
                 f"Cannot receive {qty}: only {remaining} remaining for item {item.id}"
             )
         item.received_qty = float(item.received_qty or 0) + qty
-        add_stock(db, "part", item.part_id, qty, "电镀收回")
+        receive_id = item.receive_part_id or item.part_id
+        add_stock(db, "part", receive_id, qty, "电镀收回")
         if float(item.received_qty) >= float(item.qty):
             item.status = "已收回"
         updated.append(item)
@@ -153,6 +157,8 @@ def add_plating_item(db: Session, order_id: str, item: dict) -> PlatingOrderItem
     if order.status != "pending":
         raise ValueError(f"Cannot add item: order {order_id} status is '{order.status}', must be 'pending'")
     _require_part(db, item["part_id"])
+    if item.get("receive_part_id"):
+        _require_part(db, item["receive_part_id"])
     new_item = PlatingOrderItem(
         plating_order_id=order_id,
         part_id=item["part_id"],
@@ -162,6 +168,7 @@ def add_plating_item(db: Session, order_id: str, item: dict) -> PlatingOrderItem
         plating_method=item.get("plating_method"),
         unit=item.get("unit", "个"),
         note=item.get("note"),
+        receive_part_id=item.get("receive_part_id"),
     )
     db.add(new_item)
     db.flush()
@@ -180,6 +187,10 @@ def update_plating_item(db: Session, order_id: str, item_id: int, data: dict) ->
     ).first()
     if item is None:
         raise ValueError(f"PlatingOrderItem {item_id} not found in order {order_id}")
+    if "receive_part_id" in data:
+        if data["receive_part_id"] is not None:
+            _require_part(db, data["receive_part_id"])
+        item.receive_part_id = data["receive_part_id"]
     for field in ("qty", "unit", "plating_method", "note"):
         if field in data and data[field] is not None:
             setattr(item, field, data[field])
@@ -218,15 +229,16 @@ def delete_plating_order(db: Session, order_id: str) -> None:
     vendor_received = _vendor_receipt_totals_for_plating(db, order_id)
 
     sent_by_part: dict[str, float] = {}
-    received_by_part: dict[str, float] = {}
+    received_by_receive_part: dict[str, float] = {}
     for item in items:
         sent_by_part[item.part_id] = sent_by_part.get(item.part_id, 0.0) + float(item.qty)
-        received_by_part[item.part_id] = received_by_part.get(item.part_id, 0.0) + float(item.received_qty or 0)
+        receive_id = item.receive_part_id or item.part_id
+        received_by_receive_part[receive_id] = received_by_receive_part.get(receive_id, 0.0) + float(item.received_qty or 0)
 
-    for part_id, total_received in received_by_part.items():
-        legacy_received = total_received - vendor_received.get(part_id, 0.0)
+    for receive_id, total_received in received_by_receive_part.items():
+        legacy_received = total_received - vendor_received.get(receive_id, 0.0)
         if legacy_received > 0:
-            deduct_stock(db, "part", part_id, legacy_received, "电镀收回撤回")
+            deduct_stock(db, "part", receive_id, legacy_received, "电镀收回撤回")
 
     receipts = db.query(VendorReceipt).filter(
         VendorReceipt.order_id == order_id,

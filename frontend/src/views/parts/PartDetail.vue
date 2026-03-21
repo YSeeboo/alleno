@@ -27,6 +27,12 @@
           <n-descriptions-item label="单位">{{ part.unit || '-' }}</n-descriptions-item>
           <n-descriptions-item label="单件成本">{{ part.unit_cost?.toFixed(2) ?? '-' }}</n-descriptions-item>
           <n-descriptions-item label="默认电镀工艺">{{ part.plating_process || '-' }}</n-descriptions-item>
+          <n-descriptions-item label="关联原色配件">
+            <router-link v-if="part.parent_part_id" :to="`/parts/${part.parent_part_id}`" style="color: #2080f0;">
+              {{ parentPartName || part.parent_part_id }}
+            </router-link>
+            <span v-else>-</span>
+          </n-descriptions-item>
           <n-descriptions-item label="当前库存">
             <n-text :style="{ color: stock < 10 ? '#d03050' : '#18a058', fontWeight: 600 }">
               {{ stock }}
@@ -57,6 +63,7 @@ const route = useRoute()
 const router = useRouter()
 const loading = ref(true)
 const part = ref(null)
+const parentPartName = ref('')
 const stock = ref(0)
 const logs = ref([])
 
@@ -87,6 +94,14 @@ onMounted(async () => {
     logs.value = lRes.data
   } finally {
     loading.value = false
+  }
+  if (part.value?.parent_part_id) {
+    try {
+      const ppRes = await getPart(part.value.parent_part_id)
+      parentPartName.value = `${ppRes.data.id} ${ppRes.data.name}`
+    } catch (_) {
+      parentPartName.value = part.value.parent_part_id
+    }
   }
 })
 </script>

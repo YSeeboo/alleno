@@ -11,8 +11,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import models  # registers all ORM classes with Base
 from database import Base, get_db
 from main import app
+from api.deps import get_current_user
+from models.user import User
+from time_utils import now_beijing
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "postgresql://allen:allen@localhost:5432/allen_shop_test")
+
+# A fake admin user returned by the overridden get_current_user dependency
+_fake_admin = User(id=0, username="test-admin", password_hash="", owner="test", permissions=[], is_admin=True, is_active=True, created_at=now_beijing())
 
 
 @pytest.fixture(scope="session")
@@ -44,6 +50,7 @@ def db(engine):
 def client(db):
     """FastAPI TestClient with the test DB injected via dependency override."""
     app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: _fake_admin
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
@@ -75,6 +82,7 @@ def client_real_get_db(engine):
             db.close()
 
     app.dependency_overrides[get_db] = real_get_db
+    app.dependency_overrides[get_current_user] = lambda: _fake_admin
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
