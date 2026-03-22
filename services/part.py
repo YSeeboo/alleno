@@ -59,6 +59,8 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
         raise ValueError(
             "Category cannot be changed after creation — the part ID encodes the category."
         )
+    if part.parent_part_id is not None and ("color" in data or "parent_part_id" in data):
+        raise ValueError("变体配件不可修改颜色或父配件关系")
     if "parent_part_id" in data and data["parent_part_id"] is not None:
         if data["parent_part_id"] == part_id:
             raise ValueError("配件不能指向自身作为父配件")
@@ -76,9 +78,69 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
     return part
 
 
+COLOR_CODES = {"G": "金色", "S": "白K", "RG": "玫瑰金"}
+
+
+def create_part_variant(db: Session, part_id: str, color_code: str) -> Part:
+    color = COLOR_CODES.get(color_code)
+    if color is None:
+        raise ValueError(
+            f"Invalid color_code '{color_code}'. Must be one of: {list(COLOR_CODES.keys())}"
+        )
+    parent = get_part(db, part_id)
+    if parent is None:
+        raise ValueError(f"Part not found: {part_id}")
+    if parent.parent_part_id is not None:
+        raise ValueError("只能从根配件创建变体")
+    # Check duplicate color variant
+    existing = (
+        db.query(Part)
+        .filter(Part.parent_part_id == part_id, Part.color == color)
+        .first()
+    )
+    if existing is not None:
+        raise ValueError(f"该配件已存在颜色变体: {color}")
+    prefix = PART_CATEGORIES[parent.category]
+    variant = Part(
+        id=_next_id_by_category(db, Part, prefix),
+        name=parent.name,
+        category=parent.category,
+        unit=parent.unit,
+        unit_cost=parent.unit_cost,
+        plating_process=parent.plating_process,
+        image=parent.image,
+        color=color,
+        parent_part_id=part_id,
+    )
+    db.add(variant)
+    db.flush()
+    return variant
+
+
+def list_part_variants(db: Session, part_id: str) -> List[Part]:
+    part = get_part(db, part_id)
+    if part is None:
+        raise ValueError(f"Part not found: {part_id}")
+    root_id = part.parent_part_id if part.parent_part_id is not None else part_id
+    variants = (
+        db.query(Part)
+        .filter(Part.parent_part_id == root_id)
+        .order_by(Part.id.desc())
+        .all()
+    )
+    if part.parent_part_id is not None:
+        # Include the root part when querying from a variant
+        root = db.get(Part, root_id)
+        return [root] + variants if root else variants
+    return variants
+
+
 def delete_part(db: Session, part_id: str) -> None:
     part = get_part(db, part_id)
     if part is None:
         raise ValueError(f"Part not found: {part_id}")
+    has_children = db.query(Part).filter(Part.parent_part_id == part_id).first() is not None
+    if has_children:
+        raise ValueError("该配件存在颜色变体，请先删除所有变体后再删除根配件")
     db.delete(part)
     db.flush()

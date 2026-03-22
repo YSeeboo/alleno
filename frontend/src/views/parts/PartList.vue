@@ -60,7 +60,10 @@
           <n-select v-model:value="form.category" :options="categoryOptions" clearable placeholder="请选择类目" :disabled="!!editingId" />
           <span v-if="!!editingId" style="color: #999; font-size: 12px; margin-left: 8px;">类目不可修改</span>
         </n-form-item>
-        <n-form-item label="颜色"><n-input v-model:value="form.color" /></n-form-item>
+        <n-form-item label="颜色">
+          <n-input v-model:value="form.color" :disabled="editingIsVariant" />
+          <span v-if="editingIsVariant" style="color: #999; font-size: 12px; margin-left: 8px;">变体不可修改</span>
+        </n-form-item>
         <n-form-item label="单位">
           <n-select v-model:value="form.unit" :options="unitOptions" placeholder="请选择单位" />
         </n-form-item>
@@ -75,7 +78,22 @@
             filterable
             clearable
             placeholder="选填，选择原色配件"
+            :disabled="editingIsVariant"
           />
+          <span v-if="editingIsVariant" style="color: #999; font-size: 12px; margin-left: 8px;">变体不可修改</span>
+        </n-form-item>
+        <n-form-item v-if="editingId && !form.parent_part_id && availableVariants.length > 0" label="创建颜色变体">
+          <n-space>
+            <n-button
+              v-for="v in availableVariants"
+              :key="v.code"
+              :loading="creatingVariant"
+              @click="doCreateVariant(v.code)"
+            >
+              <span :style="{ color: v.color, fontWeight: 'bold', marginRight: '4px' }">{{ v.code }}</span>
+              {{ v.label }}
+            </n-button>
+          </n-space>
         </n-form-item>
       </n-form>
       <template #footer>
@@ -152,18 +170,19 @@
 <script setup>
 import { ref, reactive, computed, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { useMessage } from 'naive-ui'
+import { useMessage, useDialog } from 'naive-ui'
 import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
   NModal, NDataTable, NSpin, NEmpty, NDropdown, NImage,
 } from 'naive-ui'
-import { listParts, createPart, updatePart, deletePart, importPartsExcel, downloadPartsImportTemplate } from '@/api/parts'
+import { listParts, createPart, updatePart, deletePart, importPartsExcel, downloadPartsImportTemplate, createPartVariant, getPartVariants } from '@/api/parts'
 import { getStock, addStock } from '@/api/inventory'
 import { renderNamedImage } from '@/utils/ui'
 import ImageUploadModal from '../../components/ImageUploadModal.vue'
 
 const router = useRouter()
 const message = useMessage()
+const dialog = useDialog()
 
 const loading = ref(true)
 const rows = ref([])
@@ -184,9 +203,47 @@ const unitOptions = [
   { label: 'kg', value: 'kg' },
 ]
 
+const COLOR_VARIANTS = [
+  { code: 'G', label: '金色', color: '#DAA520' },
+  { code: 'S', label: '白K', color: '#C0C0C0' },
+  { code: 'RG', label: '玫瑰金', color: '#B76E79' },
+]
+
+const creatingVariant = ref(false)
+const existingVariantColors = ref([])
+
+const availableVariants = computed(() =>
+  COLOR_VARIANTS.filter((v) => !existingVariantColors.value.includes(v.code))
+)
+
+const doCreateVariant = (colorCode) => {
+  const variant = COLOR_VARIANTS.find((v) => v.code === colorCode)
+  if (!variant || !editingId.value) return
+  dialog.info({
+    title: '确认创建变体',
+    content: `确认创建${variant.label}变体配件？`,
+    positiveText: '确认',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      creatingVariant.value = true
+      try {
+        await createPartVariant(editingId.value, { color_code: colorCode })
+        message.success(`${variant.label}变体创建成功`)
+        existingVariantColors.value.push(colorCode)
+        await load()
+      } catch (error) {
+        message.error(error.response?.data?.detail || '创建变体失败')
+      } finally {
+        creatingVariant.value = false
+      }
+    },
+  })
+}
+
 // Modal state
 const showModal = ref(false)
 const editingId = ref(null)
+const editingIsVariant = ref(false)
 const saving = ref(false)
 const formRef = ref(null)
 const form = reactive({ name: '', image: '', category: null, color: '', unit: '个', unit_cost: null, plating_process: '', parent_part_id: null })
@@ -258,6 +315,8 @@ const parentPartOptions = computed(() => {
 
 const openCreate = () => {
   editingId.value = null
+  editingIsVariant.value = false
+  existingVariantColors.value = []
   Object.assign(form, { name: '', image: '', category: null, color: '', unit: '个', unit_cost: null, plating_process: '', parent_part_id: null })
   showModal.value = true
 }
@@ -274,8 +333,13 @@ const closeImportModal = () => {
   if (importFileInputRef.value) importFileInputRef.value.value = ''
 }
 
-const openEdit = (row) => {
-  editingId.value = row.id
+const COLOR_CODE_REVERSE = { '金色': 'G', '白K': 'S', '玫瑰金': 'RG' }
+
+const openEdit = async (row) => {
+  const rowId = row.id
+  editingId.value = rowId
+  editingIsVariant.value = !!row.parent_part_id
+  existingVariantColors.value = []
   const cat = row.category && VALID_CATEGORIES.includes(row.category) ? row.category : null
   Object.assign(form, {
     name: row.name,
@@ -288,6 +352,19 @@ const openEdit = (row) => {
     parent_part_id: row.parent_part_id || null,
   })
   showModal.value = true
+  // Load existing variants for root parts (non-blocking)
+  if (!row.parent_part_id) {
+    try {
+      const { data: variants } = await getPartVariants(rowId)
+      // Guard against race: only apply if still editing the same part
+      if (editingId.value !== rowId) return
+      existingVariantColors.value = variants
+        .map((v) => COLOR_CODE_REVERSE[v.color])
+        .filter(Boolean)
+    } catch {
+      // ignore — buttons will show all options as fallback
+    }
+  }
 }
 
 const openImageModal = (id) => {
@@ -306,6 +383,11 @@ const save = async () => {
   try {
     if (editingId.value) {
       const { category, ...updateData } = form
+      // Variant parts: backend rejects color/parent_part_id changes
+      if (editingIsVariant.value) {
+        delete updateData.color
+        delete updateData.parent_part_id
+      }
       await updatePart(editingId.value, updateData)
     } else {
       await createPart(form)
@@ -383,19 +465,21 @@ const doImport = async () => {
   }
 }
 
-const doDelete = async (id) => {
-  await deletePart(id)
-  message.success('已删除')
-  await load()
-}
-
 const confirmDelete = (row) => {
-  window.$dialog.warning({
+  dialog.warning({
     title: '确认删除',
     content: `确认删除 ${row.name}？`,
     positiveText: '删除',
     negativeText: '取消',
-    onPositiveClick: () => doDelete(row.id),
+    onPositiveClick: async () => {
+      try {
+        await deletePart(row.id)
+        message.success('已删除')
+        await load()
+      } catch (error) {
+        message.error(error.response?.data?.detail || '删除失败')
+      }
+    },
   })
 }
 

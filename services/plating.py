@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Session, aliased
 
 from models.part import Part
 from models.plating_order import PlatingOrder, PlatingOrderItem
@@ -187,9 +187,26 @@ def update_plating_item(db: Session, order_id: str, item_id: int, data: dict) ->
     ).first()
     if item is None:
         raise ValueError(f"PlatingOrderItem {item_id} not found in order {order_id}")
+    if "part_id" in data:
+        if data["part_id"] is None:
+            raise ValueError("发出配件不能为空")
+        _require_part(db, data["part_id"])
+        # Only clear receive_part_id when part_id actually changes
+        if data["part_id"] != item.part_id:
+            item.part_id = data["part_id"]
+            if "receive_part_id" not in data:
+                item.receive_part_id = None
     if "receive_part_id" in data:
         if data["receive_part_id"] is not None:
             _require_part(db, data["receive_part_id"])
+            # Validate receive part belongs to same family as send part
+            send_part_id = item.part_id
+            recv_part = db.get(Part, data["receive_part_id"])
+            send_part = db.get(Part, send_part_id)
+            send_root = send_part.parent_part_id or send_part.id
+            recv_root = recv_part.parent_part_id or recv_part.id
+            if send_root != recv_root:
+                raise ValueError("收回配件必须与发出配件属于同一配件族")
         item.receive_part_id = data["receive_part_id"]
     for field in ("qty", "unit", "plating_method", "note"):
         if field in data and data[field] is not None:
@@ -278,6 +295,63 @@ def update_plating_order_status(db: Session, order_id: str, status: str) -> Plat
     order.status = status
     db.flush()
     return order
+
+
+def list_pending_receive_items(db: Session, part_keyword: str = None) -> list:
+    SendPart = aliased(Part)
+    ReceivePart = aliased(Part)
+    q = (
+        db.query(
+            PlatingOrderItem.id,
+            PlatingOrderItem.plating_order_id,
+            PlatingOrder.supplier_name,
+            PlatingOrderItem.part_id,
+            SendPart.name.label("part_name"),
+            SendPart.image.label("part_image"),
+            PlatingOrderItem.receive_part_id,
+            ReceivePart.name.label("receive_part_name"),
+            PlatingOrderItem.plating_method,
+            PlatingOrderItem.qty,
+            PlatingOrderItem.received_qty,
+            PlatingOrderItem.unit,
+        )
+        .join(PlatingOrder, PlatingOrderItem.plating_order_id == PlatingOrder.id)
+        .join(SendPart, PlatingOrderItem.part_id == SendPart.id)
+        .outerjoin(ReceivePart, PlatingOrderItem.receive_part_id == ReceivePart.id)
+        .filter(
+            PlatingOrderItem.status == "电镀中",
+            func.coalesce(PlatingOrderItem.received_qty, 0) < PlatingOrderItem.qty,
+        )
+    )
+    if part_keyword:
+        like_pattern = f"%{part_keyword}%"
+        q = q.filter(
+            or_(
+                SendPart.id.ilike(like_pattern),
+                SendPart.name.ilike(like_pattern),
+                ReceivePart.id.ilike(like_pattern),
+                ReceivePart.name.ilike(like_pattern),
+            )
+        )
+    q = q.order_by(PlatingOrder.created_at.desc())
+    rows = q.all()
+    return [
+        {
+            "id": row.id,
+            "plating_order_id": row.plating_order_id,
+            "supplier_name": row.supplier_name,
+            "part_id": row.part_id,
+            "part_name": row.part_name,
+            "part_image": row.part_image,
+            "receive_part_id": row.receive_part_id,
+            "receive_part_name": row.receive_part_name,
+            "plating_method": row.plating_method,
+            "qty": float(row.qty),
+            "received_qty": float(row.received_qty or 0),
+            "unit": row.unit,
+        }
+        for row in rows
+    ]
 
 
 def update_plating_delivery_images(db: Session, order_id: str, delivery_images: Optional[list]) -> PlatingOrder:

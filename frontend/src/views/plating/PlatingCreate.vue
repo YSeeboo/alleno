@@ -79,30 +79,27 @@ const submitting = ref(false)
 const partOptions = ref([])
 const allParts = ref([])
 
+const COLOR_BADGE_MAP = { '金色': 'G', '白K': 'S', '玫瑰金': 'RG' }
+
 const getReceivePartOptions = (sendPartId) => {
   if (!sendPartId) return partOptions.value
   const sendPart = allParts.value.find((p) => p.id === sendPartId)
   if (!sendPart) return partOptions.value
-  // Find the "root" parent: either the part's parent or itself
   const rootId = sendPart.parent_part_id || sendPart.id
-  // Collect all variants sharing the same root (siblings + parent + self)
   const variantIds = new Set(
     allParts.value
       .filter((p) => p.id === rootId || p.parent_part_id === rootId)
       .map((p) => p.id)
   )
-  if (variantIds.size <= 1) return partOptions.value
-  // Put variants first, then the rest
-  const variants = []
-  const rest = []
-  for (const opt of partOptions.value) {
-    if (variantIds.has(opt.value)) {
-      variants.push(opt)
-    } else {
-      rest.push(opt)
-    }
-  }
-  return [...variants, ...rest]
+  if (variantIds.size <= 1) return []
+  return partOptions.value
+    .filter((opt) => variantIds.has(opt.value))
+    .map((opt) => {
+      const part = allParts.value.find((p) => p.id === opt.value)
+      const badge = part?.color ? COLOR_BADGE_MAP[part.color] : null
+      if (!badge) return opt
+      return { ...opt, label: `${opt.label} [${badge}]` }
+    })
 }
 
 const platingMethodOptions = [

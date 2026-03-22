@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from api._errors import service_errors
 from database import get_db
 from schemas.plating import (
+    PendingReceiveItemResponse,
     PlatingCreate,
     PlatingDeliveryImagesUpdate,
     PlatingItemCreate,
@@ -25,6 +26,7 @@ from services.plating import (
     delete_plating_item,
     get_plating_order,
     get_plating_items,
+    list_pending_receive_items,
     list_plating_orders,
     receive_plating_items,
     send_plating_order,
@@ -35,6 +37,7 @@ from services.plating import (
 
 
 class PlatingItemUpdate(BaseModel):
+    part_id: Optional[str] = None
     qty: Optional[float] = Field(None, gt=0)
     unit: Optional[str] = None
     plating_method: Optional[str] = None
@@ -64,6 +67,12 @@ def api_create_plating_order(body: PlatingCreate, db: Session = Depends(get_db))
 def api_list_plating_orders(status: Optional[str] = None, db: Session = Depends(get_db)):
     with service_errors():
         return list_plating_orders(db, status=status)
+
+
+@router.get("/items/pending-receive", response_model=list[PendingReceiveItemResponse])
+def api_list_pending_receive_items(part_keyword: str = None, db: Session = Depends(get_db)):
+    with service_errors():
+        return list_pending_receive_items(db, part_keyword)
 
 
 @router.get("/{order_id}", response_model=PlatingResponse)

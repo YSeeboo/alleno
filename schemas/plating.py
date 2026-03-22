@@ -56,3 +56,18 @@ class PlatingResponse(BaseModel):
 
 class PlatingDeliveryImagesUpdate(BaseModel):
     delivery_images: List[str] = Field(default_factory=list, max_length=4)
+
+
+class PendingReceiveItemResponse(BaseModel):
+    id: int
+    plating_order_id: str
+    supplier_name: str
+    part_id: str
+    part_name: str
+    part_image: Optional[str] = None
+    receive_part_id: Optional[str] = None
+    receive_part_name: Optional[str] = None
+    plating_method: Optional[str] = None
+    qty: float
+    received_qty: float
+    unit: Optional[str] = None

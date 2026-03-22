@@ -78,7 +78,12 @@ export function renderOptionWithImage(option) {
       renderImageThumb(option.image, option.name || option.label, 32),
       h('div', [
         h('div', { style: { fontWeight: 600 } }, option.code || option.value),
-        h('div', { style: { color: '#666', fontSize: '12px' } }, option.name || option.label),
+        h('div', { style: { color: '#666', fontSize: '12px' } }, [
+          option.name || option.label,
+          ...(option.badge ? [h('span', {
+            style: `margin-left: 4px; font-size: 11px; font-weight: bold; color: #fff; background: ${option.badgeColor || '#999'}; padding: 1px 5px; border-radius: 4px;`,
+          }, option.badge)] : []),
+        ]),
       ]),
     ]
   )

@@ -16,3 +16,5 @@ export const downloadPartsImportTemplate = () =>
   api.get('/parts/import-template', {
     responseType: 'blob',
   })
+export const createPartVariant = (partId, data) => api.post(`/parts/${partId}/create-variant`, data)
+export const getPartVariants = (partId) => api.get(`/parts/${partId}/variants`)

@@ -306,3 +306,90 @@ def test_download_parts_import_template(client):
     data = import_resp.json()
     assert data["imported_count"] == 1
     assert data["created_count"] == 1
+
+
+def _create_root_and_variant(client):
+    root = client.post("/api/parts/", json={"name": "铜扣", "category": "小配件"}).json()
+    variant = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G"}).json()
+    return root, variant
+
+
+def test_create_variant(client):
+    root, variant = _create_root_and_variant(client)
+    assert variant["color"] == "金色"
+    assert variant["parent_part_id"] == root["id"]
+    assert variant["name"] == root["name"]
+    assert variant["category"] == root["category"]
+
+
+def test_create_variant_duplicate_color(client):
+    root, _ = _create_root_and_variant(client)
+    resp = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G"})
+    assert resp.status_code == 400
+    assert "已存在" in resp.json()["detail"]
+
+
+def test_create_variant_from_variant_rejected(client):
+    _, variant = _create_root_and_variant(client)
+    resp = client.post(f"/api/parts/{variant['id']}/create-variant", json={"color_code": "S"})
+    assert resp.status_code == 400
+    assert "根配件" in resp.json()["detail"]
+
+
+def test_create_variant_invalid_color_code(client):
+    root = client.post("/api/parts/", json={"name": "铜扣", "category": "小配件"}).json()
+    resp = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "XX"})
+    assert resp.status_code == 400
+
+
+def test_list_variants_from_root(client):
+    root, variant = _create_root_and_variant(client)
+    resp = client.get(f"/api/parts/{root['id']}/variants")
+    assert resp.status_code == 200
+    ids = [v["id"] for v in resp.json()]
+    assert variant["id"] in ids
+    assert root["id"] not in ids
+
+
+def test_list_variants_from_variant_includes_root(client):
+    root, variant = _create_root_and_variant(client)
+    resp = client.get(f"/api/parts/{variant['id']}/variants")
+    assert resp.status_code == 200
+    ids = [v["id"] for v in resp.json()]
+    assert root["id"] in ids
+    assert variant["id"] in ids
+
+
+def test_update_variant_parent_part_id_rejected(client):
+    _, variant = _create_root_and_variant(client)
+    resp = client.patch(f"/api/parts/{variant['id']}", json={"parent_part_id": None})
+    assert resp.status_code == 400
+    assert "变体配件" in resp.json()["detail"]
+
+
+def test_update_variant_color_rejected(client):
+    _, variant = _create_root_and_variant(client)
+    resp = client.patch(f"/api/parts/{variant['id']}", json={"color": "白K"})
+    assert resp.status_code == 400
+    assert "变体配件" in resp.json()["detail"]
+
+
+def test_delete_root_with_variants_rejected(client):
+    root, _ = _create_root_and_variant(client)
+    resp = client.delete(f"/api/parts/{root['id']}")
+    assert resp.status_code == 400
+    assert "变体" in resp.json()["detail"]
+
+
+def test_delete_variant_then_root_succeeds(client):
+    root, variant = _create_root_and_variant(client)
+    assert client.delete(f"/api/parts/{variant['id']}").status_code == 204
+    assert client.delete(f"/api/parts/{root['id']}").status_code == 204
+
+
+def test_update_variant_rehang_rejected(client):
+    root2 = client.post("/api/parts/", json={"name": "银链", "category": "链条"}).json()
+    _, variant = _create_root_and_variant(client)
+    resp = client.patch(f"/api/parts/{variant['id']}", json={"parent_part_id": root2["id"]})
+    assert resp.status_code == 400
+    assert "变体配件" in resp.json()["detail"]

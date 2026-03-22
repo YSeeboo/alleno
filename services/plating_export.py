@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 import re
 from urllib.request import Request, urlopen

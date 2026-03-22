@@ -143,6 +143,9 @@
           <n-button v-if="order.status === 'pending'" type="primary" :loading="sending" @click="doSend">
             确认发出
           </n-button>
+          <n-button v-if="order.status === 'processing'" type="warning" :loading="bulkReceiving" @click="doBulkReceive">
+            整单回收
+          </n-button>
         </n-space>
       </n-card>
 
@@ -176,6 +179,7 @@
             filterable
             clearable
             placeholder="默认同发出配件"
+            @update:value="(v) => autoFillMethod(v, addForm)"
           />
         </n-form-item>
         <n-form-item label="数量">
@@ -199,36 +203,6 @@
       </template>
     </n-modal>
 
-    <!-- Edit Item Modal -->
-    <n-modal v-model:show="editModalVisible" preset="card" title="修改明细" style="width: 500px;">
-      <n-form label-placement="left" label-width="90">
-        <n-form-item label="收回配件">
-          <n-select
-            v-model:value="editForm.receive_part_id"
-            :options="getReceivePartOptions(editForm.part_id)"
-            :render-label="renderOptionWithImage"
-            filterable
-            clearable
-            placeholder="默认同发出配件"
-          />
-        </n-form-item>
-        <n-form-item label="数量">
-          <n-input-number v-model:value="editForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
-        </n-form-item>
-        <n-form-item label="单位">
-          <n-select v-model:value="editForm.unit" :options="unitOptions" />
-        </n-form-item>
-        <n-form-item label="电镀方式">
-          <n-select v-model:value="editForm.plating_method" :options="platingMethodOptions" />
-        </n-form-item>
-      </n-form>
-      <template #footer>
-        <n-space justify="end">
-          <n-button @click="editModalVisible = false">取消</n-button>
-          <n-button type="primary" :loading="editSubmitting" @click="doEditItem">保存修改</n-button>
-        </n-space>
-      </template>
-    </n-modal>
 
     <ImageUploadModal
       v-model:show="showDeliveryImageModal"
@@ -237,6 +211,31 @@
       suppress-success
       @uploaded="handleDeliveryImageUploaded"
     />
+
+    <!-- Partial Receive Modal -->
+    <n-modal v-model:show="detailPartialReceiveVisible" preset="card" title="部分回收" style="width: 400px;">
+      <n-form label-placement="left" label-width="80">
+        <n-form-item label="配件">{{ detailPartialItem?.part_name }}</n-form-item>
+        <n-form-item label="发出数量">{{ detailPartialItem?.qty }}</n-form-item>
+        <n-form-item label="已收回">{{ detailPartialItem?.received_qty }}</n-form-item>
+        <n-form-item label="未收回">{{ detailPartialRemaining }}</n-form-item>
+        <n-form-item label="回收数量">
+          <n-input-number
+            v-model:value="detailPartialQty"
+            :min="0.0001"
+            :max="detailPartialRemaining"
+            :precision="4"
+            style="width: 100%;"
+          />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="detailPartialReceiveVisible = false">取消</n-button>
+          <n-button type="primary" :loading="itemReceiving" @click="doDetailPartialReceive">确定</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -251,7 +250,7 @@ import {
 } from 'naive-ui'
 import { CreateOutline } from '@vicons/ionicons5'
 import {
-  getPlating, getPlatingItems, sendPlating,
+  getPlating, getPlatingItems, sendPlating, receivePlating,
   addPlatingItem, updatePlatingItem, deletePlatingItem,
   updatePlatingDeliveryImages, downloadPlatingExcel, downloadPlatingPdf,
 } from '@/api/plating'
@@ -279,6 +278,14 @@ const deliveryImagesSaving = ref(false)
 const pendingDeliveryImages = ref([])
 const retryingPendingImage = ref('')
 
+// Receive state
+const bulkReceiving = ref(false)
+const itemReceiving = ref(false)
+const detailPartialReceiveVisible = ref(false)
+const detailPartialItem = ref(null)
+const detailPartialQty = ref(0)
+const detailPartialRemaining = ref(0)
+
 const statusType = { pending: 'default', processing: 'info', completed: 'success' }
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
 const deliveryImages = computed(() => order.value?.delivery_images || [])
@@ -301,8 +308,9 @@ const platingMethodOptions = [
   { label: '金', value: '金' },
   { label: '白K', value: '白K' },
   { label: '玫瑰金', value: '玫瑰金' },
-  { label: '银色', value: '银色' },
 ]
+
+const COLOR_TO_METHOD = { '金色': '金', '白K': '白K', '玫瑰金': '玫瑰金' }
 
 const unitOptions = [
   { label: '个', value: '个' },
@@ -311,6 +319,9 @@ const unitOptions = [
   { label: 'g', value: 'g' },
   { label: 'kg', value: 'kg' },
 ]
+
+const COLOR_BADGE_MAP = { '金色': 'G', '白K': 'S', '玫瑰金': 'RG' }
+const COLOR_BADGE_STYLE = { 'G': '#DAA520', 'S': '#C0C0C0', 'RG': '#B76E79' }
 
 const getReceivePartOptions = (sendPartId) => {
   if (!sendPartId) return partOptions.value
@@ -322,17 +333,79 @@ const getReceivePartOptions = (sendPartId) => {
       .filter((p) => p.id === rootId || p.parent_part_id === rootId)
       .map((p) => p.id)
   )
-  if (variantIds.size <= 1) return partOptions.value
-  const variants = []
-  const rest = []
-  for (const opt of partOptions.value) {
-    if (variantIds.has(opt.value)) {
-      variants.push(opt)
-    } else {
-      rest.push(opt)
+  if (variantIds.size <= 1) return []
+  return partOptions.value
+    .filter((opt) => variantIds.has(opt.value))
+    .map((opt) => {
+      const part = allParts.value.find((p) => p.id === opt.value)
+      const badge = part?.color ? COLOR_BADGE_MAP[part.color] : null
+      if (!badge) return opt
+      return { ...opt, badge, badgeColor: COLOR_BADGE_STYLE[badge] || '#999' }
+    })
+}
+
+// Inline editing
+const inlineEditing = ref({}) // key: `${row.id}_${field}`, value: current editing value
+const inlineSaving = ref({})
+
+const inlineKey = (rowId, field) => `${rowId}_${field}`
+
+const startInline = (row, field) => {
+  if (!isPending()) return
+  inlineEditing.value[inlineKey(row.id, field)] = row[field] ?? null
+}
+
+const cancelInline = (rowId, field) => {
+  delete inlineEditing.value[inlineKey(rowId, field)]
+}
+
+const saveInline = async (row, field, value) => {
+  const key = inlineKey(row.id, field)
+  if (inlineSaving.value[key]) return
+  const oldValue = row[field] ?? null
+  if (value === oldValue) { cancelInline(row.id, field); return }
+  inlineSaving.value[key] = true
+  try {
+    const body = { [field]: value }
+    // Changing part_id invalidates receive_part_id — clear it
+    if (field === 'part_id') {
+      body.receive_part_id = null
     }
+    // Auto-fill plating_method when changing receive_part_id
+    if (field === 'receive_part_id' && value) {
+      const part = allParts.value.find((p) => p.id === value)
+      if (part?.color && COLOR_TO_METHOD[part.color]) {
+        body.plating_method = COLOR_TO_METHOD[part.color]
+      }
+    }
+    await updatePlatingItem(route.params.id, row.id, body)
+    await loadData()
+    message.success('已保存')
+  } catch (e) {
+    message.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    delete inlineSaving.value[key]
+    cancelInline(row.id, field)
   }
-  return [...variants, ...rest]
+}
+
+const renderInlineSelect = (row, field, options, { renderLabel, placeholder } = {}) => {
+  const key = inlineKey(row.id, field)
+  const isEditing = key in inlineEditing.value
+  if (!isEditing) return null // caller handles display
+  return h(NSelect, {
+    value: inlineEditing.value[key],
+    options,
+    filterable: true,
+    clearable: field === 'receive_part_id',
+    placeholder: placeholder || '请选择',
+    size: 'small',
+    style: 'min-width: 140px;',
+    defaultExpanded: true,
+    renderLabel: renderLabel || undefined,
+    'onUpdate:value': (v) => { saveInline(row, field, v) },
+    onBlur: () => { cancelInline(row.id, field) },
+  })
 }
 
 // Add Item Modal
@@ -340,10 +413,6 @@ const addModalVisible = ref(false)
 const addSubmitting = ref(false)
 const addForm = ref({ part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金', note: '' })
 
-// Edit Item Modal
-const editModalVisible = ref(false)
-const editSubmitting = ref(false)
-const editForm = ref({ id: null, part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金' })
 const editingNoteItemId = ref(null)
 const editingNoteValue = ref('')
 const savingNoteItemId = ref(null)
@@ -373,6 +442,66 @@ const doSend = async () => {
     await loadData()
   } finally {
     sending.value = false
+  }
+}
+
+const doBulkReceive = () => {
+  dialog.warning({
+    title: '确认整单回收',
+    content: '确认将该电镀单所有未收回配件全部回收？',
+    positiveText: '确认',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      bulkReceiving.value = true
+      try {
+        const receipts = items.value
+          .filter((item) => item.received_qty < item.qty)
+          .map((item) => ({ plating_order_item_id: item.id, qty: item.qty - item.received_qty }))
+        if (receipts.length === 0) {
+          message.warning('没有需要回收的明细')
+          return
+        }
+        await receivePlating(route.params.id, receipts)
+        message.success('回收成功')
+        await loadData()
+      } finally {
+        bulkReceiving.value = false
+      }
+    },
+  })
+}
+
+const doFullReceiveRow = async (row) => {
+  itemReceiving.value = true
+  try {
+    const remaining = row.qty - row.received_qty
+    await receivePlating(route.params.id, [{ plating_order_item_id: row.id, qty: remaining }])
+    message.success('回收成功')
+    await loadData()
+  } finally {
+    itemReceiving.value = false
+  }
+}
+
+const openDetailPartialReceive = (row) => {
+  detailPartialItem.value = row
+  detailPartialRemaining.value = row.qty - row.received_qty
+  detailPartialQty.value = null
+  detailPartialReceiveVisible.value = true
+}
+
+const doDetailPartialReceive = async () => {
+  if (!detailPartialItem.value || !detailPartialQty.value) return
+  itemReceiving.value = true
+  try {
+    await receivePlating(route.params.id, [
+      { plating_order_item_id: detailPartialItem.value.id, qty: detailPartialQty.value },
+    ])
+    message.success('回收成功')
+    detailPartialReceiveVisible.value = false
+    await loadData()
+  } finally {
+    itemReceiving.value = false
   }
 }
 
@@ -475,6 +604,14 @@ const openAddModal = () => {
   addModalVisible.value = true
 }
 
+const autoFillMethod = (receivePartId, form) => {
+  if (!receivePartId) return
+  const part = allParts.value.find((p) => p.id === receivePartId)
+  if (part?.color && COLOR_TO_METHOD[part.color]) {
+    form.plating_method = COLOR_TO_METHOD[part.color]
+  }
+}
+
 const onAddPartSelect = (val) => {
   const found = partOptions.value.find((p) => p.value === val)
   if (found && found.unit) {
@@ -496,31 +633,6 @@ const doAddItem = async () => {
     await loadData()
   } finally {
     addSubmitting.value = false
-  }
-}
-
-const openEditModal = (row) => {
-  editForm.value = {
-    id: row.id,
-    part_id: row.part_id,
-    receive_part_id: row.receive_part_id || null,
-    qty: row.qty,
-    unit: row.unit || '个',
-    plating_method: row.plating_method || '金',
-  }
-  editModalVisible.value = true
-}
-
-const doEditItem = async () => {
-  editSubmitting.value = true
-  try {
-    const { id, part_id: _partId, ...body } = editForm.value
-    await updatePlatingItem(route.params.id, id, body)
-    message.success('修改已保存')
-    editModalVisible.value = false
-    await loadData()
-  } finally {
-    editSubmitting.value = false
   }
 }
 
@@ -731,17 +843,105 @@ const itemColumns = [
     title: '发出配件',
     key: 'part_name',
     minWidth: 180,
-    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name),
+    render: (row) => {
+      const key = inlineKey(row.id, 'part_id')
+      if (key in inlineEditing.value) {
+        return renderInlineSelect(row, 'part_id', partOptions.value, { renderLabel: renderOptionWithImage, placeholder: '选择发出配件' })
+      }
+      const content = renderNamedImage(row.part_name, row.part_image, row.part_name)
+      if (!isPending()) return content
+      return h('div', { style: 'cursor: pointer;', onClick: () => startInline(row, 'part_id') }, [content])
+    },
   },
   {
     title: '收回配件',
     key: 'receive_part_name',
-    minWidth: 120,
-    render: (row) => row.receive_part_name || '同发出配件',
+    minWidth: 140,
+    render: (row) => {
+      const key = inlineKey(row.id, 'receive_part_id')
+      if (key in inlineEditing.value) {
+        return renderInlineSelect(row, 'receive_part_id', getReceivePartOptions(row.part_id), { renderLabel: renderOptionWithImage, placeholder: '默认同发出配件' })
+      }
+      let content
+      if (!row.receive_part_name) {
+        content = h('span', { style: 'color: #999;' }, '同发出配件')
+      } else {
+        const receivePart = allParts.value.find((p) => p.id === row.receive_part_id)
+        const badge = receivePart?.color ? COLOR_BADGE_MAP[receivePart.color] : null
+        if (!badge) {
+          content = h('span', null, row.receive_part_name)
+        } else {
+          const badgeColor = COLOR_BADGE_STYLE[badge] || '#999'
+          content = h('span', [
+            row.receive_part_name,
+            h('span', {
+              style: `margin-left: 4px; font-size: 11px; font-weight: bold; color: #fff; background: ${badgeColor}; padding: 1px 5px; border-radius: 4px;`,
+            }, badge),
+          ])
+        }
+      }
+      if (!isPending()) return content
+      return h('div', { style: 'cursor: pointer;', onClick: () => startInline(row, 'receive_part_id') }, [content])
+    },
   },
-  { title: '发出数量', key: 'qty' },
-  { title: '单位', key: 'unit', render: (r) => r.unit || '-' },
-  { title: '电镀方式', key: 'plating_method', render: (r) => r.plating_method || '-' },
+  {
+    title: '发出数量',
+    key: 'qty',
+    width: 100,
+    render: (row) => {
+      const key = inlineKey(row.id, 'qty')
+      if (key in inlineEditing.value) {
+        return h(NInputNumber, {
+          value: inlineEditing.value[key],
+          min: 1,
+          precision: 0,
+          step: 1,
+          size: 'small',
+          style: 'width: 90px;',
+          autofocus: true,
+          'onUpdate:value': (v) => { inlineEditing.value[key] = v },
+          onBlur: () => { saveInline(row, 'qty', inlineEditing.value[key]) },
+          onKeydown: (e) => { if (e.key === 'Enter') saveInline(row, 'qty', inlineEditing.value[key]); if (e.key === 'Escape') cancelInline(row.id, 'qty') },
+        })
+      }
+      if (!isPending()) return row.qty
+      return h('span', { style: 'cursor: pointer; color: #2080f0;', onClick: () => startInline(row, 'qty') }, row.qty)
+    },
+  },
+  { title: '已收回', key: 'received_qty', render: (r) => r.received_qty ?? 0 },
+  {
+    title: '未收回',
+    key: 'remaining',
+    render: (r) => r.qty - (r.received_qty ?? 0),
+  },
+  {
+    title: '单位',
+    key: 'unit',
+    width: 80,
+    render: (row) => {
+      const key = inlineKey(row.id, 'unit')
+      if (key in inlineEditing.value) {
+        return renderInlineSelect(row, 'unit', unitOptions)
+      }
+      const text = row.unit || '-'
+      if (!isPending()) return text
+      return h('span', { style: 'cursor: pointer; color: #2080f0;', onClick: () => startInline(row, 'unit') }, text)
+    },
+  },
+  {
+    title: '电镀方式',
+    key: 'plating_method',
+    width: 100,
+    render: (row) => {
+      const key = inlineKey(row.id, 'plating_method')
+      if (key in inlineEditing.value) {
+        return renderInlineSelect(row, 'plating_method', platingMethodOptions)
+      }
+      const text = row.plating_method || '-'
+      if (!isPending()) return text
+      return h('span', { style: 'cursor: pointer; color: #2080f0;', onClick: () => startInline(row, 'plating_method') }, text)
+    },
+  },
   {
     title: '状态',
     key: 'item_status',
@@ -756,46 +956,51 @@ const itemColumns = [
   {
     title: '操作',
     key: 'actions',
-    width: 140,
+    width: 200,
     render: (row) => {
       const pending = isPending()
-      const editBtn = h(
-        NTooltip,
-        { disabled: pending, trigger: 'hover' },
-        {
-          trigger: () =>
-            h(
-              NButton,
-              {
-                size: 'small',
-                disabled: !pending,
-                style: 'margin-right: 6px;',
-                onClick: pending ? () => openEditModal(row) : undefined,
-              },
-              { default: () => '修改' },
-            ),
-          default: () => '当前单子进行中/已完成，不允许修改',
-        },
-      )
-      const deleteBtn = h(
-        NTooltip,
-        { disabled: pending, trigger: 'hover' },
-        {
-          trigger: () =>
-            h(
-              NButton,
-              {
+      const isProcessing = order.value?.status === 'processing'
+      const canReceive = isProcessing && row.status === '电镀中' && row.received_qty < row.qty
+      const btns = []
+
+      if (pending) {
+        btns.push(h(NButton, {
+          size: 'small',
+          type: 'error',
+          onClick: () => doDeleteItem(row),
+        }, { default: () => '删除' }))
+      }
+
+      if (canReceive) {
+        btns.push(h(NButton, {
+          size: 'small',
+          type: 'primary',
+          loading: itemReceiving.value,
+          onClick: () => doFullReceiveRow(row),
+        }, { default: () => '全部回收' }))
+        btns.push(h(NButton, {
+          size: 'small',
+          onClick: () => openDetailPartialReceive(row),
+        }, { default: () => '部分回收' }))
+      }
+
+      if (!pending && !canReceive) {
+        btns.push(h(
+          NTooltip,
+          { trigger: 'hover' },
+          {
+            trigger: () =>
+              h(NButton, {
                 size: 'small',
                 type: 'error',
-                disabled: !pending,
-                onClick: pending ? () => doDeleteItem(row) : undefined,
-              },
-              { default: () => '删除' },
-            ),
-          default: () => '当前单子进行中/已完成，不允许删除',
-        },
-      )
-      return h(NSpace, { size: 'small' }, { default: () => [editBtn, deleteBtn] })
+                disabled: true,
+              }, { default: () => '删除' }),
+            default: () => '当前单子进行中/已完成，不允许删除',
+          },
+        ))
+      }
+
+      return h(NSpace, { size: 'small' }, { default: () => btns })
     },
   },
 ]

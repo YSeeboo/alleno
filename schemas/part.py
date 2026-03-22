@@ -38,6 +38,10 @@ class PartResponse(BaseModel):
     parent_part_id: Optional[str] = None
 
 
+class PartVariantCreate(BaseModel):
+    color_code: str
+
+
 class PartImportRowResult(BaseModel):
     row_number: int
     part_id: str

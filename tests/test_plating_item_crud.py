@@ -143,6 +143,44 @@ def test_edit_item_order_not_found(client):
     assert resp.status_code == 404
 
 
+def test_edit_item_same_part_id_keeps_receive_part(client, db, pending_order):
+    """Submitting part_id equal to current value must NOT clear receive_part_id."""
+    from services.part import create_part_variant
+
+    order_id = pending_order["id"]
+    item_id = _get_first_item_id(client, order_id)
+    items = client.get(f"/api/plating/{order_id}/items").json()
+    part_id = items[0]["part_id"]
+
+    # Create a variant and set it as receive_part_id
+    variant = create_part_variant(db, part_id, "G")
+    db.commit()
+    resp = client.put(f"/api/plating/{order_id}/items/{item_id}", json={
+        "receive_part_id": variant.id,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["receive_part_id"] == variant.id
+
+    # Now send part_id with same value — receive_part_id must survive
+    resp = client.put(f"/api/plating/{order_id}/items/{item_id}", json={
+        "part_id": part_id,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["receive_part_id"] == variant.id
+
+
+def test_edit_item_cross_family_receive_rejected(client, db, pending_order, part2):
+    """Setting receive_part_id to a part from a different family must be rejected."""
+    order_id = pending_order["id"]
+    item_id = _get_first_item_id(client, order_id)
+
+    resp = client.put(f"/api/plating/{order_id}/items/{item_id}", json={
+        "receive_part_id": part2.id,
+    })
+    assert resp.status_code == 400
+    assert "配件族" in resp.json()["detail"]
+
+
 # ──────────────────────────────────────────────────────────────
 # DELETE /api/plating/{order_id}/items/{item_id} — delete item
 # ──────────────────────────────────────────────────────────────
