@@ -25,7 +25,7 @@
           <n-descriptions-item label="类目">{{ part.category || '-' }}</n-descriptions-item>
           <n-descriptions-item label="颜色">{{ part.color || '-' }}</n-descriptions-item>
           <n-descriptions-item label="单位">{{ part.unit || '-' }}</n-descriptions-item>
-          <n-descriptions-item label="单件成本">{{ part.unit_cost?.toFixed(2) ?? '-' }}</n-descriptions-item>
+          <n-descriptions-item label="单件成本">{{ part.unit_cost?.toFixed(3) ?? '-' }}</n-descriptions-item>
           <n-descriptions-item label="默认电镀工艺">{{ part.plating_process || '-' }}</n-descriptions-item>
           <n-descriptions-item label="关联原色配件">
             <router-link v-if="part.parent_part_id" :to="`/parts/${part.parent_part_id}`" style="color: #2080f0;">

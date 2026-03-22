@@ -171,25 +171,53 @@
             @update:value="onAddPartSelect"
           />
         </n-form-item>
-        <n-form-item label="收回配件">
-          <n-select
-            v-model:value="addForm.receive_part_id"
-            :options="getReceivePartOptions(addForm.part_id)"
-            :render-label="renderOptionWithImage"
-            filterable
-            clearable
-            placeholder="默认同发出配件"
-            @update:value="(v) => autoFillMethod(v, addForm)"
-          />
+        <n-form-item v-if="addForm.part_id" label="电镀颜色">
+          <div>
+            <n-space size="small" style="margin-bottom: 6px;">
+              <n-tooltip v-for="cv in colorVariantList" :key="cv.code" :disabled="!isVariantPart(addForm.part_id)">
+                <template #trigger>
+                  <span
+                    :style="{
+                      display: 'inline-block',
+                      fontSize: '11px',
+                      fontWeight: 'bold',
+                      color: addFormColor === cv.code ? '#fff' : BADGE_COLORS[cv.code],
+                      background: addFormColor === cv.code ? BADGE_COLORS[cv.code] : '#f5f5f5',
+                      padding: '2px 10px',
+                      borderRadius: '4px',
+                      cursor: isVariantPart(addForm.part_id) ? 'not-allowed' : 'pointer',
+                      opacity: isVariantPart(addForm.part_id) ? 0.5 : 1,
+                      border: `1px solid ${BADGE_COLORS[cv.code]}`,
+                    }"
+                    @click="!isVariantPart(addForm.part_id) && toggleAddColor(cv.code)"
+                  >{{ cv.code }}</span>
+                </template>
+                当前非原色配件，不可创建变体
+              </n-tooltip>
+            </n-space>
+            <div v-if="addFormColor && addVariantInfo" style="font-size: 13px; color: #333;">
+              <template v-if="addVariantInfo.part">
+                <span>对应配件：{{ addVariantInfo.part.name }} ({{ addVariantInfo.part.id }})</span>
+              </template>
+              <template v-else-if="addVariantInfo.suggested_name">
+                <span style="color: #999;">对应配件：{{ addVariantInfo.suggested_name }}</span>
+                <n-button
+                  size="tiny"
+                  type="primary"
+                  style="margin-left: 8px;"
+                  :loading="addCreatingVariant"
+                  @click="doCreateVariantInAdd"
+                >新建</n-button>
+              </template>
+            </div>
+            <div v-if="addFormColor && addVariantLoading" style="font-size: 13px; color: #999;">查询中...</div>
+          </div>
         </n-form-item>
         <n-form-item label="数量">
           <n-input-number v-model:value="addForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
         </n-form-item>
         <n-form-item label="单位">
           <n-select v-model:value="addForm.unit" :options="unitOptions" />
-        </n-form-item>
-        <n-form-item label="电镀方式">
-          <n-select v-model:value="addForm.plating_method" :options="platingMethodOptions" />
         </n-form-item>
         <n-form-item label="备注">
           <n-input v-model:value="addForm.note" placeholder="备注（可选）" />
@@ -255,7 +283,7 @@ import {
   updatePlatingDeliveryImages, downloadPlatingExcel, downloadPlatingPdf,
 } from '@/api/plating'
 import { changeOrderStatus } from '@/api/kanban'
-import { listParts } from '@/api/parts'
+import { listParts, findOrCreateVariant, createPartVariant, getColorVariants } from '@/api/parts'
 import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 
@@ -304,14 +332,6 @@ const statusOptions = computed(() => {
 })
 const fmt = (dt) => new Date(dt).toLocaleString('zh-CN')
 
-const platingMethodOptions = [
-  { label: '金', value: '金' },
-  { label: '白K', value: '白K' },
-  { label: '玫瑰金', value: '玫瑰金' },
-]
-
-const COLOR_TO_METHOD = { '金色': '金', '白K': '白K', '玫瑰金': '玫瑰金' }
-
 const unitOptions = [
   { label: '个', value: '个' },
   { label: '条', value: '条' },
@@ -320,28 +340,28 @@ const unitOptions = [
   { label: 'kg', value: 'kg' },
 ]
 
-const COLOR_BADGE_MAP = { '金色': 'G', '白K': 'S', '玫瑰金': 'RG' }
-const COLOR_BADGE_STYLE = { 'G': '#DAA520', 'S': '#C0C0C0', 'RG': '#B76E79' }
+const BADGE_COLORS = { G: '#DAA520', S: '#C0C0C0', RG: '#B76E79' }
+const COLOR_SUFFIXES = ['_金色', '_白K', '_玫瑰金']
+const COLOR_SUFFIX_MAP = { '_金色': 'G', '_白K': 'S', '_玫瑰金': 'RG' }
+const COLOR_CODE_TO_METHOD = { G: '金', S: '白K', RG: '玫瑰金' }
+const METHOD_TO_CODE = { '金': 'G', '白K': 'S', '玫瑰金': 'RG' }
 
-const getReceivePartOptions = (sendPartId) => {
-  if (!sendPartId) return partOptions.value
-  const sendPart = allParts.value.find((p) => p.id === sendPartId)
-  if (!sendPart) return partOptions.value
-  const rootId = sendPart.parent_part_id || sendPart.id
-  const variantIds = new Set(
-    allParts.value
-      .filter((p) => p.id === rootId || p.parent_part_id === rootId)
-      .map((p) => p.id)
-  )
-  if (variantIds.size <= 1) return []
-  return partOptions.value
-    .filter((opt) => variantIds.has(opt.value))
-    .map((opt) => {
-      const part = allParts.value.find((p) => p.id === opt.value)
-      const badge = part?.color ? COLOR_BADGE_MAP[part.color] : null
-      if (!badge) return opt
-      return { ...opt, badge, badgeColor: COLOR_BADGE_STYLE[badge] || '#999' }
-    })
+const colorVariantList = ref([])
+let addVariantRequestSeq = 0
+
+const isVariantPart = (partId) => {
+  if (!partId) return false
+  const part = allParts.value.find((p) => p.id === partId)
+  if (!part) return false
+  return COLOR_SUFFIXES.some((suffix) => part.name.endsWith(suffix))
+}
+
+const getColorBadge = (partName) => {
+  if (!partName) return null
+  for (const [suffix, code] of Object.entries(COLOR_SUFFIX_MAP)) {
+    if (partName.endsWith(suffix)) return code
+  }
+  return null
 }
 
 // Inline editing
@@ -370,13 +390,6 @@ const saveInline = async (row, field, value) => {
     // Changing part_id invalidates receive_part_id — clear it
     if (field === 'part_id') {
       body.receive_part_id = null
-    }
-    // Auto-fill plating_method when changing receive_part_id
-    if (field === 'receive_part_id' && value) {
-      const part = allParts.value.find((p) => p.id === value)
-      if (part?.color && COLOR_TO_METHOD[part.color]) {
-        body.plating_method = COLOR_TO_METHOD[part.color]
-      }
     }
     await updatePlatingItem(route.params.id, row.id, body)
     await loadData()
@@ -412,6 +425,10 @@ const renderInlineSelect = (row, field, options, { renderLabel, placeholder } = 
 const addModalVisible = ref(false)
 const addSubmitting = ref(false)
 const addForm = ref({ part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金', note: '' })
+const addFormColor = ref(null)
+const addVariantInfo = ref(null)
+const addVariantLoading = ref(false)
+const addCreatingVariant = ref(false)
 
 const editingNoteItemId = ref(null)
 const editingNoteValue = ref('')
@@ -601,25 +618,155 @@ const doChangeStatus = (newStatus) => {
 
 const openAddModal = () => {
   addForm.value = { part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金', note: '' }
+  addFormColor.value = null
+  addVariantInfo.value = null
+  addVariantLoading.value = false
+  addCreatingVariant.value = false
   addModalVisible.value = true
-}
-
-const autoFillMethod = (receivePartId, form) => {
-  if (!receivePartId) return
-  const part = allParts.value.find((p) => p.id === receivePartId)
-  if (part?.color && COLOR_TO_METHOD[part.color]) {
-    form.plating_method = COLOR_TO_METHOD[part.color]
-  }
 }
 
 const onAddPartSelect = (val) => {
   const found = partOptions.value.find((p) => p.value === val)
-  if (found && found.unit) {
-    addForm.value.unit = found.unit
-  } else {
-    addForm.value.unit = '个'
-  }
+  addForm.value.unit = found?.unit || '个'
   addForm.value.receive_part_id = null
+  addFormColor.value = null
+  addVariantInfo.value = null
+  addVariantLoading.value = false
+  ++addVariantRequestSeq
+  if (val && !isVariantPart(val)) {
+    // Default select G for non-variant parts
+    toggleAddColor('G')
+  } else if (val) {
+    // Variant part: auto-set plating_method from its suffix
+    const part = allParts.value.find((p) => p.id === val)
+    const code = getColorBadge(part?.name)
+    addForm.value.plating_method = code ? (COLOR_CODE_TO_METHOD[code] || '金') : '金'
+  }
+}
+
+const toggleAddColor = async (code) => {
+  if (addFormColor.value === code) {
+    addFormColor.value = null
+    addVariantInfo.value = null
+    addForm.value.receive_part_id = null
+    addForm.value.plating_method = '金'
+    return
+  }
+  addFormColor.value = code
+  addForm.value.plating_method = COLOR_CODE_TO_METHOD[code] || '金'
+  addVariantInfo.value = null
+  addVariantLoading.value = true
+  const seq = ++addVariantRequestSeq
+  try {
+    const { data } = await findOrCreateVariant(addForm.value.part_id, { color_code: code })
+    if (addFormColor.value !== code || addVariantRequestSeq !== seq) return // stale
+    addVariantInfo.value = data
+    addForm.value.receive_part_id = data.part?.id || null
+  } catch (e) {
+    if (addFormColor.value === code && addVariantRequestSeq === seq) {
+      message.error(e.response?.data?.detail || '查询变体失败')
+    }
+  } finally {
+    if (addFormColor.value === code && addVariantRequestSeq === seq) {
+      addVariantLoading.value = false
+    }
+  }
+}
+
+const doCreateVariantInAdd = () => {
+  const suggestedName = addVariantInfo.value?.suggested_name
+  dialog.info({
+    title: '确认新建',
+    content: `当前没有 ${suggestedName}，确定新建吗？`,
+    positiveText: '确认',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      addCreatingVariant.value = true
+      try {
+        const { data: newPart } = await createPartVariant(addForm.value.part_id, { color_code: addFormColor.value })
+        addForm.value.receive_part_id = newPart.id
+        addVariantInfo.value = { part: newPart, created: true }
+        // Refresh parts list
+        const { data: parts } = await listParts()
+        allParts.value = parts
+        parts.forEach((p) => { partMap.value[p.id] = p })
+        partOptions.value = parts.map((p) => ({
+          label: `${p.id} ${p.name}`,
+          value: p.id,
+          code: p.id,
+          name: p.name,
+          image: p.image,
+          unit: p.unit,
+        }))
+        message.success('变体创建成功')
+      } catch (e) {
+        message.error(e.response?.data?.detail || '创建变体失败')
+      } finally {
+        addCreatingVariant.value = false
+      }
+    },
+  })
+}
+
+const toggleInlineColor = async (row, code) => {
+  const currentBadge = getColorBadge(row.receive_part_name) || METHOD_TO_CODE[row.plating_method] || null
+  if (currentBadge === code) {
+    // Deselect: clear receive_part_id
+    try {
+      await updatePlatingItem(route.params.id, row.id, { receive_part_id: null, plating_method: null })
+      await loadData()
+    } catch (e) {
+      message.error(e.response?.data?.detail || '更新失败')
+    }
+    return
+  }
+  // Find or create variant
+  try {
+    const { data } = await findOrCreateVariant(row.part_id, { color_code: code })
+    if (data.part) {
+      // Variant exists, update directly
+      await updatePlatingItem(route.params.id, row.id, {
+        receive_part_id: data.part.id,
+        plating_method: COLOR_CODE_TO_METHOD[code] || '金',
+      })
+      await loadData()
+    } else {
+      // Variant doesn't exist, confirm creation
+      dialog.info({
+        title: '确认新建',
+        content: `当前没有 ${data.suggested_name}，确定新建吗？`,
+        positiveText: '确认',
+        negativeText: '取消',
+        onPositiveClick: async () => {
+          try {
+            const { data: newPart } = await createPartVariant(row.part_id, { color_code: code })
+            await updatePlatingItem(route.params.id, row.id, {
+              receive_part_id: newPart.id,
+              plating_method: COLOR_CODE_TO_METHOD[code] || '金',
+            })
+            // Refresh parts list and table
+            const { data: parts } = await listParts()
+            allParts.value = parts
+            parts.forEach((p) => { partMap.value[p.id] = p })
+            partOptions.value = parts.map((p) => ({
+              label: `${p.id} ${p.name}`,
+              value: p.id,
+              code: p.id,
+              name: p.name,
+              image: p.image,
+              unit: p.unit,
+            }))
+            await loadData()
+            message.success('变体创建成功')
+          } catch (e) {
+            message.error(e.response?.data?.detail || '创建变体失败')
+          }
+        },
+      })
+    }
+  } catch (e) {
+    message.error(e.response?.data?.detail || '查询变体失败')
+  }
 }
 
 const doAddItem = async () => {
@@ -854,34 +1001,46 @@ const itemColumns = [
     },
   },
   {
+    title: '电镀颜色',
+    key: 'plating_color_inline',
+    width: 120,
+    render: (row) => {
+      const currentBadge = getColorBadge(row.receive_part_name) || METHOD_TO_CODE[row.plating_method] || null
+      const variantPart = isVariantPart(row.part_id)
+      const pending = isPending()
+      return h('div', { style: 'display: flex; gap: 4px; align-items: center;' },
+        colorVariantList.value.map((cv) => {
+          const isActive = currentBadge === cv.code
+          const disabled = !pending || variantPart
+          return h('span', {
+            style: {
+              display: 'inline-block',
+              fontSize: '11px',
+              fontWeight: 'bold',
+              color: isActive ? '#fff' : BADGE_COLORS[cv.code],
+              background: isActive ? BADGE_COLORS[cv.code] : '#f5f5f5',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              cursor: disabled ? 'default' : 'pointer',
+              opacity: disabled ? 0.5 : 1,
+              border: `1px solid ${BADGE_COLORS[cv.code]}`,
+            },
+            title: variantPart ? '当前非原色配件，不可创建变体' : '',
+            onClick: disabled ? undefined : () => toggleInlineColor(row, cv.code),
+          }, cv.code)
+        }),
+      )
+    },
+  },
+  {
     title: '收回配件',
     key: 'receive_part_name',
     minWidth: 140,
     render: (row) => {
-      const key = inlineKey(row.id, 'receive_part_id')
-      if (key in inlineEditing.value) {
-        return renderInlineSelect(row, 'receive_part_id', getReceivePartOptions(row.part_id), { renderLabel: renderOptionWithImage, placeholder: '默认同发出配件' })
-      }
-      let content
       if (!row.receive_part_name) {
-        content = h('span', { style: 'color: #999;' }, '同发出配件')
-      } else {
-        const receivePart = allParts.value.find((p) => p.id === row.receive_part_id)
-        const badge = receivePart?.color ? COLOR_BADGE_MAP[receivePart.color] : null
-        if (!badge) {
-          content = h('span', null, row.receive_part_name)
-        } else {
-          const badgeColor = COLOR_BADGE_STYLE[badge] || '#999'
-          content = h('span', [
-            row.receive_part_name,
-            h('span', {
-              style: `margin-left: 4px; font-size: 11px; font-weight: bold; color: #fff; background: ${badgeColor}; padding: 1px 5px; border-radius: 4px;`,
-            }, badge),
-          ])
-        }
+        return h('span', { style: 'color: #999;' }, '同发出配件')
       }
-      if (!isPending()) return content
-      return h('div', { style: 'cursor: pointer;', onClick: () => startInline(row, 'receive_part_id') }, [content])
+      return h('span', null, row.receive_part_name)
     },
   },
   {
@@ -926,20 +1085,6 @@ const itemColumns = [
       const text = row.unit || '-'
       if (!isPending()) return text
       return h('span', { style: 'cursor: pointer; color: #2080f0;', onClick: () => startInline(row, 'unit') }, text)
-    },
-  },
-  {
-    title: '电镀方式',
-    key: 'plating_method',
-    width: 100,
-    render: (row) => {
-      const key = inlineKey(row.id, 'plating_method')
-      if (key in inlineEditing.value) {
-        return renderInlineSelect(row, 'plating_method', platingMethodOptions)
-      }
-      const text = row.plating_method || '-'
-      if (!isPending()) return text
-      return h('span', { style: 'cursor: pointer; color: #2080f0;', onClick: () => startInline(row, 'plating_method') }, text)
     },
   },
   {
@@ -1007,7 +1152,7 @@ const itemColumns = [
 
 onMounted(async () => {
   try {
-    const { data: parts } = await listParts()
+    const [{ data: parts }, colorsRes] = await Promise.all([listParts(), getColorVariants()])
     allParts.value = parts
     parts.forEach((p) => { partMap.value[p.id] = p })
     partOptions.value = parts.map((p) => ({
@@ -1018,6 +1163,7 @@ onMounted(async () => {
       image: p.image,
       unit: p.unit,
     }))
+    colorVariantList.value = colorsRes.data
     await loadData()
   } finally {
     loading.value = false

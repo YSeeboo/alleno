@@ -318,22 +318,22 @@ def test_create_variant(client):
     root, variant = _create_root_and_variant(client)
     assert variant["color"] == "金色"
     assert variant["parent_part_id"] == root["id"]
-    assert variant["name"] == root["name"]
+    assert variant["name"] == f"{root['name']}_金色"
     assert variant["category"] == root["category"]
 
 
-def test_create_variant_duplicate_color(client):
-    root, _ = _create_root_and_variant(client)
+def test_create_variant_duplicate_color_returns_existing(client):
+    root, variant = _create_root_and_variant(client)
     resp = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G"})
-    assert resp.status_code == 400
-    assert "已存在" in resp.json()["detail"]
+    assert resp.status_code == 201
+    assert resp.json()["id"] == variant["id"]
 
 
 def test_create_variant_from_variant_rejected(client):
     _, variant = _create_root_and_variant(client)
     resp = client.post(f"/api/parts/{variant['id']}/create-variant", json={"color_code": "S"})
     assert resp.status_code == 400
-    assert "根配件" in resp.json()["detail"]
+    assert "非原色配件" in resp.json()["detail"]
 
 
 def test_create_variant_invalid_color_code(client):

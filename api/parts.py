@@ -5,8 +5,8 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from database import get_db
-from schemas.part import PartCreate, PartImportResponse, PartResponse, PartUpdate, PartVariantCreate
-from services.part import create_part, create_part_variant, get_part, list_part_variants, list_parts, update_part, delete_part
+from schemas.part import PartCreate, FindOrCreateVariantResponse, PartImportResponse, PartResponse, PartUpdate, PartVariantCreate
+from services.part import COLOR_VARIANTS, create_part, create_part_variant, find_or_create_variant, get_part, list_part_variants, list_parts, update_part, delete_part
 from services.part_import import build_parts_import_template, import_parts_excel
 from api._errors import service_errors
 
@@ -45,6 +45,17 @@ def api_download_parts_import_template(_db: Session = Depends(get_db)):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": 'attachment; filename="parts-import-template.xlsx"'},
     )
+
+
+@router.get("/color-variants")
+def api_get_color_variants():
+    return COLOR_VARIANTS
+
+
+@router.post("/{part_id}/find-or-create-variant", response_model=FindOrCreateVariantResponse)
+def api_find_or_create_variant(part_id: str, body: PartVariantCreate, db: Session = Depends(get_db)):
+    with service_errors():
+        return find_or_create_variant(db, part_id, body.color_code)
 
 
 @router.post("/{part_id}/create-variant", response_model=PartResponse, status_code=201)

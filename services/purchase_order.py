@@ -57,9 +57,9 @@ def create_purchase_order(
 
     total = 0.0
     for item in items:
-        price = item.get("price")
+        price = round(item["price"], 3) if item.get("price") is not None else None
         qty = item["qty"]
-        amount = round(qty * price, 2) if price is not None else None
+        amount = round(qty * price, 3) if price is not None else None
         if amount is not None:
             total += amount
 
@@ -160,9 +160,11 @@ def update_purchase_item(db: Session, order_id: str, item_id: int, data: dict) -
 
     old_qty = float(item.qty)
 
-    for field in ("unit", "price", "note"):
+    for field in ("unit", "note"):
         if field in data:
             setattr(item, field, data[field])
+    if "price" in data:
+        item.price = round(data["price"], 3) if data["price"] is not None else None
     if "qty" in data and data["qty"] is not None:
         item.qty = data["qty"]
 
@@ -176,7 +178,7 @@ def update_purchase_item(db: Session, order_id: str, item_id: int, data: dict) -
 
     # Recalc amount
     if item.price is not None:
-        item.amount = round(float(item.qty) * float(item.price), 2)
+        item.amount = round(float(item.qty) * float(item.price), 3)
     else:
         item.amount = None
 

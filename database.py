@@ -50,6 +50,26 @@ def ensure_schema_compat(target_engine=None):
                 conn.execute(text("ALTER TABLE plating_order_item ADD COLUMN receive_part_id VARCHAR NULL REFERENCES part(id)"))
                 logger.warning("Added missing plating_order_item.receive_part_id column")
 
+        # Upgrade price/amount columns from Numeric(x,2) to Numeric(x,3)
+        _price_columns = [
+            ("jewelry", "retail_price", "NUMERIC(10,3)"),
+            ("jewelry", "wholesale_price", "NUMERIC(10,3)"),
+            ("part", "unit_cost", "NUMERIC(10,3)"),
+            ("order", "total_amount", "NUMERIC(10,3)"),
+            ("order_item", "unit_price", "NUMERIC(10,3)"),
+            ("purchase_order", "total_amount", "NUMERIC(12,3)"),
+            ("purchase_order_item", "price", "NUMERIC(12,3)"),
+            ("purchase_order_item", "amount", "NUMERIC(12,3)"),
+        ]
+        for table, col, new_type in _price_columns:
+            if not inspector.has_table(table):
+                continue
+            for c in inspector.get_columns(table):
+                if c["name"] == col and hasattr(c["type"], "scale") and c["type"].scale < 3:
+                    conn.execute(text(f'ALTER TABLE "{table}" ALTER COLUMN {col} TYPE {new_type}'))
+                    logger.warning("Upgraded %s.%s to %s", table, col, new_type)
+                    break
+
 def get_db():
     db = SessionLocal()
     try:

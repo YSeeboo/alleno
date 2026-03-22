@@ -27,7 +27,7 @@
           <n-input-number
             v-model:value="item.unit_price"
             :min="0"
-            :precision="2"
+            :precision="3"
             placeholder="单价"
             style="width: 100px;"
           />
@@ -40,7 +40,7 @@
 
     <n-space justify="space-between" align="center">
       <n-text>合计：<n-text style="font-size: 18px; font-weight: 600; color: #FF0000;">
-        ¥{{ total.toFixed(2) }}
+        ¥{{ total.toFixed(3) }}
       </n-text></n-text>
       <n-button type="primary" :loading="submitting" @click="submit">提交订单</n-button>
     </n-space>

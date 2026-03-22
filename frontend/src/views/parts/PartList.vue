@@ -68,7 +68,7 @@
           <n-select v-model:value="form.unit" :options="unitOptions" placeholder="请选择单位" />
         </n-form-item>
         <n-form-item label="单件成本">
-          <n-input-number v-model:value="form.unit_cost" :min="0" :precision="2" style="width: 100%;" />
+          <n-input-number v-model:value="form.unit_cost" :min="0" :precision="3" style="width: 100%;" />
         </n-form-item>
         <n-form-item label="默认电镀工艺"><n-input v-model:value="form.plating_process" /></n-form-item>
         <n-form-item label="关联原色配件">
@@ -81,19 +81,6 @@
             :disabled="editingIsVariant"
           />
           <span v-if="editingIsVariant" style="color: #999; font-size: 12px; margin-left: 8px;">变体不可修改</span>
-        </n-form-item>
-        <n-form-item v-if="editingId && !form.parent_part_id && availableVariants.length > 0" label="创建颜色变体">
-          <n-space>
-            <n-button
-              v-for="v in availableVariants"
-              :key="v.code"
-              :loading="creatingVariant"
-              @click="doCreateVariant(v.code)"
-            >
-              <span :style="{ color: v.color, fontWeight: 'bold', marginRight: '4px' }">{{ v.code }}</span>
-              {{ v.label }}
-            </n-button>
-          </n-space>
         </n-form-item>
       </n-form>
       <template #footer>
@@ -175,7 +162,7 @@ import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
   NModal, NDataTable, NSpin, NEmpty, NDropdown, NImage,
 } from 'naive-ui'
-import { listParts, createPart, updatePart, deletePart, importPartsExcel, downloadPartsImportTemplate, createPartVariant, getPartVariants } from '@/api/parts'
+import { listParts, createPart, updatePart, deletePart, importPartsExcel, downloadPartsImportTemplate, getPartVariants } from '@/api/parts'
 import { getStock, addStock } from '@/api/inventory'
 import { renderNamedImage } from '@/utils/ui'
 import ImageUploadModal from '../../components/ImageUploadModal.vue'
@@ -203,42 +190,7 @@ const unitOptions = [
   { label: 'kg', value: 'kg' },
 ]
 
-const COLOR_VARIANTS = [
-  { code: 'G', label: '金色', color: '#DAA520' },
-  { code: 'S', label: '白K', color: '#C0C0C0' },
-  { code: 'RG', label: '玫瑰金', color: '#B76E79' },
-]
-
-const creatingVariant = ref(false)
 const existingVariantColors = ref([])
-
-const availableVariants = computed(() =>
-  COLOR_VARIANTS.filter((v) => !existingVariantColors.value.includes(v.code))
-)
-
-const doCreateVariant = (colorCode) => {
-  const variant = COLOR_VARIANTS.find((v) => v.code === colorCode)
-  if (!variant || !editingId.value) return
-  dialog.info({
-    title: '确认创建变体',
-    content: `确认创建${variant.label}变体配件？`,
-    positiveText: '确认',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      creatingVariant.value = true
-      try {
-        await createPartVariant(editingId.value, { color_code: colorCode })
-        message.success(`${variant.label}变体创建成功`)
-        existingVariantColors.value.push(colorCode)
-        await load()
-      } catch (error) {
-        message.error(error.response?.data?.detail || '创建变体失败')
-      } finally {
-        creatingVariant.value = false
-      }
-    },
-  })
-}
 
 // Modal state
 const showModal = ref(false)
@@ -494,7 +446,7 @@ const columns = [
   { title: '类目', key: 'category' },
   { title: '颜色', key: 'color' },
   { title: '单位', key: 'unit', width: 60 },
-  { title: '单件成本', key: 'unit_cost', width: 90, render: (r) => r.unit_cost?.toFixed(2) ?? '-' },
+  { title: '单件成本', key: 'unit_cost', width: 90, render: (r) => r.unit_cost?.toFixed(3) ?? '-' },
   {
     title: '当前库存',
     key: 'stock',

@@ -11,18 +11,22 @@ _VALID_STATUSES = {"待生产", "生产中", "已完成"}
 
 def create_order(db: Session, customer_name: str, items: list) -> Order:
     order_id = _next_id(db, Order, "OR")
-    total = sum(item["quantity"] * item["unit_price"] for item in items)
-    order = Order(id=order_id, customer_name=customer_name, total_amount=total)
+    total = 0.0
+    order = Order(id=order_id, customer_name=customer_name)
     db.add(order)
     db.flush()
     for item in items:
+        unit_price = round(item["unit_price"], 3)
+        subtotal = round(item["quantity"] * unit_price, 3)
+        total += subtotal
         db.add(OrderItem(
             order_id=order_id,
             jewelry_id=item["jewelry_id"],
             quantity=item["quantity"],
-            unit_price=item["unit_price"],
+            unit_price=unit_price,
             remarks=item.get("remarks"),
         ))
+    order.total_amount = round(total, 3)
     db.flush()
     return order
 

@@ -39,7 +39,7 @@
             :options="unitOptions"
             style="width: 90px;"
           />
-          <n-input-number v-model:value="item.price" :min="0" :precision="2" :step="0.1" placeholder="单价" style="width: 110px;" />
+          <n-input-number v-model:value="item.price" :min="0" :precision="3" :step="0.1" placeholder="单价" style="width: 110px;" />
           <span style="min-width: 80px; color: #666;">{{ formatAmount(item.qty, item.price) }}</span>
           <n-button type="error" size="small" @click="items.splice(idx, 1)">删除</n-button>
         </n-space>
@@ -96,12 +96,12 @@ const unitOptions = [
 ]
 
 const formatAmount = (qty, price) => {
-  if (!qty || price == null) return '¥ 0.00'
-  return `¥ ${(qty * price).toFixed(2)}`
+  if (!qty || price == null) return '¥ 0.000'
+  return `¥ ${(qty * price).toFixed(3)}`
 }
 
 const totalAmount = computed(() => {
-  return items.reduce((sum, item) => sum + (item.qty || 0) * (item.price || 0), 0).toFixed(2)
+  return items.reduce((sum, item) => sum + (item.qty || 0) * (item.price || 0), 0).toFixed(3)
 })
 
 const addRow = () => {

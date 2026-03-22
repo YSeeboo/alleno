@@ -71,7 +71,7 @@ const columns = [
       return h('span', { class: `badge ${cls}` }, `• ${r.status}`)
     },
   },
-  { title: '总金额', key: 'total_amount', render: (r) => r.total_amount?.toFixed(2) ?? '-' },
+  { title: '总金额', key: 'total_amount', render: (r) => r.total_amount?.toFixed(3) ?? '-' },
   { title: '创建时间', key: 'created_at', render: (r) => new Date(r.created_at).toLocaleString('zh-CN') },
 ]
 

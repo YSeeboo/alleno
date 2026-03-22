@@ -26,7 +26,7 @@
               </n-tag>
             </n-popselect>
           </n-descriptions-item>
-          <n-descriptions-item label="总金额">{{ order.total_amount != null ? `¥ ${Number(order.total_amount).toFixed(2)}` : '-' }}</n-descriptions-item>
+          <n-descriptions-item label="总金额">{{ order.total_amount != null ? `¥ ${Number(order.total_amount).toFixed(3)}` : '-' }}</n-descriptions-item>
           <n-descriptions-item label="创建时间">{{ fmt(order.created_at) }}</n-descriptions-item>
           <n-descriptions-item label="付款时间">{{ order.paid_at ? fmt(order.paid_at) : '-' }}</n-descriptions-item>
           <n-descriptions-item label="备注">{{ order.note || '-' }}</n-descriptions-item>
@@ -140,7 +140,7 @@
           <n-select v-model:value="editForm.unit" :options="unitOptions" />
         </n-form-item>
         <n-form-item label="单价">
-          <n-input-number v-model:value="editForm.price" :min="0" :precision="2" :step="0.1" style="width: 100%;" />
+          <n-input-number v-model:value="editForm.price" :min="0" :precision="3" :step="0.1" style="width: 100%;" />
         </n-form-item>
         <n-form-item label="备注">
           <n-input v-model:value="editForm.note" placeholder="备注（可选）" />
@@ -502,8 +502,8 @@ const itemColumns = [
   },
   { title: '购入数量', key: 'qty' },
   { title: '单位', key: 'unit', render: (r) => r.unit || '-' },
-  { title: '单价', key: 'price', render: (r) => r.price != null ? `¥ ${Number(r.price).toFixed(2)}` : '-' },
-  { title: '金额', key: 'amount', render: (r) => r.amount != null ? `¥ ${Number(r.amount).toFixed(2)}` : '-' },
+  { title: '单价', key: 'price', render: (r) => r.price != null ? `¥ ${Number(r.price).toFixed(3)}` : '-' },
+  { title: '金额', key: 'amount', render: (r) => r.amount != null ? `¥ ${Number(r.amount).toFixed(3)}` : '-' },
   {
     title: '备注',
     key: 'note',

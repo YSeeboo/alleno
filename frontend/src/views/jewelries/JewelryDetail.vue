@@ -24,8 +24,8 @@
           </n-descriptions-item>
           <n-descriptions-item label="类目">{{ jewelry.category || '-' }}</n-descriptions-item>
           <n-descriptions-item label="颜色">{{ jewelry.color || '-' }}</n-descriptions-item>
-          <n-descriptions-item label="零售价">{{ jewelry.retail_price?.toFixed(2) ?? '-' }}</n-descriptions-item>
-          <n-descriptions-item label="批发价">{{ jewelry.wholesale_price?.toFixed(2) ?? '-' }}</n-descriptions-item>
+          <n-descriptions-item label="零售价">{{ jewelry.retail_price?.toFixed(3) ?? '-' }}</n-descriptions-item>
+          <n-descriptions-item label="批发价">{{ jewelry.wholesale_price?.toFixed(3) ?? '-' }}</n-descriptions-item>
           <n-descriptions-item label="状态">{{ jewelry.status }}</n-descriptions-item>
           <n-descriptions-item label="当前库存">{{ stock }}</n-descriptions-item>
         </n-descriptions>

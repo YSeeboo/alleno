@@ -88,7 +88,7 @@ const rowProps = (row) => ({ style: 'cursor: pointer;', onClick: () => router.pu
 
 const formatAmount = (val) => {
   if (val == null) return '-'
-  return `¥ ${Number(val).toFixed(2)}`
+  return `¥ ${Number(val).toFixed(3)}`
 }
 
 const columns = [

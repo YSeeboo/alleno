@@ -53,7 +53,7 @@ from database import Base
 
 @pytest.fixture
 def db():
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    engine = create_engine(os.getenv("TEST_DATABASE_URL", "postgresql://allen:allen@localhost:5432/allen_shop_test"))
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -1456,7 +1456,7 @@ This script uses a real SQLite file (not in-memory) so you can inspect the DB af
 """
 End-to-end verification script for Allen Shop service layer.
 Run from project root:  python scripts/verify_services.py
-Creates verify_test.db (deleted at end).
+Uses `TEST_DATABASE_URL` (defaults to `postgresql://allen:allen@localhost:5432/allen_shop_test`).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -1467,8 +1467,7 @@ from sqlalchemy.orm import sessionmaker
 import models
 from database import Base
 
-DB_PATH = "verify_test.db"
-engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+engine = create_engine(os.getenv("TEST_DATABASE_URL", "postgresql://allen:allen@localhost:5432/allen_shop_test"))
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
 db = Session()

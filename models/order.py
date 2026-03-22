@@ -10,7 +10,7 @@ class Order(Base):
     id = Column(String, primary_key=True)
     customer_name = Column(String, nullable=False)
     status = Column(String, nullable=False, default="待生产")
-    total_amount = Column(Numeric(10, 2), nullable=True)
+    total_amount = Column(Numeric(10, 3), nullable=True)
     created_at = Column(DateTime, default=now_beijing)
 
 
@@ -21,5 +21,5 @@ class OrderItem(Base):
     order_id = Column(String, ForeignKey("order.id"), nullable=False)
     jewelry_id = Column(String, ForeignKey("jewelry.id"), nullable=False)
     quantity = Column(Integer, nullable=False)
-    unit_price = Column(Numeric(10, 2), nullable=False)
+    unit_price = Column(Numeric(10, 3), nullable=False)
     remarks = Column(Text, nullable=True)

@@ -42,6 +42,11 @@ class PartVariantCreate(BaseModel):
     color_code: str
 
 
+class FindOrCreateVariantResponse(BaseModel):
+    part: Optional[PartResponse] = None
+    suggested_name: Optional[str] = None
+
+
 class PartImportRowResult(BaseModel):
     row_number: int
     part_id: str

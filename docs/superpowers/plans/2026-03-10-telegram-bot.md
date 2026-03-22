@@ -133,7 +133,7 @@ async def test_rate_limit_allows_after_cooldown():
 - [ ] **Step 2: Run to verify failures**
 
 ```bash
-cd /Users/ycb/workspace/allen_shop && DATABASE_URL=sqlite:///./test.db python -m pytest tests/test_bot_middleware.py -v
+cd /Users/ycb/workspace/allen_shop && TEST_DATABASE_URL=postgresql://allen:allen@localhost:5432/allen_shop_test python -m pytest tests/test_bot_middleware.py -v
 ```
 Expected: ImportError or AttributeError — middleware not implemented.
 
@@ -201,7 +201,7 @@ cd /Users/ycb/workspace/allen_shop && python -m pip install pytest-asyncio --qui
 - [ ] **Step 5: Run tests — expect PASS**
 
 ```bash
-cd /Users/ycb/workspace/allen_shop && DATABASE_URL=sqlite:///./test.db python -m pytest tests/test_bot_middleware.py -v
+cd /Users/ycb/workspace/allen_shop && TEST_DATABASE_URL=postgresql://allen:allen@localhost:5432/allen_shop_test python -m pytest tests/test_bot_middleware.py -v
 ```
 
 If `asyncio mode` error, add to `tests/conftest.py`:
@@ -305,7 +305,7 @@ def test_execute_tool_handles_service_error(db):
 - [ ] **Step 2: Run to verify failures**
 
 ```bash
-cd /Users/ycb/workspace/allen_shop && DATABASE_URL=sqlite:///./test.db python -m pytest tests/test_bot_tools.py -v
+cd /Users/ycb/workspace/allen_shop && TEST_DATABASE_URL=postgresql://allen:allen@localhost:5432/allen_shop_test python -m pytest tests/test_bot_tools.py -v
 ```
 
 - [ ] **Step 3: Implement `bot/agent/tools.py`**
@@ -612,7 +612,7 @@ def execute_tool(tool_name: str, tool_input: Dict[str, Any], db: Session) -> str
 - [ ] **Step 4: Run tests — expect PASS**
 
 ```bash
-cd /Users/ycb/workspace/allen_shop && DATABASE_URL=sqlite:///./test.db python -m pytest tests/test_bot_tools.py -v
+cd /Users/ycb/workspace/allen_shop && TEST_DATABASE_URL=postgresql://allen:allen@localhost:5432/allen_shop_test python -m pytest tests/test_bot_tools.py -v
 ```
 
 - [ ] **Step 5: Commit**
@@ -745,7 +745,7 @@ async def test_runner_max_iterations(db):
 - [ ] **Step 2: Run to verify failures**
 
 ```bash
-cd /Users/ycb/workspace/allen_shop && DATABASE_URL=sqlite:///./test.db python -m pytest tests/test_bot_runner.py -v
+cd /Users/ycb/workspace/allen_shop && TEST_DATABASE_URL=postgresql://allen:allen@localhost:5432/allen_shop_test python -m pytest tests/test_bot_runner.py -v
 ```
 
 - [ ] **Step 3: Implement `bot/agent/runner.py`**
@@ -806,7 +806,7 @@ async def run_agent(user_message: str, db: Session) -> str:
 - [ ] **Step 4: Run tests — expect PASS**
 
 ```bash
-cd /Users/ycb/workspace/allen_shop && DATABASE_URL=sqlite:///./test.db python -m pytest tests/test_bot_runner.py -v
+cd /Users/ycb/workspace/allen_shop && TEST_DATABASE_URL=postgresql://allen:allen@localhost:5432/allen_shop_test python -m pytest tests/test_bot_runner.py -v
 ```
 
 - [ ] **Step 5: Commit**
@@ -874,7 +874,7 @@ async def handle_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> No
 - [ ] **Step 2: Verify imports are clean**
 
 ```bash
-cd /Users/ycb/workspace/allen_shop && DATABASE_URL=sqlite:///./test.db python -c "from bot.handlers import handle_message, handle_error; print('OK')"
+cd /Users/ycb/workspace/allen_shop && DATABASE_URL=postgresql://allen:allen@localhost:5432/allen_shop_test python -c "from bot.handlers import handle_message, handle_error; print('OK')"
 ```
 
 - [ ] **Step 3: Commit**
@@ -973,13 +973,13 @@ if __name__ == "__main__":
 - [ ] **Step 2: Verify imports clean (no bot token needed)**
 
 ```bash
-cd /Users/ycb/workspace/allen_shop && DATABASE_URL=sqlite:///./test.db python -c "from main import app; print('OK')"
+cd /Users/ycb/workspace/allen_shop && DATABASE_URL=postgresql://allen:allen@localhost:5432/allen_shop_test python -c "from main import app; print('OK')"
 ```
 
 - [ ] **Step 3: Run full test suite**
 
 ```bash
-cd /Users/ycb/workspace/allen_shop && DATABASE_URL=sqlite:///./test.db python -m pytest tests/ -v
+cd /Users/ycb/workspace/allen_shop && TEST_DATABASE_URL=postgresql://allen:allen@localhost:5432/allen_shop_test python -m pytest tests/ -v
 ```
 Expected: all tests pass (bot thread not started in tests because no TELEGRAM_BOT_TOKEN).
 

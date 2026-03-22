@@ -16,7 +16,7 @@
               <n-descriptions-item label="状态">
                 <n-tag :type="statusColor[order?.status]">{{ order?.status }}</n-tag>
               </n-descriptions-item>
-              <n-descriptions-item label="总金额">{{ order?.total_amount?.toFixed(2) }}</n-descriptions-item>
+              <n-descriptions-item label="总金额">{{ order?.total_amount?.toFixed(3) }}</n-descriptions-item>
               <n-descriptions-item label="创建时间" :span="2">
                 {{ order?.created_at ? new Date(order.created_at).toLocaleString('zh-CN') : '-' }}
               </n-descriptions-item>
@@ -103,8 +103,8 @@ const itemColumns = [
     render: (row) => renderNamedImage(row.jewelry_name, row.jewelry_image, row.jewelry_name),
   },
   { title: '数量', key: 'quantity' },
-  { title: '单价', key: 'unit_price', render: (r) => r.unit_price?.toFixed(2) ?? '-' },
-  { title: '小计', key: 'subtotal', render: (r) => ((r.quantity || 0) * (r.unit_price || 0)).toFixed(2) },
+  { title: '单价', key: 'unit_price', render: (r) => r.unit_price?.toFixed(3) ?? '-' },
+  { title: '小计', key: 'subtotal', render: (r) => ((r.quantity || 0) * (r.unit_price || 0)).toFixed(3) },
   { title: '备注', key: 'remarks', render: (r) => r.remarks || '-' },
 ]
 

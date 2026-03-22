@@ -49,7 +49,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "sqlite:///./allen_shop.db"
+    DATABASE_URL: str = "postgresql://allen:allen@localhost:5432/allen_shop"
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_WHITELIST: str = ""
     ANTHROPIC_API_KEY: str = ""
@@ -74,7 +74,7 @@ settings = Settings()
 python -c "from config import settings; print(settings.DATABASE_URL)"
 ```
 
-Expected: `sqlite:///./allen_shop.db`
+Expected: `postgresql://allen:allen@localhost:5432/allen_shop`
 
 ---
 
@@ -92,9 +92,7 @@ from sqlalchemy.orm import sessionmaker
 
 from config import settings
 
-connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
-
-engine = create_engine(settings.DATABASE_URL, connect_args=connect_args)
+engine = create_engine(settings.DATABASE_URL)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -499,18 +497,20 @@ INFO:     Uvicorn running on http://127.0.0.1:8000
 
 ```bash
 python -c "
-import sqlite3, sys
-conn = sqlite3.connect('allen_shop.db')
-tables = conn.execute(\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\").fetchall()
+import sys
+from sqlalchemy import create_engine, inspect
+from config import settings
+
+engine = create_engine(settings.DATABASE_URL)
+tables = inspect(engine).get_table_names()
 expected = {'bom','handcraft_jewelry_item','handcraft_order','handcraft_part_item',
             'inventory_log','jewelry','order','order_item','part',
             'plating_order','plating_order_item'}
-found = {t[0] for t in tables}
+found = set(tables)
 missing = expected - found
 if missing:
     print('MISSING:', missing); sys.exit(1)
 print('All', len(found), 'tables present:', sorted(found))
-conn.close()
 "
 ```
 
@@ -521,7 +521,7 @@ Expected: `All 11 tables present: [...]`
 ## Completion Criteria
 
 - [ ] `uvicorn main:app` starts without errors
-- [ ] `allen_shop.db` is auto-created on startup
+- [ ] PostgreSQL schema is initialized on startup
 - [ ] All 11 tables present in the database
 - [ ] No service or API logic implemented (stubs only)
 - [ ] No extra files beyond the specified structure

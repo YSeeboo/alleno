@@ -208,9 +208,11 @@ def update_plating_item(db: Session, order_id: str, item_id: int, data: dict) ->
             if send_root != recv_root:
                 raise ValueError("收回配件必须与发出配件属于同一配件族")
         item.receive_part_id = data["receive_part_id"]
-    for field in ("qty", "unit", "plating_method", "note"):
+    for field in ("qty", "unit", "note"):
         if field in data and data[field] is not None:
             setattr(item, field, data[field])
+    if "plating_method" in data:
+        item.plating_method = data["plating_method"]
     db.flush()
     return item
 
