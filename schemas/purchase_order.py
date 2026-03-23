@@ -2,6 +2,8 @@ from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from schemas.part import CostDiffItem
+
 
 class PurchaseOrderItemCreate(BaseModel):
     part_id: str
@@ -72,6 +74,7 @@ class PurchaseOrderItemAddonResponse(BaseModel):
     price: float
     amount: float
     unit_cost: float
+    cost_diffs: list[CostDiffItem] = Field(default_factory=list)
 
 
 class PurchaseOrderItemResponse(BaseModel):
@@ -100,3 +103,4 @@ class PurchaseOrderResponse(BaseModel):
     paid_at: Optional[datetime] = None
     delivery_images: list[str] = Field(default_factory=list)
     items: list[PurchaseOrderItemResponse] = Field(default_factory=list)
+    cost_diffs: list[CostDiffItem] = Field(default_factory=list)

@@ -1,6 +1,6 @@
 from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PartCreate(BaseModel):
@@ -77,3 +77,33 @@ class PartCostLogResponse(BaseModel):
     unit_cost_after: Optional[float] = None
     source_id: Optional[str] = None
     created_at: datetime
+
+
+class CostDiffItem(BaseModel):
+    part_id: str
+    part_name: str
+    field: str
+    current_value: Optional[float] = None
+    new_value: float
+
+
+class BatchCostUpdateItem(BaseModel):
+    part_id: str
+    field: str
+    value: float = Field(ge=0)
+    source_id: Optional[str] = None
+
+
+class BatchCostUpdateRequest(BaseModel):
+    updates: list[BatchCostUpdateItem] = Field(min_length=1)
+
+
+class BatchCostUpdateResultItem(BaseModel):
+    part_id: str
+    field: str
+    updated: bool
+
+
+class BatchCostUpdateResponse(BaseModel):
+    updated_count: int
+    results: list[BatchCostUpdateResultItem]
