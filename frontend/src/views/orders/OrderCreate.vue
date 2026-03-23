@@ -27,9 +27,9 @@
           <n-input-number
             v-model:value="item.unit_price"
             :min="0"
-            :precision="3"
+            :precision="7"
             placeholder="单价"
-            style="width: 100px;"
+            style="width: 120px;"
           />
           <n-input v-model:value="item.remarks" placeholder="备注" style="width: 160px;" />
           <n-button type="error" size="small" @click="items.splice(idx, 1)">删除</n-button>
@@ -40,7 +40,7 @@
 
     <n-space justify="space-between" align="center">
       <n-text>合计：<n-text style="font-size: 18px; font-weight: 600; color: #FF0000;">
-        ¥{{ total.toFixed(3) }}
+        ¥{{ fmtMoney(total) }}
       </n-text></n-text>
       <n-button type="primary" :loading="submitting" @click="submit">提交订单</n-button>
     </n-space>
@@ -54,7 +54,7 @@ import { useMessage } from 'naive-ui'
 import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NText, NH2 } from 'naive-ui'
 import { listJewelries } from '@/api/jewelries'
 import { createOrder } from '@/api/orders'
-import { renderOptionWithImage } from '@/utils/ui'
+import { renderOptionWithImage, fmtMoney } from '@/utils/ui'
 
 const router = useRouter()
 const message = useMessage()

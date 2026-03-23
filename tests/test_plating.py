@@ -5,9 +5,10 @@ import pytest
 from services.part import create_part
 from services.inventory import add_stock, get_stock
 from services.plating import (
-    create_plating_order, send_plating_order, receive_plating_items,
+    create_plating_order, send_plating_order,
     get_plating_order, list_plating_orders, update_plating_delivery_images,
 )
+from services.plating_receipt import create_plating_receipt
 
 
 @pytest.fixture
@@ -86,8 +87,8 @@ def test_receive_plating_items_partial(setup):
     item = db.query(PlatingOrderItem).filter(
         PlatingOrderItem.plating_order_id == order.id
     ).first()
-    # Receive 50 of 100
-    receive_plating_items(db, order.id, [{"plating_order_item_id": item.id, "qty": 50}])
+    # Receive 50 of 100 via plating receipt
+    create_plating_receipt(db, "厂A", [{"plating_order_item_id": item.id, "part_id": p1.id, "qty": 50}])
     db.refresh(item)
     assert float(item.received_qty) == 50.0
     assert item.status == "电镀中"  # not yet complete
@@ -104,9 +105,9 @@ def test_receive_plating_items_completes_order(setup):
     item = db.query(PlatingOrderItem).filter(
         PlatingOrderItem.plating_order_id == order.id
     ).first()
-    # Receive in two batches
-    receive_plating_items(db, order.id, [{"plating_order_item_id": item.id, "qty": 60}])
-    receive_plating_items(db, order.id, [{"plating_order_item_id": item.id, "qty": 40}])
+    # Receive in two batches via plating receipts
+    create_plating_receipt(db, "厂A", [{"plating_order_item_id": item.id, "part_id": p1.id, "qty": 60}])
+    create_plating_receipt(db, "厂A", [{"plating_order_item_id": item.id, "part_id": p1.id, "qty": 40}])
     db.refresh(item)
     db.refresh(order)
     assert item.status == "已收回"

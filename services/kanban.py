@@ -861,7 +861,7 @@ def record_vendor_receipt(
     note: str | None = None,
 ) -> tuple[list[VendorReceipt], list[str]]:
     if order_type == "plating":
-        raise ValueError("电镀单收回请使用电镀单收回接口（POST /api/plating/{id}/receive）")
+        raise ValueError("电镀单收回请使用电镀回收单（POST /api/plating-receipts/）")
 
     # Validate order exists and belongs to this vendor
     _validate_order_ownership(db, order_id, order_type, vendor_name)
@@ -936,7 +936,7 @@ def get_orders_for_vendor(
     db: Session, vendor_name: str, order_type: str
 ) -> list[VendorOrderOption]:
     if order_type == "plating":
-        raise ValueError("电镀单收回请使用电镀单收回接口（POST /api/plating/{id}/receive）")
+        raise ValueError("电镀单收回请使用电镀回收单（POST /api/plating-receipts/）")
     else:
         rows = (
             db.query(HandcraftOrder)
@@ -951,7 +951,7 @@ def get_order_items_for_receipt(
     db: Session, order_id: str, order_type: str
 ) -> OrderItemsForReceiptResponse:
     if order_type == "plating":
-        raise ValueError("电镀单收回请使用电镀单收回接口（POST /api/plating/{id}/receive）")
+        raise ValueError("电镀单收回请使用电镀回收单（POST /api/plating-receipts/）")
 
     # Handcraft only — plating is blocked above
     received_rows = (
@@ -1015,22 +1015,77 @@ def _undo_receipts_for_order(db: Session, order_id: str, order_type: str) -> Non
 
 
 def _undo_plating_receipts(db: Session, order_id: str) -> None:
-    """Reverse all received stock for a plating order using PlatingOrderItem as source of truth."""
+    """Reverse all received stock for a plating order and clean up receipt records."""
+    from models.plating_receipt import PlatingReceipt, PlatingReceiptItem
+
     items = (
         db.query(PlatingOrderItem)
         .filter(PlatingOrderItem.plating_order_id == order_id)
         .all()
     )
+
+    # Collect PlatingReceiptItem records linked to this order's items
+    item_ids = [item.id for item in items]
+    receipt_items = (
+        db.query(PlatingReceiptItem)
+        .filter(PlatingReceiptItem.plating_order_item_id.in_(item_ids))
+        .all()
+    ) if item_ids else []
+
+    # Track which PlatingReceipts are affected
+    affected_receipt_ids = {ri.plating_receipt_id for ri in receipt_items}
+
+    # Reverse stock using PlatingReceiptItem as source of truth (not received_qty)
+    plating_receipt_received: dict[str, float] = {}
+    for ri in receipt_items:
+        plating_receipt_received[ri.part_id] = plating_receipt_received.get(ri.part_id, 0.0) + float(ri.qty)
+        db.delete(ri)
+
+    # Reverse stock from VendorReceipt records (legacy kanban path)
+    vendor_receipts = db.query(VendorReceipt).filter(
+        VendorReceipt.order_id == order_id,
+        VendorReceipt.order_type == "plating",
+    ).all()
+    vendor_received: dict[str, float] = {}
+    for r in vendor_receipts:
+        vendor_received[r.item_id] = vendor_received.get(r.item_id, 0.0) + float(r.qty)
+        deduct_stock(db, r.item_type, r.item_id, r.qty, reason="电镀收回撤回")
+        db.delete(r)
+
+    # Reverse stock from PlatingReceiptItem records
+    for part_id, qty in plating_receipt_received.items():
+        deduct_stock(db, "part", part_id, qty, reason="电镀收回撤回")
+
+    # Reverse any legacy received stock not tracked by either receipt type
     for item in items:
         recv = float(item.received_qty or 0)
         if recv > 0:
             receive_id = item.receive_part_id or item.part_id
-            deduct_stock(db, "part", receive_id, recv, reason="电镀收回撤回")
-    # Clean up legacy VendorReceipts (from old kanban path) without double-deducting
-    db.query(VendorReceipt).filter(
-        VendorReceipt.order_id == order_id,
-        VendorReceipt.order_type == "plating",
-    ).delete(synchronize_session=False)
+            tracked = plating_receipt_received.get(receive_id, 0.0) + vendor_received.get(receive_id, 0.0)
+            legacy = recv - tracked
+            if legacy > 0:
+                deduct_stock(db, "part", receive_id, legacy, reason="电镀收回撤回")
+
+    db.flush()
+
+    # Clean up empty PlatingReceipt records and recalc non-empty ones
+    for receipt_id in affected_receipt_ids:
+        receipt = db.query(PlatingReceipt).filter(PlatingReceipt.id == receipt_id).first()
+        if receipt is None:
+            continue
+        remaining = db.query(PlatingReceiptItem).filter(
+            PlatingReceiptItem.plating_receipt_id == receipt_id
+        ).count()
+        if remaining == 0:
+            db.delete(receipt)
+        else:
+            # Recalc total for receipts that span multiple orders
+            remaining_items = db.query(PlatingReceiptItem).filter(
+                PlatingReceiptItem.plating_receipt_id == receipt_id
+            ).all()
+            from decimal import Decimal
+            receipt.total_amount = sum(Decimal(str(ri.amount or 0)) for ri in remaining_items)
+    db.flush()
 
 
 def _force_complete_plating(db: Session, order: PlatingOrder, now) -> None:
@@ -1139,7 +1194,7 @@ def change_order_status(
             order.status = "pending"
 
         elif current_status == "processing" and new_status == "completed":
-            _force_complete_plating(db, order, now)
+            raise ValueError("电镀单完成需通过创建电镀回收单（POST /api/plating-receipts/），不支持直接改状态")
 
         elif current_status == "completed" and new_status == "processing":
             _undo_plating_receipts(db, order_id)

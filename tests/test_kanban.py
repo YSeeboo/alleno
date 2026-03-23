@@ -229,7 +229,13 @@ def test_kanban_vendor_can_appear_in_pending_return_and_returned_for_plating(db,
         {"part_id": part.id, "qty": 10, "plating_method": "银色"},
     ])
     send_plating_order(db, completed_order.id)
-    change_order_status(db, completed_order.id, "plating", "completed")
+    # Complete via PlatingReceipt (force-complete is blocked)
+    from services.plating import get_plating_items
+    from services.plating_receipt import create_plating_receipt
+    poi = get_plating_items(db, completed_order.id)[0]
+    create_plating_receipt(db, "电镀厂A", [
+        {"plating_order_item_id": poi.id, "part_id": part.id, "qty": 10},
+    ])
 
     board = get_kanban(db, order_type="plating")
 
@@ -268,11 +274,11 @@ def test_kanban_vendor_can_appear_in_pending_return_and_returned_for_handcraft(d
 
 
 def test_plating_receipt_updates_order_item_row(db, plating_vendor):
-    from services.plating import receive_plating_items
+    from services.plating_receipt import create_plating_receipt
     order, part = plating_vendor
 
     item = db.query(PlatingOrderItem).filter(PlatingOrderItem.plating_order_id == order.id).one()
-    receive_plating_items(db, order.id, [{"plating_order_item_id": item.id, "qty": 6}])
+    create_plating_receipt(db, order.supplier_name, [{"plating_order_item_id": item.id, "part_id": item.receive_part_id or item.part_id, "qty": 6}])
 
     db.refresh(item)
     assert float(item.received_qty) == 6.0
@@ -301,11 +307,11 @@ def test_handcraft_receipt_updates_jewelry_item_row(db, handcraft_vendor):
 
 def test_plating_autocomplete_on_full_receipt(db, plating_vendor):
     """Receiving all dispatched parts triggers PlatingOrder → completed."""
-    from services.plating import receive_plating_items
+    from services.plating_receipt import create_plating_receipt
     order, part = plating_vendor
 
     item = db.query(PlatingOrderItem).filter(PlatingOrderItem.plating_order_id == order.id).one()
-    receive_plating_items(db, order.id, [{"plating_order_item_id": item.id, "qty": 10}])
+    create_plating_receipt(db, order.supplier_name, [{"plating_order_item_id": item.id, "part_id": item.receive_part_id or item.part_id, "qty": 10}])
 
     db.refresh(order)
     assert order.status == "completed"
@@ -314,11 +320,11 @@ def test_plating_autocomplete_on_full_receipt(db, plating_vendor):
 
 def test_plating_no_autocomplete_on_partial_receipt(db, plating_vendor):
     """Partial receipt must NOT auto-complete the order."""
-    from services.plating import receive_plating_items
+    from services.plating_receipt import create_plating_receipt
     order, part = plating_vendor
 
     item = db.query(PlatingOrderItem).filter(PlatingOrderItem.plating_order_id == order.id).one()
-    receive_plating_items(db, order.id, [{"plating_order_item_id": item.id, "qty": 9}])
+    create_plating_receipt(db, order.supplier_name, [{"plating_order_item_id": item.id, "part_id": item.receive_part_id or item.part_id, "qty": 9}])
 
     db.refresh(order)
     assert order.status == "processing"
@@ -421,20 +427,36 @@ def test_cross_order_item_rejection(db, part, jewelry):
         ])
 
 
-def test_change_order_status_syncs_plating_item_rows(db, plating_vendor):
+def test_change_order_status_plating_force_complete_blocked(db, plating_vendor):
+    """Kanban processing→completed is blocked for plating orders."""
     order, part = plating_vendor
 
-    change_order_status(db, order.id, "plating", "completed")
+    with pytest.raises(ValueError, match="回收单"):
+        change_order_status(db, order.id, "plating", "completed")
 
-    item = db.query(PlatingOrderItem).filter(PlatingOrderItem.plating_order_id == order.id).one()
+
+def test_change_order_status_plating_completed_to_processing(db, plating_vendor):
+    """Kanban completed→processing rollback still works (reverses receipts)."""
+    from services.plating import get_plating_items
+    from services.plating_receipt import create_plating_receipt
+
+    order, part = plating_vendor
+    poi = get_plating_items(db, order.id)[0]
+
+    # Complete via receipt
+    create_plating_receipt(db, order.supplier_name, [
+        {"plating_order_item_id": poi.id, "part_id": part.id, "qty": float(poi.qty)},
+    ])
+    db.flush()
     db.refresh(order)
-    assert float(item.received_qty) == float(item.qty)
-    assert item.status == "已收回"
     assert order.status == "completed"
 
+    # Rollback via kanban
     change_order_status(db, order.id, "plating", "processing")
-
     db.refresh(order)
+    assert order.status == "processing"
+
+    item = db.query(PlatingOrderItem).filter(PlatingOrderItem.plating_order_id == order.id).one()
     assert float(item.received_qty) == 0.0
     assert item.status == "电镀中"
     assert order.status == "processing"
@@ -485,14 +507,14 @@ def test_kanban_plating_record_vendor_receipt_blocked(db, plating_vendor):
     """record_vendor_receipt rejects plating order_type."""
     order, part = plating_vendor
     items = [ReceiptItemIn(item_id=part.id, item_type="part", qty=5)]
-    with pytest.raises(ValueError, match="电镀单收回请使用电镀单收回接口"):
+    with pytest.raises(ValueError, match="电镀单收回请使用电镀回收单"):
         record_vendor_receipt(db, "电镀厂A", "plating", order.id, items)
 
 
 def test_kanban_plating_get_orders_for_vendor_blocked(db, plating_vendor):
     """get_orders_for_vendor rejects plating order_type."""
     from services.kanban import get_orders_for_vendor
-    with pytest.raises(ValueError, match="电镀单收回请使用电镀单收回接口"):
+    with pytest.raises(ValueError, match="电镀单收回请使用电镀回收单"):
         get_orders_for_vendor(db, "电镀厂A", "plating")
 
 
@@ -500,5 +522,5 @@ def test_kanban_plating_get_order_items_for_receipt_blocked(db, plating_vendor):
     """get_order_items_for_receipt rejects plating order_type."""
     from services.kanban import get_order_items_for_receipt
     order, _ = plating_vendor
-    with pytest.raises(ValueError, match="电镀单收回请使用电镀单收回接口"):
+    with pytest.raises(ValueError, match="电镀单收回请使用电镀回收单"):
         get_order_items_for_receipt(db, order.id, "plating")

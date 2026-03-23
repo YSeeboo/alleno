@@ -20,3 +20,5 @@ export const createPartVariant = (partId, data) => api.post(`/parts/${partId}/cr
 export const getPartVariants = (partId) => api.get(`/parts/${partId}/variants`)
 export const getColorVariants = () => api.get('/parts/color-variants')
 export const findOrCreateVariant = (partId, data) => api.post(`/parts/${partId}/find-or-create-variant`, data)
+export const getPartCostLogs = (partId) => api.get(`/parts/${partId}/cost-logs`)
+export const batchUpdatePartCosts = (data) => api.post('/parts/batch-update-costs', data)

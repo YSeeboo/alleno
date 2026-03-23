@@ -60,10 +60,10 @@
           <n-select v-model:value="form.unit" :options="unitOptions" placeholder="请选择单位" />
         </n-form-item>
         <n-form-item label="零售价">
-          <n-input-number v-model:value="form.retail_price" :min="0" :precision="3" style="width: 100%;" />
+          <n-input-number v-model:value="form.retail_price" :min="0" :precision="7" style="width: 100%;" />
         </n-form-item>
         <n-form-item label="批发价">
-          <n-input-number v-model:value="form.wholesale_price" :min="0" :precision="3" style="width: 100%;" />
+          <n-input-number v-model:value="form.wholesale_price" :min="0" :precision="7" style="width: 100%;" />
         </n-form-item>
       </n-form>
       <template #footer>
@@ -93,7 +93,7 @@ import {
 } from 'naive-ui'
 import { listJewelries, createJewelry, updateJewelry, updateJewelryStatus, deleteJewelry } from '@/api/jewelries'
 import { getStock } from '@/api/inventory'
-import { renderNamedImage } from '@/utils/ui'
+import { renderNamedImage, fmtMoney } from '@/utils/ui'
 import ImageUploadModal from '../../components/ImageUploadModal.vue'
 
 const router = useRouter()
@@ -242,8 +242,8 @@ const columns = [
   { title: '类目', key: 'category' },
   { title: '颜色', key: 'color' },
   { title: '单位', key: 'unit', width: 60 },
-  { title: '零售价', key: 'retail_price', render: (r) => r.retail_price?.toFixed(3) ?? '-' },
-  { title: '批发价', key: 'wholesale_price', render: (r) => r.wholesale_price?.toFixed(3) ?? '-' },
+  { title: '零售价', key: 'retail_price', render: (r) => r.retail_price != null ? fmtMoney(r.retail_price) : '-' },
+  { title: '批发价', key: 'wholesale_price', render: (r) => r.wholesale_price != null ? fmtMoney(r.wholesale_price) : '-' },
   { title: '当前库存', key: 'stock' },
   {
     title: '状态',

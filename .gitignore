@@ -45,6 +45,12 @@ Thumbs.db
 # Git worktrees
 .worktrees/
 
+# Superpowers brainstorm
+.superpowers/
+
+# Workspace temp
+workspace/
+
 # Node / Frontend
 frontend/node_modules/
 frontend/dist/

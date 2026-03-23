@@ -23,11 +23,21 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     return user
 
 
+# Legacy permissions that were merged into another key.
+# Users with the old key are treated as having the new key.
+_PERM_ALIASES = {"inventory_log": "inventory"}
+
+
 def require_permission(perm_key: str):
     def dependency(current_user: User = Depends(get_current_user)):
         if current_user.is_admin:
             return current_user
-        if perm_key not in (current_user.permissions or []):
+        perms = set(current_user.permissions or [])
+        # expand legacy aliases
+        for old, new in _PERM_ALIASES.items():
+            if old in perms:
+                perms.add(new)
+        if perm_key not in perms:
             raise HTTPException(status_code=403, detail=f"无 {perm_key} 权限")
         return current_user
 

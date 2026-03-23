@@ -64,14 +64,18 @@ const allFlatItems = [
   { label: '饰品管理', key: 'jewelries', icon: icon(DiamondOutline), perm: 'jewelries' },
   { label: '订单管理', key: 'orders', icon: icon(ReceiptOutline), perm: 'orders' },
   { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
-  { label: '电镀单', key: 'plating', icon: icon(ColorWandOutline), perm: 'plating' },
+  { label: '电镀发出', key: 'plating', icon: icon(ColorWandOutline), perm: 'plating' },
+  { label: '电镀回收', key: 'plating-receipts', icon: icon(ColorWandOutline), perm: 'plating' },
   { label: '手工单', key: 'handcraft', icon: icon(HammerOutline), perm: 'handcraft' },
   { label: '库存总表', key: 'inventory', icon: icon(ArchiveOutline), perm: 'inventory' },
-  { label: '库存流水', key: 'inventory-log', icon: icon(ListOutline), perm: 'inventory_log' },
+  { label: '库存流水', key: 'inventory-log', icon: icon(ListOutline), perm: 'inventory' },
   { label: '用户管理', key: 'users', icon: icon(PeopleOutline), perm: 'users' },
 ]
 
-const filterChildren = (children) => children.filter((c) => hasPerm(c.perm))
+const filterChildren = (children) => children
+  .filter((c) => hasPerm(c.perm))
+  .map((c) => c.children ? { ...c, children: c.children.filter((sc) => hasPerm(sc.perm)) } : c)
+  .filter((c) => !c.children || c.children.length > 0)
 
 const allGroupedItems = [
   {
@@ -93,7 +97,13 @@ const allGroupedItems = [
     children: [
       { label: '订单管理', key: 'orders', icon: icon(ReceiptOutline), perm: 'orders' },
       { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
-      { label: '电镀单', key: 'plating', icon: icon(ColorWandOutline), perm: 'plating' },
+      {
+        label: '电镀单', key: 'plating-group', icon: icon(ColorWandOutline), perm: 'plating',
+        children: [
+          { label: '电镀发出', key: 'plating', perm: 'plating' },
+          { label: '电镀回收', key: 'plating-receipts', perm: 'plating' },
+        ],
+      },
       { label: '手工单', key: 'handcraft', icon: icon(HammerOutline), perm: 'handcraft' },
     ],
   },
@@ -101,7 +111,7 @@ const allGroupedItems = [
     type: 'group', label: '库存', key: 'group-inventory',
     children: [
       { label: '库存总表', key: 'inventory', icon: icon(ArchiveOutline), perm: 'inventory' },
-      { label: '库存流水', key: 'inventory-log', icon: icon(ListOutline), perm: 'inventory_log' },
+      { label: '库存流水', key: 'inventory-log', icon: icon(ListOutline), perm: 'inventory' },
     ],
   },
   {

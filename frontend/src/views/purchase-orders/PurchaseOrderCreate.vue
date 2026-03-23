@@ -39,7 +39,7 @@
             :options="unitOptions"
             style="width: 90px;"
           />
-          <n-input-number v-model:value="item.price" :min="0" :precision="3" :step="0.1" placeholder="单价" style="width: 110px;" />
+          <n-input-number v-model:value="item.price" :min="0" :precision="7" :step="0.1" placeholder="单价" style="width: 130px;" />
           <span style="min-width: 80px; color: #666;">{{ formatAmount(item.qty, item.price) }}</span>
           <n-button type="error" size="small" @click="items.splice(idx, 1)">删除</n-button>
         </n-space>
@@ -65,17 +65,41 @@
     <n-space justify="end">
       <n-button type="primary" :loading="submitting" @click="submit">提交</n-button>
     </n-space>
+    <!-- Cost Diff Modal -->
+    <n-modal v-model:show="costDiffVisible" :mask-closable="false" preset="card" title="成本变动确认" style="width: 600px;">
+      <div style="margin-bottom: 12px; color: #333;">
+        当前成本与配件已有成本金额不相同，是否更新配件成本？
+      </div>
+      <div style="margin-bottom: 12px; color: #999; font-size: 12px;">来源：{{ costDiffSourceId }}</div>
+      <n-data-table
+        :columns="[
+          { title: '配件编号', key: 'part_id', width: 130 },
+          { title: '配件名称', key: 'part_name', minWidth: 120 },
+          { title: '原单价', key: 'current_value', width: 110, render: (r) => r.current_value != null ? `¥ ${fmtMoney(r.current_value)}` : '-' },
+          { title: '更新单价', key: 'new_value', width: 110, render: (r) => h('span', { style: 'color: #d03050; font-weight: 600;' }, `¥ ${fmtMoney(r.new_value)}`) },
+        ]"
+        :data="costDiffs"
+        :bordered="false"
+        size="small"
+      />
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="skipCostUpdate" :disabled="costDiffUpdating">跳过</n-button>
+          <n-button type="primary" :loading="costDiffUpdating" @click="confirmCostUpdate">确认更新</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { useMessage } from 'naive-ui'
-import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NRadioGroup, NRadio } from 'naive-ui'
-import { listParts } from '@/api/parts'
+import { useMessage, useDialog } from 'naive-ui'
+import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NRadioGroup, NRadio, NModal, NDataTable } from 'naive-ui'
+import { listParts, batchUpdatePartCosts } from '@/api/parts'
 import { createPurchaseOrder, getPurchaseOrderVendors } from '@/api/purchaseOrders'
-import { renderOptionWithImage } from '@/utils/ui'
+import { renderOptionWithImage, fmtMoney } from '@/utils/ui'
 
 const router = useRouter()
 const message = useMessage()
@@ -87,6 +111,12 @@ const submitting = ref(false)
 const partOptions = ref([])
 const vendorOptions = ref([])
 
+// Cost diff modal
+const costDiffVisible = ref(false)
+const costDiffs = ref([])
+const costDiffSourceId = ref('')
+const costDiffUpdating = ref(false)
+
 const unitOptions = [
   { label: '个', value: '个' },
   { label: '条', value: '条' },
@@ -96,12 +126,12 @@ const unitOptions = [
 ]
 
 const formatAmount = (qty, price) => {
-  if (!qty || price == null) return '¥ 0.000'
-  return `¥ ${(qty * price).toFixed(3)}`
+  if (!qty || price == null) return '¥ 0.00'
+  return `¥ ${fmtMoney(qty * price)}`
 }
 
 const totalAmount = computed(() => {
-  return items.reduce((sum, item) => sum + (item.qty || 0) * (item.price || 0), 0).toFixed(3)
+  return fmtMoney(items.reduce((sum, item) => sum + (item.qty || 0) * (item.price || 0), 0))
 })
 
 const addRow = () => {
@@ -110,11 +140,46 @@ const addRow = () => {
 
 const onPartSelect = (item, val) => {
   const found = partOptions.value.find((p) => p.value === val)
-  if (found && found.unit) {
-    item.unit = found.unit
-  } else {
-    item.unit = '个'
+  item.unit = found?.unit || '个'
+  if (found?.purchase_cost != null) {
+    item.price = found.purchase_cost
   }
+}
+
+const handleCostDiffs = (data) => {
+  if (data.cost_diffs && data.cost_diffs.length > 0) {
+    costDiffs.value = data.cost_diffs
+    costDiffSourceId.value = data.id
+    costDiffVisible.value = true
+  } else {
+    router.push(`/purchase-orders/${data.id}`)
+  }
+}
+
+const confirmCostUpdate = async () => {
+  costDiffUpdating.value = true
+  try {
+    await batchUpdatePartCosts({
+      updates: costDiffs.value.map((d) => ({
+        part_id: d.part_id,
+        field: d.field,
+        value: d.new_value,
+        source_id: costDiffSourceId.value,
+      })),
+    })
+    message.success('配件成本已更新')
+    costDiffVisible.value = false
+    router.push(`/purchase-orders/${costDiffSourceId.value}`)
+  } catch (_) {
+    message.error('成本更新失败，请重试')
+  } finally {
+    costDiffUpdating.value = false
+  }
+}
+
+const skipCostUpdate = () => {
+  costDiffVisible.value = false
+  router.push(`/purchase-orders/${costDiffSourceId.value}`)
 }
 
 const submit = async () => {
@@ -130,7 +195,7 @@ const submit = async () => {
       note: note.value,
     })
     message.success('创建成功')
-    router.push(`/purchase-orders/${data.id}`)
+    handleCostDiffs(data)
   } finally {
     submitting.value = false
   }
@@ -145,6 +210,7 @@ onMounted(async () => {
       name: p.name,
       image: p.image,
       unit: p.unit,
+      purchase_cost: p.purchase_cost,
     }))
   }).catch(() => {})
   const vendorsPromise = getPurchaseOrderVendors().then(({ data }) => {

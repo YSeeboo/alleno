@@ -91,44 +91,6 @@ def send_plating_order(db: Session, plating_order_id: str) -> PlatingOrder:
     return order
 
 
-def receive_plating_items(db: Session, plating_order_id: str, receipts: list) -> list:
-    updated = []
-    for receipt in receipts:
-        item = db.query(PlatingOrderItem).filter(
-            PlatingOrderItem.id == receipt["plating_order_item_id"]
-        ).first()
-        if item is None:
-            raise ValueError(f"PlatingOrderItem not found: {receipt['plating_order_item_id']}")
-        if item.plating_order_id != plating_order_id:
-            raise ValueError(
-                f"PlatingOrderItem {receipt['plating_order_item_id']} does not belong to order {plating_order_id}"
-            )
-        qty = receipt["qty"]
-        remaining = float(item.qty) - float(item.received_qty or 0)
-        if qty > remaining:
-            raise ValueError(
-                f"Cannot receive {qty}: only {remaining} remaining for item {item.id}"
-            )
-        item.received_qty = float(item.received_qty or 0) + qty
-        receive_id = item.receive_part_id or item.part_id
-        add_stock(db, "part", receive_id, qty, "电镀收回")
-        if float(item.received_qty) >= float(item.qty):
-            item.status = "已收回"
-        updated.append(item)
-    db.flush()
-    # Check if all items are received
-    all_items = (
-        db.query(PlatingOrderItem)
-        .filter(PlatingOrderItem.plating_order_id == plating_order_id)
-        .all()
-    )
-    if all(i.status == "已收回" for i in all_items):
-        order = get_plating_order(db, plating_order_id)
-        order.status = "completed"
-        order.completed_at = datetime.now(timezone.utc)
-        db.flush()
-    return updated
-
 
 def get_plating_order(db: Session, plating_order_id: str) -> Optional[PlatingOrder]:
     return db.query(PlatingOrder).filter(PlatingOrder.id == plating_order_id).first()
@@ -240,12 +202,23 @@ def delete_plating_item(db: Session, order_id: str, item_id: int) -> None:
 
 
 def delete_plating_order(db: Session, order_id: str) -> None:
+    from models.plating_receipt import PlatingReceiptItem
+
     order = get_plating_order(db, order_id)
     if order is None:
         raise ValueError(f"PlatingOrder not found: {order_id}")
 
     items = get_plating_items(db, order_id)
     vendor_received = _vendor_receipt_totals_for_plating(db, order_id)
+
+    # Compute PlatingReceiptItem totals per receive_part_id
+    item_ids = [item.id for item in items]
+    receipt_items = db.query(PlatingReceiptItem).filter(
+        PlatingReceiptItem.plating_order_item_id.in_(item_ids)
+    ).all() if item_ids else []
+    plating_receipt_received: dict[str, float] = {}
+    for ri in receipt_items:
+        plating_receipt_received[ri.part_id] = plating_receipt_received.get(ri.part_id, 0.0) + float(ri.qty)
 
     sent_by_part: dict[str, float] = {}
     received_by_receive_part: dict[str, float] = {}
@@ -255,7 +228,7 @@ def delete_plating_order(db: Session, order_id: str) -> None:
         received_by_receive_part[receive_id] = received_by_receive_part.get(receive_id, 0.0) + float(item.received_qty or 0)
 
     for receive_id, total_received in received_by_receive_part.items():
-        legacy_received = total_received - vendor_received.get(receive_id, 0.0)
+        legacy_received = total_received - vendor_received.get(receive_id, 0.0) - plating_receipt_received.get(receive_id, 0.0)
         if legacy_received > 0:
             deduct_stock(db, "part", receive_id, legacy_received, "电镀收回撤回")
 
@@ -266,6 +239,35 @@ def delete_plating_order(db: Session, order_id: str) -> None:
     for receipt in receipts:
         deduct_stock(db, receipt.item_type, receipt.item_id, float(receipt.qty), "电镀收回撤回")
         db.delete(receipt)
+
+    # Reverse stock from PlatingReceiptItem records linked to this order's items
+    affected_receipt_ids = set()
+    for ri in receipt_items:
+        receive_id = ri.part_id  # part_id on receipt item is already the receive target
+        deduct_stock(db, "part", receive_id, float(ri.qty), "电镀收回撤回")
+        affected_receipt_ids.add(ri.plating_receipt_id)
+        db.delete(ri)
+    db.flush()
+
+    # Clean up PlatingReceipt records that became empty or recalc totals
+    from models.plating_receipt import PlatingReceipt
+    for pr_id in affected_receipt_ids:
+        remaining_items = db.query(PlatingReceiptItem).filter(
+            PlatingReceiptItem.plating_receipt_id == pr_id
+        ).count()
+        if remaining_items == 0:
+            pr = db.query(PlatingReceipt).filter(PlatingReceipt.id == pr_id).first()
+            if pr:
+                db.delete(pr)
+        else:
+            pr = db.query(PlatingReceipt).filter(PlatingReceipt.id == pr_id).first()
+            if pr:
+                items_left = db.query(PlatingReceiptItem).filter(
+                    PlatingReceiptItem.plating_receipt_id == pr_id
+                ).all()
+                from decimal import Decimal
+                pr.total_amount = sum(Decimal(str(it.amount or 0)) for it in items_left)
+    db.flush()
 
     if order.status != "pending":
         for part_id, total_sent in sent_by_part.items():
@@ -293,13 +295,13 @@ def update_plating_order_status(db: Session, order_id: str, status: str) -> Plat
     if current == "pending" and status == "processing":
         raise ValueError("Use POST /send to dispatch a pending order; it deducts inventory and updates item statuses")
     if current == "processing" and status == "completed":
-        raise ValueError("Use POST /receive to complete a processing order; items must be fully received first")
+        raise ValueError("电镀单完成需通过创建电镀回收单（POST /api/plating-receipts/）完成收回")
     order.status = status
     db.flush()
     return order
 
 
-def list_pending_receive_items(db: Session, part_keyword: str = None) -> list:
+def list_pending_receive_items(db: Session, part_keyword: str = None, supplier_name: str = None) -> list:
     SendPart = aliased(Part)
     ReceivePart = aliased(Part)
     q = (
@@ -325,6 +327,8 @@ def list_pending_receive_items(db: Session, part_keyword: str = None) -> list:
             func.coalesce(PlatingOrderItem.received_qty, 0) < PlatingOrderItem.qty,
         )
     )
+    if supplier_name:
+        q = q.filter(PlatingOrder.supplier_name == supplier_name)
     if part_keyword:
         like_pattern = f"%{part_keyword}%"
         q = q.filter(

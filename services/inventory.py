@@ -46,6 +46,26 @@ def get_stock_log(db: Session, item_type: str, item_id: str) -> list:
     )
 
 
+def list_stock_logs(
+    db: Session,
+    item_type: str | None = None,
+    item_id: str | None = None,
+    reason: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> dict:
+    q = db.query(InventoryLog)
+    if item_type:
+        q = q.filter(InventoryLog.item_type == item_type)
+    if item_id:
+        q = q.filter(InventoryLog.item_id.ilike(f"%{item_id}%"))
+    if reason:
+        q = q.filter(InventoryLog.reason.ilike(f"%{reason}%"))
+    total = q.count()
+    rows = q.order_by(InventoryLog.created_at.desc(), InventoryLog.id.desc()).offset(offset).limit(limit).all()
+    return {"total": total, "items": rows}
+
+
 def get_inventory_overview(
     db: Session,
     item_type: str | None = None,

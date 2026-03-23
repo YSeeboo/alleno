@@ -23,7 +23,7 @@ def test_ensure_schema_compat_restores_missing_columns(engine):
     assert "color" not in handcraft_part_columns
 
 
-def test_ensure_schema_compat_upgrades_price_columns_to_three_decimals(engine):
+def test_ensure_schema_compat_upgrades_price_columns_to_seven_decimals(engine):
     with engine.begin() as conn:
         conn.execute(text('ALTER TABLE "jewelry" ALTER COLUMN retail_price TYPE NUMERIC(10,2)'))
         conn.execute(text('ALTER TABLE "jewelry" ALTER COLUMN wholesale_price TYPE NUMERIC(10,2)'))
@@ -39,15 +39,31 @@ def test_ensure_schema_compat_upgrades_price_columns_to_three_decimals(engine):
     with engine.begin() as conn:
         inspector = inspect(conn)
 
-        def scale(table_name: str, column_name: str) -> int:
+        def col_type(table_name: str, column_name: str):
             column = next(col for col in inspector.get_columns(table_name) if col["name"] == column_name)
-            return column["type"].scale
+            return column["type"]
 
-        assert scale("jewelry", "retail_price") == 3
-        assert scale("jewelry", "wholesale_price") == 3
-        assert scale("part", "unit_cost") == 3
-        assert scale("order", "total_amount") == 3
-        assert scale("order_item", "unit_price") == 3
-        assert scale("purchase_order", "total_amount") == 3
-        assert scale("purchase_order_item", "price") == 3
-        assert scale("purchase_order_item", "amount") == 3
+        for table, col in [
+            ("jewelry", "retail_price"), ("jewelry", "wholesale_price"),
+            ("part", "unit_cost"),
+            ("order", "total_amount"), ("order_item", "unit_price"),
+            ("purchase_order", "total_amount"),
+            ("purchase_order_item", "price"), ("purchase_order_item", "amount"),
+        ]:
+            ct = col_type(table, col)
+            assert ct.scale == 7, f"{table}.{col} scale={ct.scale}, expected 7"
+            assert ct.precision == 18, f"{table}.{col} precision={ct.precision}, expected 18"
+
+
+def test_ensure_schema_compat_upgrades_from_numeric_14_7(engine):
+    """Columns already at NUMERIC(14,7) should still be upgraded to NUMERIC(18,7)."""
+    with engine.begin() as conn:
+        conn.execute(text('ALTER TABLE "jewelry" ALTER COLUMN retail_price TYPE NUMERIC(14,7)'))
+
+    ensure_schema_compat(engine)
+
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        column = next(col for col in inspector.get_columns("jewelry") if col["name"] == "retail_price")
+        assert column["type"].precision == 18
+        assert column["type"].scale == 7

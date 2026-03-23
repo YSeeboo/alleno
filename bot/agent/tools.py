@@ -303,14 +303,30 @@ def execute_tool(name: str, inputs: dict, db) -> str:
             return "\n".join(lines)
 
         elif name == "receive_plating_items":
-            from services.plating import receive_plating_items
-            updated = receive_plating_items(db, inputs["plating_order_id"], inputs["receipts"])
+            from services.plating import get_plating_order
+            from services.plating_receipt import create_plating_receipt
+            from models.plating_order import PlatingOrderItem
+            order = get_plating_order(db, inputs["plating_order_id"])
+            if order is None:
+                return f"电镀单 {inputs['plating_order_id']} 不存在"
+            receipt_items = []
+            for r in inputs["receipts"]:
+                poi = db.query(PlatingOrderItem).filter(PlatingOrderItem.id == r["plating_order_item_id"]).first()
+                if poi is None:
+                    return f"电镀明细 {r['plating_order_item_id']} 不存在"
+                receive_id = poi.receive_part_id or poi.part_id
+                receipt_items.append({
+                    "plating_order_item_id": r["plating_order_item_id"],
+                    "part_id": receive_id,
+                    "qty": r["qty"],
+                })
+            receipt = create_plating_receipt(db, order.supplier_name, receipt_items)
             db.commit()
             lines = [
-                f"明细#{item.id} 已收:{item.received_qty}/{item.qty} 状态:{item.status}"
-                for item in updated
+                f"明细#{item.plating_order_item_id} 收回:{item.qty}"
+                for item in receipt.items
             ]
-            return "电镀收回成功:\n" + "\n".join(lines)
+            return f"电镀收回成功 (回收单 {receipt.id}):\n" + "\n".join(lines)
 
         elif name == "get_handcraft_order":
             from services.handcraft import get_handcraft_order

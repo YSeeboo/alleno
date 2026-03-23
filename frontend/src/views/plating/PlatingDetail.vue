@@ -143,9 +143,6 @@
           <n-button v-if="order.status === 'pending'" type="primary" :loading="sending" @click="doSend">
             确认发出
           </n-button>
-          <n-button v-if="order.status === 'processing'" type="warning" :loading="bulkReceiving" @click="doBulkReceive">
-            整单回收
-          </n-button>
         </n-space>
       </n-card>
 
@@ -240,30 +237,6 @@
       @uploaded="handleDeliveryImageUploaded"
     />
 
-    <!-- Partial Receive Modal -->
-    <n-modal v-model:show="detailPartialReceiveVisible" preset="card" title="部分回收" style="width: 400px;">
-      <n-form label-placement="left" label-width="80">
-        <n-form-item label="配件">{{ detailPartialItem?.part_name }}</n-form-item>
-        <n-form-item label="发出数量">{{ detailPartialItem?.qty }}</n-form-item>
-        <n-form-item label="已收回">{{ detailPartialItem?.received_qty }}</n-form-item>
-        <n-form-item label="未收回">{{ detailPartialRemaining }}</n-form-item>
-        <n-form-item label="回收数量">
-          <n-input-number
-            v-model:value="detailPartialQty"
-            :min="0.0001"
-            :max="detailPartialRemaining"
-            :precision="4"
-            style="width: 100%;"
-          />
-        </n-form-item>
-      </n-form>
-      <template #footer>
-        <n-space justify="end">
-          <n-button @click="detailPartialReceiveVisible = false">取消</n-button>
-          <n-button type="primary" :loading="itemReceiving" @click="doDetailPartialReceive">确定</n-button>
-        </n-space>
-      </template>
-    </n-modal>
   </div>
 </template>
 
@@ -278,7 +251,7 @@ import {
 } from 'naive-ui'
 import { CreateOutline } from '@vicons/ionicons5'
 import {
-  getPlating, getPlatingItems, sendPlating, receivePlating,
+  getPlating, getPlatingItems, sendPlating,
   addPlatingItem, updatePlatingItem, deletePlatingItem,
   updatePlatingDeliveryImages, downloadPlatingExcel, downloadPlatingPdf,
 } from '@/api/plating'
@@ -306,14 +279,6 @@ const deliveryImagesSaving = ref(false)
 const pendingDeliveryImages = ref([])
 const retryingPendingImage = ref('')
 
-// Receive state
-const bulkReceiving = ref(false)
-const itemReceiving = ref(false)
-const detailPartialReceiveVisible = ref(false)
-const detailPartialItem = ref(null)
-const detailPartialQty = ref(0)
-const detailPartialRemaining = ref(0)
-
 const statusType = { pending: 'default', processing: 'info', completed: 'success' }
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
 const deliveryImages = computed(() => order.value?.delivery_images || [])
@@ -325,7 +290,6 @@ const statusOptions = computed(() => {
   if (s === 'pending') return [{ label: '进行中', value: 'processing' }]
   if (s === 'processing') return [
     { label: '待发出', value: 'pending' },
-    { label: '已完成', value: 'completed' },
   ]
   if (s === 'completed') return [{ label: '进行中', value: 'processing' }]
   return []
@@ -459,66 +423,6 @@ const doSend = async () => {
     await loadData()
   } finally {
     sending.value = false
-  }
-}
-
-const doBulkReceive = () => {
-  dialog.warning({
-    title: '确认整单回收',
-    content: '确认将该电镀单所有未收回配件全部回收？',
-    positiveText: '确认',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      bulkReceiving.value = true
-      try {
-        const receipts = items.value
-          .filter((item) => item.received_qty < item.qty)
-          .map((item) => ({ plating_order_item_id: item.id, qty: item.qty - item.received_qty }))
-        if (receipts.length === 0) {
-          message.warning('没有需要回收的明细')
-          return
-        }
-        await receivePlating(route.params.id, receipts)
-        message.success('回收成功')
-        await loadData()
-      } finally {
-        bulkReceiving.value = false
-      }
-    },
-  })
-}
-
-const doFullReceiveRow = async (row) => {
-  itemReceiving.value = true
-  try {
-    const remaining = row.qty - row.received_qty
-    await receivePlating(route.params.id, [{ plating_order_item_id: row.id, qty: remaining }])
-    message.success('回收成功')
-    await loadData()
-  } finally {
-    itemReceiving.value = false
-  }
-}
-
-const openDetailPartialReceive = (row) => {
-  detailPartialItem.value = row
-  detailPartialRemaining.value = row.qty - row.received_qty
-  detailPartialQty.value = null
-  detailPartialReceiveVisible.value = true
-}
-
-const doDetailPartialReceive = async () => {
-  if (!detailPartialItem.value || !detailPartialQty.value) return
-  itemReceiving.value = true
-  try {
-    await receivePlating(route.params.id, [
-      { plating_order_item_id: detailPartialItem.value.id, qty: detailPartialQty.value },
-    ])
-    message.success('回收成功')
-    detailPartialReceiveVisible.value = false
-    await loadData()
-  } finally {
-    itemReceiving.value = false
   }
 }
 
@@ -1101,11 +1005,9 @@ const itemColumns = [
   {
     title: '操作',
     key: 'actions',
-    width: 200,
+    width: 100,
     render: (row) => {
       const pending = isPending()
-      const isProcessing = order.value?.status === 'processing'
-      const canReceive = isProcessing && row.status === '电镀中' && row.received_qty < row.qty
       const btns = []
 
       if (pending) {
@@ -1116,20 +1018,7 @@ const itemColumns = [
         }, { default: () => '删除' }))
       }
 
-      if (canReceive) {
-        btns.push(h(NButton, {
-          size: 'small',
-          type: 'primary',
-          loading: itemReceiving.value,
-          onClick: () => doFullReceiveRow(row),
-        }, { default: () => '全部回收' }))
-        btns.push(h(NButton, {
-          size: 'small',
-          onClick: () => openDetailPartialReceive(row),
-        }, { default: () => '部分回收' }))
-      }
-
-      if (!pending && !canReceive) {
+      if (!pending) {
         btns.push(h(
           NTooltip,
           { trigger: 'hover' },

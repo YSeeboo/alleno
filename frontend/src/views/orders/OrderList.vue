@@ -30,6 +30,7 @@ import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
 import { listOrders } from '@/api/orders'
+import { fmtMoney } from '@/utils/ui'
 
 const router = useRouter()
 const loading = ref(true)
@@ -71,7 +72,7 @@ const columns = [
       return h('span', { class: `badge ${cls}` }, `• ${r.status}`)
     },
   },
-  { title: '总金额', key: 'total_amount', render: (r) => r.total_amount?.toFixed(3) ?? '-' },
+  { title: '总金额', key: 'total_amount', render: (r) => r.total_amount != null ? fmtMoney(r.total_amount) : '-' },
   { title: '创建时间', key: 'created_at', render: (r) => new Date(r.created_at).toLocaleString('zh-CN') },
 ]
 

@@ -26,7 +26,7 @@
               </n-tag>
             </n-popselect>
           </n-descriptions-item>
-          <n-descriptions-item label="总金额">{{ order.total_amount != null ? `¥ ${Number(order.total_amount).toFixed(3)}` : '-' }}</n-descriptions-item>
+          <n-descriptions-item label="总金额">{{ order.total_amount != null ? `¥ ${fmtMoney(order.total_amount)}` : '-' }}</n-descriptions-item>
           <n-descriptions-item label="创建时间">{{ fmt(order.created_at) }}</n-descriptions-item>
           <n-descriptions-item label="付款时间">{{ order.paid_at ? fmt(order.paid_at) : '-' }}</n-descriptions-item>
           <n-descriptions-item label="备注">{{ order.note || '-' }}</n-descriptions-item>
@@ -125,7 +125,7 @@
       </n-card>
 
       <n-card v-if="order" title="购入明细">
-        <n-data-table v-if="order.items?.length > 0" :columns="itemColumns" :data="order.items" :bordered="false" />
+        <n-data-table v-if="order.items?.length > 0" :columns="itemColumns" :data="tableData" :bordered="false" :row-class-name="rowClassName" />
         <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
       </n-card>
     </n-spin>
@@ -140,7 +140,7 @@
           <n-select v-model:value="editForm.unit" :options="unitOptions" />
         </n-form-item>
         <n-form-item label="单价">
-          <n-input-number v-model:value="editForm.price" :min="0" :precision="3" :step="0.1" style="width: 100%;" />
+          <n-input-number v-model:value="editForm.price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" :step="0.1" style="width: 100%;" />
         </n-form-item>
         <n-form-item label="备注">
           <n-input v-model:value="editForm.note" placeholder="备注（可选）" />
@@ -161,6 +161,30 @@
       suppress-success
       @uploaded="handleDeliveryImageUploaded"
     />
+
+    <!-- Addon Cost Diff Modal -->
+    <n-modal v-model:show="addonCostDiffVisible" :mask-closable="false" preset="card" title="穿珠成本变动确认" style="width: 550px;">
+      <div style="margin-bottom: 12px; color: #333;">
+        当前穿珠成本与配件已有穿珠成本金额不相同，是否更新穿珠成本？
+      </div>
+      <n-data-table
+        :columns="[
+          { title: '配件编号', key: 'part_id', width: 130 },
+          { title: '配件名称', key: 'part_name', minWidth: 120 },
+          { title: '原穿珠费用', key: 'current_value', width: 120, render: (r) => r.current_value != null ? `¥ ${fmtMoney(r.current_value)}` : '-' },
+          { title: '更新穿珠费用', key: 'new_value', width: 120, render: (r) => h('span', { style: 'color: #d03050; font-weight: 600;' }, `¥ ${fmtMoney(r.new_value)}`) },
+        ]"
+        :data="addonCostDiffs"
+        :bordered="false"
+        size="small"
+      />
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="skipAddonCostUpdate" :disabled="addonCostDiffUpdating">跳过</n-button>
+          <n-button type="primary" :loading="addonCostDiffUpdating" @click="confirmAddonCostUpdate">确认更新</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -172,15 +196,17 @@ import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
   NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon, NImage,
+  NPopover,
 } from 'naive-ui'
 import { CreateOutline } from '@vicons/ionicons5'
 import {
   getPurchaseOrder, updatePurchaseOrderStatus,
   updatePurchaseOrderDeliveryImages,
   updatePurchaseOrderItem, deletePurchaseOrderItem,
+  createPurchaseOrderItemAddon, updatePurchaseOrderItemAddon, deletePurchaseOrderItemAddon,
 } from '@/api/purchaseOrders'
-import { listParts } from '@/api/parts'
-import { renderNamedImage } from '@/utils/ui'
+import { listParts, batchUpdatePartCosts } from '@/api/parts'
+import { renderNamedImage, fmtMoney } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 
 const route = useRoute()
@@ -228,6 +254,30 @@ const editingNoteValue = ref('')
 const savingNoteItemId = ref(null)
 const noteInputRef = ref(null)
 
+// Addon cost diff modal
+const addonCostDiffVisible = ref(false)
+const addonCostDiffs = ref([])
+const addonCostDiffSourceId = ref('')
+const addonCostDiffUpdating = ref(false)
+
+// Addon (穿珠费用)
+const addonEditing = ref({})   // { [itemId]: { qty: null, price: null, saving: false } }
+
+const tableData = computed(() => {
+  if (!order.value?.items) return []
+  const rows = []
+  for (const item of order.value.items) {
+    rows.push({ ...item, _rowType: 'item' })
+    for (const addon of (item.addons || [])) {
+      rows.push({ ...addon, _rowType: 'addon', _parentItem: item })
+    }
+    if (addonEditing.value[item.id]) {
+      rows.push({ _rowType: 'addon_new', _parentItem: item, id: `new-${item.id}` })
+    }
+  }
+  return rows
+})
+
 const loadData = async () => {
   const id = route.params.id
   const { data } = await getPurchaseOrder(id)
@@ -241,6 +291,8 @@ const loadData = async () => {
   pendingDeliveryImages.value = pendingDeliveryImages.value.filter((image) => !data.delivery_images.includes(image))
   if (isPaid()) {
     stopEditNote()
+    addonEditing.value = {}
+    addonInlineEditing.value = {}
   }
 }
 
@@ -492,45 +544,348 @@ const renderNoteCell = (row) => {
   )
 }
 
+const handleAddonCostDiffs = (data, orderId) => {
+  if (data.cost_diffs && data.cost_diffs.length > 0) {
+    addonCostDiffs.value = data.cost_diffs
+    addonCostDiffSourceId.value = orderId
+    addonCostDiffVisible.value = true
+  }
+}
+
+const confirmAddonCostUpdate = async () => {
+  addonCostDiffUpdating.value = true
+  try {
+    await batchUpdatePartCosts({
+      updates: addonCostDiffs.value.map((d) => ({
+        part_id: d.part_id,
+        field: d.field,
+        value: d.new_value,
+        source_id: addonCostDiffSourceId.value,
+      })),
+    })
+    message.success('配件穿珠成本已更新')
+    addonCostDiffVisible.value = false
+  } catch (_) {
+    message.error('成本更新失败，请重试')
+  } finally {
+    addonCostDiffUpdating.value = false
+  }
+}
+
+const skipAddonCostUpdate = () => {
+  addonCostDiffVisible.value = false
+}
+
+// --- Addon (穿珠费用) ---
+const startAddonEditing = (itemId) => {
+  addonEditing.value[itemId] = { qty: null, price: null, saving: false }
+}
+
+const cancelAddonEditing = (itemId) => {
+  delete addonEditing.value[itemId]
+}
+
+const saveAddon = async (itemId) => {
+  const state = addonEditing.value[itemId]
+  if (!state || state.saving) return
+  if (!state.qty || state.qty <= 0) {
+    message.warning('请填写穿珠数量')
+    return
+  }
+  if (state.price == null || state.price < 0) {
+    message.warning('请填写穿珠单价')
+    return
+  }
+  state.saving = true
+  try {
+    const { data } = await createPurchaseOrderItemAddon(route.params.id, itemId, {
+      type: 'bead_stringing',
+      qty: state.qty,
+      unit: '条',
+      price: state.price,
+    })
+    message.success('穿珠费用已保存')
+    handleAddonCostDiffs(data, route.params.id)
+    delete addonEditing.value[itemId]
+    await loadData()
+  } finally {
+    state.saving = false
+  }
+}
+
+const doDeleteAddon = (itemId, addonId) => {
+  dialog.warning({
+    title: '确认移除',
+    content: '确认移除该穿珠费用？',
+    positiveText: '移除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await deletePurchaseOrderItemAddon(route.params.id, itemId, addonId)
+        message.success('已移除')
+        await loadData()
+      } catch (_) {}
+    },
+  })
+}
+
+// Inline addon editing (展示态双击编辑)
+const addonInlineEditing = ref({})  // { [addonId]: { qty, price, saving } }
+
+const startAddonInlineEdit = (addon) => {
+  if (isPaid()) return
+  addonInlineEditing.value[addon.id] = {
+    qty: addon.qty,
+    price: addon.price,
+    saving: false,
+  }
+}
+
+const cancelAddonInlineEdit = (addonId) => {
+  delete addonInlineEditing.value[addonId]
+}
+
+const saveAddonInlineEdit = async (itemId, addonId) => {
+  const state = addonInlineEditing.value[addonId]
+  if (!state || state.saving) return
+  if (!state.qty || state.qty <= 0) {
+    message.warning('请填写穿珠数量')
+    return
+  }
+  if (state.price == null || state.price < 0) {
+    message.warning('请填写穿珠单价')
+    return
+  }
+  state.saving = true
+  try {
+    const { data } = await updatePurchaseOrderItemAddon(route.params.id, itemId, addonId, {
+      qty: state.qty,
+      price: state.price,
+    })
+    message.success('穿珠费用已更新')
+    handleAddonCostDiffs(data, route.params.id)
+    delete addonInlineEditing.value[addonId]
+    await loadData()
+  } finally {
+    state.saving = false
+  }
+}
+
+const rowClassName = (row) => {
+  if (row._rowType === 'addon' || row._rowType === 'addon_new') return 'addon-sub-row'
+  return ''
+}
+
+// Format helpers: keep precision constraints but strip trailing zeros
+const fmtQty = (v) => v == null ? '' : parseFloat(Number(v).toFixed(4)).toString()
+const fmtPrice = (v) => v == null ? '' : parseFloat(Number(v).toFixed(7)).toString()
+const parseNum = (v) => { if (v == null || String(v).trim() === '') return null; const n = Number(v); return Number.isNaN(n) ? null : n }
+
+const ADDON_TYPE_LABELS = { bead_stringing: '穿珠子' }
+
+const addonRowStyle = {
+  fontSize: '13px',
+  lineHeight: '1',
+}
+
 const itemColumns = [
-  { title: '配件编号', key: 'part_id', width: 120 },
+  {
+    title: '配件编号',
+    key: 'part_id',
+    width: 120,
+    render: (row) => {
+      if (row._rowType === 'addon' || row._rowType === 'addon_new') {
+        return h('span', { style: { ...addonRowStyle, color: '#bbb', paddingLeft: '16px' } }, '└')
+      }
+      return row.part_id
+    },
+  },
   {
     title: '配件',
     key: 'part_name',
     minWidth: 180,
-    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name),
+    render: (row) => {
+      if (row._rowType === 'addon') {
+        return h('span', { style: { ...addonRowStyle, color: '#1890ff', fontWeight: 500 } }, ADDON_TYPE_LABELS[row.type] || row.type)
+      }
+      if (row._rowType === 'addon_new') {
+        return h('span', { style: { ...addonRowStyle, color: '#1890ff', fontWeight: 500 } }, '穿珠子')
+      }
+      return renderNamedImage(row.part_name, row.part_image, row.part_name)
+    },
   },
-  { title: '购入数量', key: 'qty' },
-  { title: '单位', key: 'unit', render: (r) => r.unit || '-' },
-  { title: '单价', key: 'price', render: (r) => r.price != null ? `¥ ${Number(r.price).toFixed(3)}` : '-' },
-  { title: '金额', key: 'amount', render: (r) => r.amount != null ? `¥ ${Number(r.amount).toFixed(3)}` : '-' },
+  {
+    title: '购入数量',
+    key: 'qty',
+    render: (row) => {
+      if (row._rowType === 'addon') {
+        const editing = addonInlineEditing.value[row.id]
+        if (editing) {
+          return h(NInputNumber, {
+            value: editing.qty,
+            size: 'small',
+            min: 0.0001,
+            precision: 4,
+            format: fmtQty,
+            parse: parseNum,
+            style: 'width: 90px;',
+            disabled: editing.saving,
+            'onUpdate:value': (v) => { editing.qty = v },
+          })
+        }
+        return h('span', {
+          style: { ...addonRowStyle, cursor: isPaid() ? 'default' : 'pointer' },
+          onDblclick: () => startAddonInlineEdit(row),
+        }, row.qty)
+      }
+      if (row._rowType === 'addon_new') {
+        const state = addonEditing.value[row._parentItem.id]
+        return h(NInputNumber, {
+          value: state?.qty,
+          size: 'small',
+          min: 0.0001,
+          precision: 4,
+          format: fmtQty,
+          parse: parseNum,
+          placeholder: '数量',
+          style: 'width: 90px;',
+          disabled: state?.saving,
+          'onUpdate:value': (v) => { if (state) state.qty = v },
+        })
+      }
+      return row.qty
+    },
+  },
+  {
+    title: '单位',
+    key: 'unit',
+    render: (row) => {
+      if (row._rowType === 'addon' || row._rowType === 'addon_new') {
+        return h('span', { style: addonRowStyle }, '条')
+      }
+      return row.unit || '-'
+    },
+  },
+  {
+    title: '单价',
+    key: 'price',
+    render: (row) => {
+      if (row._rowType === 'addon') {
+        const editing = addonInlineEditing.value[row.id]
+        if (editing) {
+          return h(NInputNumber, {
+            value: editing.price,
+            size: 'small',
+            min: 0,
+            precision: 7,
+            format: fmtPrice,
+            parse: parseNum,
+            step: 0.1,
+            style: 'width: 100px;',
+            disabled: editing.saving,
+            'onUpdate:value': (v) => { editing.price = v },
+          })
+        }
+        return h('span', {
+          style: { ...addonRowStyle, cursor: isPaid() ? 'default' : 'pointer' },
+          onDblclick: () => startAddonInlineEdit(row),
+        }, `¥ ${fmtMoney(row.price)}`)
+      }
+      if (row._rowType === 'addon_new') {
+        const state = addonEditing.value[row._parentItem.id]
+        return h(NInputNumber, {
+          value: state?.price,
+          size: 'small',
+          min: 0,
+          precision: 7,
+          format: fmtPrice,
+          parse: parseNum,
+          step: 0.1,
+          placeholder: '单价',
+          style: 'width: 100px;',
+          disabled: state?.saving,
+          'onUpdate:value': (v) => { if (state) state.price = v },
+        })
+      }
+      return row.price != null ? `¥ ${fmtMoney(row.price)}` : '-'
+    },
+  },
+  {
+    title: '金额',
+    key: 'amount',
+    render: (row) => {
+      if (row._rowType === 'addon') {
+        return h('span', { style: addonRowStyle }, `¥ ${fmtMoney(row.amount)}`)
+      }
+      if (row._rowType === 'addon_new') {
+        const state = addonEditing.value[row._parentItem.id]
+        const amt = (state?.qty && state?.price != null) ? state.qty * state.price : null
+        return h('span', { style: addonRowStyle }, amt != null ? `¥ ${fmtMoney(amt)}` : '-')
+      }
+      return row.amount != null ? `¥ ${fmtMoney(row.amount)}` : '-'
+    },
+  },
   {
     title: '备注',
     key: 'note',
     minWidth: 240,
-    render: (row) => renderNoteCell(row),
+    render: (row) => {
+      if (row._rowType === 'addon') {
+        return h(
+          'span',
+          {
+            style: {
+              background: '#f0f7ff',
+              border: '1px solid #d6e8fa',
+              borderRadius: '4px',
+              padding: '2px 8px',
+              fontSize: '11px',
+              color: '#4a90d9',
+            },
+          },
+          `单配件穿珠成本: ¥ ${fmtMoney(row.unit_cost)}`,
+        )
+      }
+      if (row._rowType === 'addon_new') {
+        return h('span', { style: { ...addonRowStyle, color: '#999' } }, '-')
+      }
+      return renderNoteCell(row)
+    },
   },
   {
     title: '操作',
     key: 'actions',
-    width: 140,
+    width: 180,
     render: (row) => {
+      if (row._rowType === 'addon') {
+        if (isPaid()) return h('span', { style: { ...addonRowStyle, color: '#999' } }, '-')
+        const editing = addonInlineEditing.value[row.id]
+        if (editing) {
+          return h(NSpace, { size: 'small' }, { default: () => [
+            h(NButton, { size: 'tiny', type: 'primary', loading: editing.saving, onClick: () => saveAddonInlineEdit(row._parentItem.id, row.id) }, { default: () => '保存' }),
+            h(NButton, { size: 'tiny', disabled: editing.saving, onClick: () => cancelAddonInlineEdit(row.id) }, { default: () => '取消' }),
+          ]})
+        }
+        return h(NButton, { size: 'tiny', type: 'error', onClick: () => doDeleteAddon(row._parentItem.id, row.id) }, { default: () => '移除' })
+      }
+      if (row._rowType === 'addon_new') {
+        const state = addonEditing.value[row._parentItem.id]
+        return h(NSpace, { size: 'small' }, { default: () => [
+          h(NButton, { size: 'tiny', type: 'primary', loading: state?.saving, onClick: () => saveAddon(row._parentItem.id) }, { default: () => '保存' }),
+          h(NButton, { size: 'tiny', disabled: state?.saving, onClick: () => cancelAddonEditing(row._parentItem.id) }, { default: () => '取消' }),
+        ]})
+      }
+
+      // 配件行
       const canEdit = !isPaid()
+      const hasBeadAddon = (row.addons || []).some((a) => a.type === 'bead_stringing')
+      const isNewAddonEditing = !!addonEditing.value[row.id]
+
       const editBtn = h(
         NTooltip,
         { disabled: canEdit, trigger: 'hover' },
         {
-          trigger: () =>
-            h(
-              NButton,
-              {
-                size: 'small',
-                disabled: !canEdit,
-                style: 'margin-right: 6px;',
-                onClick: canEdit ? () => openEditModal(row) : undefined,
-              },
-              { default: () => '修改' },
-            ),
+          trigger: () => h(NButton, { size: 'small', disabled: !canEdit, style: 'margin-right: 6px;', onClick: canEdit ? () => openEditModal(row) : undefined }, { default: () => '修改' }),
           default: () => '已付款状态不允许修改',
         },
       )
@@ -538,21 +893,27 @@ const itemColumns = [
         NTooltip,
         { disabled: canEdit, trigger: 'hover' },
         {
-          trigger: () =>
-            h(
-              NButton,
-              {
-                size: 'small',
-                type: 'error',
-                disabled: !canEdit,
-                onClick: canEdit ? () => doDeleteItem(row) : undefined,
-              },
-              { default: () => '删除' },
-            ),
+          trigger: () => h(NButton, { size: 'small', type: 'error', disabled: !canEdit, onClick: canEdit ? () => doDeleteItem(row) : undefined }, { default: () => '删除' }),
           default: () => '已付款状态不允许删除',
         },
       )
-      return h(NSpace, { size: 'small' }, { default: () => [editBtn, deleteBtn] })
+
+      const moreBtn = canEdit
+        ? h(NPopover, { trigger: 'click', placement: 'bottom-start' }, {
+            trigger: () => h(NButton, { size: 'small', style: 'letter-spacing: 2px; font-weight: bold;' }, { default: () => '···' }),
+            default: () => h('div', { style: 'min-width: 100px;' }, [
+              h(NButton, {
+                text: true,
+                block: true,
+                disabled: hasBeadAddon || isNewAddonEditing,
+                style: 'justify-content: flex-start; padding: 6px 12px;',
+                onClick: () => startAddonEditing(row.id),
+              }, { default: () => '穿珠费用' }),
+            ]),
+          })
+        : null
+
+      return h(NSpace, { size: 'small' }, { default: () => [editBtn, deleteBtn, moreBtn].filter(Boolean) })
     },
   },
 ]
@@ -663,5 +1024,11 @@ onMounted(async () => {
 .delivery-images-meta {
   color: #8a6b39;
   font-size: 12px;
+}
+
+:deep(.addon-sub-row td) {
+  background: linear-gradient(90deg, #f0f7ff 0%, #fafcff 100%) !important;
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
 }
 </style>

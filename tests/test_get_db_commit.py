@@ -46,14 +46,14 @@ def test_service_exception_mid_loop_rolls_back_flush(client_real_get_db):
     """Partial DB writes flushed before a service ValueError must be rolled back.
 
     Scenario:
-      - A plating receive request lists two receipts.
-      - The first receipt is valid: add_stock() flushes an InventoryLog row.
-      - The second receipt references a non-existent item: ValueError is raised.
+      - A plating receipt creation lists two items.
+      - The first item is valid: add_stock() flushes an InventoryLog row.
+      - The second item references a non-existent PlatingOrderItem: ValueError is raised.
       - service_errors() converts it to HTTPException(400).
       - get_db() must call rollback(), undoing the first flush.
 
     Proof: stock of the first part is queried before and after the failed
-    receive; it must not have increased.
+    receipt creation; it must not have increased.
     """
     c = client_real_get_db
 
@@ -82,13 +82,14 @@ def test_service_exception_mid_loop_rolls_back_flush(client_real_get_db):
     items = c.get(f"/api/plating/{order_id}/items").json()
     item1_id = next(i["id"] for i in items if i["part_id"] == part1_id)
 
-    # --- the failing receive ---
-    # First receipt is valid (triggers add_stock + flush for part1).
-    # Second receipt references a non-existent item — ValueError mid-loop.
-    resp = c.post(f"/api/plating/{order_id}/receive", json={
-        "receipts": [
-            {"plating_order_item_id": item1_id, "qty": 5.0},
-            {"plating_order_item_id": 999999, "qty": 5.0},
+    # --- the failing receipt creation ---
+    # First item is valid (triggers add_stock + flush for part1).
+    # Second item references a non-existent PlatingOrderItem — ValueError mid-loop.
+    resp = c.post("/api/plating-receipts/", json={
+        "vendor_name": "RollbackSupplier",
+        "items": [
+            {"plating_order_item_id": item1_id, "part_id": part1_id, "qty": 5.0},
+            {"plating_order_item_id": 999999, "part_id": part2_id, "qty": 5.0},
         ],
     })
     assert resp.status_code == 400

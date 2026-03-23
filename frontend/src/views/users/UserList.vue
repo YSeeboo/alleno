@@ -70,8 +70,7 @@ const permissionOptions = [
   { value: 'purchase_orders', label: '配件采购' },
   { value: 'plating', label: '电镀单' },
   { value: 'handcraft', label: '手工单' },
-  { value: 'inventory', label: '库存总表' },
-  { value: 'inventory_log', label: '库存流水' },
+  { value: 'inventory', label: '库存' },
   { value: 'users', label: '用户管理' },
 ]
 

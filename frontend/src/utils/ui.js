@@ -3,6 +3,20 @@ import { NImage } from 'naive-ui'
 
 export const BRAND_COLOR = '#FF0000'
 
+/**
+ * Format a monetary value: up to 7 decimal places, no trailing zeros, minimum 2 decimals.
+ * e.g. 2340 → "2340.00", 1.5 → "1.50", 0.1234567 → "0.1234567"
+ */
+export function fmtMoney(val) {
+  if (val == null) return '-'
+  const s = Number(val).toFixed(7)
+  // Remove trailing zeros but keep at least 2 decimal places
+  const [int, dec] = s.split('.')
+  const trimmed = dec.replace(/0+$/, '')
+  const final = trimmed.length < 2 ? trimmed.padEnd(2, '0') : trimmed
+  return `${int}.${final}`
+}
+
 export function renderImageThumb(src, alt = '图片', size = 40) {
   const side = `${size}px`
   const boxStyle = {

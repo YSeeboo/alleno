@@ -64,12 +64,14 @@ const detail = reactive({ items: [], orders: [] })
 const statusTypeMap = { pending: 'default', processing: 'info', completed: 'success' }
 const statusLabelMap = { pending: '待发出', processing: '进行中', completed: '已完成' }
 
-const statusOptions = (currentStatus) => {
+const statusOptions = (currentStatus, orderType) => {
   if (currentStatus === 'pending') return [{ label: '进行中', key: 'processing' }]
-  if (currentStatus === 'processing') return [
-    { label: '待发出', key: 'pending' },
-    { label: '已完成', key: 'completed' },
-  ]
+  if (currentStatus === 'processing') {
+    const opts = [{ label: '待发出', key: 'pending' }]
+    // 电镀单完成必须通过回收单，不允许直接改状态
+    if (orderType !== 'plating') opts.push({ label: '已完成', key: 'completed' })
+    return opts
+  }
   if (currentStatus === 'completed') return [{ label: '进行中', key: 'processing' }]
   return []
 }
@@ -166,7 +168,7 @@ const orderColumns = [
     key: 'status',
     width: 110,
     render: (r) => {
-      const opts = statusOptions(r.status)
+      const opts = statusOptions(r.status, r.order_type)
       if (opts.length === 0) {
         return h(NTag, { type: statusTypeMap[r.status] || 'default', size: 'small' }, () => statusLabelMap[r.status] || r.status)
       }

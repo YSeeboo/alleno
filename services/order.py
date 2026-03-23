@@ -1,3 +1,4 @@
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -7,17 +8,18 @@ from services._helpers import _next_id
 from services.bom import get_bom
 
 _VALID_STATUSES = {"待生产", "生产中", "已完成"}
+_Q7 = Decimal("0.0000001")
 
 
 def create_order(db: Session, customer_name: str, items: list) -> Order:
     order_id = _next_id(db, Order, "OR")
-    total = 0.0
+    total = Decimal(0)
     order = Order(id=order_id, customer_name=customer_name)
     db.add(order)
     db.flush()
     for item in items:
-        unit_price = round(item["unit_price"], 3)
-        subtotal = round(item["quantity"] * unit_price, 3)
+        unit_price = Decimal(str(item["unit_price"])).quantize(_Q7, rounding=ROUND_HALF_UP)
+        subtotal = (Decimal(str(item["quantity"])) * unit_price).quantize(_Q7, rounding=ROUND_HALF_UP)
         total += subtotal
         db.add(OrderItem(
             order_id=order_id,
@@ -26,7 +28,7 @@ def create_order(db: Session, customer_name: str, items: list) -> Order:
             unit_price=unit_price,
             remarks=item.get("remarks"),
         ))
-    order.total_amount = round(total, 3)
+    order.total_amount = total
     db.flush()
     return order
 

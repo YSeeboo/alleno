@@ -12,6 +12,6 @@ class Jewelry(Base):
     category = Column(String, nullable=True)
     color = Column(String, nullable=True)
     unit = Column(String, nullable=True)
-    retail_price = Column(Numeric(10, 3), nullable=True)
-    wholesale_price = Column(Numeric(10, 3), nullable=True)
+    retail_price = Column(Numeric(18, 7), nullable=True)
+    wholesale_price = Column(Numeric(18, 7), nullable=True)
     status = Column(String, nullable=False, default="active")

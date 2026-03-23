@@ -37,3 +37,8 @@ class LogEntryResponse(BaseModel):
     reason: str
     note: Optional[str] = None
     created_at: datetime
+
+
+class PaginatedLogResponse(BaseModel):
+    total: int
+    items: list[LogEntryResponse]

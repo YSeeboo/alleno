@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from api._errors import service_errors
 from database import get_db
-from schemas.inventory import InventoryOverviewItem, LogEntryResponse, StockResponse
-from services.inventory import add_stock, deduct_stock, get_inventory_overview, get_stock, get_stock_log
+from schemas.inventory import InventoryOverviewItem, LogEntryResponse, PaginatedLogResponse, StockResponse
+from services.inventory import add_stock, deduct_stock, get_inventory_overview, get_stock, get_stock_log, list_stock_logs
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
@@ -16,6 +16,19 @@ class StockAdjust(BaseModel):
     qty: float
     reason: str
     note: Optional[str] = None
+
+
+@router.get("/logs", response_model=PaginatedLogResponse)
+def api_list_stock_logs(
+    item_type: Optional[str] = Query(None),
+    item_id: Optional[str] = Query(None),
+    reason: Optional[str] = Query(None),
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    with service_errors():
+        return list_stock_logs(db, item_type=item_type, item_id=item_id, reason=reason, limit=limit, offset=offset)
 
 
 @router.post("/{item_type}/{item_id}/add", response_model=StockResponse)
