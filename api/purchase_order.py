@@ -57,6 +57,9 @@ def api_create_purchase_order(body: PurchaseOrderCreate, db: Session = Depends(g
             status=body.status,
             note=body.note,
         )
+    with service_errors():
+        for oi in order.items:
+            auto_set_initial_purchase_cost(db, oi, source_id=order.id)
     cost_diffs = detect_purchase_cost_diffs(db, order)
     resp = PurchaseOrderResponse.model_validate(order)
     resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]
@@ -131,6 +134,8 @@ def api_create_addon(order_id: str, item_id: int, body: PurchaseOrderItemAddonCr
             type=body.type, qty=body.qty, unit=body.unit, price=body.price,
         )
     item = db.get(PurchaseOrderItem, item_id)
+    with service_errors():
+        auto_set_initial_bead_cost(db, item, addon, source_id=order_id)
     cost_diffs = detect_addon_cost_diffs(db, item, addon)
     resp = PurchaseOrderItemAddonResponse.model_validate(addon)
     resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]

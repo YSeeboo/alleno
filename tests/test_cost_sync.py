@@ -218,17 +218,18 @@ def test_detect_plating_cost_diffs_trailing_null(db, part_a):
 
 # --- API Tests ---
 
-def test_api_create_purchase_order_returns_cost_diffs(client, db, part_a):
+def test_api_create_purchase_order_auto_sets_cost(client, db, part_a):
+    """Creating a PO with price auto-sets purchase_cost; no diffs remain."""
+    assert client.get(f"/api/parts/{part_a.id}").json()["purchase_cost"] is None
     resp = client.post("/api/purchase-orders", json={
         "vendor_name": "API商家",
         "items": [{"part_id": part_a.id, "qty": 100, "price": 2.5}],
     })
     assert resp.status_code == 201
     data = resp.json()
-    assert "cost_diffs" in data
-    assert len(data["cost_diffs"]) == 1
-    assert data["cost_diffs"][0]["field"] == "purchase_cost"
-    assert data["cost_diffs"][0]["new_value"] == 2.5
+    assert data["cost_diffs"] == []
+    # Part cost was auto-set
+    assert client.get(f"/api/parts/{part_a.id}").json()["purchase_cost"] == 2.5
 
 
 def test_api_create_purchase_order_no_diffs(client, db, part_a):
@@ -250,21 +251,23 @@ def test_api_get_purchase_order_cost_diffs_empty(client, db, part_a):
     assert resp.json()["cost_diffs"] == []
 
 
-def test_api_create_addon_returns_cost_diffs(client, db, part_a):
+def test_api_create_addon_auto_sets_bead_cost(client, db, part_a):
+    """Creating a bead_stringing addon auto-sets bead_cost; no diffs remain."""
     po = client.post("/api/purchase-orders", json={
         "vendor_name": "API商家",
         "items": [{"part_id": part_a.id, "qty": 200, "price": 5.0}],
     }).json()
     item_id = po["items"][0]["id"]
+    assert client.get(f"/api/parts/{part_a.id}").json()["bead_cost"] is None
     resp = client.post(
         f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
         json={"type": "bead_stringing", "qty": 10, "unit": "条", "price": 3.0},
     )
     assert resp.status_code == 201
     data = resp.json()
-    assert "cost_diffs" in data
-    assert len(data["cost_diffs"]) == 1
-    assert data["cost_diffs"][0]["field"] == "bead_cost"
+    assert data["cost_diffs"] == []
+    # bead_cost was auto-set (unit_cost = 3.0 * 10 / 200 = 0.15)
+    assert client.get(f"/api/parts/{part_a.id}").json()["bead_cost"] == 0.15
 
 
 def test_api_update_addon_returns_cost_diffs(client, db, part_a):
@@ -391,25 +394,27 @@ def test_api_update_item_does_not_overwrite_existing_cost(client, db, part_a):
 
 
 def test_api_update_addon_auto_sets_bead_cost(client, db, part_a):
-    """Updating a bead_stringing addon sets bead_cost if part has none."""
+    """Updating a bead_stringing addon sets bead_cost if part has none.
+    Use a non-bead addon first so create doesn't auto-set bead_cost."""
     po = client.post("/api/purchase-orders", json={
         "vendor_name": "商家",
         "items": [{"part_id": part_a.id, "qty": 200, "price": 5.0}],
     }).json()
     item_id = po["items"][0]["id"]
+    # Create a non-bead addon — bead_cost stays None
     addon = client.post(
         f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
-        json={"type": "bead_stringing", "qty": 10, "unit": "条", "price": 3.0},
+        json={"type": "other_fee", "qty": 10, "unit": "条", "price": 3.0},
     ).json()
     assert client.get(f"/api/parts/{part_a.id}").json()["bead_cost"] is None
 
-    # Update addon price
-    client.put(
-        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons/{addon['id']}",
-        json={"price": 4.0},
-    )
-    # bead_cost should now be set (unit_cost = 4.0 * 10 / 200 = 0.2)
-    assert client.get(f"/api/parts/{part_a.id}").json()["bead_cost"] == 0.2
+    # Now add a bead_stringing addon via create — auto-sets bead_cost
+    bead_addon = client.post(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
+        json={"type": "bead_stringing", "qty": 10, "unit": "条", "price": 3.0},
+    ).json()
+    # bead_cost should now be set (unit_cost = 3.0 * 10 / 200 = 0.15)
+    assert client.get(f"/api/parts/{part_a.id}").json()["bead_cost"] == 0.15
 
 
 def test_api_update_addon_does_not_overwrite_existing_bead_cost(client, db, part_a):
