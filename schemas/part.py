@@ -9,7 +9,6 @@ class PartCreate(BaseModel):
     image: Optional[str] = None
     color: Optional[str] = None
     unit: Optional[str] = None
-    unit_cost: Optional[float] = None
     plating_process: Optional[str] = None
     parent_part_id: Optional[str] = None
 

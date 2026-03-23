@@ -43,6 +43,7 @@ def create_part(db: Session, data: dict) -> Part:
             raise ValueError(f"Parent part not found: {parent_part_id}")
         if parent.parent_part_id is not None:
             raise ValueError("不支持多层嵌套：目标配件已有父配件")
+    data.pop("unit_cost", None)
     prefix = PART_CATEGORIES[category]
     part = Part(id=_next_id_by_category(db, Part, prefix), **data)
     db.add(part)

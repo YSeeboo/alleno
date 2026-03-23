@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from models.part import Part
 from services.inventory import add_stock
-from services.part import PART_CATEGORIES, create_part, get_part, update_part
+from services.part import PART_CATEGORIES, create_part, get_part, update_part, update_part_cost
 
 _XML_NS = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 _REL_NS = {"rel": "http://schemas.openxmlformats.org/package/2006/relationships"}
@@ -91,6 +91,10 @@ def import_parts_excel(db: Session, file_bytes: bytes, filename: str | None) -> 
             part = update_part(db, plan["part"].id, payload)
             action = "updated"
             updated_count += 1
+
+        cost = plan["row"].unit_cost
+        if cost is not None:
+            update_part_cost(db, part.id, "purchase_cost", cost, source_id="Excel导入")
 
         qty = plan["row"].qty
         if qty > 0:
@@ -389,7 +393,6 @@ def _build_single_plan(db: Session, row: _ImportRow) -> dict:
         "name": row.name,
         "color": row.color,
         "unit": row.unit,
-        "unit_cost": row.unit_cost,
         "plating_process": row.plating_process,
     }
 

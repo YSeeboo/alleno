@@ -235,6 +235,7 @@ def test_import_parts_excel_updates_existing_part_by_id(client):
     assert part["name"] == "新铜扣"
     assert part["color"] == "古铜"
     assert part["unit"] == "个"
+    assert part["purchase_cost"] == 2.8
     assert part["unit_cost"] == 2.8
     assert part["plating_process"] == "喷砂"
 
@@ -264,6 +265,7 @@ def test_import_parts_excel_updates_existing_part_by_name_and_category(client):
     assert part["name"] == "铜扣"
     assert part["color"] == "古金"
     assert part["unit"] == "个"
+    assert part["purchase_cost"] == 2.2
     assert part["unit_cost"] == 2.2
     assert part["plating_process"] == "拉丝"
 
