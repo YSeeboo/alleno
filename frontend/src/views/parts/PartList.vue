@@ -81,6 +81,21 @@
           />
           <span v-if="editingIsVariant" style="color: #999; font-size: 12px; margin-left: 8px;">变体不可修改</span>
         </n-form-item>
+        <n-form-item v-if="editingId && !editingIsVariant" label="创建变体">
+          <n-space>
+            <n-button
+              v-for="vc in variantColorOptions"
+              :key="vc.code"
+              size="small"
+              :disabled="vc.exists || creatingVariant"
+              :type="vc.exists ? 'default' : 'primary'"
+              secondary
+              @click="doCreateVariant(vc.code)"
+            >
+              {{ vc.label }}{{ vc.exists ? ' ✓' : '' }}
+            </n-button>
+          </n-space>
+        </n-form-item>
       </n-form>
       <template #footer>
         <n-space justify="end">
@@ -161,7 +176,7 @@ import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
   NModal, NDataTable, NSpin, NEmpty, NDropdown, NImage,
 } from 'naive-ui'
-import { listParts, createPart, updatePart, deletePart, importPartsExcel, downloadPartsImportTemplate, getPartVariants } from '@/api/parts'
+import { listParts, createPart, updatePart, deletePart, importPartsExcel, downloadPartsImportTemplate, getPartVariants, createPartVariant } from '@/api/parts'
 import { getStock, addStock } from '@/api/inventory'
 import { renderNamedImage, fmtMoney } from '@/utils/ui'
 import ImageUploadModal from '../../components/ImageUploadModal.vue'
@@ -190,6 +205,39 @@ const unitOptions = [
 ]
 
 const existingVariantColors = ref([])
+const creatingVariant = ref(false)
+
+const COLOR_CODE_REVERSE = { '金色': 'G', '白K': 'S', '玫瑰金': 'RG' }
+const VARIANT_COLORS = [
+  { code: 'G', label: '金色 G' },
+  { code: 'S', label: '白K S' },
+  { code: 'RG', label: '玫瑰金 RG' },
+]
+
+const variantColorOptions = computed(() =>
+  VARIANT_COLORS.map((vc) => ({
+    ...vc,
+    exists: existingVariantColors.value.includes(vc.code),
+  }))
+)
+
+const doCreateVariant = async (colorCode) => {
+  creatingVariant.value = true
+  try {
+    await createPartVariant(editingId.value, { color_code: colorCode })
+    message.success(`变体 ${colorCode} 创建成功`)
+    // Refresh existing variants
+    const { data: variants } = await getPartVariants(editingId.value)
+    existingVariantColors.value = variants
+      .map((v) => COLOR_CODE_REVERSE[v.color])
+      .filter(Boolean)
+    await load()
+  } catch (error) {
+    message.error(error.response?.data?.detail || '创建变体失败')
+  } finally {
+    creatingVariant.value = false
+  }
+}
 
 // Modal state
 const showModal = ref(false)
@@ -283,8 +331,6 @@ const closeImportModal = () => {
   importFile.value = null
   if (importFileInputRef.value) importFileInputRef.value.value = ''
 }
-
-const COLOR_CODE_REVERSE = { '金色': 'G', '白K': 'S', '玫瑰金': 'RG' }
 
 const openEdit = async (row) => {
   const rowId = row.id
