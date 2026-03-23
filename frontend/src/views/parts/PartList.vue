@@ -362,7 +362,7 @@ const openEdit = async (row) => {
     } catch {
       // ignore — buttons will show all options as fallback
     } finally {
-      loadingVariants.value = false
+      if (editingId.value === rowId) loadingVariants.value = false
     }
   }
 }
