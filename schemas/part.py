@@ -1,4 +1,5 @@
 from typing import Optional
+from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 
@@ -19,7 +20,6 @@ class PartUpdate(BaseModel):
     category: Optional[str] = None
     color: Optional[str] = None
     unit: Optional[str] = None
-    unit_cost: Optional[float] = None
     plating_process: Optional[str] = None
     parent_part_id: Optional[str] = None
 
@@ -34,6 +34,9 @@ class PartResponse(BaseModel):
     color: Optional[str] = None
     unit: Optional[str] = None
     unit_cost: Optional[float] = None
+    purchase_cost: Optional[float] = None
+    bead_cost: Optional[float] = None
+    plating_cost: Optional[float] = None
     plating_process: Optional[str] = None
     parent_part_id: Optional[str] = None
 
@@ -61,3 +64,17 @@ class PartImportResponse(BaseModel):
     updated_count: int
     stock_entry_count: int
     results: list[PartImportRowResult]
+
+
+class PartCostLogResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    part_id: str
+    field: str
+    cost_before: Optional[float] = None
+    cost_after: Optional[float] = None
+    unit_cost_before: Optional[float] = None
+    unit_cost_after: Optional[float] = None
+    source_id: Optional[str] = None
+    created_at: datetime

@@ -1,4 +1,4 @@
-from .part import Part
+from .part import Part, PartCostLog
 from .jewelry import Jewelry
 from .bom import Bom
 from .order import Order, OrderItem
@@ -12,6 +12,7 @@ from .user import User
 
 __all__ = [
     "Part",
+    "PartCostLog",
     "Jewelry",
     "Bom",
     "Order",
