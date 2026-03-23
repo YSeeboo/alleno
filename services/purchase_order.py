@@ -1,15 +1,17 @@
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from models.part import Part
-from models.purchase_order import PurchaseOrder, PurchaseOrderItem
+from models.purchase_order import PurchaseOrder, PurchaseOrderItem, PurchaseOrderItemAddon
 from services._helpers import _next_id
 from services.inventory import add_stock, deduct_stock
 from time_utils import now_beijing
 
 
 _VALID_STATUSES = {"未付款", "已付款"}
+_Q7 = Decimal("0.0000001")
 
 
 def _require_part(db: Session, part_id: str) -> None:
@@ -26,8 +28,11 @@ def _normalize_delivery_images(delivery_images: Optional[list]) -> list[str]:
 
 def _recalc_total(db: Session, order: PurchaseOrder) -> None:
     items = get_purchase_items(db, order.id)
-    total = sum(float(item.amount or 0) for item in items)
-    order.total_amount = total
+    total = sum(Decimal(str(item.amount or 0)) for item in items)
+    addon_total = sum(
+        Decimal(str(a.amount or 0)) for item in items for a in item.addons
+    )
+    order.total_amount = total + addon_total
 
 
 def create_purchase_order(
@@ -55,24 +60,24 @@ def create_purchase_order(
     db.add(order)
     db.flush()
 
-    total = 0.0
+    total = Decimal(0)
     for item in items:
-        price = round(item["price"], 3) if item.get("price") is not None else None
-        qty = item["qty"]
-        amount = round(qty * price, 3) if price is not None else None
+        price = Decimal(str(item["price"])).quantize(_Q7, rounding=ROUND_HALF_UP) if item.get("price") is not None else None
+        qty = Decimal(str(item["qty"]))
+        amount = (qty * price).quantize(_Q7, rounding=ROUND_HALF_UP) if price is not None else None
         if amount is not None:
             total += amount
 
         db.add(PurchaseOrderItem(
             purchase_order_id=order_id,
             part_id=item["part_id"],
-            qty=qty,
+            qty=item["qty"],
             unit=item.get("unit", "个"),
             price=price,
             amount=amount,
             note=item.get("note"),
         ))
-        add_stock(db, "part", item["part_id"], qty, "采购入库")
+        add_stock(db, "part", item["part_id"], item["qty"], "采购入库")
 
     order.total_amount = total
     db.flush()
@@ -110,9 +115,8 @@ def delete_purchase_order(db: Session, order_id: str) -> None:
     for item in items:
         deduct_stock(db, "part", item.part_id, float(item.qty), "采购单删除")
 
-    db.query(PurchaseOrderItem).filter(
-        PurchaseOrderItem.purchase_order_id == order_id
-    ).delete(synchronize_session=False)
+    for item in items:
+        db.delete(item)
     db.flush()
     db.delete(order)
     db.flush()
@@ -164,7 +168,7 @@ def update_purchase_item(db: Session, order_id: str, item_id: int, data: dict) -
         if field in data:
             setattr(item, field, data[field])
     if "price" in data:
-        item.price = round(data["price"], 3) if data["price"] is not None else None
+        item.price = Decimal(str(data["price"])).quantize(_Q7, rounding=ROUND_HALF_UP) if data["price"] is not None else None
     if "qty" in data and data["qty"] is not None:
         item.qty = data["qty"]
 
@@ -176,9 +180,17 @@ def update_purchase_item(db: Session, order_id: str, item_id: int, data: dict) -
         else:
             deduct_stock(db, "part", item.part_id, -diff, "采购明细修改")
 
+    # Recalc addon unit_cost when item qty changes
+    if new_qty != old_qty:
+        new_qty_d = Decimal(str(item.qty))
+        for addon in item.addons:
+            addon.unit_cost = (Decimal(str(addon.amount)) / new_qty_d).quantize(
+                _Q7, rounding=ROUND_HALF_UP
+            ) if new_qty_d else Decimal("0")
+
     # Recalc amount
     if item.price is not None:
-        item.amount = round(float(item.qty) * float(item.price), 3)
+        item.amount = (Decimal(str(item.qty)) * Decimal(str(item.price))).quantize(_Q7, rounding=ROUND_HALF_UP)
     else:
         item.amount = None
 
@@ -218,3 +230,76 @@ def delete_purchase_item(db: Session, order_id: str, item_id: int) -> None:
 def get_vendor_names(db: Session) -> list[str]:
     rows = db.query(PurchaseOrder.vendor_name).distinct().all()
     return [row[0] for row in rows]
+
+
+def _get_order_and_item(db: Session, order_id: str, item_id: int):
+    order = get_purchase_order(db, order_id)
+    if order is None:
+        raise ValueError(f"采购单 {order_id} 不存在")
+    if order.status == "已付款":
+        raise ValueError("已付款状态不允许操作附加费用")
+    item = db.get(PurchaseOrderItem, item_id)
+    if item is None or item.purchase_order_id != order_id:
+        raise ValueError(f"明细 {item_id} 不存在")
+    return order, item
+
+
+def create_purchase_item_addon(
+    db: Session, order_id: str, item_id: int, *,
+    type: str, qty: float, unit: str | None = None, price: float,
+) -> PurchaseOrderItemAddon:
+    order, item = _get_order_and_item(db, order_id, item_id)
+    existing = db.query(PurchaseOrderItemAddon).filter_by(
+        purchase_order_item_id=item_id, type=type
+    ).first()
+    if existing:
+        raise ValueError(f"该配件已存在类型为 {type} 的附加费用")
+    qty_d = Decimal(str(qty))
+    price_d = Decimal(str(price)).quantize(_Q7, rounding=ROUND_HALF_UP)
+    amount_d = (qty_d * price_d).quantize(_Q7, rounding=ROUND_HALF_UP)
+    item_qty_d = Decimal(str(item.qty))
+    unit_cost_d = (amount_d / item_qty_d).quantize(_Q7, rounding=ROUND_HALF_UP) if item_qty_d else Decimal("0")
+    addon = PurchaseOrderItemAddon(
+        purchase_order_item_id=item_id, type=type, qty=qty_d, unit=unit,
+        price=price_d, amount=amount_d, unit_cost=unit_cost_d,
+    )
+    db.add(addon)
+    db.flush()
+    _recalc_total(db, order)
+    db.flush()
+    return addon
+
+
+def update_purchase_item_addon(
+    db: Session, order_id: str, item_id: int, addon_id: int, *,
+    qty: float | None = None, price: float | None = None,
+) -> PurchaseOrderItemAddon:
+    order, item = _get_order_and_item(db, order_id, item_id)
+    addon = db.get(PurchaseOrderItemAddon, addon_id)
+    if addon is None or addon.purchase_order_item_id != item_id:
+        raise ValueError(f"附加费用 {addon_id} 不存在")
+    if qty is not None:
+        addon.qty = Decimal(str(qty))
+    if price is not None:
+        addon.price = Decimal(str(price)).quantize(_Q7, rounding=ROUND_HALF_UP)
+    addon.amount = (Decimal(str(addon.qty)) * Decimal(str(addon.price))).quantize(_Q7, rounding=ROUND_HALF_UP)
+    item_qty_d = Decimal(str(item.qty))
+    addon.unit_cost = (addon.amount / item_qty_d).quantize(_Q7, rounding=ROUND_HALF_UP) if item_qty_d else Decimal("0")
+    db.flush()
+    _recalc_total(db, order)
+    db.flush()
+    return addon
+
+
+def delete_purchase_item_addon(
+    db: Session, order_id: str, item_id: int, addon_id: int,
+) -> None:
+    order, item = _get_order_and_item(db, order_id, item_id)
+    addon = db.get(PurchaseOrderItemAddon, addon_id)
+    if addon is None or addon.purchase_order_item_id != item_id:
+        raise ValueError(f"附加费用 {addon_id} 不存在")
+    db.delete(addon)
+    db.flush()
+    db.expire(item, ["addons"])
+    _recalc_total(db, order)
+    db.flush()
