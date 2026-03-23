@@ -30,13 +30,13 @@ def _build_purchase_price_map(order: PurchaseOrder) -> Dict[str, Optional[float]
 
 
 def auto_set_initial_purchase_costs(db: Session, order: PurchaseOrder) -> None:
-    """Auto-set purchase_cost for parts that have none, using last-row-wins."""
+    """Sync purchase_cost for all parts in order, using last-row-wins."""
     price_map = _build_purchase_price_map(order)
     for part_id, new_price in price_map.items():
         if new_price is None:
             continue
         part = db.get(Part, part_id)
-        if part is None or part.purchase_cost is not None:
+        if part is None:
             continue
         update_part_cost(db, part_id, "purchase_cost", new_price, source_id=order.id)
 
@@ -87,21 +87,21 @@ def detect_addon_cost_diffs(
 
 
 def auto_set_initial_purchase_cost(db: Session, item: PurchaseOrderItem, source_id: Optional[str] = None) -> None:
-    """If item has a price and the part has no purchase_cost yet, set it."""
+    """Sync item price to part purchase_cost. Skips if price is None or same value."""
     if item.price is None:
         return
     part = db.get(Part, item.part_id)
-    if part is None or part.purchase_cost is not None:
+    if part is None:
         return
     update_part_cost(db, item.part_id, "purchase_cost", float(item.price), source_id=source_id)
 
 
 def auto_set_initial_bead_cost(db: Session, item: PurchaseOrderItem, addon: PurchaseOrderItemAddon, source_id: Optional[str] = None) -> None:
-    """If addon is bead_stringing and the part has no bead_cost yet, set it."""
+    """Sync addon unit_cost to part bead_cost. Skips if not bead_stringing or same value."""
     if addon.type != "bead_stringing":
         return
     part = db.get(Part, item.part_id)
-    if part is None or part.bead_cost is not None:
+    if part is None:
         return
     update_part_cost(db, item.part_id, "bead_cost", float(addon.unit_cost), source_id=source_id)
 

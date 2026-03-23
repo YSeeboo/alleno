@@ -419,8 +419,8 @@ def test_api_update_item_historical_order_sets_unit_cost(client, db, part_a):
     assert p["unit_cost"] == 2.5
 
 
-def test_api_update_item_does_not_overwrite_existing_cost(client, db, part_a):
-    """Updating a purchase item does NOT overwrite existing purchase_cost."""
+def test_api_update_item_overwrites_existing_cost(client, db, part_a):
+    """Updating a purchase item always syncs purchase_cost to latest price."""
     update_part_cost(db, part_a.id, "purchase_cost", 1.0)
     po = client.post("/api/purchase-orders", json={
         "vendor_name": "商家",
@@ -432,8 +432,8 @@ def test_api_update_item_does_not_overwrite_existing_cost(client, db, part_a):
         f"/api/purchase-orders/{po['id']}/items/{item_id}",
         json={"price": 9.9},
     )
-    # Should still be 1.0
-    assert client.get(f"/api/parts/{part_a.id}").json()["purchase_cost"] == 1.0
+    # Should be updated to 9.9
+    assert client.get(f"/api/parts/{part_a.id}").json()["purchase_cost"] == 9.9
 
 
 def test_api_create_addon_auto_sets_bead_cost_on_create(client, db, part_a):
@@ -480,8 +480,8 @@ def test_api_update_addon_auto_sets_bead_cost_on_put(client, db, part_b):
     assert client.get(f"/api/parts/{part_b.id}").json()["bead_cost"] == 0.2
 
 
-def test_api_update_addon_does_not_overwrite_existing_bead_cost(client, db, part_a):
-    """Updating a bead_stringing addon does NOT overwrite existing bead_cost."""
+def test_api_update_addon_overwrites_existing_bead_cost(client, db, part_a):
+    """Updating a bead_stringing addon always syncs bead_cost to latest value."""
     update_part_cost(db, part_a.id, "bead_cost", 0.1)
     po = client.post("/api/purchase-orders", json={
         "vendor_name": "商家",
@@ -497,5 +497,5 @@ def test_api_update_addon_does_not_overwrite_existing_bead_cost(client, db, part
         f"/api/purchase-orders/{po['id']}/items/{item_id}/addons/{addon['id']}",
         json={"price": 99.0},
     )
-    # Should still be 0.1
-    assert client.get(f"/api/parts/{part_a.id}").json()["bead_cost"] == 0.1
+    # unit_cost = 99.0 * 10 / 200 = 4.95
+    assert client.get(f"/api/parts/{part_a.id}").json()["bead_cost"] == 4.95
