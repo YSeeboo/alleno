@@ -33,12 +33,37 @@ class PurchaseOrderItemUpdate(BaseModel):
     note: Optional[str] = None
 
 
+class PurchaseOrderItemAddonCreate(BaseModel):
+    type: str
+    qty: float = Field(gt=0)
+    unit: Optional[str] = None
+    price: float = Field(ge=0)
+
+
+class PurchaseOrderItemAddonUpdate(BaseModel):
+    qty: Optional[float] = Field(None, gt=0)
+    price: Optional[float] = Field(None, ge=0)
+
+
 class PurchaseOrderStatusUpdate(BaseModel):
     status: str
 
 
 class PurchaseOrderDeliveryImagesUpdate(BaseModel):
     delivery_images: List[str] = Field(default_factory=list, max_length=4)
+
+
+class PurchaseOrderItemAddonResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    purchase_order_item_id: int
+    type: str
+    qty: float
+    unit: Optional[str] = None
+    price: float
+    amount: float
+    unit_cost: float
 
 
 class PurchaseOrderItemResponse(BaseModel):
@@ -52,6 +77,7 @@ class PurchaseOrderItemResponse(BaseModel):
     price: Optional[float] = None
     amount: Optional[float] = None
     note: Optional[str] = None
+    addons: list[PurchaseOrderItemAddonResponse] = Field(default_factory=list)
 
 
 class PurchaseOrderResponse(BaseModel):

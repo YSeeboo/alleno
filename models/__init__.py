@@ -6,7 +6,8 @@ from .inventory_log import InventoryLog
 from .plating_order import PlatingOrder, PlatingOrderItem
 from .handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
 from .vendor_receipt import VendorReceipt
-from .purchase_order import PurchaseOrder, PurchaseOrderItem
+from .purchase_order import PurchaseOrder, PurchaseOrderItem, PurchaseOrderItemAddon
+from .plating_receipt import PlatingReceipt, PlatingReceiptItem
 from .user import User
 
 __all__ = [
@@ -24,5 +25,8 @@ __all__ = [
     "VendorReceipt",
     "PurchaseOrder",
     "PurchaseOrderItem",
+    "PurchaseOrderItemAddon",
+    "PlatingReceipt",
+    "PlatingReceiptItem",
     "User",
 ]
