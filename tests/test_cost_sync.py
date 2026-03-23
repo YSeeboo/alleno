@@ -232,6 +232,21 @@ def test_api_create_purchase_order_auto_sets_cost(client, db, part_a):
     assert client.get(f"/api/parts/{part_a.id}").json()["purchase_cost"] == 2.5
 
 
+def test_api_create_purchase_order_duplicate_part_uses_last_price(client, db, part_a):
+    """Duplicate part_id rows: auto-set uses last-row-wins price."""
+    resp = client.post("/api/purchase-orders", json={
+        "vendor_name": "API商家",
+        "items": [
+            {"part_id": part_a.id, "qty": 50, "price": 2.0},
+            {"part_id": part_a.id, "qty": 50, "price": 3.0},
+        ],
+    })
+    assert resp.status_code == 201
+    assert resp.json()["cost_diffs"] == []
+    # Last price (3.0) should be the one auto-set
+    assert client.get(f"/api/parts/{part_a.id}").json()["purchase_cost"] == 3.0
+
+
 def test_api_create_purchase_order_no_diffs(client, db, part_a):
     update_part_cost(db, part_a.id, "purchase_cost", 2.5)
     resp = client.post("/api/purchase-orders", json={
@@ -393,28 +408,48 @@ def test_api_update_item_does_not_overwrite_existing_cost(client, db, part_a):
     assert client.get(f"/api/parts/{part_a.id}").json()["purchase_cost"] == 1.0
 
 
-def test_api_update_addon_auto_sets_bead_cost(client, db, part_a):
-    """Updating a bead_stringing addon sets bead_cost if part has none.
-    Use a non-bead addon first so create doesn't auto-set bead_cost."""
+def test_api_create_addon_auto_sets_bead_cost_on_create(client, db, part_a):
+    """Creating a bead_stringing addon auto-sets bead_cost when part has none."""
     po = client.post("/api/purchase-orders", json={
         "vendor_name": "商家",
         "items": [{"part_id": part_a.id, "qty": 200, "price": 5.0}],
     }).json()
     item_id = po["items"][0]["id"]
-    # Create a non-bead addon — bead_cost stays None
-    addon = client.post(
-        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
-        json={"type": "other_fee", "qty": 10, "unit": "条", "price": 3.0},
-    ).json()
     assert client.get(f"/api/parts/{part_a.id}").json()["bead_cost"] is None
 
-    # Now add a bead_stringing addon via create — auto-sets bead_cost
-    bead_addon = client.post(
+    client.post(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
+        json={"type": "bead_stringing", "qty": 10, "unit": "条", "price": 3.0},
+    )
+    # bead_cost should now be set (unit_cost = 3.0 * 10 / 200 = 0.15)
+    assert client.get(f"/api/parts/{part_a.id}").json()["bead_cost"] == 0.15
+
+
+def test_api_update_addon_auto_sets_bead_cost_on_put(client, db, part_b):
+    """PUT on a bead_stringing addon auto-sets bead_cost when part has none.
+    Use part_b with bead_cost pre-set then cleared to isolate the PUT path."""
+    # Create order + bead addon — this auto-sets bead_cost
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "商家",
+        "items": [{"part_id": part_b.id, "qty": 200, "price": 5.0}],
+    }).json()
+    item_id = po["items"][0]["id"]
+    addon = client.post(
         f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
         json={"type": "bead_stringing", "qty": 10, "unit": "条", "price": 3.0},
     ).json()
-    # bead_cost should now be set (unit_cost = 3.0 * 10 / 200 = 0.15)
-    assert client.get(f"/api/parts/{part_a.id}").json()["bead_cost"] == 0.15
+    # Create set it to 0.15; now clear it via direct DB write to isolate PUT
+    part_b.bead_cost = None
+    db.flush()
+    assert client.get(f"/api/parts/{part_b.id}").json()["bead_cost"] is None
+
+    # PUT updates the addon — should auto-set bead_cost
+    client.put(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons/{addon['id']}",
+        json={"price": 4.0},
+    )
+    # unit_cost = 4.0 * 10 / 200 = 0.2
+    assert client.get(f"/api/parts/{part_b.id}").json()["bead_cost"] == 0.2
 
 
 def test_api_update_addon_does_not_overwrite_existing_bead_cost(client, db, part_a):

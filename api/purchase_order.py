@@ -18,7 +18,7 @@ from schemas.purchase_order import (
     PurchaseOrderResponse,
     PurchaseOrderStatusUpdate,
 )
-from services.cost_sync import auto_set_initial_bead_cost, auto_set_initial_purchase_cost, detect_purchase_cost_diffs, detect_addon_cost_diffs
+from services.cost_sync import auto_set_initial_bead_cost, auto_set_initial_purchase_cost, auto_set_initial_purchase_costs, detect_purchase_cost_diffs, detect_addon_cost_diffs
 from services.purchase_order import (
     create_purchase_order,
     create_purchase_item_addon,
@@ -58,8 +58,7 @@ def api_create_purchase_order(body: PurchaseOrderCreate, db: Session = Depends(g
             note=body.note,
         )
     with service_errors():
-        for oi in order.items:
-            auto_set_initial_purchase_cost(db, oi, source_id=order.id)
+        auto_set_initial_purchase_costs(db, order)
     cost_diffs = detect_purchase_cost_diffs(db, order)
     resp = PurchaseOrderResponse.model_validate(order)
     resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]

@@ -21,12 +21,28 @@ def _compare(current_value, new_value) -> bool:
     return cur != new
 
 
-def detect_purchase_cost_diffs(db: Session, order: PurchaseOrder) -> list[dict]:
-    # Last row wins: track every row including price=None
+def _build_purchase_price_map(order: PurchaseOrder) -> Dict[str, Optional[float]]:
+    """Last row wins: track every row including price=None."""
     price_map: Dict[str, Optional[float]] = {}
     for item in order.items:
         price_map[item.part_id] = float(item.price) if item.price is not None else None
+    return price_map
 
+
+def auto_set_initial_purchase_costs(db: Session, order: PurchaseOrder) -> None:
+    """Auto-set purchase_cost for parts that have none, using last-row-wins."""
+    price_map = _build_purchase_price_map(order)
+    for part_id, new_price in price_map.items():
+        if new_price is None:
+            continue
+        part = db.get(Part, part_id)
+        if part is None or part.purchase_cost is not None:
+            continue
+        update_part_cost(db, part_id, "purchase_cost", new_price, source_id=order.id)
+
+
+def detect_purchase_cost_diffs(db: Session, order: PurchaseOrder) -> list[dict]:
+    price_map = _build_purchase_price_map(order)
     diffs = []
     for part_id, new_price in price_map.items():
         if new_price is None:
