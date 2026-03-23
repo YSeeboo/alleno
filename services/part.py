@@ -77,10 +77,14 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
         raise ValueError(
             "Category cannot be changed after creation — the part ID encodes the category."
         )
-    if (_is_color_variant(part.name) or part.parent_part_id is not None) and "color" in data:
-        raise ValueError("变体配件不可修改颜色")
-    if part.parent_part_id is not None and "parent_part_id" in data:
-        raise ValueError("变体配件不可修改父配件关系")
+    if (_is_color_variant(part.name) or part.parent_part_id is not None):
+        if "color" in data and data["color"] != part.color:
+            raise ValueError("变体配件不可修改颜色")
+        data.pop("color", None)
+    if part.parent_part_id is not None:
+        if "parent_part_id" in data and data["parent_part_id"] != part.parent_part_id:
+            raise ValueError("变体配件不可修改父配件关系")
+        data.pop("parent_part_id", None)
     if "parent_part_id" in data and data["parent_part_id"] is not None:
         if data["parent_part_id"] == part_id:
             raise ValueError("配件不能指向自身作为父配件")
@@ -166,11 +170,14 @@ def create_part_variant(db: Session, part_id: str, color_code: str) -> Part:
         name=variant_name,
         category=parent.category,
         unit=parent.unit,
+        purchase_cost=parent.purchase_cost,
+        bead_cost=parent.bead_cost,
         plating_process=parent.plating_process,
         image=parent.image,
         color=color,
         parent_part_id=part_id,
     )
+    _recalc_unit_cost(variant)
     db.add(variant)
     db.flush()
     return variant
