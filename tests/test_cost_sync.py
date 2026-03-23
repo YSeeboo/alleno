@@ -391,6 +391,34 @@ def test_api_update_item_auto_sets_purchase_cost(client, db, part_a):
     assert client.get(f"/api/parts/{part_a.id}").json()["purchase_cost"] == 2.5
 
 
+def test_api_update_item_historical_order_sets_unit_cost(client, db, part_a):
+    """Historical order (created before auto-set): item has price but part
+    has no cost. User clicks edit and saves without changes → unit_cost updates."""
+    # Create order — auto-set fires, sets purchase_cost
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "商家",
+        "items": [{"part_id": part_a.id, "qty": 100, "price": 2.5}],
+    }).json()
+    item_id = po["items"][0]["id"]
+
+    # Simulate historical data: clear cost as if order was created before auto-set
+    part_a.purchase_cost = None
+    part_a.unit_cost = None
+    db.flush()
+    p = client.get(f"/api/parts/{part_a.id}").json()
+    assert p["purchase_cost"] is None
+    assert p["unit_cost"] is None
+
+    # User clicks edit → saves without changing anything (frontend sends all fields)
+    client.put(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}",
+        json={"qty": 100, "unit": "个", "price": 2.5, "note": ""},
+    )
+    p = client.get(f"/api/parts/{part_a.id}").json()
+    assert p["purchase_cost"] == 2.5
+    assert p["unit_cost"] == 2.5
+
+
 def test_api_update_item_does_not_overwrite_existing_cost(client, db, part_a):
     """Updating a purchase item does NOT overwrite existing purchase_cost."""
     update_part_cost(db, part_a.id, "purchase_cost", 1.0)
