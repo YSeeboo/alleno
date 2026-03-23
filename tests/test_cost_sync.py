@@ -74,6 +74,20 @@ def test_detect_purchase_cost_diffs_multiple_items_same_part(db, part_a):
     assert diffs[0]["new_value"] == 3.0
 
 
+def test_detect_purchase_cost_diffs_trailing_null(db, part_a):
+    """Last row for same part has price=None → no diff should be produced."""
+    from services.cost_sync import detect_purchase_cost_diffs
+    order = create_purchase_order(
+        db, vendor_name="商家",
+        items=[
+            {"part_id": part_a.id, "qty": 50, "price": 2.0},
+            {"part_id": part_a.id, "qty": 50},
+        ],
+    )
+    diffs = detect_purchase_cost_diffs(db, order)
+    assert len(diffs) == 0
+
+
 def test_detect_addon_cost_diffs_bead(db, part_a):
     from services.cost_sync import detect_addon_cost_diffs
     order = create_purchase_order(

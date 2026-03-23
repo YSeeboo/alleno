@@ -20,13 +20,15 @@ def _compare(current_value, new_value) -> bool:
 
 
 def detect_purchase_cost_diffs(db: Session, order: PurchaseOrder) -> list[dict]:
-    price_map = {}
+    # Last row wins: track every row including price=None
+    price_map: dict[str, float | None] = {}
     for item in order.items:
-        if item.price is not None:
-            price_map[item.part_id] = float(item.price)
+        price_map[item.part_id] = float(item.price) if item.price is not None else None
 
     diffs = []
     for part_id, new_price in price_map.items():
+        if new_price is None:
+            continue
         part = db.get(Part, part_id)
         if part is None:
             continue
@@ -69,18 +71,19 @@ def detect_addon_cost_diffs(
 def detect_plating_cost_diffs(db: Session, receipt) -> list[dict]:
     from models.plating_order import PlatingOrderItem
 
-    price_map = {}
+    # Last row wins: track every row including price=None
+    price_map: dict[str, float | None] = {}
     for ri in receipt.items:
-        if ri.price is None:
-            continue
         poi = db.get(PlatingOrderItem, ri.plating_order_item_id)
         if poi is None:
             continue
         receive_id = poi.receive_part_id or poi.part_id
-        price_map[receive_id] = float(ri.price)
+        price_map[receive_id] = float(ri.price) if ri.price is not None else None
 
     diffs = []
     for part_id, new_price in price_map.items():
+        if new_price is None:
+            continue
         part = db.get(Part, part_id)
         if part is None:
             continue
