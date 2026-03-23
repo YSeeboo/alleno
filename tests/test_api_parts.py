@@ -395,3 +395,18 @@ def test_update_variant_rehang_rejected(client):
     resp = client.patch(f"/api/parts/{variant['id']}", json={"parent_part_id": root2["id"]})
     assert resp.status_code == 400
     assert "变体配件" in resp.json()["detail"]
+
+
+def test_update_variant_full_payload_allows_other_fields(client):
+    """Frontend sends full payload including color="" and parent_part_id="".
+    This should not block updates to other fields like unit or image."""
+    _, variant = _create_root_and_variant(client)
+    resp = client.patch(f"/api/parts/{variant['id']}", json={
+        "name": variant["name"],
+        "image": "",
+        "color": "",
+        "unit": "条",
+        "parent_part_id": "",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["unit"] == "条"
