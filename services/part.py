@@ -223,8 +223,8 @@ def _recalc_unit_cost(part: Part) -> None:
 
 
 def update_part_cost(
-    db: Session, part_id: str, field: str, value: float, source_id: str | None = None,
-) -> PartCostLog | None:
+    db: Session, part_id: str, field: str, value: float, source_id: Optional[str] = None,
+) -> Optional[PartCostLog]:
     if field not in _COST_FIELDS:
         raise ValueError(f"无效的成本字段: {field}")
     part = get_part(db, part_id)
