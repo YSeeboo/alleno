@@ -266,3 +266,39 @@ def test_api_delete_item_cascades_addon(client, db):
     order = client.get(f"/api/purchase-orders/{po['id']}").json()
     assert len(order["items"]) == 1
     assert order["total_amount"] == 50.0
+
+
+def test_api_create_addon_type_stripped(client, db):
+    """type with leading/trailing spaces should be stripped, preventing duplicates."""
+    part = _create_part_via_db(db)
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "API商家",
+        "items": [{"part_id": part.id, "qty": 100, "unit": "条", "price": 2.0}],
+    }).json()
+    item_id = po["items"][0]["id"]
+    resp = client.post(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
+        json={"type": "  bead_stringing  ", "qty": 5, "unit": "条", "price": 1.0},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["type"] == "bead_stringing"
+    # Duplicate with spaces should be rejected
+    resp2 = client.post(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
+        json={"type": " bead_stringing ", "qty": 3, "unit": "条", "price": 2.0},
+    )
+    assert resp2.status_code == 400
+
+
+def test_api_create_addon_blank_type_rejected(client, db):
+    part = _create_part_via_db(db)
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "API商家",
+        "items": [{"part_id": part.id, "qty": 100, "unit": "条", "price": 2.0}],
+    }).json()
+    item_id = po["items"][0]["id"]
+    resp = client.post(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
+        json={"type": "   ", "qty": 5, "unit": "条", "price": 1.0},
+    )
+    assert resp.status_code == 422

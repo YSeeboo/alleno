@@ -39,6 +39,14 @@ class PurchaseOrderItemAddonCreate(BaseModel):
     unit: Optional[str] = None
     price: float = Field(ge=0)
 
+    @field_validator("type")
+    @classmethod
+    def type_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("附加费用类型不能为空")
+        return v
+
 
 class PurchaseOrderItemAddonUpdate(BaseModel):
     qty: Optional[float] = Field(None, gt=0)
