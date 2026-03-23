@@ -5,8 +5,8 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from database import get_db
-from schemas.part import PartCreate, FindOrCreateVariantResponse, PartImportResponse, PartResponse, PartUpdate, PartVariantCreate
-from services.part import COLOR_VARIANTS, create_part, create_part_variant, find_or_create_variant, get_part, list_part_variants, list_parts, update_part, delete_part
+from schemas.part import PartCreate, FindOrCreateVariantResponse, PartCostLogResponse, PartImportResponse, PartResponse, PartUpdate, PartVariantCreate
+from services.part import COLOR_VARIANTS, create_part, create_part_variant, find_or_create_variant, get_part, list_part_cost_logs, list_part_variants, list_parts, update_part, delete_part
 from services.part_import import build_parts_import_template, import_parts_excel
 from api._errors import service_errors
 
@@ -68,6 +68,14 @@ def api_create_part_variant(part_id: str, body: PartVariantCreate, db: Session =
 def api_list_part_variants(part_id: str, db: Session = Depends(get_db)):
     with service_errors():
         return list_part_variants(db, part_id)
+
+
+@router.get("/{part_id}/cost-logs", response_model=list[PartCostLogResponse])
+def api_get_part_cost_logs(part_id: str, db: Session = Depends(get_db)):
+    part = get_part(db, part_id)
+    if part is None:
+        raise HTTPException(status_code=404, detail=f"Part {part_id} not found")
+    return list_part_cost_logs(db, part_id)
 
 
 @router.get("/{part_id}", response_model=PartResponse)
