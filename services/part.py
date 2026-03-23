@@ -3,7 +3,9 @@ from typing import List, Optional
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from models.part import Part
+from decimal import Decimal, ROUND_HALF_UP
+
+from models.part import Part, PartCostLog
 from services._helpers import _next_id_by_category
 
 COLOR_VARIANTS = [
@@ -12,6 +14,9 @@ COLOR_VARIANTS = [
     {"code": "RG", "label": "玫瑰金"},
 ]
 COLOR_SUFFIXES = [v["label"] for v in COLOR_VARIANTS]
+
+_COST_FIELDS = {"purchase_cost", "bead_cost", "plating_cost"}
+_Q7 = Decimal("0.0000001")
 
 
 def _is_color_variant(name: str) -> bool:
@@ -86,6 +91,7 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
         has_children = db.query(Part).filter(Part.parent_part_id == part_id).first() is not None
         if has_children:
             raise ValueError("不支持多层嵌套：当前配件已有子配件，不能再挂到其他配件下")
+    data.pop("unit_cost", None)
     for key, value in data.items():
         setattr(part, key, value)
     db.flush()
@@ -159,7 +165,6 @@ def create_part_variant(db: Session, part_id: str, color_code: str) -> Part:
         name=variant_name,
         category=parent.category,
         unit=parent.unit,
-        unit_cost=parent.unit_cost,
         plating_process=parent.plating_process,
         image=parent.image,
         color=color,
@@ -206,3 +211,55 @@ def delete_part(db: Session, part_id: str) -> None:
         raise ValueError("该配件存在颜色变体，请先删除所有变体后再删除根配件")
     db.delete(part)
     db.flush()
+
+
+def _recalc_unit_cost(part: Part) -> None:
+    purchase = Decimal(str(part.purchase_cost or 0))
+    bead = Decimal(str(part.bead_cost or 0))
+    plating = Decimal(str(part.plating_cost or 0))
+    total = purchase + bead + plating
+    part.unit_cost = total if total else None
+
+
+def update_part_cost(
+    db: Session, part_id: str, field: str, value: float, source_id: str | None = None,
+) -> PartCostLog | None:
+    if field not in _COST_FIELDS:
+        raise ValueError(f"无效的成本字段: {field}")
+    part = get_part(db, part_id)
+    if part is None:
+        raise ValueError(f"Part not found: {part_id}")
+
+    old_field_value = getattr(part, field)
+    old_unit_cost = part.unit_cost
+
+    new_value = Decimal(str(value)).quantize(_Q7, rounding=ROUND_HALF_UP)
+
+    old_comparable = Decimal(str(old_field_value)).quantize(_Q7, rounding=ROUND_HALF_UP) if old_field_value is not None else None
+    if old_comparable == new_value:
+        return None
+
+    setattr(part, field, new_value)
+    _recalc_unit_cost(part)
+
+    log = PartCostLog(
+        part_id=part_id,
+        field=field,
+        cost_before=old_field_value,
+        cost_after=new_value,
+        unit_cost_before=old_unit_cost,
+        unit_cost_after=part.unit_cost,
+        source_id=source_id,
+    )
+    db.add(log)
+    db.flush()
+    return log
+
+
+def list_part_cost_logs(db: Session, part_id: str) -> list[PartCostLog]:
+    return (
+        db.query(PartCostLog)
+        .filter(PartCostLog.part_id == part_id)
+        .order_by(PartCostLog.created_at.desc())
+        .all()
+    )
