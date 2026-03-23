@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from models.part import Part
 from models.purchase_order import PurchaseOrder, PurchaseOrderItem, PurchaseOrderItemAddon
+from services.part import update_part_cost
 
 _Q7 = Decimal("0.0000001")
 
@@ -67,6 +68,26 @@ def detect_addon_cost_diffs(
             "new_value": new_value,
         }]
     return []
+
+
+def auto_set_initial_purchase_cost(db: Session, item: PurchaseOrderItem, source_id: Optional[str] = None) -> None:
+    """If item has a price and the part has no purchase_cost yet, set it."""
+    if item.price is None:
+        return
+    part = db.get(Part, item.part_id)
+    if part is None or part.purchase_cost is not None:
+        return
+    update_part_cost(db, item.part_id, "purchase_cost", float(item.price), source_id=source_id)
+
+
+def auto_set_initial_bead_cost(db: Session, item: PurchaseOrderItem, addon: PurchaseOrderItemAddon, source_id: Optional[str] = None) -> None:
+    """If addon is bead_stringing and the part has no bead_cost yet, set it."""
+    if addon.type != "bead_stringing":
+        return
+    part = db.get(Part, item.part_id)
+    if part is None or part.bead_cost is not None:
+        return
+    update_part_cost(db, item.part_id, "bead_cost", float(addon.unit_cost), source_id=source_id)
 
 
 def detect_plating_cost_diffs(db: Session, receipt) -> list[dict]:

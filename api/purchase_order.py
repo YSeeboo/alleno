@@ -18,7 +18,7 @@ from schemas.purchase_order import (
     PurchaseOrderResponse,
     PurchaseOrderStatusUpdate,
 )
-from services.cost_sync import detect_purchase_cost_diffs, detect_addon_cost_diffs
+from services.cost_sync import auto_set_initial_bead_cost, auto_set_initial_purchase_cost, detect_purchase_cost_diffs, detect_addon_cost_diffs
 from services.purchase_order import (
     create_purchase_order,
     create_purchase_item_addon,
@@ -107,6 +107,7 @@ def api_update_purchase_item(order_id: str, item_id: int, body: PurchaseOrderIte
         raise HTTPException(status_code=404, detail=f"PurchaseOrder {order_id} not found")
     with service_errors():
         item = update_purchase_item(db, order_id, item_id, body.model_dump(exclude_unset=True))
+        auto_set_initial_purchase_cost(db, item, source_id=order_id)
     return item
 
 
@@ -147,6 +148,8 @@ def api_update_addon(order_id: str, item_id: int, addon_id: int, body: PurchaseO
             **body.model_dump(exclude_unset=True),
         )
     item = db.get(PurchaseOrderItem, item_id)
+    with service_errors():
+        auto_set_initial_bead_cost(db, item, addon, source_id=order_id)
     cost_diffs = detect_addon_cost_diffs(db, item, addon)
     resp = PurchaseOrderItemAddonResponse.model_validate(addon)
     resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]

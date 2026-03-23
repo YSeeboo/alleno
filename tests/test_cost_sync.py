@@ -350,3 +350,84 @@ def test_api_create_plating_receipt_returns_cost_diffs(client, db, part_a):
     assert "cost_diffs" in data
     assert len(data["cost_diffs"]) == 1
     assert data["cost_diffs"][0]["field"] == "plating_cost"
+
+
+# --- Auto-set initial cost on update tests ---
+
+def test_api_update_item_auto_sets_purchase_cost(client, db, part_a):
+    """Updating a purchase item sets purchase_cost if part has none."""
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "商家",
+        "items": [{"part_id": part_a.id, "qty": 100}],
+    }).json()
+    item_id = po["items"][0]["id"]
+    # Part has no purchase_cost yet
+    assert client.get(f"/api/parts/{part_a.id}").json()["purchase_cost"] is None
+
+    # Update item with a price
+    client.put(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}",
+        json={"price": 2.5},
+    )
+    # Now part should have purchase_cost
+    assert client.get(f"/api/parts/{part_a.id}").json()["purchase_cost"] == 2.5
+
+
+def test_api_update_item_does_not_overwrite_existing_cost(client, db, part_a):
+    """Updating a purchase item does NOT overwrite existing purchase_cost."""
+    update_part_cost(db, part_a.id, "purchase_cost", 1.0)
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "商家",
+        "items": [{"part_id": part_a.id, "qty": 100}],
+    }).json()
+    item_id = po["items"][0]["id"]
+
+    client.put(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}",
+        json={"price": 9.9},
+    )
+    # Should still be 1.0
+    assert client.get(f"/api/parts/{part_a.id}").json()["purchase_cost"] == 1.0
+
+
+def test_api_update_addon_auto_sets_bead_cost(client, db, part_a):
+    """Updating a bead_stringing addon sets bead_cost if part has none."""
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "商家",
+        "items": [{"part_id": part_a.id, "qty": 200, "price": 5.0}],
+    }).json()
+    item_id = po["items"][0]["id"]
+    addon = client.post(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
+        json={"type": "bead_stringing", "qty": 10, "unit": "条", "price": 3.0},
+    ).json()
+    assert client.get(f"/api/parts/{part_a.id}").json()["bead_cost"] is None
+
+    # Update addon price
+    client.put(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons/{addon['id']}",
+        json={"price": 4.0},
+    )
+    # bead_cost should now be set (unit_cost = 4.0 * 10 / 200 = 0.2)
+    assert client.get(f"/api/parts/{part_a.id}").json()["bead_cost"] == 0.2
+
+
+def test_api_update_addon_does_not_overwrite_existing_bead_cost(client, db, part_a):
+    """Updating a bead_stringing addon does NOT overwrite existing bead_cost."""
+    update_part_cost(db, part_a.id, "bead_cost", 0.1)
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "商家",
+        "items": [{"part_id": part_a.id, "qty": 200, "price": 5.0}],
+    }).json()
+    item_id = po["items"][0]["id"]
+    addon = client.post(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
+        json={"type": "bead_stringing", "qty": 10, "unit": "条", "price": 3.0},
+    ).json()
+
+    client.put(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons/{addon['id']}",
+        json={"price": 99.0},
+    )
+    # Should still be 0.1
+    assert client.get(f"/api/parts/{part_a.id}").json()["bead_cost"] == 0.1
