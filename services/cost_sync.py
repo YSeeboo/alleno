@@ -1,4 +1,5 @@
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Dict, Optional
 
 from sqlalchemy.orm import Session
 
@@ -21,7 +22,7 @@ def _compare(current_value, new_value) -> bool:
 
 def detect_purchase_cost_diffs(db: Session, order: PurchaseOrder) -> list[dict]:
     # Last row wins: track every row including price=None
-    price_map: dict[str, float | None] = {}
+    price_map: Dict[str, Optional[float]] = {}
     for item in order.items:
         price_map[item.part_id] = float(item.price) if item.price is not None else None
 
@@ -72,7 +73,7 @@ def detect_plating_cost_diffs(db: Session, receipt) -> list[dict]:
     from models.plating_order import PlatingOrderItem
 
     # Last row wins: track every row including price=None
-    price_map: dict[str, float | None] = {}
+    price_map: Dict[str, Optional[float]] = {}
     for ri in receipt.items:
         poi = db.get(PlatingOrderItem, ri.plating_order_item_id)
         if poi is None:

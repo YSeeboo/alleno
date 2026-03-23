@@ -199,6 +199,23 @@ def test_detect_plating_cost_diffs_different_value(db, part_a):
     assert diffs[0]["new_value"] == 1.5
 
 
+def test_detect_plating_cost_diffs_trailing_null(db, part_a):
+    """Last receipt row for same receive part has price=None → no diff."""
+    from services.cost_sync import detect_plating_cost_diffs
+    from services.plating_receipt import create_plating_receipt
+
+    variant, poi = _setup_plating_scenario(db, part_a)
+    receipt = create_plating_receipt(
+        db, vendor_name="电镀商",
+        items=[
+            {"plating_order_item_id": poi.id, "part_id": variant.id, "qty": 5, "price": 1.5},
+            {"plating_order_item_id": poi.id, "part_id": variant.id, "qty": 5},
+        ],
+    )
+    diffs = detect_plating_cost_diffs(db, receipt)
+    assert len(diffs) == 0
+
+
 # --- API Tests ---
 
 def test_api_create_purchase_order_returns_cost_diffs(client, db, part_a):
