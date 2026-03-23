@@ -78,10 +78,11 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
             "Category cannot be changed after creation — the part ID encodes the category."
         )
     if (_is_color_variant(part.name) or part.parent_part_id is not None):
-        new_color = data.get("color")
-        # Treat empty string as "not changing" — frontend sends "" for disabled fields
-        if new_color and new_color != part.color:
-            raise ValueError("变体配件不可修改颜色")
+        if "color" in data:
+            new_color = data["color"]
+            # Empty string = frontend disabled field, treat as no-op
+            if new_color != "" and new_color != part.color:
+                raise ValueError("变体配件不可修改颜色")
         data.pop("color", None)
     if part.parent_part_id is not None:
         if "parent_part_id" in data:
