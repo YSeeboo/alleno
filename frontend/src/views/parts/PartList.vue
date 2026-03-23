@@ -87,7 +87,7 @@
               v-for="vc in variantColorOptions"
               :key="vc.code"
               size="small"
-              :disabled="vc.exists || creatingVariant"
+              :disabled="vc.exists || creatingVariant || loadingVariants"
               :type="vc.exists ? 'default' : 'primary'"
               secondary
               @click="doCreateVariant(vc.code)"
@@ -206,6 +206,7 @@ const unitOptions = [
 
 const existingVariantColors = ref([])
 const creatingVariant = ref(false)
+const loadingVariants = ref(false)
 
 const COLOR_CODE_REVERSE = { '金色': 'G', '白K': 'S', '玫瑰金': 'RG' }
 const VARIANT_COLORS = [
@@ -349,17 +350,19 @@ const openEdit = async (row) => {
     parent_part_id: row.parent_part_id || null,
   })
   showModal.value = true
-  // Load existing variants for root parts (non-blocking)
+  // Load existing variants for root parts (non-blocking, buttons disabled until done)
   if (!row.parent_part_id) {
+    loadingVariants.value = true
     try {
       const { data: variants } = await getPartVariants(rowId)
-      // Guard against race: only apply if still editing the same part
       if (editingId.value !== rowId) return
       existingVariantColors.value = variants
         .map((v) => COLOR_CODE_REVERSE[v.color])
         .filter(Boolean)
     } catch {
       // ignore — buttons will show all options as fallback
+    } finally {
+      loadingVariants.value = false
     }
   }
 }
