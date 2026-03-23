@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 
 from api._errors import service_errors
 from database import get_db
+from models.purchase_order import PurchaseOrderItem
+from schemas.part import CostDiffItem
 from schemas.purchase_order import (
     PurchaseOrderCreate,
     PurchaseOrderDeliveryImagesUpdate,
@@ -16,6 +18,7 @@ from schemas.purchase_order import (
     PurchaseOrderResponse,
     PurchaseOrderStatusUpdate,
 )
+from services.cost_sync import detect_purchase_cost_diffs, detect_addon_cost_diffs
 from services.purchase_order import (
     create_purchase_order,
     create_purchase_item_addon,
@@ -54,7 +57,10 @@ def api_create_purchase_order(body: PurchaseOrderCreate, db: Session = Depends(g
             status=body.status,
             note=body.note,
         )
-    return order
+    cost_diffs = detect_purchase_cost_diffs(db, order)
+    resp = PurchaseOrderResponse.model_validate(order)
+    resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]
+    return resp
 
 
 @router.get("/{order_id}", response_model=PurchaseOrderResponse)
@@ -123,7 +129,11 @@ def api_create_addon(order_id: str, item_id: int, body: PurchaseOrderItemAddonCr
             db, order_id, item_id,
             type=body.type, qty=body.qty, unit=body.unit, price=body.price,
         )
-    return addon
+    item = db.get(PurchaseOrderItem, item_id)
+    cost_diffs = detect_addon_cost_diffs(db, item, addon)
+    resp = PurchaseOrderItemAddonResponse.model_validate(addon)
+    resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]
+    return resp
 
 
 @router.put("/{order_id}/items/{item_id}/addons/{addon_id}", response_model=PurchaseOrderItemAddonResponse)
@@ -136,7 +146,11 @@ def api_update_addon(order_id: str, item_id: int, addon_id: int, body: PurchaseO
             db, order_id, item_id, addon_id,
             **body.model_dump(exclude_unset=True),
         )
-    return addon
+    item = db.get(PurchaseOrderItem, item_id)
+    cost_diffs = detect_addon_cost_diffs(db, item, addon)
+    resp = PurchaseOrderItemAddonResponse.model_validate(addon)
+    resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]
+    return resp
 
 
 @router.delete("/{order_id}/items/{item_id}/addons/{addon_id}", status_code=204)

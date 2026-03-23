@@ -5,8 +5,8 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from database import get_db
-from schemas.part import PartCreate, FindOrCreateVariantResponse, PartCostLogResponse, PartImportResponse, PartResponse, PartUpdate, PartVariantCreate
-from services.part import COLOR_VARIANTS, create_part, create_part_variant, find_or_create_variant, get_part, list_part_cost_logs, list_part_variants, list_parts, update_part, delete_part
+from schemas.part import BatchCostUpdateRequest, BatchCostUpdateResponse, BatchCostUpdateResultItem, PartCreate, FindOrCreateVariantResponse, PartCostLogResponse, PartImportResponse, PartResponse, PartUpdate, PartVariantCreate
+from services.part import COLOR_VARIANTS, create_part, create_part_variant, find_or_create_variant, get_part, list_part_cost_logs, list_part_variants, list_parts, update_part, update_part_cost, delete_part
 from services.part_import import build_parts_import_template, import_parts_excel
 from api._errors import service_errors
 
@@ -50,6 +50,24 @@ def api_download_parts_import_template(_db: Session = Depends(get_db)):
 @router.get("/color-variants")
 def api_get_color_variants():
     return COLOR_VARIANTS
+
+
+@router.post("/batch-update-costs", response_model=BatchCostUpdateResponse)
+def api_batch_update_costs(body: BatchCostUpdateRequest, db: Session = Depends(get_db)):
+    results = []
+    updated_count = 0
+    with service_errors():
+        for item in body.updates:
+            log = update_part_cost(db, item.part_id, item.field, item.value, source_id=item.source_id)
+            updated = log is not None
+            if updated:
+                updated_count += 1
+            results.append(BatchCostUpdateResultItem(
+                part_id=item.part_id,
+                field=item.field,
+                updated=updated,
+            ))
+    return BatchCostUpdateResponse(updated_count=updated_count, results=results)
 
 
 @router.post("/{part_id}/find-or-create-variant", response_model=FindOrCreateVariantResponse)

@@ -183,3 +183,139 @@ def test_detect_plating_cost_diffs_different_value(db, part_a):
     assert len(diffs) == 1
     assert diffs[0]["current_value"] == 2.0
     assert diffs[0]["new_value"] == 1.5
+
+
+# --- API Tests ---
+
+def test_api_create_purchase_order_returns_cost_diffs(client, db, part_a):
+    resp = client.post("/api/purchase-orders", json={
+        "vendor_name": "API商家",
+        "items": [{"part_id": part_a.id, "qty": 100, "price": 2.5}],
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert "cost_diffs" in data
+    assert len(data["cost_diffs"]) == 1
+    assert data["cost_diffs"][0]["field"] == "purchase_cost"
+    assert data["cost_diffs"][0]["new_value"] == 2.5
+
+
+def test_api_create_purchase_order_no_diffs(client, db, part_a):
+    update_part_cost(db, part_a.id, "purchase_cost", 2.5)
+    resp = client.post("/api/purchase-orders", json={
+        "vendor_name": "API商家",
+        "items": [{"part_id": part_a.id, "qty": 100, "price": 2.5}],
+    })
+    assert resp.status_code == 201
+    assert resp.json()["cost_diffs"] == []
+
+
+def test_api_get_purchase_order_cost_diffs_empty(client, db, part_a):
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "API商家",
+        "items": [{"part_id": part_a.id, "qty": 100, "price": 2.5}],
+    }).json()
+    resp = client.get(f"/api/purchase-orders/{po['id']}")
+    assert resp.json()["cost_diffs"] == []
+
+
+def test_api_create_addon_returns_cost_diffs(client, db, part_a):
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "API商家",
+        "items": [{"part_id": part_a.id, "qty": 200, "price": 5.0}],
+    }).json()
+    item_id = po["items"][0]["id"]
+    resp = client.post(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
+        json={"type": "bead_stringing", "qty": 10, "unit": "条", "price": 3.0},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert "cost_diffs" in data
+    assert len(data["cost_diffs"]) == 1
+    assert data["cost_diffs"][0]["field"] == "bead_cost"
+
+
+def test_api_update_addon_returns_cost_diffs(client, db, part_a):
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "API商家",
+        "items": [{"part_id": part_a.id, "qty": 200, "price": 5.0}],
+    }).json()
+    item_id = po["items"][0]["id"]
+    addon = client.post(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
+        json={"type": "bead_stringing", "qty": 10, "unit": "条", "price": 3.0},
+    ).json()
+    resp = client.put(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons/{addon['id']}",
+        json={"price": 4.0},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "cost_diffs" in data
+
+
+def test_api_batch_update_costs(client, db, part_a, part_b):
+    resp = client.post("/api/parts/batch-update-costs", json={
+        "updates": [
+            {"part_id": part_a.id, "field": "purchase_cost", "value": 3.0, "source_id": "CG-0001"},
+            {"part_id": part_b.id, "field": "purchase_cost", "value": 5.0, "source_id": "CG-0001"},
+        ],
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["updated_count"] == 2
+    assert len(data["results"]) == 2
+    assert all(r["updated"] for r in data["results"])
+
+    p_a = client.get(f"/api/parts/{part_a.id}").json()
+    assert p_a["purchase_cost"] == 3.0
+
+
+def test_api_batch_update_costs_no_change(client, db, part_a):
+    update_part_cost(db, part_a.id, "purchase_cost", 3.0)
+    resp = client.post("/api/parts/batch-update-costs", json={
+        "updates": [
+            {"part_id": part_a.id, "field": "purchase_cost", "value": 3.0, "source_id": "CG-0001"},
+        ],
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["updated_count"] == 0
+    assert data["results"][0]["updated"] is False
+
+
+def test_api_batch_update_costs_invalid_field(client, db, part_a):
+    resp = client.post("/api/parts/batch-update-costs", json={
+        "updates": [
+            {"part_id": part_a.id, "field": "invalid", "value": 3.0},
+        ],
+    })
+    assert resp.status_code == 400
+
+
+def test_api_create_plating_receipt_returns_cost_diffs(client, db, part_a):
+    from services.part import create_part_variant
+    from services.plating import create_plating_order, send_plating_order
+    from services.inventory import add_stock
+
+    variant = create_part_variant(db, part_a.id, "G")
+    add_stock(db, "part", part_a.id, 100, "测试入库")
+    order = create_plating_order(db, supplier_name="电镀商", items=[{
+        "part_id": part_a.id, "qty": 50, "receive_part_id": variant.id,
+    }])
+    send_plating_order(db, order.id)
+    from models.plating_order import PlatingOrderItem
+    poi = db.query(PlatingOrderItem).filter(
+        PlatingOrderItem.plating_order_id == order.id
+    ).first()
+
+    resp = client.post("/api/plating-receipts/", json={
+        "vendor_name": "电镀商",
+        "items": [{"plating_order_item_id": poi.id, "part_id": variant.id, "qty": 10, "price": 1.5}],
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert "cost_diffs" in data
+    assert len(data["cost_diffs"]) == 1
+    assert data["cost_diffs"][0]["field"] == "plating_cost"
