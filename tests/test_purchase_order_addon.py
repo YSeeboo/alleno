@@ -143,3 +143,126 @@ def test_update_item_qty_recalcs_addon_unit_cost(db, order_and_item):
     update_purchase_item(db, order.id, item.id, {"qty": 100})
     db.refresh(addon)
     assert addon.unit_cost == Decimal("0.3")
+
+
+# --- API Tests ---
+
+def _create_part_via_db(db):
+    from models.part import Part
+    p = Part(id="PJ-DZ-00099", name="API测试配件", category="吊坠")
+    db.add(p)
+    db.flush()
+    return p
+
+
+def test_api_create_addon(client, db):
+    part = _create_part_via_db(db)
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "API商家",
+        "items": [{"part_id": part.id, "qty": 100, "unit": "条", "price": 2.0}],
+    }).json()
+    item_id = po["items"][0]["id"]
+    resp = client.post(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
+        json={"type": "bead_stringing", "qty": 5, "unit": "条", "price": 1.0},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["type"] == "bead_stringing"
+    assert data["amount"] == 5.0
+    assert data["unit_cost"] == 0.05
+
+
+def test_api_addon_in_order_response(client, db):
+    part = _create_part_via_db(db)
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "API商家",
+        "items": [{"part_id": part.id, "qty": 100, "unit": "条", "price": 2.0}],
+    }).json()
+    item_id = po["items"][0]["id"]
+    client.post(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
+        json={"type": "bead_stringing", "qty": 5, "unit": "条", "price": 1.0},
+    )
+    resp = client.get(f"/api/purchase-orders/{po['id']}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["items"][0]["addons"]) == 1
+    assert data["total_amount"] == 205.0
+
+
+def test_api_update_addon(client, db):
+    part = _create_part_via_db(db)
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "API商家",
+        "items": [{"part_id": part.id, "qty": 100, "unit": "条", "price": 2.0}],
+    }).json()
+    item_id = po["items"][0]["id"]
+    addon = client.post(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
+        json={"type": "bead_stringing", "qty": 5, "unit": "条", "price": 1.0},
+    ).json()
+    resp = client.put(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons/{addon['id']}",
+        json={"qty": 10, "price": 2.0},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["amount"] == 20.0
+    assert data["unit_cost"] == 0.2
+
+
+def test_api_delete_addon(client, db):
+    part = _create_part_via_db(db)
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "API商家",
+        "items": [{"part_id": part.id, "qty": 100, "unit": "条", "price": 2.0}],
+    }).json()
+    item_id = po["items"][0]["id"]
+    addon = client.post(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
+        json={"type": "bead_stringing", "qty": 5, "unit": "条", "price": 1.0},
+    ).json()
+    resp = client.delete(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons/{addon['id']}",
+    )
+    assert resp.status_code == 204
+    order = client.get(f"/api/purchase-orders/{po['id']}").json()
+    assert order["total_amount"] == 200.0
+    assert len(order["items"][0]["addons"]) == 0
+
+
+def test_api_create_addon_paid_returns_400(client, db):
+    part = _create_part_via_db(db)
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "API商家",
+        "items": [{"part_id": part.id, "qty": 100, "unit": "条", "price": 2.0}],
+    }).json()
+    item_id = po["items"][0]["id"]
+    client.patch(f"/api/purchase-orders/{po['id']}/status", json={"status": "已付款"})
+    resp = client.post(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
+        json={"type": "bead_stringing", "qty": 5, "unit": "条", "price": 1.0},
+    )
+    assert resp.status_code == 400
+
+
+def test_api_delete_item_cascades_addon(client, db):
+    part = _create_part_via_db(db)
+    po = client.post("/api/purchase-orders", json={
+        "vendor_name": "API商家",
+        "items": [
+            {"part_id": part.id, "qty": 100, "unit": "条", "price": 2.0},
+            {"part_id": part.id, "qty": 50, "unit": "条", "price": 1.0},
+        ],
+    }).json()
+    item_id = po["items"][0]["id"]
+    client.post(
+        f"/api/purchase-orders/{po['id']}/items/{item_id}/addons",
+        json={"type": "bead_stringing", "qty": 5, "unit": "条", "price": 1.0},
+    )
+    resp = client.delete(f"/api/purchase-orders/{po['id']}/items/{item_id}")
+    assert resp.status_code == 204
+    order = client.get(f"/api/purchase-orders/{po['id']}").json()
+    assert len(order["items"]) == 1
+    assert order["total_amount"] == 50.0
