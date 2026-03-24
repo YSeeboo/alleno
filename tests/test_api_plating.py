@@ -489,6 +489,37 @@ def test_pending_receive_items_exclude_item_ids(client, db):
 
 
 def test_pending_receive_items_exclude_item_ids_invalid(client, db):
-    """GET /api/plating/items/pending-receive?exclude_item_ids=1,a returns 400."""
-    resp = client.get("/api/plating/items/pending-receive", params={"exclude_item_ids": "1,abc"})
-    assert resp.status_code == 400
+    """GET /api/plating/items/pending-receive?exclude_item_ids=abc returns 422."""
+    resp = client.get("/api/plating/items/pending-receive?exclude_item_ids=abc")
+    assert resp.status_code == 422
+
+
+def test_pending_receive_items_exclude_multiple_ids(client, db):
+    """GET /api/plating/items/pending-receive?exclude_item_ids=1&exclude_item_ids=2 works as list."""
+    from services.plating import create_plating_order, send_plating_order, get_plating_items
+
+    p1 = create_part(db, {"name": "扣M1", "category": "小配件"})
+    p2 = create_part(db, {"name": "扣M2", "category": "小配件"})
+    p3 = create_part(db, {"name": "扣M3", "category": "小配件"})
+    for p in (p1, p2, p3):
+        add_stock(db, "part", p.id, 100, "初始")
+
+    order = create_plating_order(db, "厂M", [
+        {"part_id": p1.id, "qty": 10, "plating_method": "金色"},
+        {"part_id": p2.id, "qty": 10, "plating_method": "银色"},
+        {"part_id": p3.id, "qty": 10, "plating_method": "玫瑰金"},
+    ])
+    send_plating_order(db, order.id)
+    db.flush()
+
+    items = get_plating_items(db, order.id)
+    id1, id2, id3 = items[0].id, items[1].id, items[2].id
+
+    # Exclude two of three
+    resp = client.get(
+        f"/api/plating/items/pending-receive?supplier_name=厂M&exclude_item_ids={id1}&exclude_item_ids={id2}",
+    )
+    assert resp.status_code == 200
+    result = resp.json()
+    assert len(result) == 1
+    assert result[0]["id"] == id3

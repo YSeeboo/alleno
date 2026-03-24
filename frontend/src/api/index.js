@@ -5,6 +5,9 @@ const { message } = createDiscreteApi(['message'])
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api',
+  paramsSerializer: {
+    indexes: null, // serialize arrays as key=1&key=2 (not key[]=1)
+  },
 })
 
 api.interceptors.request.use((config) => {

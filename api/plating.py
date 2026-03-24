@@ -2,7 +2,7 @@ from datetime import date as date_type
 from typing import Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -73,19 +73,13 @@ def api_list_pending_receive_items(
     part_keyword: str = None,
     supplier_name: str = None,
     date_on: date_type = None,
-    exclude_item_ids: str = None,
+    exclude_item_ids: list[int] = Query(None),
     db: Session = Depends(get_db),
 ):
-    parsed_exclude = None
-    if exclude_item_ids:
-        try:
-            parsed_exclude = [int(x.strip()) for x in exclude_item_ids.split(",") if x.strip()]
-        except ValueError:
-            raise HTTPException(status_code=400, detail="exclude_item_ids must be comma-separated integers")
     with service_errors():
         return list_pending_receive_items(
             db, part_keyword, supplier_name=supplier_name,
-            date_on=date_on, exclude_item_ids=parsed_exclude,
+            date_on=date_on, exclude_item_ids=exclude_item_ids or None,
         )
 
 
