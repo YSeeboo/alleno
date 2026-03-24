@@ -84,6 +84,22 @@ def ensure_schema_compat(target_engine=None):
                     logger.warning("Upgraded %s.%s to %s", table, col, new_type)
                 break
 
+        # Trim whitespace from supplier/vendor name columns
+        _name_columns = [
+            ("plating_order", "supplier_name"),
+            ("handcraft_order", "supplier_name"),
+            ("plating_receipt", "vendor_name"),
+            ("purchase_order", "vendor_name"),
+        ]
+        for table, col in _name_columns:
+            if inspector.has_table(table):
+                result = conn.execute(text(
+                    f'UPDATE "{table}" SET {col} = TRIM({col}) '
+                    f'WHERE {col} != TRIM({col})'
+                ))
+                if result.rowcount:
+                    logger.warning("Trimmed %d rows in %s.%s", result.rowcount, table, col)
+
 def get_db():
     db = SessionLocal()
     try:
