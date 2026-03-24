@@ -116,11 +116,15 @@ def send_handcraft_order(db: Session, handcraft_order_id: str) -> HandcraftOrder
         .filter(HandcraftJewelryItem.handcraft_order_id == handcraft_order_id)
         .all()
     )
+    # Aggregate qty by part_id to avoid double-deducting when same part appears multiple times
+    part_totals: dict[str, float] = {}
+    for item in part_items:
+        part_totals[item.part_id] = part_totals.get(item.part_id, 0.0) + float(item.qty)
     deducted = []
     try:
-        for item in part_items:
-            deduct_stock(db, "part", item.part_id, float(item.qty), "手工发出")
-            deducted.append((item.part_id, float(item.qty)))
+        for part_id, total_qty in part_totals.items():
+            deduct_stock(db, "part", part_id, total_qty, "手工发出")
+            deducted.append((part_id, total_qty))
     except ValueError:
         for part_id, qty in deducted:
             add_stock(db, "part", part_id, qty, "手工发出回滚")

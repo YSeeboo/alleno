@@ -9,3 +9,4 @@ export const updatePlatingReceiptStatus = (id, status) => api.patch(`/plating-re
 export const updatePlatingReceiptDeliveryImages = (id, deliveryImages) => api.patch(`/plating-receipts/${id}/delivery-images`, { delivery_images: deliveryImages })
 export const updatePlatingReceiptItem = (id, itemId, data) => api.put(`/plating-receipts/${id}/items/${itemId}`, data)
 export const deletePlatingReceiptItem = (id, itemId) => api.delete(`/plating-receipts/${id}/items/${itemId}`)
+export const addPlatingReceiptItems = (id, data) => api.post(`/plating-receipts/${id}/items`, data)

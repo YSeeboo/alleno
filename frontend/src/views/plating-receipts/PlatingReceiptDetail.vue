@@ -124,7 +124,13 @@
         </n-descriptions>
       </n-card>
 
-      <n-card v-if="receipt" title="回收明细">
+      <n-card v-if="receipt">
+        <template #header>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span>回收明细</span>
+            <n-button v-if="!isPaid()" size="small" type="primary" @click="openAddItemsModal">+ 增加配件</n-button>
+          </div>
+        </template>
         <n-data-table v-if="receipt.items?.length > 0" :columns="itemColumns" :data="receipt.items" :bordered="false" />
         <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
       </n-card>
@@ -165,25 +171,92 @@
       suppress-success
       @uploaded="handleDeliveryImageUploaded"
     />
+
+    <!-- Add Items Modal -->
+    <n-modal v-model:show="addItemsModalVisible" preset="card" :title="`增加回收配件（${receipt?.vendor_name}）`" style="width: 800px;">
+      <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
+        <n-input
+          v-model:value="addItemsFilterKeyword"
+          placeholder="编号/名称搜索"
+          clearable
+          style="width: 200px;"
+          @update:value="onAddItemsFilterKeyword"
+        />
+        <span style="font-size: 13px; color: #666;">发出日期</span>
+        <n-date-picker
+          v-model:value="addItemsFilterDateOn"
+          type="date"
+          clearable
+          style="width: 160px;"
+          @update:value="onAddItemsFilterDate"
+        />
+      </div>
+      <n-spin :show="addItemsLoading">
+        <n-empty v-if="!addItemsLoading && addItemsPendingItems.length === 0" :description="addItemsFetchError ? '加载失败，请重试' : '暂无可添加的待回收配件'" style="margin: 16px 0;" />
+        <n-data-table
+          v-if="addItemsPendingItems.length > 0"
+          :columns="addItemsColumns"
+          :data="addItemsPendingItems"
+          :bordered="false"
+          :row-key="(row) => row.id"
+          :checked-row-keys="addItemsCheckedKeys"
+          @update:checked-row-keys="(keys) => { addItemsCheckedKeys = keys }"
+          size="small"
+          :max-height="400"
+        />
+      </n-spin>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="addItemsModalVisible = false">取消</n-button>
+          <n-button type="primary" :loading="addItemsSubmitting" :disabled="addItemsCheckedKeys.length === 0" @click="submitAddItems">确认添加</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- Cost Diff Modal (from add items) -->
+    <n-modal v-model:show="addItemsCostDiffVisible" :mask-closable="false" preset="card" title="电镀成本变动确认" style="width: 550px;">
+      <div style="margin-bottom: 12px; color: #333;">
+        当前电镀成本与配件已有电镀成本金额不相同，是否更新电镀成本？
+      </div>
+      <n-data-table
+        :columns="[
+          { title: '配件编号', key: 'part_id', width: 130 },
+          { title: '配件名称', key: 'part_name', minWidth: 120 },
+          { title: '原电镀费用', key: 'current_value', width: 120, render: (r) => r.current_value != null ? `¥ ${fmtMoney(r.current_value)}` : '-' },
+          { title: '更新电镀费用', key: 'new_value', width: 120, render: (r) => h('span', { style: 'color: #d03050; font-weight: 600;' }, `¥ ${fmtMoney(r.new_value)}`) },
+        ]"
+        :data="addItemsCostDiffs"
+        :bordered="false"
+        size="small"
+      />
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="skipAddItemsCostUpdate" :disabled="addItemsCostDiffUpdating">跳过</n-button>
+          <n-button type="primary" :loading="addItemsCostDiffUpdating" @click="confirmAddItemsCostUpdate">确认更新</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, h, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
-  NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon, NImage,
+  NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon, NImage, NDatePicker,
 } from 'naive-ui'
 import { CreateOutline } from '@vicons/ionicons5'
 import {
   getPlatingReceipt, updatePlatingReceiptStatus,
   updatePlatingReceiptDeliveryImages,
   updatePlatingReceiptItem, deletePlatingReceiptItem,
-  deletePlatingReceipt,
+  deletePlatingReceipt, addPlatingReceiptItems,
 } from '@/api/platingReceipts'
+import { listPendingReceiveItems } from '@/api/plating'
+import { batchUpdatePartCosts } from '@/api/parts'
 import { renderNamedImage, fmtMoney } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 
@@ -230,6 +303,24 @@ const editingNoteItemId = ref(null)
 const editingNoteValue = ref('')
 const savingNoteItemId = ref(null)
 const noteInputRef = ref(null)
+
+// Add items modal
+const addItemsModalVisible = ref(false)
+const addItemsLoading = ref(false)
+const addItemsSubmitting = ref(false)
+const addItemsPendingItems = ref([])
+const addItemsCheckedKeys = ref([])
+const addItemsInputs = reactive({})
+const addItemsFilterKeyword = ref('')
+const addItemsFilterDateOn = ref(null)
+let addItemsDebounceTimer = null
+let addItemsFetchSeq = 0
+const addItemsFetchError = ref(false)
+
+// Cost diff modal (for add-items)
+const addItemsCostDiffVisible = ref(false)
+const addItemsCostDiffs = ref([])
+const addItemsCostDiffUpdating = ref(false)
 
 const loadData = async () => {
   const id = route.params.id
@@ -581,6 +672,187 @@ const itemColumns = [
         },
       )
       return h(NSpace, { size: 'small' }, { default: () => [editBtn, deleteBtn] })
+    },
+  },
+]
+
+// Add items helpers
+const getAddRemaining = (item) => item.qty - (item.received_qty || 0)
+
+const getAddInput = (id) => {
+  if (!addItemsInputs[id]) {
+    addItemsInputs[id] = { qty: null, price: null, unit: '个' }
+  }
+  return addItemsInputs[id]
+}
+
+const fetchAddItemsPending = async () => {
+  if (!receipt.value) return
+  const seq = ++addItemsFetchSeq
+  addItemsLoading.value = true
+  addItemsFetchError.value = false
+  try {
+    const existingPoiIds = receipt.value.items.map((i) => i.plating_order_item_id).filter(Boolean)
+    const params = { supplier_name: receipt.value.vendor_name }
+    if (existingPoiIds.length > 0) params.exclude_item_ids = existingPoiIds.join(',')
+    if (addItemsFilterKeyword.value) params.part_keyword = addItemsFilterKeyword.value
+    if (addItemsFilterDateOn.value) {
+      const d = new Date(addItemsFilterDateOn.value)
+      params.date_on = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    const { data } = await listPendingReceiveItems(params)
+    if (seq !== addItemsFetchSeq) return
+    addItemsPendingItems.value = data
+    for (const item of data) {
+      if (!addItemsInputs[item.id]) {
+        addItemsInputs[item.id] = { qty: getAddRemaining(item), price: null, unit: item.unit || '个' }
+      }
+    }
+  } catch (_) {
+    if (seq !== addItemsFetchSeq) return
+    addItemsPendingItems.value = []
+    addItemsCheckedKeys.value = []
+    addItemsFetchError.value = true
+    message.error('加载待回收配件失败')
+  } finally {
+    if (seq === addItemsFetchSeq) addItemsLoading.value = false
+  }
+}
+
+const openAddItemsModal = () => {
+  addItemsCheckedKeys.value = []
+  addItemsFilterKeyword.value = ''
+  addItemsFilterDateOn.value = null
+  Object.keys(addItemsInputs).forEach((k) => delete addItemsInputs[k])
+  addItemsModalVisible.value = true
+  fetchAddItemsPending()
+}
+
+const onAddItemsFilterKeyword = () => {
+  clearTimeout(addItemsDebounceTimer)
+  addItemsDebounceTimer = setTimeout(() => {
+    addItemsCheckedKeys.value = []
+    fetchAddItemsPending()
+  }, 300)
+}
+
+const onAddItemsFilterDate = () => {
+  addItemsCheckedKeys.value = []
+  fetchAddItemsPending()
+}
+
+const submitAddItems = async () => {
+  if (addItemsCheckedKeys.value.length === 0) {
+    message.warning('请至少勾选一条待回收配件')
+    return
+  }
+  const items = []
+  for (const id of addItemsCheckedKeys.value) {
+    const pending = addItemsPendingItems.value.find((p) => p.id === id)
+    if (!pending) continue
+    const input = addItemsInputs[id]
+    if (!input?.qty || input.qty <= 0) {
+      message.warning(`请填写「${pending.part_name}」的回收数量`)
+      return
+    }
+    items.push({
+      plating_order_item_id: pending.id,
+      part_id: pending.receive_part_id || pending.part_id,
+      qty: input.qty,
+      price: input.price != null ? input.price : null,
+      unit: input.unit || '个',
+    })
+  }
+
+  addItemsSubmitting.value = true
+  try {
+    const { data } = await addPlatingReceiptItems(route.params.id, { items })
+    message.success('配件已添加')
+    addItemsModalVisible.value = false
+    if (data.cost_diffs && data.cost_diffs.length > 0) {
+      addItemsCostDiffs.value = data.cost_diffs
+      addItemsCostDiffVisible.value = true
+    }
+    await loadData()
+  } finally {
+    addItemsSubmitting.value = false
+  }
+}
+
+const confirmAddItemsCostUpdate = async () => {
+  addItemsCostDiffUpdating.value = true
+  try {
+    await batchUpdatePartCosts({
+      updates: addItemsCostDiffs.value.map((d) => ({
+        part_id: d.part_id,
+        field: d.field,
+        value: d.new_value,
+        source_id: receipt.value.id,
+      })),
+    })
+    message.success('配件电镀成本已更新')
+    addItemsCostDiffVisible.value = false
+  } catch (_) {
+    message.error('成本更新失败，请重试')
+  } finally {
+    addItemsCostDiffUpdating.value = false
+  }
+}
+
+const skipAddItemsCostUpdate = () => {
+  addItemsCostDiffVisible.value = false
+}
+
+const addItemsColumns = [
+  { type: 'selection' },
+  { title: '电镀单号', key: 'plating_order_id', width: 100 },
+  {
+    title: '配件',
+    key: 'part_name',
+    minWidth: 140,
+    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name),
+  },
+  { title: '电镀方式', key: 'plating_method', width: 80, render: (r) => r.plating_method || '-' },
+  {
+    title: '发出日期',
+    key: 'created_at',
+    width: 100,
+    render: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString('zh-CN') : '-',
+  },
+  { title: '剩余', key: 'remaining', width: 70, render: (r) => getAddRemaining(r) },
+  {
+    title: '本次回收',
+    key: 'input_qty',
+    width: 110,
+    render: (row) => {
+      const input = getAddInput(row.id)
+      return h(NInputNumber, {
+        value: input.qty,
+        min: 0.0001,
+        max: getAddRemaining(row),
+        precision: 4,
+        step: 1,
+        size: 'small',
+        style: 'width: 100px;',
+        'onUpdate:value': (v) => { input.qty = v },
+      })
+    },
+  },
+  {
+    title: '单价',
+    key: 'input_price',
+    width: 110,
+    render: (row) => {
+      const input = getAddInput(row.id)
+      return h(NInputNumber, {
+        value: input.price,
+        min: 0,
+        precision: 7,
+        step: 0.1,
+        size: 'small',
+        style: 'width: 100px;',
+        'onUpdate:value': (v) => { input.price = v },
+      })
     },
   },
 ]

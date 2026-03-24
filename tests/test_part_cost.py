@@ -63,15 +63,17 @@ def test_update_part_ignores_unit_cost(db, part):
     assert updated.name == "新名称"
 
 
-def test_create_variant_no_cost_inheritance(db, part):
+def test_create_variant_inherits_purchase_and_bead_cost(db, part):
+    """Variants should inherit purchase_cost and bead_cost from parent, but not plating_cost."""
     from services.part import update_part_cost
     update_part_cost(db, part.id, "purchase_cost", 2.5)
     update_part_cost(db, part.id, "bead_cost", 0.15)
+    update_part_cost(db, part.id, "plating_cost", 1.0)
     variant = create_part_variant(db, part.id, "G")
-    assert variant.purchase_cost is None
-    assert variant.bead_cost is None
+    assert float(variant.purchase_cost) == 2.5
+    assert float(variant.bead_cost) == 0.15
     assert variant.plating_cost is None
-    assert variant.unit_cost is None
+    assert float(variant.unit_cost) == 2.65  # 2.5 + 0.15, no plating
 
 
 # --- API Tests ---

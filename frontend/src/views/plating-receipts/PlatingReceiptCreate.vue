@@ -23,8 +23,25 @@
     </n-form>
 
     <n-card title="待回收配件" style="margin-bottom: 16px;">
+      <div v-if="vendorName" style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
+        <n-input
+          v-model:value="filterKeyword"
+          placeholder="编号/名称搜索"
+          clearable
+          style="width: 200px;"
+          @update:value="onFilterKeywordChange"
+        />
+        <span style="font-size: 13px; color: #666;">发出日期</span>
+        <n-date-picker
+          v-model:value="filterDateOn"
+          type="date"
+          clearable
+          style="width: 160px;"
+          @update:value="onFilterDateChange"
+        />
+      </div>
       <n-spin :show="loadingItems">
-        <n-empty v-if="!loadingItems && pendingItems.length === 0" :description="vendorName ? '该商家暂无待回收配件' : '请先选择商家'" style="margin-top: 16px;" />
+        <n-empty v-if="!loadingItems && pendingItems.length === 0" :description="fetchError ? '加载失败，请重试' : vendorName ? '该商家暂无待回收配件' : '请先选择商家'" style="margin-top: 16px;" />
         <n-data-table
           v-if="pendingItems.length > 0"
           :columns="pendingColumns"
@@ -86,7 +103,7 @@ import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
-  NCard, NH2, NRadioGroup, NRadio, NDataTable, NSpin, NEmpty, NImage, NModal,
+  NCard, NH2, NRadioGroup, NRadio, NDataTable, NSpin, NEmpty, NImage, NModal, NDatePicker,
 } from 'naive-ui'
 import { listPendingReceiveItems } from '@/api/plating'
 import { createPlatingReceipt } from '@/api/platingReceipts'
@@ -105,6 +122,13 @@ const pendingItems = ref([])
 const checkedKeys = ref([])
 // Store user input for qty and price per item id
 const itemInputs = reactive({})
+
+// Filter state
+const filterKeyword = ref('')
+const filterDateOn = ref(null)
+let debounceTimer = null
+let fetchSeq = 0
+const fetchError = ref(false)
 
 // Cost diff modal
 const costDiffVisible = ref(false)
@@ -140,28 +164,61 @@ const totalAmount = computed(() => {
   return fmtMoney(sum)
 })
 
-const onVendorChange = async (val) => {
-  vendorName.value = val
-  checkedKeys.value = []
-  if (!val) {
+const fetchPendingItems = async () => {
+  const seq = ++fetchSeq
+  if (!vendorName.value) {
     pendingItems.value = []
+    loadingItems.value = false
+    fetchError.value = false
     return
   }
   loadingItems.value = true
+  fetchError.value = false
   try {
-    const { data } = await listPendingReceiveItems({ supplier_name: val })
+    const params = { supplier_name: vendorName.value }
+    if (filterKeyword.value) params.part_keyword = filterKeyword.value
+    if (filterDateOn.value) {
+      const d = new Date(filterDateOn.value)
+      params.date_on = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    const { data } = await listPendingReceiveItems(params)
+    if (seq !== fetchSeq) return
     pendingItems.value = data
-    // Initialize inputs for each item
     for (const item of data) {
       if (!itemInputs[item.id]) {
         itemInputs[item.id] = { qty: getRemaining(item), price: null, unit: item.unit || '个' }
       }
     }
   } catch (_) {
+    if (seq !== fetchSeq) return
     pendingItems.value = []
+    checkedKeys.value = []
+    fetchError.value = true
+    message.error('加载待回收配件失败')
   } finally {
-    loadingItems.value = false
+    if (seq === fetchSeq) loadingItems.value = false
   }
+}
+
+const onVendorChange = async (val) => {
+  vendorName.value = val
+  checkedKeys.value = []
+  filterKeyword.value = ''
+  filterDateOn.value = null
+  await fetchPendingItems()
+}
+
+const onFilterKeywordChange = () => {
+  clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => {
+    checkedKeys.value = []
+    fetchPendingItems()
+  }, 300)
+}
+
+const onFilterDateChange = () => {
+  checkedKeys.value = []
+  fetchPendingItems()
 }
 
 const onCheck = (keys) => {
@@ -178,6 +235,12 @@ const pendingColumns = [
     render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name),
   },
   { title: '电镀方式', key: 'plating_method', width: 90, render: (r) => r.plating_method || '-' },
+  {
+    title: '发出日期',
+    key: 'created_at',
+    width: 100,
+    render: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString('zh-CN') : '-',
+  },
   { title: '总数量', key: 'qty', width: 80 },
   { title: '已回收', key: 'received_qty', width: 80, render: (r) => r.received_qty ?? 0 },
   { title: '剩余', key: 'remaining', width: 80, render: (r) => getRemaining(r) },
