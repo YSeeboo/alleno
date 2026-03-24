@@ -7,7 +7,14 @@
 
     <n-form label-placement="left" label-width="100" style="margin-bottom: 16px;">
       <n-form-item label="电镀厂名称">
-        <n-input v-model:value="supplierName" style="width: 300px;" />
+        <n-select
+          v-model:value="supplierName"
+          :options="supplierOptions"
+          filterable
+          tag
+          placeholder="选择或输入电镀厂名称"
+          style="width: 300px;"
+        />
       </n-form-item>
       <n-form-item label="备注">
         <n-input v-model:value="note" type="textarea" :rows="2" style="width: 300px;" />
@@ -94,13 +101,14 @@ import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2 } from 'naive-ui'
 import { listParts, findOrCreateVariant, createPartVariant, getColorVariants } from '@/api/parts'
-import { createPlating } from '@/api/plating'
+import { createPlating, getPlatingSuppliers } from '@/api/plating'
 import { renderOptionWithImage } from '@/utils/ui'
 
 const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
-const supplierName = ref('')
+const supplierName = ref(null)
+const supplierOptions = ref([])
 const note = ref('')
 const items = reactive([createEmptyItem()])
 const submitting = ref(false)
@@ -227,7 +235,7 @@ const addItem = () => {
 }
 
 const submit = async () => {
-  if (!supplierName.value) { message.warning('请输入电镀厂名称'); return }
+  if (!supplierName.value?.trim()) { message.warning('请输入电镀厂名称'); return }
   if (items.length === 0) { message.warning('请至少添加一条明细'); return }
   if (items.some((i) => !i.part_id)) { message.warning('请选择配件'); return }
   submitting.value = true
@@ -244,7 +252,9 @@ const submit = async () => {
 
 onMounted(async () => {
   try {
-    const [partsRes, colorsRes] = await Promise.all([listParts(), getColorVariants()])
+    const [partsRes, colorsRes, suppliersRes] = await Promise.all([
+      listParts(), getColorVariants(), getPlatingSuppliers(),
+    ])
     allParts.value = partsRes.data
     partOptions.value = partsRes.data.map((p) => ({
       label: `${p.id} ${p.name}`,
@@ -255,6 +265,7 @@ onMounted(async () => {
       unit: p.unit,
     }))
     colorVariants.value = colorsRes.data
+    supplierOptions.value = suppliersRes.data.map((v) => ({ label: v, value: v }))
   } catch (_) {
     // error already shown by axios interceptor
   }

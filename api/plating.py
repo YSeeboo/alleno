@@ -26,6 +26,7 @@ from services.plating import (
     delete_plating_item,
     get_plating_order,
     get_plating_items,
+    get_plating_supplier_names,
     list_pending_receive_items,
     list_plating_orders,
     send_plating_order,
@@ -63,9 +64,14 @@ def api_create_plating_order(body: PlatingCreate, db: Session = Depends(get_db))
 
 
 @router.get("/", response_model=list[PlatingResponse])
-def api_list_plating_orders(status: Optional[str] = None, db: Session = Depends(get_db)):
+def api_list_plating_orders(status: Optional[str] = None, supplier_name: Optional[str] = None, db: Session = Depends(get_db)):
     with service_errors():
-        return list_plating_orders(db, status=status)
+        return list_plating_orders(db, status=status, supplier_name=supplier_name)
+
+
+@router.get("/suppliers", response_model=list[str])
+def api_get_plating_supplier_names(db: Session = Depends(get_db)):
+    return get_plating_supplier_names(db)
 
 
 @router.get("/items/pending-receive", response_model=list[PendingReceiveItemResponse])

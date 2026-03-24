@@ -20,5 +20,6 @@ export const deletePlatingItem = (id, itemId) => api.delete(`/plating/${id}/item
 export const updatePlatingStatus = (id, status) => api.patch(`/plating/${id}/status`, { status })
 export const updatePlatingDeliveryImages = (id, deliveryImages) =>
   api.patch(`/plating/${id}/delivery-images`, { delivery_images: deliveryImages })
+export const getPlatingSuppliers = () => api.get('/plating/suppliers')
 export const listPendingReceiveItems = (params) =>
   api.get('/plating/items/pending-receive', { params })

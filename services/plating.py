@@ -96,10 +96,12 @@ def get_plating_order(db: Session, plating_order_id: str) -> Optional[PlatingOrd
     return db.query(PlatingOrder).filter(PlatingOrder.id == plating_order_id).first()
 
 
-def list_plating_orders(db: Session, status: str = None) -> list:
+def list_plating_orders(db: Session, status: str = None, supplier_name: str = None) -> list:
     q = db.query(PlatingOrder)
     if status is not None:
         q = q.filter(PlatingOrder.status == status)
+    if supplier_name is not None:
+        q = q.filter(PlatingOrder.supplier_name == supplier_name)
     return q.all()
 
 
@@ -364,6 +366,11 @@ def list_pending_receive_items(db: Session, part_keyword: str = None, supplier_n
         }
         for row in rows
     ]
+
+
+def get_plating_supplier_names(db: Session) -> list[str]:
+    rows = db.query(PlatingOrder.supplier_name).distinct().all()
+    return [row[0] for row in rows]
 
 
 def update_plating_delivery_images(db: Session, order_id: str, delivery_images: Optional[list]) -> PlatingOrder:

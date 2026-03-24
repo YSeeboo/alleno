@@ -8,6 +8,8 @@
     <div class="filter-bar">
       <n-select v-model:value="filterStatus" :options="statusOptions" clearable placeholder="筛选状态"
         style="width: 140px;" @update:value="load" />
+      <n-select v-model:value="filterSupplier" :options="supplierOptions" clearable placeholder="筛选厂家"
+        style="width: 160px;" @update:value="load" />
       <div class="filter-bar-end">
         <n-button type="primary" @click="router.push('/plating/create')">新建电镀单</n-button>
       </div>
@@ -24,7 +26,7 @@
 import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDialog, useMessage, NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
-import { listPlating, deletePlating } from '@/api/plating'
+import { listPlating, deletePlating, getPlatingSuppliers } from '@/api/plating'
 
 const router = useRouter()
 const dialog = useDialog()
@@ -33,6 +35,8 @@ const loading = ref(true)
 const deletingId = ref(null)
 const rows = ref([])
 const filterStatus = ref(null)
+const filterSupplier = ref(null)
+const supplierOptions = ref([])
 const statusOptions = [
   { label: '待发出', value: 'pending' },
   { label: '进行中', value: 'processing' },
@@ -44,7 +48,9 @@ const statusBadge = { pending: 'badge-amber', processing: 'badge-indigo', comple
 const load = async () => {
   loading.value = true
   try {
-    const params = filterStatus.value ? { status: filterStatus.value } : {}
+    const params = {}
+    if (filterStatus.value) params.status = filterStatus.value
+    if (filterSupplier.value) params.supplier_name = filterSupplier.value
     const { data } = await listPlating(params)
     rows.value = data
   } finally {
@@ -104,5 +110,10 @@ const columns = [
   },
 ]
 
-onMounted(load)
+onMounted(async () => {
+  getPlatingSuppliers().then(({ data }) => {
+    supplierOptions.value = data.map((v) => ({ label: v, value: v }))
+  }).catch(() => {})
+  await load()
+})
 </script>

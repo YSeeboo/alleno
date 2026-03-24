@@ -8,6 +8,8 @@
     <div class="filter-bar">
       <n-select v-model:value="filterStatus" :options="statusOptions" clearable placeholder="筛选状态"
         style="width: 140px;" @update:value="load" />
+      <n-select v-model:value="filterSupplier" :options="supplierOptions" clearable placeholder="筛选商家"
+        style="width: 160px;" @update:value="load" />
       <div class="filter-bar-end">
         <n-button type="primary" @click="router.push('/handcraft/create')">新建手工单</n-button>
       </div>
@@ -23,7 +25,7 @@
 import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDialog, useMessage, NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
-import { listHandcraft, deleteHandcraft } from '@/api/handcraft'
+import { listHandcraft, deleteHandcraft, getHandcraftSuppliers } from '@/api/handcraft'
 
 const router = useRouter()
 const dialog = useDialog()
@@ -32,6 +34,8 @@ const loading = ref(true)
 const deletingId = ref(null)
 const rows = ref([])
 const filterStatus = ref(null)
+const filterSupplier = ref(null)
+const supplierOptions = ref([])
 const statusOptions = [
   { label: '待发出', value: 'pending' },
   { label: '进行中', value: 'processing' },
@@ -43,7 +47,9 @@ const statusBadge = { pending: 'badge-amber', processing: 'badge-indigo', comple
 const load = async () => {
   loading.value = true
   try {
-    const params = filterStatus.value ? { status: filterStatus.value } : {}
+    const params = {}
+    if (filterStatus.value) params.status = filterStatus.value
+    if (filterSupplier.value) params.supplier_name = filterSupplier.value
     const { data } = await listHandcraft(params)
     rows.value = data
   } finally {
@@ -103,5 +109,10 @@ const columns = [
   },
 ]
 
-onMounted(load)
+onMounted(async () => {
+  getHandcraftSuppliers().then(({ data }) => {
+    supplierOptions.value = data.map((v) => ({ label: v, value: v }))
+  }).catch(() => {})
+  await load()
+})
 </script>

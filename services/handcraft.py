@@ -179,11 +179,18 @@ def get_handcraft_order(db: Session, handcraft_order_id: str) -> Optional[Handcr
     return db.query(HandcraftOrder).filter(HandcraftOrder.id == handcraft_order_id).first()
 
 
-def list_handcraft_orders(db: Session, status: str = None) -> list:
+def list_handcraft_orders(db: Session, status: str = None, supplier_name: str = None) -> list:
     q = db.query(HandcraftOrder)
     if status is not None:
         q = q.filter(HandcraftOrder.status == status)
+    if supplier_name is not None:
+        q = q.filter(HandcraftOrder.supplier_name == supplier_name)
     return q.all()
+
+
+def get_handcraft_supplier_names(db: Session) -> list[str]:
+    rows = db.query(HandcraftOrder.supplier_name).distinct().all()
+    return [row[0] for row in rows]
 
 
 def get_handcraft_parts(db: Session, order_id: str) -> list:

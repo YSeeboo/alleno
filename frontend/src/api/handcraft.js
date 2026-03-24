@@ -1,6 +1,7 @@
 import api from './index'
 
 export const listHandcraft = (params) => api.get('/handcraft/', { params })
+export const getHandcraftSuppliers = () => api.get('/handcraft/suppliers')
 export const getHandcraft = (id) => api.get(`/handcraft/${id}`)
 export const deleteHandcraft = (id) => api.delete(`/handcraft/${id}`)
 export const getHandcraftParts = (id) => api.get(`/handcraft/${id}/parts`)

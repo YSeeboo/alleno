@@ -24,6 +24,7 @@ from services.handcraft import (
     add_handcraft_jewelry,
     add_handcraft_part,
     create_handcraft_order,
+    get_handcraft_supplier_names,
     delete_handcraft_order,
     delete_handcraft_jewelry,
     delete_handcraft_part,
@@ -73,9 +74,14 @@ def api_create_handcraft_order(body: HandcraftCreate, db: Session = Depends(get_
 
 
 @router.get("/", response_model=list[HandcraftResponse])
-def api_list_handcraft_orders(status: Optional[str] = None, db: Session = Depends(get_db)):
+def api_list_handcraft_orders(status: Optional[str] = None, supplier_name: Optional[str] = None, db: Session = Depends(get_db)):
     with service_errors():
-        return list_handcraft_orders(db, status=status)
+        return list_handcraft_orders(db, status=status, supplier_name=supplier_name)
+
+
+@router.get("/suppliers", response_model=list[str])
+def api_get_handcraft_supplier_names(db: Session = Depends(get_db)):
+    return get_handcraft_supplier_names(db)
 
 
 @router.get("/{order_id}", response_model=HandcraftResponse)

@@ -7,7 +7,14 @@
 
     <n-form label-placement="left" label-width="110" style="margin-bottom: 16px;">
       <n-form-item label="手工商家名称">
-        <n-input v-model:value="supplierName" style="width: 300px;" />
+        <n-select
+          v-model:value="supplierName"
+          :options="supplierOptions"
+          filterable
+          tag
+          placeholder="选择或输入手工商家名称"
+          style="width: 300px;"
+        />
       </n-form-item>
       <n-form-item label="备注">
         <n-input v-model:value="note" type="textarea" :rows="2" style="width: 300px;" />
@@ -85,12 +92,13 @@ import { useMessage } from 'naive-ui'
 import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NGrid, NGi } from 'naive-ui'
 import { listParts } from '@/api/parts'
 import { listJewelries } from '@/api/jewelries'
-import { createHandcraft } from '@/api/handcraft'
+import { createHandcraft, getHandcraftSuppliers } from '@/api/handcraft'
 import { renderOptionWithImage } from '@/utils/ui'
 
 const router = useRouter()
 const message = useMessage()
-const supplierName = ref('')
+const supplierName = ref(null)
+const supplierOptions = ref([])
 const note = ref('')
 const parts = reactive([{ part_id: null, qty: 1, unit: '个', bom_qty: null, note: '' }])
 const jewelries = reactive([{ jewelry_id: null, qty: 1, unit: '个', note: '' }])
@@ -136,7 +144,7 @@ const normalizedJewelries = () => jewelries.filter((item) => item.jewelry_id)
 const submit = async () => {
   const validParts = normalizedParts()
   const validJewelries = normalizedJewelries()
-  if (!supplierName.value) { message.warning('请输入手工商家名称'); return }
+  if (!supplierName.value?.trim()) { message.warning('请输入手工商家名称'); return }
   if (validParts.length === 0) { message.warning('请至少添加一条配件'); return }
   submitting.value = true
   try {
@@ -155,7 +163,9 @@ const submit = async () => {
 
 onMounted(async () => {
   try {
-    const [pRes, jRes] = await Promise.all([listParts(), listJewelries({ status: 'active' })])
+    const [pRes, jRes, sRes] = await Promise.all([
+      listParts(), listJewelries({ status: 'active' }), getHandcraftSuppliers(),
+    ])
     partOptions.value = pRes.data.map((p) => ({
       label: `${p.id} ${p.name}`,
       value: p.id,
@@ -172,6 +182,7 @@ onMounted(async () => {
       image: j.image,
       unit: j.unit,
     }))
+    supplierOptions.value = sRes.data.map((v) => ({ label: v, value: v }))
   } catch (_) {
     // error already shown by axios interceptor
   }
