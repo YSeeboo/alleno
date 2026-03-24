@@ -71,3 +71,4 @@ class PendingReceiveItemResponse(BaseModel):
     qty: float
     received_qty: float
     unit: Optional[str] = None
+    created_at: Optional[datetime] = None

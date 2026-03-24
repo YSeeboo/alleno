@@ -1,7 +1,7 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date as date_type
 from typing import Optional
 
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, Date
 from sqlalchemy.orm import Session, aliased
 
 from models.part import Part
@@ -301,7 +301,7 @@ def update_plating_order_status(db: Session, order_id: str, status: str) -> Plat
     return order
 
 
-def list_pending_receive_items(db: Session, part_keyword: str = None, supplier_name: str = None) -> list:
+def list_pending_receive_items(db: Session, part_keyword: str = None, supplier_name: str = None, date_on: date_type = None, exclude_item_ids: list[int] = None) -> list:
     SendPart = aliased(Part)
     ReceivePart = aliased(Part)
     q = (
@@ -318,6 +318,7 @@ def list_pending_receive_items(db: Session, part_keyword: str = None, supplier_n
             PlatingOrderItem.qty,
             PlatingOrderItem.received_qty,
             PlatingOrderItem.unit,
+            PlatingOrder.created_at,
         )
         .join(PlatingOrder, PlatingOrderItem.plating_order_id == PlatingOrder.id)
         .join(SendPart, PlatingOrderItem.part_id == SendPart.id)
@@ -329,6 +330,10 @@ def list_pending_receive_items(db: Session, part_keyword: str = None, supplier_n
     )
     if supplier_name:
         q = q.filter(PlatingOrder.supplier_name == supplier_name)
+    if date_on:
+        q = q.filter(func.cast(PlatingOrder.created_at, Date) == date_on)
+    if exclude_item_ids:
+        q = q.filter(PlatingOrderItem.id.notin_(exclude_item_ids))
     if part_keyword:
         like_pattern = f"%{part_keyword}%"
         q = q.filter(
@@ -355,6 +360,7 @@ def list_pending_receive_items(db: Session, part_keyword: str = None, supplier_n
             "qty": float(row.qty),
             "received_qty": float(row.received_qty or 0),
             "unit": row.unit,
+            "created_at": row.created_at,
         }
         for row in rows
     ]

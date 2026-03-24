@@ -29,6 +29,10 @@ class PlatingReceiptCreate(BaseModel):
         return v
 
 
+class PlatingReceiptAddItemsRequest(BaseModel):
+    items: List[PlatingReceiptItemCreate] = Field(min_length=1)
+
+
 class PlatingReceiptItemUpdate(BaseModel):
     qty: float = Field(None, gt=0)
     unit: Optional[str] = None

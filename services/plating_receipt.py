@@ -159,6 +159,86 @@ def create_plating_receipt(
     return receipt
 
 
+def add_plating_receipt_items(
+    db: Session,
+    receipt_id: str,
+    items: list,
+) -> PlatingReceipt:
+    receipt = db.query(PlatingReceipt).filter(PlatingReceipt.id == receipt_id).first()
+    if receipt is None:
+        raise ValueError(f"PlatingReceipt not found: {receipt_id}")
+    if receipt.status == "已付款":
+        raise ValueError("已付款的回收单不能添加明细")
+
+    # Gather existing plating_order_item_ids to prevent duplicates
+    existing_poi_ids = {
+        ri.plating_order_item_id
+        for ri in get_plating_receipt_items(db, receipt_id)
+    }
+
+    affected_plating_orders = set()
+
+    for item_data in items:
+        poi_id = item_data["plating_order_item_id"]
+        if poi_id in existing_poi_ids:
+            raise ValueError(f"PlatingOrderItem {poi_id} 已在该回收单中，不能重复添加")
+
+        poi = db.query(PlatingOrderItem).filter(
+            PlatingOrderItem.id == poi_id
+        ).first()
+        if poi is None:
+            raise ValueError(f"PlatingOrderItem not found: {poi_id}")
+        if poi.status not in ("电镀中", "已收回"):
+            raise ValueError(f"PlatingOrderItem {poi.id} status is '{poi.status}', cannot receive")
+
+        # Validate vendor consistency
+        plating_order = db.query(PlatingOrder).filter(PlatingOrder.id == poi.plating_order_id).first()
+        if plating_order and plating_order.supplier_name != receipt.vendor_name:
+            raise ValueError(
+                f"PlatingOrderItem {poi.id} 属于供应商「{plating_order.supplier_name}」，"
+                f"与回收单商家「{receipt.vendor_name}」不一致"
+            )
+
+        qty = item_data["qty"]
+        remaining = float(poi.qty) - float(poi.received_qty or 0)
+        if qty > remaining:
+            raise ValueError(f"PlatingOrderItem {poi.id}: 最多可回收 {remaining}, 当前填写 {qty}")
+
+        expected_part_id = item_data["part_id"]
+        receive_id = poi.receive_part_id or poi.part_id
+        if expected_part_id != receive_id:
+            raise ValueError(f"part_id mismatch for PlatingOrderItem {poi.id}")
+
+        price = Decimal(str(item_data["price"])).quantize(_Q7, rounding=ROUND_HALF_UP) if item_data.get("price") is not None else None
+        amount = (Decimal(str(qty)) * price).quantize(_Q7, rounding=ROUND_HALF_UP) if price is not None else None
+
+        db.add(PlatingReceiptItem(
+            plating_receipt_id=receipt_id,
+            plating_order_item_id=poi.id,
+            part_id=expected_part_id,
+            qty=qty,
+            unit=item_data.get("unit", "个"),
+            price=price,
+            amount=amount,
+            note=item_data.get("note"),
+        ))
+
+        _apply_receive(db, poi, qty)
+        affected_plating_orders.add(poi.plating_order_id)
+        existing_poi_ids.add(poi_id)
+
+    _recalc_total(db, receipt)
+    db.flush()
+
+    for po_id in affected_plating_orders:
+        _check_plating_order_completion(db, po_id)
+    db.flush()
+
+    db.expire(receipt, ["items"])
+    _enrich_receipt(db, receipt)
+    return receipt
+
+
 def list_plating_receipts(db: Session, vendor_name: str = None) -> list:
     q = db.query(PlatingReceipt)
     if vendor_name is not None:

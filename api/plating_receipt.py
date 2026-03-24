@@ -9,6 +9,7 @@ from database import get_db
 from schemas.part import CostDiffItem
 from services.cost_sync import detect_plating_cost_diffs
 from schemas.plating_receipt import (
+    PlatingReceiptAddItemsRequest,
     PlatingReceiptCreate,
     PlatingReceiptDeliveryImagesUpdate,
     PlatingReceiptItemUpdate,
@@ -17,6 +18,7 @@ from schemas.plating_receipt import (
     PlatingReceiptStatusUpdate,
 )
 from services.plating_receipt import (
+    add_plating_receipt_items,
     create_plating_receipt,
     delete_plating_receipt,
     delete_plating_receipt_item,
@@ -50,6 +52,23 @@ def api_create_plating_receipt(body: PlatingReceiptCreate, db: Session = Depends
             items=[item.model_dump() for item in body.items],
             status=body.status,
             note=body.note,
+        )
+    cost_diffs = detect_plating_cost_diffs(db, receipt)
+    resp = PlatingReceiptResponse.model_validate(receipt)
+    resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]
+    return resp
+
+
+@router.post("/{receipt_id}/items", response_model=PlatingReceiptResponse, status_code=201)
+def api_add_plating_receipt_items(receipt_id: str, body: PlatingReceiptAddItemsRequest, db: Session = Depends(get_db)):
+    receipt = get_plating_receipt(db, receipt_id)
+    if receipt is None:
+        raise HTTPException(status_code=404, detail=f"PlatingReceipt {receipt_id} not found")
+    with service_errors():
+        receipt = add_plating_receipt_items(
+            db,
+            receipt_id=receipt_id,
+            items=[item.model_dump() for item in body.items],
         )
     cost_diffs = detect_plating_cost_diffs(db, receipt)
     resp = PlatingReceiptResponse.model_validate(receipt)

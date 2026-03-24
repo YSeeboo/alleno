@@ -432,3 +432,151 @@ def test_create_receipt_null_price(client, db):
     assert data["items"][0]["price"] is None
     assert data["items"][0]["amount"] is None
     assert data["total_amount"] == 0.0
+
+
+def test_add_items_to_existing_receipt(client, db):
+    """POST /api/plating-receipts/{id}/items adds new items to an unpaid receipt."""
+    p1 = create_part(db, {"name": "扣1", "category": "小配件"})
+    p2 = create_part(db, {"name": "扣2", "category": "小配件"})
+    add_stock(db, "part", p1.id, 100, "初始")
+    add_stock(db, "part", p2.id, 100, "初始")
+
+    order = create_plating_order(db, "厂C", [
+        {"part_id": p1.id, "qty": 50, "plating_method": "金色"},
+        {"part_id": p2.id, "qty": 30, "plating_method": "银色"},
+    ])
+    send_plating_order(db, order.id)
+    db.flush()
+    items = get_plating_items(db, order.id)
+    poi1_id, poi2_id = items[0].id, items[1].id
+
+    # Create receipt with only p1
+    resp = client.post("/api/plating-receipts/", json={
+        "vendor_name": "厂C",
+        "items": [{"plating_order_item_id": poi1_id, "part_id": p1.id, "qty": 10, "price": 1.0}],
+    })
+    assert resp.status_code == 201
+    receipt_id = resp.json()["id"]
+    assert len(resp.json()["items"]) == 1
+
+    # Add p2
+    add_resp = client.post(f"/api/plating-receipts/{receipt_id}/items", json={
+        "items": [{"plating_order_item_id": poi2_id, "part_id": p2.id, "qty": 15, "price": 2.0}],
+    })
+    assert add_resp.status_code == 201
+    data = add_resp.json()
+    assert len(data["items"]) == 2
+    assert data["total_amount"] == 40.0  # 10*1.0 + 15*2.0
+
+    # Stock updated
+    assert get_stock(db, "part", p2.id) == 100 - 30 + 15  # sent 30, received 15
+
+
+def test_add_items_to_paid_receipt_rejected(client, db):
+    """Cannot add items to a paid receipt."""
+    p1 = create_part(db, {"name": "扣P", "category": "小配件"})
+    p2 = create_part(db, {"name": "扣Q", "category": "小配件"})
+    add_stock(db, "part", p1.id, 100, "初始")
+    add_stock(db, "part", p2.id, 100, "初始")
+
+    order = create_plating_order(db, "厂D", [
+        {"part_id": p1.id, "qty": 50, "plating_method": "金色"},
+        {"part_id": p2.id, "qty": 30, "plating_method": "银色"},
+    ])
+    send_plating_order(db, order.id)
+    db.flush()
+    items = get_plating_items(db, order.id)
+
+    resp = client.post("/api/plating-receipts/", json={
+        "vendor_name": "厂D",
+        "items": [{"plating_order_item_id": items[0].id, "part_id": p1.id, "qty": 10}],
+        "status": "已付款",
+    })
+    receipt_id = resp.json()["id"]
+
+    add_resp = client.post(f"/api/plating-receipts/{receipt_id}/items", json={
+        "items": [{"plating_order_item_id": items[1].id, "part_id": p2.id, "qty": 5}],
+    })
+    assert add_resp.status_code == 400
+
+
+def test_add_items_duplicate_poi_rejected(client, db):
+    """Cannot add a plating_order_item that is already in the receipt."""
+    part = create_part(db, {"name": "扣R", "category": "小配件"})
+    add_stock(db, "part", part.id, 100, "初始")
+
+    order = create_plating_order(db, "厂E", [
+        {"part_id": part.id, "qty": 50, "plating_method": "金色"},
+    ])
+    send_plating_order(db, order.id)
+    db.flush()
+    poi_id = get_plating_items(db, order.id)[0].id
+
+    resp = client.post("/api/plating-receipts/", json={
+        "vendor_name": "厂E",
+        "items": [{"plating_order_item_id": poi_id, "part_id": part.id, "qty": 10}],
+    })
+    receipt_id = resp.json()["id"]
+
+    # Try to add the same poi again
+    add_resp = client.post(f"/api/plating-receipts/{receipt_id}/items", json={
+        "items": [{"plating_order_item_id": poi_id, "part_id": part.id, "qty": 5}],
+    })
+    assert add_resp.status_code == 400
+
+
+def test_add_items_exceeds_remaining_rejected(client, db):
+    """Cannot add more qty than remaining for a plating order item."""
+    p1 = create_part(db, {"name": "扣S", "category": "小配件"})
+    p2 = create_part(db, {"name": "扣T", "category": "小配件"})
+    add_stock(db, "part", p1.id, 100, "初始")
+    add_stock(db, "part", p2.id, 100, "初始")
+
+    order = create_plating_order(db, "厂F", [
+        {"part_id": p1.id, "qty": 50, "plating_method": "金色"},
+        {"part_id": p2.id, "qty": 10, "plating_method": "银色"},
+    ])
+    send_plating_order(db, order.id)
+    db.flush()
+    items = get_plating_items(db, order.id)
+
+    resp = client.post("/api/plating-receipts/", json={
+        "vendor_name": "厂F",
+        "items": [{"plating_order_item_id": items[0].id, "part_id": p1.id, "qty": 10}],
+    })
+    receipt_id = resp.json()["id"]
+
+    # Try to add p2 with qty exceeding what was sent
+    add_resp = client.post(f"/api/plating-receipts/{receipt_id}/items", json={
+        "items": [{"plating_order_item_id": items[1].id, "part_id": p2.id, "qty": 999}],
+    })
+    assert add_resp.status_code == 400
+
+
+def test_add_items_vendor_mismatch_rejected(client, db):
+    """Cannot add items from a different vendor's plating order."""
+    part = create_part(db, {"name": "扣V", "category": "小配件"})
+    add_stock(db, "part", part.id, 200, "初始")
+
+    order_a = create_plating_order(db, "厂G", [{"part_id": part.id, "qty": 50, "plating_method": "金色"}])
+    send_plating_order(db, order_a.id)
+
+    order_b = create_plating_order(db, "厂H", [{"part_id": part.id, "qty": 50, "plating_method": "银色"}])
+    send_plating_order(db, order_b.id)
+    db.flush()
+
+    poi_a = get_plating_items(db, order_a.id)[0].id
+    poi_b = get_plating_items(db, order_b.id)[0].id
+
+    # Create receipt for 厂G
+    resp = client.post("/api/plating-receipts/", json={
+        "vendor_name": "厂G",
+        "items": [{"plating_order_item_id": poi_a, "part_id": part.id, "qty": 10}],
+    })
+    receipt_id = resp.json()["id"]
+
+    # Try to add item from 厂H's order
+    add_resp = client.post(f"/api/plating-receipts/{receipt_id}/items", json={
+        "items": [{"plating_order_item_id": poi_b, "part_id": part.id, "qty": 10}],
+    })
+    assert add_resp.status_code == 400

@@ -398,3 +398,91 @@ def test_delete_plating_order_with_receive_part_id_restores_stock(client, db):
     # Everything restored: sent from A comes back, received to B reversed
     assert get_stock(db, "part", part_a.id) == pytest.approx(50.0)
     assert get_stock(db, "part", part_b.id) == pytest.approx(0.0)
+
+
+def test_pending_receive_items_include_created_at(client, db):
+    """GET /api/plating/items/pending-receive returns created_at field."""
+    from services.plating import create_plating_order, send_plating_order
+
+    part = create_part(db, {"name": "测试扣", "category": "小配件"})
+    add_stock(db, "part", part.id, 100, "初始")
+    order = create_plating_order(db, "厂A", [{"part_id": part.id, "qty": 50, "plating_method": "金色"}])
+    send_plating_order(db, order.id)
+    db.flush()
+
+    resp = client.get("/api/plating/items/pending-receive")
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) >= 1
+    assert "created_at" in items[0]
+    assert items[0]["created_at"] is not None
+
+
+def test_pending_receive_items_filter_date_on(client, db):
+    """GET /api/plating/items/pending-receive?date_on=YYYY-MM-DD filters by created_at date."""
+    from services.plating import create_plating_order, send_plating_order
+    from models.plating_order import PlatingOrder
+    from datetime import datetime
+
+    part = create_part(db, {"name": "扣A", "category": "小配件"})
+    add_stock(db, "part", part.id, 200, "初始")
+
+    # Order 1 — today
+    o1 = create_plating_order(db, "厂A", [{"part_id": part.id, "qty": 10, "plating_method": "金色"}])
+    send_plating_order(db, o1.id)
+
+    # Order 2 — force to a different date
+    o2 = create_plating_order(db, "厂A", [{"part_id": part.id, "qty": 20, "plating_method": "银色"}])
+    send_plating_order(db, o2.id)
+    db.query(PlatingOrder).filter(PlatingOrder.id == o2.id).update(
+        {"created_at": datetime(2025, 1, 15, 10, 0, 0)}
+    )
+    db.flush()
+
+    # Filter by o2's date — should only return o2's item
+    resp = client.get("/api/plating/items/pending-receive", params={"date_on": "2025-01-15"})
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) == 1
+    assert items[0]["plating_order_id"] == o2.id
+
+    # Filter by today — should only return o1's item
+    from time_utils import now_beijing
+    today_str = now_beijing().strftime("%Y-%m-%d")
+    resp2 = client.get("/api/plating/items/pending-receive", params={"date_on": today_str})
+    items2 = resp2.json()
+    assert len(items2) == 1
+    assert items2[0]["plating_order_id"] == o1.id
+
+
+def test_pending_receive_items_exclude_item_ids(client, db):
+    """GET /api/plating/items/pending-receive?exclude_item_ids=1,2 excludes those items."""
+    from services.plating import create_plating_order, send_plating_order, get_plating_items
+
+    p1 = create_part(db, {"name": "扣X", "category": "小配件"})
+    p2 = create_part(db, {"name": "扣Y", "category": "小配件"})
+    add_stock(db, "part", p1.id, 100, "初始")
+    add_stock(db, "part", p2.id, 100, "初始")
+
+    order = create_plating_order(db, "厂B", [
+        {"part_id": p1.id, "qty": 10, "plating_method": "金色"},
+        {"part_id": p2.id, "qty": 20, "plating_method": "银色"},
+    ])
+    send_plating_order(db, order.id)
+    db.flush()
+
+    items = get_plating_items(db, order.id)
+    exclude_id = items[0].id
+
+    # Without exclusion — both items
+    resp_all = client.get("/api/plating/items/pending-receive", params={"supplier_name": "厂B"})
+    assert len(resp_all.json()) == 2
+
+    # With exclusion — only the non-excluded item
+    resp_excl = client.get("/api/plating/items/pending-receive", params={
+        "supplier_name": "厂B",
+        "exclude_item_ids": str(exclude_id),
+    })
+    items_excl = resp_excl.json()
+    assert len(items_excl) == 1
+    assert items_excl[0]["id"] != exclude_id

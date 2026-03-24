@@ -1,3 +1,4 @@
+from datetime import date as date_type
 from typing import Optional
 from urllib.parse import quote
 
@@ -68,9 +69,24 @@ def api_list_plating_orders(status: Optional[str] = None, db: Session = Depends(
 
 
 @router.get("/items/pending-receive", response_model=list[PendingReceiveItemResponse])
-def api_list_pending_receive_items(part_keyword: str = None, supplier_name: str = None, db: Session = Depends(get_db)):
+def api_list_pending_receive_items(
+    part_keyword: str = None,
+    supplier_name: str = None,
+    date_on: date_type = None,
+    exclude_item_ids: str = None,
+    db: Session = Depends(get_db),
+):
+    parsed_exclude = None
+    if exclude_item_ids:
+        try:
+            parsed_exclude = [int(x.strip()) for x in exclude_item_ids.split(",") if x.strip()]
+        except ValueError:
+            parsed_exclude = None
     with service_errors():
-        return list_pending_receive_items(db, part_keyword, supplier_name=supplier_name)
+        return list_pending_receive_items(
+            db, part_keyword, supplier_name=supplier_name,
+            date_on=date_on, exclude_item_ids=parsed_exclude,
+        )
 
 
 @router.get("/{order_id}", response_model=PlatingResponse)
