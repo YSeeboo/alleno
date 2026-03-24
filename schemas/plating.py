@@ -1,6 +1,6 @@
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PlatingItemCreate(BaseModel):
@@ -16,6 +16,14 @@ class PlatingCreate(BaseModel):
     supplier_name: str
     items: List[PlatingItemCreate] = Field(min_length=1)
     note: Optional[str] = None
+
+    @field_validator("supplier_name")
+    @classmethod
+    def supplier_name_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("电镀厂名称不能为空")
+        return v
 
 
 class ReceiptItem(BaseModel):

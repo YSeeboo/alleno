@@ -422,3 +422,57 @@ def test_create_handcraft_order_negative_jewelry_qty(client, db):
         "jewelries": [{"jewelry_id": jewelry.id, "qty": -2}],
     })
     assert resp.status_code == 422
+
+
+def test_handcraft_suppliers_endpoint(client, db):
+    """GET /api/handcraft/suppliers returns distinct supplier names."""
+    part, jewelry = _setup(db)
+    db.commit()
+    client.post("/api/handcraft/", json={
+        "supplier_name": "商家A",
+        "parts": [{"part_id": part.id, "qty": 5}],
+    })
+    client.post("/api/handcraft/", json={
+        "supplier_name": "商家A",
+        "parts": [{"part_id": part.id, "qty": 5}],
+    })
+    client.post("/api/handcraft/", json={
+        "supplier_name": "商家B",
+        "parts": [{"part_id": part.id, "qty": 5}],
+    })
+
+    resp = client.get("/api/handcraft/suppliers")
+    assert resp.status_code == 200
+    assert set(resp.json()) == {"商家A", "商家B"}
+
+
+def test_list_handcraft_filter_supplier(client, db):
+    """GET /api/handcraft/?supplier_name=X filters by supplier."""
+    part, jewelry = _setup(db)
+    db.commit()
+    client.post("/api/handcraft/", json={
+        "supplier_name": "商家C",
+        "parts": [{"part_id": part.id, "qty": 5}],
+    })
+    client.post("/api/handcraft/", json={
+        "supplier_name": "商家D",
+        "parts": [{"part_id": part.id, "qty": 5}],
+    })
+
+    resp = client.get("/api/handcraft/", params={"supplier_name": "商家C"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["supplier_name"] == "商家C"
+
+
+def test_handcraft_supplier_name_stripped(client, db):
+    """Supplier name with whitespace is stripped at schema level."""
+    part, jewelry = _setup(db)
+    db.commit()
+    resp = client.post("/api/handcraft/", json={
+        "supplier_name": "  商家E  ",
+        "parts": [{"part_id": part.id, "qty": 5}],
+    })
+    assert resp.status_code == 201
+    assert resp.json()["supplier_name"] == "商家E"

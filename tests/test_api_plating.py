@@ -523,3 +523,48 @@ def test_pending_receive_items_exclude_multiple_ids(client, db):
     result = resp.json()
     assert len(result) == 1
     assert result[0]["id"] == id3
+
+
+def test_plating_suppliers_endpoint(client, db):
+    """GET /api/plating/suppliers returns distinct supplier names."""
+    from services.plating import create_plating_order
+
+    p = create_part(db, {"name": "S1", "category": "小配件"})
+    create_plating_order(db, "厂X", [{"part_id": p.id, "qty": 5, "plating_method": "金色"}])
+    create_plating_order(db, "厂X", [{"part_id": p.id, "qty": 5, "plating_method": "银色"}])
+    create_plating_order(db, "厂Y", [{"part_id": p.id, "qty": 5, "plating_method": "金色"}])
+    db.flush()
+
+    resp = client.get("/api/plating/suppliers")
+    assert resp.status_code == 200
+    names = resp.json()
+    assert set(names) == {"厂X", "厂Y"}
+
+
+def test_list_plating_orders_filter_supplier(client, db):
+    """GET /api/plating/?supplier_name=X filters by supplier."""
+    from services.plating import create_plating_order
+
+    p = create_part(db, {"name": "S2", "category": "小配件"})
+    create_plating_order(db, "厂A", [{"part_id": p.id, "qty": 5, "plating_method": "金色"}])
+    create_plating_order(db, "厂B", [{"part_id": p.id, "qty": 5, "plating_method": "银色"}])
+    db.flush()
+
+    resp = client.get("/api/plating/", params={"supplier_name": "厂A"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["supplier_name"] == "厂A"
+
+
+def test_plating_supplier_name_stripped(client, db):
+    """Supplier name with whitespace is stripped at schema level."""
+    p = create_part(db, {"name": "S3", "category": "小配件"})
+    db.flush()
+
+    resp = client.post("/api/plating/", json={
+        "supplier_name": "  厂Z  ",
+        "items": [{"part_id": p.id, "qty": 5, "plating_method": "金色"}],
+    })
+    assert resp.status_code == 201
+    assert resp.json()["supplier_name"] == "厂Z"
