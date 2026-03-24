@@ -486,3 +486,9 @@ def test_pending_receive_items_exclude_item_ids(client, db):
     items_excl = resp_excl.json()
     assert len(items_excl) == 1
     assert items_excl[0]["id"] != exclude_id
+
+
+def test_pending_receive_items_exclude_item_ids_invalid(client, db):
+    """GET /api/plating/items/pending-receive?exclude_item_ids=1,a returns 400."""
+    resp = client.get("/api/plating/items/pending-receive", params={"exclude_item_ids": "1,abc"})
+    assert resp.status_code == 400

@@ -81,7 +81,7 @@ def api_list_pending_receive_items(
         try:
             parsed_exclude = [int(x.strip()) for x in exclude_item_ids.split(",") if x.strip()]
         except ValueError:
-            parsed_exclude = None
+            raise HTTPException(status_code=400, detail="exclude_item_ids must be comma-separated integers")
     with service_errors():
         return list_pending_receive_items(
             db, part_keyword, supplier_name=supplier_name,

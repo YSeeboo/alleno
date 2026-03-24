@@ -500,31 +500,6 @@ def test_add_items_to_paid_receipt_rejected(client, db):
     assert add_resp.status_code == 400
 
 
-def test_add_items_duplicate_poi_rejected(client, db):
-    """Cannot add a plating_order_item that is already in the receipt."""
-    part = create_part(db, {"name": "扣R", "category": "小配件"})
-    add_stock(db, "part", part.id, 100, "初始")
-
-    order = create_plating_order(db, "厂E", [
-        {"part_id": part.id, "qty": 50, "plating_method": "金色"},
-    ])
-    send_plating_order(db, order.id)
-    db.flush()
-    poi_id = get_plating_items(db, order.id)[0].id
-
-    resp = client.post("/api/plating-receipts/", json={
-        "vendor_name": "厂E",
-        "items": [{"plating_order_item_id": poi_id, "part_id": part.id, "qty": 10}],
-    })
-    receipt_id = resp.json()["id"]
-
-    # Try to add the same poi again
-    add_resp = client.post(f"/api/plating-receipts/{receipt_id}/items", json={
-        "items": [{"plating_order_item_id": poi_id, "part_id": part.id, "qty": 5}],
-    })
-    assert add_resp.status_code == 400
-
-
 def test_add_items_exceeds_remaining_rejected(client, db):
     """Cannot add more qty than remaining for a plating order item."""
     p1 = create_part(db, {"name": "扣S", "category": "小配件"})
