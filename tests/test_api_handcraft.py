@@ -548,3 +548,57 @@ def test_pending_receive_empty_when_no_processing_orders(client, db):
     resp = client.get("/api/handcraft/items/pending-receive")
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+def test_pending_receive_exclude_multiple_part_ids(client, db):
+    """Multiple exclude_part_item_ids via repeated query key works."""
+    from services.part import create_part as svc_create_part
+
+    p1 = svc_create_part(db, {"name": "MP1", "category": "小配件"})
+    p2 = svc_create_part(db, {"name": "MP2", "category": "小配件"})
+    p3 = svc_create_part(db, {"name": "MP3", "category": "小配件"})
+    for p in (p1, p2, p3):
+        add_stock(db, "part", p.id, 100, "初始")
+    db.commit()
+    resp = client.post("/api/handcraft/", json={
+        "supplier_name": "Multi",
+        "parts": [
+            {"part_id": p1.id, "qty": 5},
+            {"part_id": p2.id, "qty": 5},
+            {"part_id": p3.id, "qty": 5},
+        ],
+    })
+    order_id = resp.json()["id"]
+    client.post(f"/api/handcraft/{order_id}/send")
+
+    all_resp = client.get("/api/handcraft/items/pending-receive", params={"supplier_name": "Multi"})
+    all_parts = [i for i in all_resp.json() if i["item_type"] == "part"]
+    assert len(all_parts) == 3
+
+    ids_to_exclude = [all_parts[0]["id"], all_parts[1]["id"]]
+    # Use repeated key format: exclude_part_item_ids=X&exclude_part_item_ids=Y
+    resp = client.get(
+        f"/api/handcraft/items/pending-receive"
+        f"?supplier_name=Multi"
+        f"&exclude_part_item_ids={ids_to_exclude[0]}"
+        f"&exclude_part_item_ids={ids_to_exclude[1]}"
+    )
+    assert resp.status_code == 200
+    remaining = [i for i in resp.json() if i["item_type"] == "part"]
+    assert len(remaining) == 1
+    assert remaining[0]["id"] == all_parts[2]["id"]
+
+
+def test_pending_receive_filter_by_date_on(client, db):
+    """date_on filter returns only items from orders created on that date."""
+    order_id, part, jewelry = _create_and_send(client, db)
+    from datetime import date
+    today = date.today().isoformat()
+
+    resp = client.get("/api/handcraft/items/pending-receive", params={"date_on": today})
+    assert resp.status_code == 200
+    assert len(resp.json()) > 0
+
+    resp2 = client.get("/api/handcraft/items/pending-receive", params={"date_on": "2000-01-01"})
+    assert resp2.status_code == 200
+    assert len(resp2.json()) == 0
