@@ -10,6 +10,11 @@
         <template #header-extra>
           <n-space size="small">
             <n-button
+              @click="router.push(`/handcraft-receipts?supplier_name=${encodeURIComponent(order.supplier_name)}`)"
+            >
+              查看回收单
+            </n-button>
+            <n-button
               :loading="downloadingExcel"
               class="export-excel-btn"
               @click="doDownloadExcel"
@@ -156,6 +161,7 @@
     </n-spin>
 
     <n-modal v-model:show="addModalVisible" preset="card" title="添加配件明细" style="width: 500px;">
+      <form @submit.prevent="doAddItem">
       <n-form label-placement="left" label-width="90">
         <n-form-item label="配件">
           <n-select
@@ -177,6 +183,7 @@
           <n-input v-model:value="addForm.note" placeholder="备注（可选）" />
         </n-form-item>
       </n-form>
+      </form>
       <template #footer>
         <n-space justify="end">
           <n-button @click="addModalVisible = false">取消</n-button>
@@ -186,6 +193,7 @@
     </n-modal>
 
     <n-modal v-model:show="editModalVisible" preset="card" title="修改配件明细" style="width: 500px;">
+      <form @submit.prevent="doEditItem">
       <n-form label-placement="left" label-width="90">
         <n-form-item label="数量">
           <n-input-number v-model:value="editForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
@@ -194,6 +202,7 @@
           <n-select v-model:value="editForm.unit" :options="unitOptions" />
         </n-form-item>
       </n-form>
+      </form>
       <template #footer>
         <n-space justify="end">
           <n-button @click="editModalVisible = false">取消</n-button>
@@ -689,6 +698,9 @@ const renderEditableCell = (field, row, emptyLabel) => {
   )
 }
 
+const partStatusLabel = { '未送出': '未送出', '制作中': '制作中', '已收回': '已收回' }
+const partStatusBadge = { '未送出': 'badge-gray', '制作中': 'badge-blue', '已收回': 'badge-green' }
+
 const itemColumns = [
   { title: '配件编号', key: 'part_id', width: 110 },
   {
@@ -704,6 +716,13 @@ const itemColumns = [
     render: (row) => renderEditableCell('color', row, '添加颜色'),
   },
   { title: '发出数量', key: 'qty' },
+  { title: '已回收', key: 'received_qty', width: 80, render: (r) => r.received_qty ?? 0 },
+  {
+    title: '状态',
+    key: 'status',
+    width: 80,
+    render: (r) => h('span', { class: `badge ${partStatusBadge[r.status] || 'badge-gray'}` }, `• ${partStatusLabel[r.status] || r.status || '未送出'}`),
+  },
   { title: '单位', key: 'unit', render: (r) => r.unit || '-' },
   {
     title: '备注',
