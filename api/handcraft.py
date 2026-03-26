@@ -18,6 +18,7 @@ from schemas.handcraft import (
     HandcraftPartItemResponse,
     HandcraftResponse,
 )
+from services.order_todo import get_links_for_production_item, delete_link
 from services.handcraft_excel import build_handcraft_order_excel
 from services.handcraft_pdf import build_handcraft_order_pdf
 from services.handcraft import (
@@ -256,3 +257,29 @@ def api_update_handcraft_delivery_images(order_id: str, body: HandcraftDeliveryI
     with service_errors():
         order = update_handcraft_delivery_images(db, order_id, body.delivery_images)
     return order
+
+
+@router.get("/{order_id}/parts/{item_id}/orders")
+def api_get_handcraft_part_orders(order_id: str, item_id: int, db: Session = Depends(get_db)):
+    """获取手工配件项关联的订单列表"""
+    return get_links_for_production_item(db, handcraft_part_item_id=item_id)
+
+
+@router.delete("/{order_id}/parts/{item_id}/orders/{link_id}", status_code=204)
+def api_delete_handcraft_part_order_link(order_id: str, item_id: int, link_id: int, db: Session = Depends(get_db)):
+    """从手工单侧解除配件项关联"""
+    with service_errors():
+        delete_link(db, link_id)
+
+
+@router.get("/{order_id}/jewelries/{item_id}/orders")
+def api_get_handcraft_jewelry_orders(order_id: str, item_id: int, db: Session = Depends(get_db)):
+    """获取手工饰品项关联的订单列表"""
+    return get_links_for_production_item(db, handcraft_jewelry_item_id=item_id)
+
+
+@router.delete("/{order_id}/jewelries/{item_id}/orders/{link_id}", status_code=204)
+def api_delete_handcraft_jewelry_order_link(order_id: str, item_id: int, link_id: int, db: Session = Depends(get_db)):
+    """从手工单侧解除饰品项关联"""
+    with service_errors():
+        delete_link(db, link_id)

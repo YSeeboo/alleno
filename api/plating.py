@@ -16,7 +16,9 @@ from schemas.plating import (
     PlatingItemCreate,
     PlatingItemResponse,
     PlatingResponse,
+    PlatingUpdate,
 )
+from services.order_todo import get_links_for_production_item, delete_link
 from services.plating_excel import build_plating_order_excel
 from services.plating_pdf import build_plating_order_pdf
 from services.plating import (
@@ -32,6 +34,7 @@ from services.plating import (
     send_plating_order,
     update_plating_delivery_images,
     update_plating_item,
+    update_plating_order,
     update_plating_order_status,
 )
 
@@ -95,6 +98,12 @@ def api_get_plating_order(order_id: str, db: Session = Depends(get_db)):
     if order is None:
         raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
     return order
+
+
+@router.patch("/{order_id}", response_model=PlatingResponse)
+def api_update_plating_order(order_id: str, body: PlatingUpdate, db: Session = Depends(get_db)):
+    with service_errors():
+        return update_plating_order(db, order_id, body.model_dump())
 
 
 @router.delete("/{order_id}", status_code=204)
@@ -206,3 +215,16 @@ def api_update_plating_delivery_images(order_id: str, body: PlatingDeliveryImage
     with service_errors():
         order = update_plating_delivery_images(db, order_id, body.delivery_images)
     return order
+
+
+@router.get("/{order_id}/items/{item_id}/orders")
+def api_get_plating_item_orders(order_id: str, item_id: int, db: Session = Depends(get_db)):
+    """获取电镀配件项关联的订单列表"""
+    return get_links_for_production_item(db, plating_order_item_id=item_id)
+
+
+@router.delete("/{order_id}/items/{item_id}/orders/{link_id}", status_code=204)
+def api_delete_plating_item_order_link(order_id: str, item_id: int, link_id: int, db: Session = Depends(get_db)):
+    """从电镀单侧解除关联"""
+    with service_errors():
+        delete_link(db, link_id)
