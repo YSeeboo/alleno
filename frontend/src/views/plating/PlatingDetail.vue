@@ -27,7 +27,29 @@
         </template>
         <n-descriptions :column="3" bordered>
           <n-descriptions-item label="电镀单号">{{ order.id }}</n-descriptions-item>
-          <n-descriptions-item label="电镀厂">{{ order.supplier_name }}</n-descriptions-item>
+          <n-descriptions-item label="电镀厂">
+            <template v-if="editingSupplier && order.status === 'pending'">
+              <n-space align="center" size="small">
+                <n-select
+                  v-model:value="editingSupplierValue"
+                  :options="supplierSelectOptions"
+                  filterable
+                  tag
+                  size="small"
+                  placeholder="选择或输入电镀厂"
+                  style="width: 200px;"
+                />
+                <n-button size="small" type="primary" :loading="savingSupplier" @click="saveSupplierName">确认</n-button>
+                <n-button size="small" :disabled="savingSupplier" @click="editingSupplier = false">取消</n-button>
+              </n-space>
+            </template>
+            <template v-else>
+              {{ order.supplier_name }}
+              <n-button v-if="order.status === 'pending'" text type="primary" size="small" style="margin-left: 6px;" @click="startEditSupplier">
+                <template #icon><n-icon :component="CreateOutline" /></template>
+              </n-button>
+            </template>
+          </n-descriptions-item>
           <n-descriptions-item label="状态">
             <n-popselect
               :value="order?.status"
@@ -147,7 +169,16 @@
       </n-card>
 
       <n-card title="电镀明细">
-        <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" />
+        <template #header-extra>
+          <n-button
+            v-if="items.length > 0"
+            size="small"
+            @click="openBatchLinkModal"
+          >
+            批量关联订单
+          </n-button>
+        </template>
+        <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" :row-key="(r) => r.id" />
         <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
         <div v-if="order?.status === 'pending'" style="margin-top: 12px;">
           <n-button dashed style="width: 100%;" @click="openAddModal">+ 添加明细行</n-button>
@@ -157,6 +188,7 @@
 
     <!-- Add Item Modal -->
     <n-modal v-model:show="addModalVisible" preset="card" title="添加电镀明细" style="width: 500px;">
+      <form @submit.prevent="doAddItem">
       <n-form label-placement="left" label-width="90">
         <n-form-item label="发出配件">
           <n-select
@@ -220,6 +252,7 @@
           <n-input v-model:value="addForm.note" placeholder="备注（可选）" />
         </n-form-item>
       </n-form>
+      </form>
       <template #footer>
         <n-space justify="end">
           <n-button @click="addModalVisible = false">取消</n-button>
@@ -237,6 +270,63 @@
       @uploaded="handleDeliveryImageUploaded"
     />
 
+    <!-- Single Link Modal: select order → select matching todo item → confirm -->
+    <n-modal v-model:show="linkModalVisible" preset="card" title="关联订单" style="width: 600px;">
+      <n-form label-placement="left" label-width="80">
+        <n-form-item label="选择订单">
+          <n-select
+            v-model:value="linkForm.orderId"
+            :options="orderOptions"
+            filterable
+            placeholder="搜索订单号或客户名"
+            @update:value="onLinkOrderSelect"
+          />
+        </n-form-item>
+        <n-form-item v-if="linkTodoItems.length > 0" label="匹配配件">
+          <n-radio-group v-model:value="linkForm.todoItemId">
+            <n-space vertical>
+              <n-radio v-for="t in linkTodoItems" :key="t.id" :value="t.id">
+                {{ t.part_name || t.part_id }} — 需要 {{ t.required_qty }}
+              </n-radio>
+            </n-space>
+          </n-radio-group>
+        </n-form-item>
+        <div v-if="linkForm.orderId && linkTodoItems.length === 0 && !linkTodoLoading" style="color: #999; padding: 8px 0;">
+          该订单配件清单中没有匹配的配件
+        </div>
+        <n-spin v-if="linkTodoLoading" size="small" />
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="linkModalVisible = false">取消</n-button>
+          <n-button type="primary" :loading="linkSubmitting" :disabled="!linkForm.todoItemId" @click="doCreateLink">确认关联</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- Batch Link Modal: select order → auto-match by part_id -->
+    <n-modal v-model:show="batchLinkModalVisible" preset="card" title="批量关联订单" style="width: 500px;">
+      <n-form label-placement="left" label-width="80">
+        <n-form-item label="选择订单">
+          <n-select
+            v-model:value="batchLinkOrderId"
+            :options="orderOptions"
+            filterable
+            placeholder="搜索订单号或客户名"
+          />
+        </n-form-item>
+        <div style="color: #666; font-size: 13px; padding: 4px 0;">
+          将自动按配件编号匹配该订单配件清单中的行，所有明细项都会参与匹配
+        </div>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="batchLinkModalVisible = false">取消</n-button>
+          <n-button type="primary" :loading="batchLinkSubmitting" :disabled="!batchLinkOrderId" @click="doBatchLink">确认批量关联</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
   </div>
 </template>
 
@@ -248,15 +338,20 @@ import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
   NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon, NImage,
+  NRadioGroup, NRadio,
 } from 'naive-ui'
 import { CreateOutline } from '@vicons/ionicons5'
 import {
   getPlating, getPlatingItems, sendPlating,
   addPlatingItem, updatePlatingItem, deletePlatingItem,
-  updatePlatingDeliveryImages, downloadPlatingExcel, downloadPlatingPdf,
+  updatePlatingDeliveryImages, updatePlatingOrder,
+  downloadPlatingExcel, downloadPlatingPdf,
+  getPlatingItemOrders, deletePlatingItemOrderLink,
 } from '@/api/plating'
+import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { changeOrderStatus } from '@/api/kanban'
 import { listParts, findOrCreateVariant, createPartVariant, getColorVariants } from '@/api/parts'
+import { listOrders, getTodo, createLink, batchLink } from '@/api/orders'
 import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 
@@ -278,6 +373,46 @@ const showDeliveryImageModal = ref(false)
 const deliveryImagesSaving = ref(false)
 const pendingDeliveryImages = ref([])
 const retryingPendingImage = ref('')
+
+const editingSupplier = ref(false)
+const editingSupplierValue = ref('')
+const savingSupplier = ref(false)
+const supplierSelectOptions = ref([])
+
+const loadSupplierOptions = async () => {
+  try {
+    const { data } = await listSuppliers({ type: 'plating' })
+    supplierSelectOptions.value = data.map((s) => ({ label: s.name, value: s.name }))
+  } catch (_) {}
+}
+
+const startEditSupplier = () => {
+  editingSupplierValue.value = order.value?.supplier_name || ''
+  editingSupplier.value = true
+  loadSupplierOptions()
+}
+
+const saveSupplierName = async () => {
+  const trimmed = (editingSupplierValue.value || '').trim()
+  if (!trimmed) { message.warning('电镀厂名称不能为空'); return }
+  if (trimmed === order.value?.supplier_name) { editingSupplier.value = false; return }
+  savingSupplier.value = true
+  try {
+    // Auto-create supplier if new (swallow duplicate 400, rethrow others)
+    const isNew = !supplierSelectOptions.value.some((o) => o.value === trimmed)
+    if (isNew) {
+      try { await createSupplier({ name: trimmed, type: 'plating' }) } catch (e) { if (e.response?.status !== 400) throw e }
+    }
+    await updatePlatingOrder(route.params.id, { supplier_name: trimmed })
+    await loadData()
+    message.success('电镀厂名称已更新')
+    editingSupplier.value = false
+  } catch (e) {
+    message.error(e.response?.data?.detail || '更新失败')
+  } finally {
+    savingSupplier.value = false
+  }
+}
 
 const statusType = { pending: 'default', processing: 'info', completed: 'success' }
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
@@ -888,6 +1023,164 @@ const renderNoteCell = (row) => {
   )
 }
 
+// --- Order Link ---
+const orderOptions = ref([])
+const itemOrderLinks = ref({}) // itemId -> [{order_id, customer_name, link_id}]
+
+const linkModalVisible = ref(false)
+const linkForm = ref({ itemId: null, partId: null, orderId: null, todoItemId: null })
+const linkTodoItems = ref([])
+const linkTodoLoading = ref(false)
+const linkSubmitting = ref(false)
+
+const batchLinkModalVisible = ref(false)
+const batchLinkOrderId = ref(null)
+const batchLinkSubmitting = ref(false)
+
+const loadOrderOptions = async () => {
+  try {
+    const { data } = await listOrders()
+    orderOptions.value = data.map((o) => ({
+      label: `${o.id} — ${o.customer_name}`,
+      value: o.id,
+    }))
+  } catch (_) {}
+}
+
+const loadItemOrderLinks = async () => {
+  const map = {}
+  await Promise.all(items.value.map(async (item) => {
+    try {
+      const { data } = await getPlatingItemOrders(route.params.id, item.id)
+      map[item.id] = data
+    } catch (_) {
+      map[item.id] = []
+    }
+  }))
+  itemOrderLinks.value = map
+}
+
+const openLinkModal = (row) => {
+  linkForm.value = { itemId: row.id, partId: row.part_id, orderId: null, todoItemId: null }
+  linkTodoItems.value = []
+  linkModalVisible.value = true
+  loadOrderOptions()
+}
+
+const onLinkOrderSelect = async (orderId) => {
+  linkForm.value.todoItemId = null
+  linkTodoItems.value = []
+  if (!orderId) return
+  linkTodoLoading.value = true
+  try {
+    const { data } = await getTodo(orderId)
+    // Filter to matching part_id
+    linkTodoItems.value = data.filter((t) => t.part_id === linkForm.value.partId)
+    if (linkTodoItems.value.length === 1) {
+      linkForm.value.todoItemId = linkTodoItems.value[0].id
+    }
+  } catch (_) {
+    linkTodoItems.value = []
+  } finally {
+    linkTodoLoading.value = false
+  }
+}
+
+const doCreateLink = async () => {
+  if (!linkForm.value.todoItemId) return
+  linkSubmitting.value = true
+  try {
+    await createLink(linkForm.value.orderId, {
+      order_todo_item_id: linkForm.value.todoItemId,
+      plating_order_item_id: linkForm.value.itemId,
+    })
+    message.success('关联成功')
+    linkModalVisible.value = false
+    await loadItemOrderLinks()
+  } catch (e) {
+    message.error(e.response?.data?.detail || '关联失败')
+  } finally {
+    linkSubmitting.value = false
+  }
+}
+
+const openBatchLinkModal = () => {
+  batchLinkOrderId.value = null
+  batchLinkModalVisible.value = true
+  loadOrderOptions()
+}
+
+const doBatchLink = async () => {
+  if (!batchLinkOrderId.value) return
+  batchLinkSubmitting.value = true
+  try {
+    const allItemIds = items.value.map((i) => i.id)
+    const { data } = await batchLink(batchLinkOrderId.value, {
+      order_id: batchLinkOrderId.value,
+      plating_order_item_ids: allItemIds,
+    })
+    const msg = [`成功关联 ${data.linked} 项`]
+    if (data.skipped.length > 0) {
+      msg.push(`跳过: ${data.skipped.join(', ')}`)
+    }
+    message.success(msg.join('，'))
+    batchLinkModalVisible.value = false
+    await loadItemOrderLinks()
+  } catch (e) {
+    message.error(e.response?.data?.detail || '批量关联失败')
+  } finally {
+    batchLinkSubmitting.value = false
+  }
+}
+
+const doUnlinkPlatingItem = (itemId, link) => {
+  dialog.warning({
+    title: '解除关联',
+    content: `确认解除与订单「${link.order_id}」的关联？`,
+    positiveText: '确认',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await deletePlatingItemOrderLink(route.params.id, itemId, link.link_id)
+        message.success('已解除关联')
+        await loadItemOrderLinks()
+      } catch (_) {}
+    },
+  })
+}
+
+const renderOrderLinkCell = (row) => {
+  const links = itemOrderLinks.value[row.id] || []
+  if (links.length === 0) {
+    return h(NButton, {
+      size: 'small',
+      text: true,
+      type: 'primary',
+      onClick: () => openLinkModal(row),
+    }, { default: () => '关联订单' })
+  }
+  return h('div', { style: 'display: flex; flex-wrap: wrap; gap: 4px; align-items: center;' }, [
+    ...links.map((link) => h('span', {
+      style: 'display: inline-flex; align-items: center; gap: 2px; background: #f0f9eb; border: 1px solid #c2e7b0; border-radius: 4px; padding: 1px 6px; font-size: 12px;',
+    }, [
+      h('span', null, link.order_id),
+      h(NButton, {
+        size: 'tiny',
+        quaternary: true,
+        type: 'error',
+        style: 'padding: 0 2px;',
+        onClick: () => doUnlinkPlatingItem(row.id, link),
+      }, { default: () => '×' }),
+    ])),
+    h(NButton, {
+      size: 'tiny',
+      text: true,
+      type: 'primary',
+      onClick: () => openLinkModal(row),
+    }, { default: () => '+' }),
+  ])
+}
+
 const itemColumns = [
   { title: '配件编号', key: 'part_id', width: 110 },
   {
@@ -1003,6 +1296,12 @@ const itemColumns = [
     render: (row) => renderNoteCell(row),
   },
   {
+    title: '关联订单',
+    key: 'order_link',
+    minWidth: 140,
+    render: (row) => renderOrderLinkCell(row),
+  },
+  {
     title: '操作',
     key: 'actions',
     width: 100,
@@ -1054,6 +1353,7 @@ onMounted(async () => {
     }))
     colorVariantList.value = colorsRes.data
     await loadData()
+    await loadItemOrderLinks()
   } finally {
     loading.value = false
   }
