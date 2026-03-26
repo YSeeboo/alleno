@@ -22,18 +22,19 @@
 
 <script setup>
 import { ref, onMounted, h } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useDialog, useMessage, NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
 import { listHandcraftReceipts, deleteHandcraftReceipt, getHandcraftReceiptSuppliers } from '@/api/handcraftReceipts'
 import { fmtMoney } from '@/utils/ui'
 
 const router = useRouter()
+const route = useRoute()
 const dialog = useDialog()
 const message = useMessage()
 const loading = ref(true)
 const deletingId = ref(null)
 const rows = ref([])
-const filterSupplier = ref(null)
+const filterSupplier = ref(route.query.supplier_name || null)
 const supplierOptions = ref([])
 const loadError = ref(false)
 

@@ -350,9 +350,9 @@ const jewelryPendingColumns = [
       const input = getInput(rowKey(row))
       return h(NInputNumber, {
         value: input.qty,
-        min: 0.0001,
+        min: 1,
         max: getRemaining(row),
-        precision: 4,
+        precision: 0,
         step: 1,
         size: 'small',
         style: 'width: 110px;',

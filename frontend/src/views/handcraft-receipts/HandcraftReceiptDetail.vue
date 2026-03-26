@@ -936,9 +936,9 @@ const addItemsJewelryColumns = [
       const input = getAddInput(addRowKey(row))
       return h(NInputNumber, {
         value: input.qty,
-        min: 0.0001,
+        min: 1,
         max: getAddRemaining(row),
-        precision: 4,
+        precision: 0,
         step: 1,
         size: 'small',
         style: 'width: 100px;',

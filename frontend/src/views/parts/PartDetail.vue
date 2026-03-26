@@ -164,6 +164,7 @@ const sourceRoute = (sourceId) => {
   if (!sourceId) return null
   if (sourceId.startsWith('CG-')) return `/purchase-orders/${sourceId}`
   if (sourceId.startsWith('ER-')) return `/plating-receipts/${sourceId}`
+  if (sourceId.startsWith('HR-')) return `/handcraft-receipts/${sourceId}`
   return null
 }
 
