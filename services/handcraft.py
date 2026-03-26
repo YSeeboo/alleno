@@ -389,7 +389,8 @@ def list_handcraft_pending_receive_items(
     keyword: str = None,
     supplier_name: str = None,
     date_on: date_type = None,
-    exclude_item_ids: list[int] = None,
+    exclude_part_item_ids: list[int] = None,
+    exclude_jewelry_item_ids: list[int] = None,
 ) -> list:
     """Return part items and jewelry items from processing handcraft orders
     that still have remaining qty to receive."""
@@ -421,8 +422,8 @@ def list_handcraft_pending_receive_items(
         pq = pq.filter(HandcraftOrder.supplier_name == supplier_name)
     if date_on:
         pq = pq.filter(func.cast(HandcraftOrder.created_at, Date) == date_on)
-    if exclude_item_ids:
-        pq = pq.filter(HandcraftPartItem.id.notin_(exclude_item_ids))
+    if exclude_part_item_ids:
+        pq = pq.filter(HandcraftPartItem.id.notin_(exclude_part_item_ids))
     if keyword:
         like = f"%{keyword}%"
         pq = pq.filter(or_(Part.id.ilike(like), Part.name.ilike(like)))
@@ -469,8 +470,8 @@ def list_handcraft_pending_receive_items(
         jq = jq.filter(HandcraftOrder.supplier_name == supplier_name)
     if date_on:
         jq = jq.filter(func.cast(HandcraftOrder.created_at, Date) == date_on)
-    if exclude_item_ids:
-        jq = jq.filter(HandcraftJewelryItem.id.notin_(exclude_item_ids))
+    if exclude_jewelry_item_ids:
+        jq = jq.filter(HandcraftJewelryItem.id.notin_(exclude_jewelry_item_ids))
     if keyword:
         like = f"%{keyword}%"
         jq = jq.filter(or_(Jewelry.id.ilike(like), Jewelry.name.ilike(like)))

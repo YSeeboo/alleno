@@ -721,8 +721,11 @@ const fetchAddItemsPending = async () => {
       .filter((i) => i.handcraft_jewelry_item_id)
       .map((i) => i.handcraft_jewelry_item_id)
     const params = { supplier_name: receipt.value.supplier_name }
-    if (existingPartItemIds.length > 0 || existingJewelryItemIds.length > 0) {
-      params.exclude_item_ids = [...existingPartItemIds, ...existingJewelryItemIds].join(',')
+    if (existingPartItemIds.length > 0) {
+      params.exclude_part_item_ids = existingPartItemIds.join(',')
+    }
+    if (existingJewelryItemIds.length > 0) {
+      params.exclude_jewelry_item_ids = existingJewelryItemIds.join(',')
     }
     if (addItemsFilterKeyword.value) params.keyword = addItemsFilterKeyword.value
     if (addItemsFilterDateOn.value) {

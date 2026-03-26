@@ -2,8 +2,6 @@ import pytest
 from services.part import create_part
 from services.jewelry import create_jewelry
 from services.inventory import add_stock, get_stock
-from services.kanban import record_vendor_receipt
-from schemas.kanban import ReceiptItemIn
 
 
 def _setup(db):
@@ -193,6 +191,7 @@ def test_delete_handcraft_order(client, db):
 
 
 def test_delete_completed_handcraft_order_restores_stock_and_clears_receipts(client, db):
+    from services.handcraft_receipt import create_handcraft_receipt
     part, jewelry = _setup(db)
     db.commit()
 
@@ -206,17 +205,19 @@ def test_delete_completed_handcraft_order_restores_stock_and_clears_receipts(cli
     send_resp = client.post(f"/api/handcraft/{order_id}/send")
     assert send_resp.status_code == 200
 
-    record_vendor_receipt(db, "Supplier Delete Completed", "handcraft", order_id, [
-        ReceiptItemIn(item_id=part.id, item_type="part", qty=10.0),
-        ReceiptItemIn(item_id=jewelry.id, item_type="jewelry", qty=5.0),
-    ])
-
     from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
-    from models.vendor_receipt import VendorReceipt
+    from models.handcraft_receipt import HandcraftReceipt, HandcraftReceiptItem
+
+    pi = db.query(HandcraftPartItem).filter(HandcraftPartItem.handcraft_order_id == order_id).first()
+    ji = db.query(HandcraftJewelryItem).filter(HandcraftJewelryItem.handcraft_order_id == order_id).first()
+
+    create_handcraft_receipt(db, "Supplier Delete Completed", [
+        {"handcraft_part_item_id": pi.id, "qty": 10.0},
+        {"handcraft_jewelry_item_id": ji.id, "qty": 5},
+    ])
 
     assert get_stock(db, "part", part.id) == pytest.approx(100.0)
     assert get_stock(db, "jewelry", jewelry.id) == pytest.approx(5.0)
-    assert db.query(VendorReceipt).filter(VendorReceipt.order_id == order_id).count() == 2
     assert db.query(HandcraftOrder).filter(HandcraftOrder.id == order_id).first().status == "completed"
 
     resp = client.delete(f"/api/handcraft/{order_id}")
@@ -227,7 +228,7 @@ def test_delete_completed_handcraft_order_restores_stock_and_clears_receipts(cli
     assert db.query(HandcraftOrder).filter(HandcraftOrder.id == order_id).first() is None
     assert db.query(HandcraftPartItem).filter(HandcraftPartItem.handcraft_order_id == order_id).count() == 0
     assert db.query(HandcraftJewelryItem).filter(HandcraftJewelryItem.handcraft_order_id == order_id).count() == 0
-    assert db.query(VendorReceipt).filter(VendorReceipt.order_id == order_id).count() == 0
+    assert db.query(HandcraftReceiptItem).count() == 0
 
 
 def test_send_handcraft_order(client, db):
@@ -261,7 +262,9 @@ def test_send_handcraft_order_insufficient_stock(client, db):
     assert resp.status_code == 400
 
 
-def test_receive_handcraft_jewelries(client, db):
+def test_receive_handcraft_via_receipt(client, db):
+    """Receiving jewelry via HandcraftReceipt (replaces old /receive endpoint)."""
+    from services.handcraft_receipt import create_handcraft_receipt
     part, jewelry = _setup(db)
     created = client.post("/api/handcraft/", json={
         "supplier_name": "Supplier A",
@@ -278,17 +281,18 @@ def test_receive_handcraft_jewelries(client, db):
         HandcraftJewelryItem.handcraft_order_id == order_id
     ).first()
 
-    resp = client.post(f"/api/handcraft/{order_id}/receive", json={
-        "receipts": [{"handcraft_jewelry_item_id": ji.id, "qty": 3}]
-    })
-    assert resp.status_code == 200
-    data = resp.json()
-    assert len(data) == 1
-    assert data[0]["received_qty"] == 3
-    assert data[0]["status"] == "制作中"  # not yet fully received
+    receipt = create_handcraft_receipt(db, "Supplier A", [
+        {"handcraft_jewelry_item_id": ji.id, "qty": 3}
+    ])
+    db.refresh(ji)
+    assert ji.received_qty == 3
+    assert ji.status == "制作中"
 
 
-def test_receive_handcraft_jewelries_completes_order(client, db):
+def test_receive_handcraft_completes_order(client, db):
+    """Receiving all parts + jewelry completes the order."""
+    from services.handcraft_receipt import create_handcraft_receipt
+    from models.handcraft_order import HandcraftJewelryItem, HandcraftPartItem
     part, jewelry = _setup(db)
     created = client.post("/api/handcraft/", json={
         "supplier_name": "Supplier A",
@@ -296,53 +300,22 @@ def test_receive_handcraft_jewelries_completes_order(client, db):
         "jewelries": [{"jewelry_id": jewelry.id, "qty": 5}],
     }).json()
     order_id = created["id"]
-
     client.post(f"/api/handcraft/{order_id}/send")
 
-    from models.handcraft_order import HandcraftJewelryItem
     ji = db.query(HandcraftJewelryItem).filter(
         HandcraftJewelryItem.handcraft_order_id == order_id
     ).first()
+    pi = db.query(HandcraftPartItem).filter(
+        HandcraftPartItem.handcraft_order_id == order_id
+    ).first()
 
-    # Receive all 5
-    resp = client.post(f"/api/handcraft/{order_id}/receive", json={
-        "receipts": [{"handcraft_jewelry_item_id": ji.id, "qty": 5}]
-    })
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data[0]["status"] == "已收回"
+    create_handcraft_receipt(db, "Supplier A", [
+        {"handcraft_jewelry_item_id": ji.id, "qty": 5},
+        {"handcraft_part_item_id": pi.id, "qty": 10.0},
+    ])
 
-    # Order should now be completed
     order_resp = client.get(f"/api/handcraft/{order_id}")
     assert order_resp.json()["status"] == "completed"
-
-
-def test_receive_handcraft_order_not_found(client, db):
-    resp = client.post("/api/handcraft/HC-9999/receive", json={"receipts": []})
-    assert resp.status_code == 404
-
-
-def test_receive_handcraft_jewelries_over_receive(client, db):
-    part, jewelry = _setup(db)
-    db.commit()
-
-    create_resp = client.post("/api/handcraft/", json={
-        "supplier_name": "Supplier OVR",
-        "parts": [{"part_id": part.id, "qty": 10.0}],
-        "jewelries": [{"jewelry_id": jewelry.id, "qty": 5}],
-    })
-    order_id = create_resp.json()["id"]
-    client.post(f"/api/handcraft/{order_id}/send")
-
-    from models.handcraft_order import HandcraftJewelryItem
-    ji = db.query(HandcraftJewelryItem).filter(
-        HandcraftJewelryItem.handcraft_order_id == order_id
-    ).first()
-
-    resp = client.post(f"/api/handcraft/{order_id}/receive", json={
-        "receipts": [{"handcraft_jewelry_item_id": ji.id, "qty": 10}]
-    })
-    assert resp.status_code == 400
 
 
 def test_create_handcraft_order_empty_parts(client, db):
@@ -476,3 +449,102 @@ def test_handcraft_supplier_name_stripped(client, db):
     })
     assert resp.status_code == 201
     assert resp.json()["supplier_name"] == "商家E"
+
+
+# --- pending-receive endpoint tests ---
+
+def _create_and_send(client, db, supplier_name="TestSupplier"):
+    part, jewelry = _setup(db)
+    db.commit()
+    resp = client.post("/api/handcraft/", json={
+        "supplier_name": supplier_name,
+        "parts": [{"part_id": part.id, "qty": 10}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 5}],
+    })
+    order_id = resp.json()["id"]
+    client.post(f"/api/handcraft/{order_id}/send")
+    return order_id, part, jewelry
+
+
+def test_pending_receive_returns_both_types(client, db):
+    """After sending, both part and jewelry items appear in pending-receive."""
+    order_id, part, jewelry = _create_and_send(client, db)
+    resp = client.get("/api/handcraft/items/pending-receive")
+    assert resp.status_code == 200
+    data = resp.json()
+    types = {item["item_type"] for item in data}
+    assert "part" in types
+    assert "jewelry" in types
+    for item in data:
+        assert item["handcraft_order_id"] == order_id
+        assert "item_name" in item
+        assert "item_type" in item
+
+
+def test_pending_receive_filter_by_supplier(client, db):
+    _create_and_send(client, db, supplier_name="SupA")
+    _create_and_send(client, db, supplier_name="SupB")
+    resp = client.get("/api/handcraft/items/pending-receive", params={"supplier_name": "SupA"})
+    data = resp.json()
+    assert all(item["supplier_name"] == "SupA" for item in data)
+    assert len(data) > 0
+
+
+def test_pending_receive_filter_by_keyword(client, db):
+    _create_and_send(client, db)
+    resp = client.get("/api/handcraft/items/pending-receive", params={"keyword": "P1"})
+    data = resp.json()
+    # Should only return part items matching "P1"
+    assert all(item["item_type"] == "part" for item in data)
+    assert len(data) > 0
+
+
+def test_pending_receive_exclude_part_ids_do_not_affect_jewelry(client, db):
+    """exclude_part_item_ids should not exclude jewelry items with same integer id."""
+    order_id, part, jewelry = _create_and_send(client, db)
+    # Get all items to find the IDs
+    all_resp = client.get("/api/handcraft/items/pending-receive")
+    all_items = all_resp.json()
+    part_item = next(i for i in all_items if i["item_type"] == "part")
+    jewelry_item = next(i for i in all_items if i["item_type"] == "jewelry")
+
+    # Exclude only part item id — jewelry with same-ish id must still appear
+    resp = client.get("/api/handcraft/items/pending-receive", params={
+        "exclude_part_item_ids": str(part_item["id"]),
+    })
+    data = resp.json()
+    part_ids = [i["id"] for i in data if i["item_type"] == "part"]
+    jewelry_ids = [i["id"] for i in data if i["item_type"] == "jewelry"]
+    assert part_item["id"] not in part_ids
+    assert jewelry_item["id"] in jewelry_ids
+
+
+def test_pending_receive_exclude_jewelry_ids_do_not_affect_parts(client, db):
+    """exclude_jewelry_item_ids should not exclude part items."""
+    order_id, part, jewelry = _create_and_send(client, db)
+    all_resp = client.get("/api/handcraft/items/pending-receive")
+    all_items = all_resp.json()
+    part_item = next(i for i in all_items if i["item_type"] == "part")
+    jewelry_item = next(i for i in all_items if i["item_type"] == "jewelry")
+
+    resp = client.get("/api/handcraft/items/pending-receive", params={
+        "exclude_jewelry_item_ids": str(jewelry_item["id"]),
+    })
+    data = resp.json()
+    part_ids = [i["id"] for i in data if i["item_type"] == "part"]
+    jewelry_ids = [i["id"] for i in data if i["item_type"] == "jewelry"]
+    assert jewelry_item["id"] not in jewelry_ids
+    assert part_item["id"] in part_ids
+
+
+def test_pending_receive_empty_when_no_processing_orders(client, db):
+    """Pending orders (not sent) should not appear."""
+    part, jewelry = _setup(db)
+    db.commit()
+    client.post("/api/handcraft/", json={
+        "supplier_name": "X",
+        "parts": [{"part_id": part.id, "qty": 5}],
+    })
+    resp = client.get("/api/handcraft/items/pending-receive")
+    assert resp.status_code == 200
+    assert resp.json() == []

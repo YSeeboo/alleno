@@ -89,13 +89,16 @@ def api_list_handcraft_pending_receive_items(
     keyword: str = None,
     supplier_name: str = None,
     date_on: date_type = None,
-    exclude_item_ids: list[int] = Query(None),
+    exclude_part_item_ids: list[int] = Query(None),
+    exclude_jewelry_item_ids: list[int] = Query(None),
     db: Session = Depends(get_db),
 ):
     with service_errors():
         return list_handcraft_pending_receive_items(
             db, keyword, supplier_name=supplier_name,
-            date_on=date_on, exclude_item_ids=exclude_item_ids or None,
+            date_on=date_on,
+            exclude_part_item_ids=exclude_part_item_ids or None,
+            exclude_jewelry_item_ids=exclude_jewelry_item_ids or None,
         )
 
 
