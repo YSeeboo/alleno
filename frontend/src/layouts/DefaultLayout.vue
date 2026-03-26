@@ -44,7 +44,7 @@ import { NLayout, NLayoutHeader, NLayoutSider, NLayoutContent, NMenu, NButton } 
 import {
   HomeOutline, ExtensionPuzzleOutline, DiamondOutline, ReceiptOutline,
   CartOutline, ColorWandOutline, HammerOutline, ListOutline, GridOutline, ArchiveOutline,
-  PeopleOutline,
+  PeopleOutline, StorefrontOutline,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '@/stores/auth'
 
@@ -66,9 +66,11 @@ const allFlatItems = [
   { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
   { label: '电镀发出', key: 'plating', icon: icon(ColorWandOutline), perm: 'plating' },
   { label: '电镀回收', key: 'plating-receipts', icon: icon(ColorWandOutline), perm: 'plating' },
-  { label: '手工单', key: 'handcraft', icon: icon(HammerOutline), perm: 'handcraft' },
+  { label: '手工发出', key: 'handcraft', icon: icon(HammerOutline), perm: 'handcraft' },
+  { label: '手工回收', key: 'handcraft-receipts', icon: icon(HammerOutline), perm: 'handcraft' },
   { label: '库存总表', key: 'inventory', icon: icon(ArchiveOutline), perm: 'inventory' },
   { label: '库存流水', key: 'inventory-log', icon: icon(ListOutline), perm: 'inventory' },
+  { label: '商家管理', key: 'suppliers', icon: icon(StorefrontOutline), perm: 'users' },
   { label: '用户管理', key: 'users', icon: icon(PeopleOutline), perm: 'users' },
 ]
 
@@ -104,7 +106,13 @@ const allGroupedItems = [
           { label: '电镀回收', key: 'plating-receipts', perm: 'plating' },
         ],
       },
-      { label: '手工单', key: 'handcraft', icon: icon(HammerOutline), perm: 'handcraft' },
+      {
+        label: '手工单', key: 'handcraft-group', icon: icon(HammerOutline), perm: 'handcraft',
+        children: [
+          { label: '手工发出', key: 'handcraft', perm: 'handcraft' },
+          { label: '手工回收', key: 'handcraft-receipts', perm: 'handcraft' },
+        ],
+      },
     ],
   },
   {
@@ -117,6 +125,7 @@ const allGroupedItems = [
   {
     type: 'group', label: '管理', key: 'group-admin',
     children: [
+      { label: '商家管理', key: 'suppliers', icon: icon(StorefrontOutline), perm: 'users' },
       { label: '用户管理', key: 'users', icon: icon(PeopleOutline), perm: 'users' },
     ],
   },
