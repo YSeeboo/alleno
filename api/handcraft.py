@@ -1,7 +1,8 @@
+from datetime import date as date_type
 from typing import Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -16,7 +17,6 @@ from schemas.handcraft import (
     HandcraftPartIn,
     HandcraftPartItemResponse,
     HandcraftResponse,
-    ReceiptRequest,
 )
 from services.handcraft_excel import build_handcraft_order_excel
 from services.handcraft_pdf import build_handcraft_order_pdf
@@ -32,7 +32,7 @@ from services.handcraft import (
     get_handcraft_order,
     get_handcraft_parts,
     list_handcraft_orders,
-    receive_handcraft_jewelries,
+    list_handcraft_pending_receive_items,
     send_handcraft_order,
     update_handcraft_delivery_images,
     update_handcraft_jewelry,
@@ -82,6 +82,21 @@ def api_list_handcraft_orders(status: Optional[str] = None, supplier_name: Optio
 @router.get("/suppliers", response_model=list[str])
 def api_get_handcraft_supplier_names(db: Session = Depends(get_db)):
     return get_handcraft_supplier_names(db)
+
+
+@router.get("/items/pending-receive")
+def api_list_handcraft_pending_receive_items(
+    keyword: str = None,
+    supplier_name: str = None,
+    date_on: date_type = None,
+    exclude_item_ids: list[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    with service_errors():
+        return list_handcraft_pending_receive_items(
+            db, keyword, supplier_name=supplier_name,
+            date_on=date_on, exclude_item_ids=exclude_item_ids or None,
+        )
 
 
 @router.get("/{order_id}", response_model=HandcraftResponse)
@@ -160,19 +175,6 @@ def api_send_handcraft_order(order_id: str, db: Session = Depends(get_db)):
         order = send_handcraft_order(db, order_id)
     return order
 
-
-@router.post("/{order_id}/receive", response_model=list[HandcraftJewelryItemResponse])
-def api_receive_handcraft_jewelries(order_id: str, body: ReceiptRequest, db: Session = Depends(get_db)):
-    order = get_handcraft_order(db, order_id)
-    if order is None:
-        raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
-    with service_errors():
-        updated = receive_handcraft_jewelries(
-            db,
-            order_id,
-            [r.model_dump() for r in body.receipts],
-        )
-    return updated
 
 
 @router.post("/{order_id}/parts", response_model=HandcraftPartItemResponse, status_code=201)
