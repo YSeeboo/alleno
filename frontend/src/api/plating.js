@@ -17,9 +17,16 @@ export const downloadPlatingPdf = (id) =>
 export const addPlatingItem = (id, data) => api.post(`/plating/${id}/items`, data)
 export const updatePlatingItem = (id, itemId, data) => api.put(`/plating/${id}/items/${itemId}`, data)
 export const deletePlatingItem = (id, itemId) => api.delete(`/plating/${id}/items/${itemId}`)
+export const updatePlatingOrder = (id, data) => api.patch(`/plating/${id}`, data)
 export const updatePlatingStatus = (id, status) => api.patch(`/plating/${id}/status`, { status })
 export const updatePlatingDeliveryImages = (id, deliveryImages) =>
   api.patch(`/plating/${id}/delivery-images`, { delivery_images: deliveryImages })
 export const getPlatingSuppliers = () => api.get('/plating/suppliers')
 export const listPendingReceiveItems = (params) =>
   api.get('/plating/items/pending-receive', { params })
+
+// --- Order links ---
+export const getPlatingItemOrders = (orderId, itemId) =>
+  api.get(`/plating/${orderId}/items/${itemId}/orders`)
+export const deletePlatingItemOrderLink = (orderId, itemId, linkId) =>
+  api.delete(`/plating/${orderId}/items/${itemId}/orders/${linkId}`)
