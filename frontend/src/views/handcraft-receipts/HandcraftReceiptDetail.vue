@@ -145,7 +145,13 @@
       <form @submit.prevent="doEditItem">
       <n-form label-placement="left" label-width="90">
         <n-form-item label="数量">
-          <n-input-number v-model:value="editForm.qty" :min="0.0001" :precision="4" :step="1" style="width: 100%;" />
+          <n-input-number
+            v-model:value="editForm.qty"
+            :min="editForm.item_type === 'jewelry' ? 1 : 0.0001"
+            :precision="editForm.item_type === 'jewelry' ? 0 : 4"
+            :step="1"
+            style="width: 100%;"
+          />
         </n-form-item>
         <n-form-item label="单位">
           <n-select v-model:value="editForm.unit" :options="unitOptions" />
@@ -372,6 +378,7 @@ const doChangeStatus = (newStatus) => {
 const openEditModal = (row) => {
   editForm.value = {
     id: row.id,
+    item_type: row.item_type,
     qty: row.qty,
     unit: row.unit || '个',
     price: row.price || 0,
@@ -383,7 +390,7 @@ const openEditModal = (row) => {
 const doEditItem = async () => {
   editSubmitting.value = true
   try {
-    const { id, ...body } = editForm.value
+    const { id, item_type, ...body } = editForm.value
     await updateHandcraftReceiptItem(route.params.id, id, body)
     message.success('修改已保存')
     editModalVisible.value = false
