@@ -43,8 +43,24 @@
         </n-gi>
       </n-grid>
 
+      <!-- TodoList -->
+      <n-card title="配件清单" style="margin-bottom: 16px;">
+        <template #header-extra>
+          <n-button
+            type="primary"
+            size="small"
+            :loading="generatingTodo"
+            @click="doGenerateTodo"
+          >
+            {{ todoItems.length > 0 ? '重新生成' : '生成配件清单' }}
+          </n-button>
+        </template>
+        <n-data-table v-if="todoItems.length > 0" :columns="todoColumns" :data="todoItems" :bordered="false" size="small" />
+        <n-empty v-else description="暂无配件清单，请点击「生成配件清单」" style="margin-top: 16px;" />
+      </n-card>
+
       <!-- Parts summary -->
-      <n-card title="配件汇总">
+      <n-card title="配件汇总（BOM）">
         <n-data-table v-if="partsSummaryRows.length > 0" :columns="partsColumns" :data="partsSummaryRows" :bordered="false" size="small" />
         <n-empty v-else description="暂无配件汇总" style="margin-top: 16px;" />
       </n-card>
@@ -53,14 +69,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useMessage } from 'naive-ui'
+import { useMessage, useDialog } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NGrid, NGi, NEmpty,
 } from 'naive-ui'
-import { getOrder, getOrderItems, getPartsSummary, updateOrderStatus } from '@/api/orders'
+import { getOrder, getOrderItems, getPartsSummary, updateOrderStatus, generateTodo, getTodo, deleteLink } from '@/api/orders'
 import { listParts } from '@/api/parts'
 import { listJewelries } from '@/api/jewelries'
 import { renderNamedImage, fmtMoney } from '@/utils/ui'
@@ -68,12 +84,15 @@ import { renderNamedImage, fmtMoney } from '@/utils/ui'
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
+const dialog = useDialog()
 
 const loading = ref(true)
 const updating = ref(false)
+const generatingTodo = ref(false)
 const order = ref(null)
 const orderItems = ref([])
 const partsSummaryRows = ref([])
+const todoItems = ref([])
 
 const statusColor = { '待生产': 'default', '生产中': 'info', '已完成': 'success' }
 const statusFlow = { '待生产': '生产中', '生产中': '已完成' }
@@ -94,6 +113,71 @@ const advanceStatus = async () => {
   }
 }
 
+const doGenerateTodo = async () => {
+  if (!order.value) return
+  if (todoItems.value.length > 0) {
+    dialog.warning({
+      title: '重新生成配件清单',
+      content: '重新生成会根据当前 BOM 更新清单，已有的订单关联会保留。确认继续？',
+      positiveText: '确认',
+      negativeText: '取消',
+      onPositiveClick: async () => {
+        await execGenerateTodo()
+      },
+    })
+  } else {
+    await execGenerateTodo()
+  }
+}
+
+const execGenerateTodo = async () => {
+  generatingTodo.value = true
+  try {
+    const { data } = await generateTodo(order.value.id)
+    todoItems.value = data
+    message.success('配件清单已生成')
+  } finally {
+    generatingTodo.value = false
+  }
+}
+
+const loadTodo = async () => {
+  if (!order.value) return
+  try {
+    const { data } = await getTodo(order.value.id)
+    todoItems.value = data
+  } catch (_) {
+    todoItems.value = []
+  }
+}
+
+const doDeleteTodoLink = (todoRow, prod) => {
+  dialog.warning({
+    title: '解除关联',
+    content: `确认解除配件「${todoRow.part_name || todoRow.part_id}」与生产单「${prod.order_id}」的关联？`,
+    positiveText: '确认',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await deleteLink(prod.link_id)
+        message.success('已解除关联')
+        await loadTodo()
+      } catch (_) {}
+    },
+  })
+}
+
+const prodStatusLabel = {
+  '未送出': '未送出',
+  '制作中': '制作中',
+  '已收回': '已收回',
+}
+const prodStatusBadge = {
+  '未送出': 'badge-gray',
+  '制作中': 'badge-blue',
+  '已收回': 'badge-green',
+}
+
 const itemColumns = [
   { title: '饰品编号', key: 'jewelry_id', width: 110 },
   {
@@ -106,6 +190,67 @@ const itemColumns = [
   { title: '单价', key: 'unit_price', render: (r) => r.unit_price != null ? fmtMoney(r.unit_price) : '-' },
   { title: '小计', key: 'subtotal', render: (r) => fmtMoney((r.quantity || 0) * (r.unit_price || 0)) },
   { title: '备注', key: 'remarks', render: (r) => r.remarks || '-' },
+]
+
+const todoColumns = [
+  { title: '配件编号', key: 'part_id', width: 110 },
+  {
+    title: '配件',
+    key: 'part_name',
+    minWidth: 160,
+    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name),
+  },
+  { title: '需要数量', key: 'required_qty', width: 100 },
+  {
+    title: '库存数量',
+    key: 'stock_qty',
+    width: 100,
+    render: (r) => r.stock_qty != null ? r.stock_qty : '-',
+  },
+  {
+    title: '缺口',
+    key: 'gap',
+    width: 80,
+    render: (r) => {
+      if (r.gap == null) return '-'
+      if (r.gap > 0) return h('span', { style: 'color: #d03050; font-weight: 600;' }, r.gap)
+      return h('span', { style: 'color: #18a058;' }, '0')
+    },
+  },
+  {
+    title: '生产单状态',
+    key: 'linked_production',
+    minWidth: 200,
+    render: (row) => {
+      const prods = row.linked_production || []
+      if (prods.length === 0) return h('span', { style: 'color: #999;' }, '-')
+      return h('div', { style: 'display: flex; flex-wrap: wrap; gap: 4px;' },
+        prods.map((p) => h('span', {
+          style: 'display: inline-flex; align-items: center; gap: 4px;',
+        }, [
+          h('span', {
+            class: `badge ${prodStatusBadge[p.status] || 'badge-gray'}`,
+            style: 'font-size: 12px;',
+          }, `${p.type === 'plating' ? 'EP' : 'HC'}:${p.order_id} ${p.status || ''}`),
+          h(NButton, {
+            size: 'tiny',
+            quaternary: true,
+            type: 'error',
+            onClick: () => doDeleteTodoLink(row, { ...p, link_id: p.link_id }),
+          }, { default: () => '×' }),
+        ])),
+      )
+    },
+  },
+  {
+    title: '完成',
+    key: 'is_complete',
+    width: 70,
+    render: (r) => {
+      if (r.is_complete) return h('span', { style: 'color: #18a058; font-weight: 600;' }, 'Yes')
+      return h('span', { style: 'color: #d03050;' }, 'No')
+    },
+  },
 ]
 
 const partsColumns = [
@@ -149,6 +294,8 @@ onMounted(async () => {
       part_image: partMap[part_id]?.image || '',
       total_qty,
     }))
+
+    await loadTodo()
   } finally {
     loading.value = false
   }
