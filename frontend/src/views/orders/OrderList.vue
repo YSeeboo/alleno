@@ -29,7 +29,7 @@
 import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
-import { listOrders } from '@/api/orders'
+import { listOrders, getProgress } from '@/api/orders'
 import { fmtMoney } from '@/utils/ui'
 
 const router = useRouter()
@@ -42,6 +42,8 @@ const statusOptions = [
   { label: '已完成', value: '已完成' },
 ]
 
+const progressMap = ref({})
+
 const load = async () => {
   loading.value = true
   try {
@@ -49,6 +51,15 @@ const load = async () => {
     if (filterStatus.value) params.status = filterStatus.value
     const { data } = await listOrders(params)
     orders.value = data
+    // Load progress for all orders in parallel
+    const progressResults = await Promise.all(
+      data.map((o) => getProgress(o.id).then((r) => r.data).catch(() => null))
+    )
+    const map = {}
+    progressResults.forEach((p) => {
+      if (p) map[p.order_id] = p
+    })
+    progressMap.value = map
   } finally {
     loading.value = false
   }
@@ -70,6 +81,17 @@ const columns = [
       }
       const cls = map[r.status] || 'badge-gray'
       return h('span', { class: `badge ${cls}` }, `• ${r.status}`)
+    },
+  },
+  {
+    title: '生产进度',
+    key: 'progress',
+    width: 100,
+    render: (r) => {
+      const p = progressMap.value[r.id]
+      if (!p || p.total === 0) return h('span', { style: 'color: #999;' }, '-')
+      const color = p.completed === p.total ? '#18a058' : '#2080f0'
+      return h('span', { style: `font-weight: 600; color: ${color};` }, `${p.completed}/${p.total} 已完成`)
     },
   },
   { title: '总金额', key: 'total_amount', render: (r) => r.total_amount != null ? fmtMoney(r.total_amount) : '-' },
