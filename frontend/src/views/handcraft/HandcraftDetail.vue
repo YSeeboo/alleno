@@ -151,12 +151,25 @@
         </n-space>
       </n-card>
 
-      <n-card title="配件明细">
+      <n-card title="配件明细" style="margin-bottom: 16px;">
+        <template #header-extra>
+          <n-button
+            v-if="items.length > 0"
+            size="small"
+            @click="openBatchLinkModal"
+          >
+            批量关联订单
+          </n-button>
+        </template>
         <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" />
         <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
         <div v-if="order?.status === 'pending'" style="margin-top: 12px;">
           <n-button dashed style="width: 100%;" @click="openAddModal">+ 添加明细行</n-button>
         </div>
+      </n-card>
+
+      <n-card v-if="jewelryItems.length > 0" title="饰品明细">
+        <n-data-table :columns="jewelryColumns" :data="jewelryItems" :bordered="false" />
       </n-card>
     </n-spin>
 
@@ -218,6 +231,84 @@
       suppress-success
       @uploaded="handleDeliveryImageUploaded"
     />
+
+    <!-- Single Link Modal for part items -->
+    <n-modal v-model:show="linkModalVisible" preset="card" title="关联订单" style="width: 600px;">
+      <n-form label-placement="left" label-width="80">
+        <n-form-item label="选择订单">
+          <n-select
+            v-model:value="linkForm.orderId"
+            :options="orderOptions"
+            filterable
+            placeholder="搜索订单号或客户名"
+            @update:value="onLinkOrderSelect"
+          />
+        </n-form-item>
+        <n-form-item v-if="linkTodoItems.length > 0" label="匹配配件">
+          <n-radio-group v-model:value="linkForm.todoItemId">
+            <n-space vertical>
+              <n-radio v-for="t in linkTodoItems" :key="t.id" :value="t.id">
+                {{ t.part_name || t.part_id }} — 需要 {{ t.required_qty }}
+              </n-radio>
+            </n-space>
+          </n-radio-group>
+        </n-form-item>
+        <div v-if="linkForm.orderId && linkTodoItems.length === 0 && !linkTodoLoading" style="color: #999; padding: 8px 0;">
+          该订单配件清单中没有匹配的配件
+        </div>
+        <n-spin v-if="linkTodoLoading" size="small" />
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="linkModalVisible = false">取消</n-button>
+          <n-button type="primary" :loading="linkSubmitting" :disabled="!linkForm.todoItemId" @click="doCreatePartLink">确认关联</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- Jewelry Link Modal: just select order -->
+    <n-modal v-model:show="jewelryLinkModalVisible" preset="card" title="关联订单（饰品）" style="width: 500px;">
+      <n-form label-placement="left" label-width="80">
+        <n-form-item label="选择订单">
+          <n-select
+            v-model:value="jewelryLinkOrderId"
+            :options="orderOptions"
+            filterable
+            placeholder="搜索订单号或客户名"
+          />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="jewelryLinkModalVisible = false">取消</n-button>
+          <n-button type="primary" :loading="jewelryLinkSubmitting" :disabled="!jewelryLinkOrderId" @click="doCreateJewelryLink">确认关联</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- Batch Link Modal -->
+    <n-modal v-model:show="batchLinkModalVisible" preset="card" title="批量关联订单" style="width: 500px;">
+      <n-form label-placement="left" label-width="80">
+        <n-form-item label="选择订单">
+          <n-select
+            v-model:value="batchLinkOrderId"
+            :options="orderOptions"
+            filterable
+            placeholder="搜索订单号或客户名"
+          />
+        </n-form-item>
+        <div style="color: #666; font-size: 13px; padding: 4px 0;">
+          将自动按配件编号匹配该订单配件清单中的行
+        </div>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="batchLinkModalVisible = false">取消</n-button>
+          <n-button type="primary" :loading="batchLinkSubmitting" :disabled="!batchLinkOrderId" @click="doBatchLink">确认批量关联</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
   </div>
 </template>
 
@@ -229,15 +320,20 @@ import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
   NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon, NImage,
+  NRadioGroup, NRadio,
 } from 'naive-ui'
 import { CreateOutline } from '@vicons/ionicons5'
 import {
-  getHandcraft, getHandcraftParts, sendHandcraft,
+  getHandcraft, getHandcraftParts, getHandcraftJewelries, sendHandcraft,
   addHandcraftPart, updateHandcraftPart, deleteHandcraftPart,
   updateHandcraftDeliveryImages, downloadHandcraftExcel, downloadHandcraftPdf,
+  getHandcraftPartOrders, deleteHandcraftPartOrderLink,
+  getHandcraftJewelryOrders, deleteHandcraftJewelryOrderLink,
 } from '@/api/handcraft'
 import { changeOrderStatus } from '@/api/kanban'
 import { listParts, updatePart } from '@/api/parts'
+import { listJewelries } from '@/api/jewelries'
+import { listOrders, getTodo, createLink, batchLink } from '@/api/orders'
 import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 
@@ -698,6 +794,252 @@ const renderEditableCell = (field, row, emptyLabel) => {
   )
 }
 
+// --- Jewelry items ---
+const jewelryItems = ref([])
+const jewelryMap = ref({})
+
+const loadJewelries = async () => {
+  try {
+    const { data } = await getHandcraftJewelries(route.params.id)
+    jewelryItems.value = data.map((j) => ({
+      ...j,
+      jewelry_name: jewelryMap.value[j.jewelry_id]?.name || j.jewelry_id,
+      jewelry_image: jewelryMap.value[j.jewelry_id]?.image || '',
+    }))
+  } catch (_) {
+    jewelryItems.value = []
+  }
+}
+
+// --- Order Link (parts) ---
+const orderOptions = ref([])
+const partItemOrderLinks = ref({}) // itemId -> [{order_id, customer_name, link_id}]
+const jewelryItemOrderLinks = ref({}) // itemId -> [{order_id, customer_name, link_id}]
+
+const linkModalVisible = ref(false)
+const linkForm = ref({ itemId: null, partId: null, orderId: null, todoItemId: null })
+const linkTodoItems = ref([])
+const linkTodoLoading = ref(false)
+const linkSubmitting = ref(false)
+
+const jewelryLinkModalVisible = ref(false)
+const jewelryLinkItemId = ref(null)
+const jewelryLinkOrderId = ref(null)
+const jewelryLinkSubmitting = ref(false)
+
+const batchLinkModalVisible = ref(false)
+const batchLinkOrderId = ref(null)
+const batchLinkSubmitting = ref(false)
+
+const loadOrderOptions = async () => {
+  try {
+    const { data } = await listOrders()
+    orderOptions.value = data.map((o) => ({
+      label: `${o.id} — ${o.customer_name}`,
+      value: o.id,
+    }))
+  } catch (_) {}
+}
+
+const loadPartItemOrderLinks = async () => {
+  const map = {}
+  await Promise.all(items.value.map(async (item) => {
+    try {
+      const { data } = await getHandcraftPartOrders(route.params.id, item.id)
+      map[item.id] = data
+    } catch (_) {
+      map[item.id] = []
+    }
+  }))
+  partItemOrderLinks.value = map
+}
+
+const loadJewelryItemOrderLinks = async () => {
+  const map = {}
+  await Promise.all(jewelryItems.value.map(async (item) => {
+    try {
+      const { data } = await getHandcraftJewelryOrders(route.params.id, item.id)
+      map[item.id] = data
+    } catch (_) {
+      map[item.id] = []
+    }
+  }))
+  jewelryItemOrderLinks.value = map
+}
+
+const openLinkModal = (row) => {
+  linkForm.value = { itemId: row.id, partId: row.part_id, orderId: null, todoItemId: null }
+  linkTodoItems.value = []
+  linkModalVisible.value = true
+  loadOrderOptions()
+}
+
+const onLinkOrderSelect = async (orderId) => {
+  linkForm.value.todoItemId = null
+  linkTodoItems.value = []
+  if (!orderId) return
+  linkTodoLoading.value = true
+  try {
+    const { data } = await getTodo(orderId)
+    linkTodoItems.value = data.filter((t) => t.part_id === linkForm.value.partId)
+    if (linkTodoItems.value.length === 1) {
+      linkForm.value.todoItemId = linkTodoItems.value[0].id
+    }
+  } catch (_) {
+    linkTodoItems.value = []
+  } finally {
+    linkTodoLoading.value = false
+  }
+}
+
+const doCreatePartLink = async () => {
+  if (!linkForm.value.todoItemId) return
+  linkSubmitting.value = true
+  try {
+    await createLink(linkForm.value.orderId, {
+      order_todo_item_id: linkForm.value.todoItemId,
+      handcraft_part_item_id: linkForm.value.itemId,
+    })
+    message.success('关联成功')
+    linkModalVisible.value = false
+    await loadPartItemOrderLinks()
+  } catch (e) {
+    message.error(e.response?.data?.detail || '关联失败')
+  } finally {
+    linkSubmitting.value = false
+  }
+}
+
+const openJewelryLinkModal = (row) => {
+  jewelryLinkItemId.value = row.id
+  jewelryLinkOrderId.value = null
+  jewelryLinkModalVisible.value = true
+  loadOrderOptions()
+}
+
+const doCreateJewelryLink = async () => {
+  if (!jewelryLinkOrderId.value || !jewelryLinkItemId.value) return
+  jewelryLinkSubmitting.value = true
+  try {
+    await createLink(jewelryLinkOrderId.value, {
+      order_id: jewelryLinkOrderId.value,
+      handcraft_jewelry_item_id: jewelryLinkItemId.value,
+    })
+    message.success('关联成功')
+    jewelryLinkModalVisible.value = false
+    await loadJewelryItemOrderLinks()
+  } catch (e) {
+    message.error(e.response?.data?.detail || '关联失败')
+  } finally {
+    jewelryLinkSubmitting.value = false
+  }
+}
+
+const openBatchLinkModal = () => {
+  batchLinkOrderId.value = null
+  batchLinkModalVisible.value = true
+  loadOrderOptions()
+}
+
+const doBatchLink = async () => {
+  if (!batchLinkOrderId.value) return
+  batchLinkSubmitting.value = true
+  try {
+    const allItemIds = items.value.map((i) => i.id)
+    const { data } = await batchLink(batchLinkOrderId.value, {
+      order_id: batchLinkOrderId.value,
+      handcraft_part_item_ids: allItemIds,
+    })
+    const msg = [`成功关联 ${data.linked} 项`]
+    if (data.skipped.length > 0) {
+      msg.push(`跳过: ${data.skipped.join(', ')}`)
+    }
+    message.success(msg.join('，'))
+    batchLinkModalVisible.value = false
+    await loadPartItemOrderLinks()
+  } catch (e) {
+    message.error(e.response?.data?.detail || '批量关联失败')
+  } finally {
+    batchLinkSubmitting.value = false
+  }
+}
+
+const doUnlinkPartItem = (itemId, link) => {
+  dialog.warning({
+    title: '解除关联',
+    content: `确认解除与订单「${link.order_id}」的关联？`,
+    positiveText: '确认',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await deleteHandcraftPartOrderLink(route.params.id, itemId, link.link_id)
+        message.success('已解除关联')
+        await loadPartItemOrderLinks()
+      } catch (_) {}
+    },
+  })
+}
+
+const doUnlinkJewelryItem = (itemId, link) => {
+  dialog.warning({
+    title: '解除关联',
+    content: `确认解除与订单「${link.order_id}」的关联？`,
+    positiveText: '确认',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await deleteHandcraftJewelryOrderLink(route.params.id, itemId, link.link_id)
+        message.success('已解除关联')
+        await loadJewelryItemOrderLinks()
+      } catch (_) {}
+    },
+  })
+}
+
+const renderPartOrderLinkCell = (row) => {
+  const links = partItemOrderLinks.value[row.id] || []
+  if (links.length === 0) {
+    return h(NButton, {
+      size: 'small', text: true, type: 'primary',
+      onClick: () => openLinkModal(row),
+    }, { default: () => '关联订单' })
+  }
+  return h('div', { style: 'display: flex; flex-wrap: wrap; gap: 4px; align-items: center;' }, [
+    ...links.map((link) => h('span', {
+      style: 'display: inline-flex; align-items: center; gap: 2px; background: #f0f9eb; border: 1px solid #c2e7b0; border-radius: 4px; padding: 1px 6px; font-size: 12px;',
+    }, [
+      h('span', null, link.order_id),
+      h(NButton, {
+        size: 'tiny', quaternary: true, type: 'error', style: 'padding: 0 2px;',
+        onClick: () => doUnlinkPartItem(row.id, link),
+      }, { default: () => '×' }),
+    ])),
+    h(NButton, { size: 'tiny', text: true, type: 'primary', onClick: () => openLinkModal(row) }, { default: () => '+' }),
+  ])
+}
+
+const renderJewelryOrderLinkCell = (row) => {
+  const links = jewelryItemOrderLinks.value[row.id] || []
+  if (links.length === 0) {
+    return h(NButton, {
+      size: 'small', text: true, type: 'primary',
+      onClick: () => openJewelryLinkModal(row),
+    }, { default: () => '关联订单' })
+  }
+  return h('div', { style: 'display: flex; flex-wrap: wrap; gap: 4px; align-items: center;' }, [
+    ...links.map((link) => h('span', {
+      style: 'display: inline-flex; align-items: center; gap: 2px; background: #f0f9eb; border: 1px solid #c2e7b0; border-radius: 4px; padding: 1px 6px; font-size: 12px;',
+    }, [
+      h('span', null, link.order_id),
+      h(NButton, {
+        size: 'tiny', quaternary: true, type: 'error', style: 'padding: 0 2px;',
+        onClick: () => doUnlinkJewelryItem(row.id, link),
+      }, { default: () => '×' }),
+    ])),
+    h(NButton, { size: 'tiny', text: true, type: 'primary', onClick: () => openJewelryLinkModal(row) }, { default: () => '+' }),
+  ])
+}
+
 const partStatusLabel = { '未送出': '未送出', '制作中': '制作中', '已收回': '已收回' }
 const partStatusBadge = { '未送出': 'badge-gray', '制作中': 'badge-blue', '已收回': 'badge-green' }
 
@@ -729,6 +1071,12 @@ const itemColumns = [
     key: 'note',
     minWidth: 240,
     render: (row) => renderEditableCell('note', row, '添加备注'),
+  },
+  {
+    title: '关联订单',
+    key: 'order_link',
+    minWidth: 140,
+    render: (row) => renderPartOrderLinkCell(row),
   },
   {
     title: '操作',
@@ -777,9 +1125,36 @@ const itemColumns = [
   },
 ]
 
+const jewelryColumns = [
+  { title: '饰品编号', key: 'jewelry_id', width: 110 },
+  {
+    title: '饰品',
+    key: 'jewelry_name',
+    minWidth: 180,
+    render: (row) => renderNamedImage(row.jewelry_name, row.jewelry_image, row.jewelry_name),
+  },
+  { title: '数量', key: 'qty' },
+  { title: '已回收', key: 'received_qty', width: 80, render: (r) => r.received_qty ?? 0 },
+  {
+    title: '状态',
+    key: 'status',
+    width: 80,
+    render: (r) => h('span', { class: `badge ${partStatusBadge[r.status] || 'badge-gray'}` }, `• ${partStatusLabel[r.status] || r.status || '未送出'}`),
+  },
+  {
+    title: '关联订单',
+    key: 'order_link',
+    minWidth: 140,
+    render: (row) => renderJewelryOrderLinkCell(row),
+  },
+]
+
 onMounted(async () => {
   try {
+    const { data: jewels } = await listJewelries()
+    jewels.forEach((j) => { jewelryMap.value[j.id] = j })
     await loadData()
+    await Promise.all([loadJewelries(), loadPartItemOrderLinks(), loadJewelryItemOrderLinks()])
   } finally {
     loading.value = false
   }
