@@ -110,7 +110,9 @@ def api_create_link(order_id: str, body: LinkCreateRequest, db: Session = Depend
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
     data = body.model_dump()
     # 确保饰品项关联的 order_id 与路径一致
-    if body.handcraft_jewelry_item_id and not body.order_id:
+    if body.order_id and body.order_id != order_id:
+        raise HTTPException(status_code=400, detail="body order_id 与路径 order_id 不一致")
+    if body.handcraft_jewelry_item_id:
         data["order_id"] = order_id
     # 校验 todo_item 属于该订单
     if body.order_todo_item_id:

@@ -265,3 +265,57 @@ def test_order_progress_no_links(client, db):
     data = resp.json()
     assert data["total"] == 0
     assert data["completed"] == 0
+
+
+# --- Fix: part_id mismatch rejected ---
+
+def test_create_link_part_id_mismatch_rejected(client, db):
+    """配件项的 part_id 必须与 TodoList 行的 part_id 一致。"""
+    order_id, part_a, part_b, _ = _setup_order_with_bom(db, client)
+    client.post(f"/api/orders/{order_id}/todo")
+    todos = client.get(f"/api/orders/{order_id}/todo").json()
+    # Get todo for part_b
+    b_todo_id = next(t["id"] for t in todos if t["part_id"] == part_b.id)
+
+    # Create plating order for part_a
+    _, poi_id = _setup_plating_order(db, client, part_a)
+
+    # Try to link part_a's plating item to part_b's todo — should fail
+    resp = client.post(f"/api/orders/{order_id}/links", json={
+        "order_todo_item_id": b_todo_id,
+        "plating_order_item_id": poi_id,
+    })
+    assert resp.status_code == 400
+
+
+# --- Fix: reverse-side unlink scoping ---
+
+def test_plating_unlink_wrong_item_rejected(client, db):
+    """删除关联时 link_id 必须属于路径中的 item_id。"""
+    order_id, part_a, _, _ = _setup_order_with_bom(db, client)
+    client.post(f"/api/orders/{order_id}/todo")
+    todos = client.get(f"/api/orders/{order_id}/todo").json()
+    a_todo_id = next(t["id"] for t in todos if t["part_id"] == part_a.id)
+
+    plating_id, poi_id = _setup_plating_order(db, client, part_a)
+    link = client.post(f"/api/orders/{order_id}/links", json={
+        "order_todo_item_id": a_todo_id,
+        "plating_order_item_id": poi_id,
+    }).json()
+
+    # Try to delete with wrong item_id (999)
+    resp = client.delete(f"/api/plating/{plating_id}/items/999/orders/{link['id']}")
+    assert resp.status_code == 404
+
+
+# --- Fix: body order_id mismatch rejected ---
+
+def test_create_link_body_order_id_mismatch_rejected(client, db):
+    """body 中的 order_id 必须与路径 order_id 一致。"""
+    order_id, part_a, _, jewelry = _setup_order_with_bom(db, client)
+
+    resp = client.post(f"/api/orders/{order_id}/links", json={
+        "order_id": "OR-9999",
+        "handcraft_jewelry_item_id": 1,
+    })
+    assert resp.status_code == 400
