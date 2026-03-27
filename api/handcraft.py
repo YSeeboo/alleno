@@ -262,12 +262,20 @@ def api_update_handcraft_delivery_images(order_id: str, body: HandcraftDeliveryI
 @router.get("/{order_id}/parts/{item_id}/orders")
 def api_get_handcraft_part_orders(order_id: str, item_id: int, db: Session = Depends(get_db)):
     """获取手工配件项关联的订单列表"""
+    from models.handcraft_order import HandcraftPartItem
+    hpi = db.get(HandcraftPartItem, item_id)
+    if hpi is None or hpi.handcraft_order_id != order_id:
+        raise HTTPException(status_code=404, detail="配件项不存在或不属于该手工单")
     return get_links_for_production_item(db, handcraft_part_item_id=item_id)
 
 
 @router.delete("/{order_id}/parts/{item_id}/orders/{link_id}", status_code=204)
 def api_delete_handcraft_part_order_link(order_id: str, item_id: int, link_id: int, db: Session = Depends(get_db)):
     """从手工单侧解除配件项关联"""
+    from models.order import OrderItemLink
+    link = db.get(OrderItemLink, link_id)
+    if link is None or link.handcraft_part_item_id != item_id:
+        raise HTTPException(status_code=404, detail="Link not found for this item")
     with service_errors():
         delete_link(db, link_id)
 
@@ -275,11 +283,19 @@ def api_delete_handcraft_part_order_link(order_id: str, item_id: int, link_id: i
 @router.get("/{order_id}/jewelries/{item_id}/orders")
 def api_get_handcraft_jewelry_orders(order_id: str, item_id: int, db: Session = Depends(get_db)):
     """获取手工饰品项关联的订单列表"""
+    from models.handcraft_order import HandcraftJewelryItem
+    hji = db.get(HandcraftJewelryItem, item_id)
+    if hji is None or hji.handcraft_order_id != order_id:
+        raise HTTPException(status_code=404, detail="饰品项不存在或不属于该手工单")
     return get_links_for_production_item(db, handcraft_jewelry_item_id=item_id)
 
 
 @router.delete("/{order_id}/jewelries/{item_id}/orders/{link_id}", status_code=204)
 def api_delete_handcraft_jewelry_order_link(order_id: str, item_id: int, link_id: int, db: Session = Depends(get_db)):
     """从手工单侧解除饰品项关联"""
+    from models.order import OrderItemLink
+    link = db.get(OrderItemLink, link_id)
+    if link is None or link.handcraft_jewelry_item_id != item_id:
+        raise HTTPException(status_code=404, detail="Link not found for this item")
     with service_errors():
         delete_link(db, link_id)

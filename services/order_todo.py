@@ -98,6 +98,7 @@ def _get_linked_production(db: Session, todo_item_id: int) -> list[dict]:
             poi = db.get(PlatingOrderItem, link.plating_order_item_id)
             if poi:
                 result.append({
+                    "link_id": link.id,
                     "type": "plating",
                     "order_id": poi.plating_order_id,
                     "item_id": poi.id,
@@ -108,6 +109,7 @@ def _get_linked_production(db: Session, todo_item_id: int) -> list[dict]:
             hpi = db.get(HandcraftPartItem, link.handcraft_part_item_id)
             if hpi:
                 result.append({
+                    "link_id": link.id,
                     "type": "handcraft_part",
                     "order_id": hpi.handcraft_order_id,
                     "item_id": hpi.id,
@@ -142,6 +144,7 @@ def create_link(db: Session, data: dict) -> OrderItemLink:
         raise ValueError("配件项只能关联 TodoList 行，不能直接关联 order_id")
 
     # 校验 todo_item 存在
+    todo = None
     if has_todo:
         todo = db.get(OrderTodoItem, data["order_todo_item_id"])
         if todo is None:
@@ -152,6 +155,34 @@ def create_link(db: Session, data: dict) -> OrderItemLink:
         order = db.query(Order).filter(Order.id == data["order_id"]).first()
         if order is None:
             raise ValueError(f"Order not found: {data['order_id']}")
+
+        # 校验饰品项的 jewelry_id 在订单中存在
+        if data.get("handcraft_jewelry_item_id"):
+            hji = db.get(HandcraftJewelryItem, data["handcraft_jewelry_item_id"])
+            if hji is None:
+                raise ValueError(f"HandcraftJewelryItem not found: {data['handcraft_jewelry_item_id']}")
+            order_jewelry_ids = {
+                oi.jewelry_id
+                for oi in db.query(OrderItem).filter(OrderItem.order_id == data["order_id"]).all()
+            }
+            if hji.jewelry_id not in order_jewelry_ids:
+                raise ValueError(f"该订单不包含饰品 {hji.jewelry_id}，无法关联")
+
+    # 校验配件项的 part_id 与 todo 行的 part_id 一致
+    if todo is not None:
+        prod_part_id = None
+        if data.get("plating_order_item_id"):
+            poi = db.get(PlatingOrderItem, data["plating_order_item_id"])
+            if poi is None:
+                raise ValueError(f"PlatingOrderItem not found: {data['plating_order_item_id']}")
+            prod_part_id = poi.part_id
+        elif data.get("handcraft_part_item_id"):
+            hpi = db.get(HandcraftPartItem, data["handcraft_part_item_id"])
+            if hpi is None:
+                raise ValueError(f"HandcraftPartItem not found: {data['handcraft_part_item_id']}")
+            prod_part_id = hpi.part_id
+        if prod_part_id and prod_part_id != todo.part_id:
+            raise ValueError(f"生产项配件 {prod_part_id} 与 TodoList 行配件 {todo.part_id} 不匹配")
 
     # 校验唯一性：同一个生产项只能关联一个订单
     prod_key = set_keys[0]

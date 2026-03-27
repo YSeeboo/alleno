@@ -1154,7 +1154,8 @@ onMounted(async () => {
     const { data: jewels } = await listJewelries()
     jewels.forEach((j) => { jewelryMap.value[j.id] = j })
     await loadData()
-    await Promise.all([loadJewelries(), loadPartItemOrderLinks(), loadJewelryItemOrderLinks()])
+    await Promise.all([loadJewelries(), loadPartItemOrderLinks()])
+    await loadJewelryItemOrderLinks()
   } finally {
     loading.value = false
   }

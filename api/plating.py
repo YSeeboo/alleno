@@ -220,11 +220,19 @@ def api_update_plating_delivery_images(order_id: str, body: PlatingDeliveryImage
 @router.get("/{order_id}/items/{item_id}/orders")
 def api_get_plating_item_orders(order_id: str, item_id: int, db: Session = Depends(get_db)):
     """获取电镀配件项关联的订单列表"""
+    from models.plating_order import PlatingOrderItem
+    poi = db.get(PlatingOrderItem, item_id)
+    if poi is None or poi.plating_order_id != order_id:
+        raise HTTPException(status_code=404, detail="配件项不存在或不属于该电镀单")
     return get_links_for_production_item(db, plating_order_item_id=item_id)
 
 
 @router.delete("/{order_id}/items/{item_id}/orders/{link_id}", status_code=204)
 def api_delete_plating_item_order_link(order_id: str, item_id: int, link_id: int, db: Session = Depends(get_db)):
     """从电镀单侧解除关联"""
+    from models.order import OrderItemLink
+    link = db.get(OrderItemLink, link_id)
+    if link is None or link.plating_order_item_id != item_id:
+        raise HTTPException(status_code=404, detail="Link not found for this item")
     with service_errors():
         delete_link(db, link_id)
