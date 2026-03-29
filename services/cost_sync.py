@@ -135,3 +135,69 @@ def detect_plating_cost_diffs(db: Session, receipt) -> list[dict]:
                 "new_value": new_price,
             })
     return diffs
+
+
+def detect_handcraft_jewelry_cost_diffs(db: Session, receipt) -> list[dict]:
+    """Detect handcraft_cost diffs for jewelry items in a handcraft receipt."""
+    from models.jewelry import Jewelry
+
+    price_map: Dict[str, Optional[float]] = {}
+    for ri in receipt.items:
+        if ri.item_type != "jewelry" or ri.price is None:
+            continue
+        price_map[ri.item_id] = float(ri.price)
+
+    diffs = []
+    for jewelry_id, new_price in price_map.items():
+        jewelry = db.get(Jewelry, jewelry_id)
+        if jewelry is None:
+            continue
+        current = float(jewelry.handcraft_cost) if jewelry.handcraft_cost is not None else None
+        if _compare(current, new_price):
+            diffs.append({
+                "part_id": jewelry_id,       # 复用 CostDiffItem 结构，part_id 字段存 jewelry_id
+                "part_name": jewelry.name,
+                "field": "handcraft_cost",
+                "current_value": current,
+                "new_value": new_price,
+            })
+    return diffs
+
+
+def auto_set_initial_handcraft_cost(db: Session, jewelry_id: str, price: float) -> None:
+    """Sync handcraft receipt jewelry price to Jewelry.handcraft_cost."""
+    from models.jewelry import Jewelry
+    jewelry = db.get(Jewelry, jewelry_id)
+    if jewelry is None:
+        return
+    new_value = Decimal(str(price)).quantize(_Q7, rounding=ROUND_HALF_UP)
+    current = Decimal(str(jewelry.handcraft_cost)).quantize(_Q7, rounding=ROUND_HALF_UP) if jewelry.handcraft_cost is not None else None
+    if current == new_value:
+        return
+    jewelry.handcraft_cost = new_value
+    db.flush()
+
+
+def detect_handcraft_bead_cost_diffs(db: Session, receipt) -> list[dict]:
+    """Detect bead_cost diffs for part items in a handcraft receipt."""
+    price_map: Dict[str, Optional[float]] = {}
+    for ri in receipt.items:
+        if ri.item_type != "part" or ri.price is None:
+            continue
+        price_map[ri.item_id] = float(ri.price)
+
+    diffs = []
+    for part_id, new_price in price_map.items():
+        part = db.get(Part, part_id)
+        if part is None:
+            continue
+        current = float(part.bead_cost) if part.bead_cost is not None else None
+        if _compare(current, new_price):
+            diffs.append({
+                "part_id": part_id,
+                "part_name": part.name,
+                "field": "bead_cost",
+                "current_value": current,
+                "new_value": new_price,
+            })
+    return diffs
