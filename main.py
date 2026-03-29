@@ -24,6 +24,9 @@ from api.feishu import router as feishu_router
 from api.kanban import router as kanban_router
 from api.purchase_order import router as purchase_order_router
 from api.plating_receipt import router as plating_receipt_router
+from api.handcraft_receipt import router as handcraft_receipt_router
+from api.supplier import router as supplier_router
+from api.jewelry_template import router as jewelry_template_router
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +104,9 @@ app.include_router(feishu_router)
 app.include_router(kanban_router, prefix="/api/kanban", tags=["kanban"], dependencies=[require_permission("kanban")])
 app.include_router(purchase_order_router, dependencies=[require_permission("purchase_orders")])
 app.include_router(plating_receipt_router, dependencies=[require_permission("plating")])
+app.include_router(handcraft_receipt_router, dependencies=[require_permission("handcraft")])
+app.include_router(supplier_router, dependencies=[Depends(get_current_user)])
+app.include_router(jewelry_template_router, dependencies=[require_permission("parts")])
 
 
 @app.get("/")
