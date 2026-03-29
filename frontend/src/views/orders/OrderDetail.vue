@@ -153,6 +153,7 @@ const reloadOrder = async () => {
     part_image: partMap[part_id]?.image || '',
     total_qty,
   }))
+  await loadTodo()
 }
 
 const doAddItem = async () => {
@@ -176,18 +177,10 @@ const doAddItem = async () => {
   }
 }
 
-const doDeleteItem = (row) => {
-  dialog.warning({
-    title: '删除饰品',
-    content: `确认删除「${row.jewelry_name || row.jewelry_id}」？`,
-    positiveText: '确认',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      await deleteOrderItem(order.value.id, row.id)
-      message.success('已删除')
-      await reloadOrder()
-    },
-  })
+const doDeleteItem = async (row) => {
+  await deleteOrderItem(order.value.id, row.id)
+  message.success('已删除')
+  await reloadOrder()
 }
 
 const advanceStatus = async () => {

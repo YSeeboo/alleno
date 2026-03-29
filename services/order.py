@@ -76,6 +76,8 @@ def add_order_item(db: Session, order_id: str, data: dict) -> OrderItem:
     order = get_order(db, order_id)
     if order is None:
         raise ValueError(f"Order not found: {order_id}")
+    if order.status != "待生产":
+        raise ValueError(f"订单状态为「{order.status}」，只有「待生产」状态可以修改饰品明细")
     unit_price = Decimal(str(data["unit_price"])).quantize(_Q7, rounding=ROUND_HALF_UP)
     item = OrderItem(
         order_id=order_id,
@@ -91,6 +93,11 @@ def add_order_item(db: Session, order_id: str, data: dict) -> OrderItem:
 
 
 def delete_order_item(db: Session, order_id: str, item_id: int) -> None:
+    order = get_order(db, order_id)
+    if order is None:
+        raise ValueError(f"Order not found: {order_id}")
+    if order.status != "待生产":
+        raise ValueError(f"订单状态为「{order.status}」，只有「待生产」状态可以修改饰品明细")
     item = db.query(OrderItem).filter(
         OrderItem.id == item_id, OrderItem.order_id == order_id
     ).first()

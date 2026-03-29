@@ -5,8 +5,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class OrderItemCreate(BaseModel):
     jewelry_id: str
-    quantity: int
-    unit_price: float
+    quantity: int = Field(..., gt=0)
+    unit_price: float = Field(..., ge=0)
     remarks: Optional[str] = None
 
 
