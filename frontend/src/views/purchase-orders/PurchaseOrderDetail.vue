@@ -125,6 +125,15 @@
       </n-card>
 
       <n-card v-if="order" title="购入明细">
+        <template #header-extra>
+          <n-button
+            v-if="order.items?.length > 0"
+            size="small"
+            @click="openBatchLinkModal"
+          >
+            批量关联订单
+          </n-button>
+        </template>
         <n-data-table v-if="order.items?.length > 0" :columns="itemColumns" :data="tableData" :bordered="false" :row-class-name="rowClassName" />
         <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
       </n-card>
@@ -132,6 +141,7 @@
 
     <!-- Edit Item Modal -->
     <n-modal v-model:show="editModalVisible" preset="card" title="修改明细" style="width: 500px;">
+      <form @submit.prevent="doEditItem">
       <n-form label-placement="left" label-width="90">
         <n-form-item label="数量">
           <n-input-number v-model:value="editForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
@@ -146,6 +156,7 @@
           <n-input v-model:value="editForm.note" placeholder="备注（可选）" />
         </n-form-item>
       </n-form>
+      </form>
       <template #footer>
         <n-space justify="end">
           <n-button @click="editModalVisible = false">取消</n-button>
@@ -161,6 +172,75 @@
       suppress-success
       @uploaded="handleDeliveryImageUploaded"
     />
+
+    <!-- Single Link Modal -->
+    <n-modal v-model:show="linkModalVisible" preset="card" title="关联订单" style="width: 600px;">
+      <n-form label-placement="left" label-width="80">
+        <n-form-item label="选择订单">
+          <n-select
+            v-model:value="linkForm.orderId"
+            :options="orderOptions"
+            filterable
+            placeholder="搜索订单号或客户名"
+            @update:value="onLinkOrderSelect"
+          />
+        </n-form-item>
+        <n-form-item v-if="linkTodoItems.length > 0" label="匹配配件">
+          <n-radio-group v-model:value="linkForm.todoItemId">
+            <n-space vertical>
+              <n-radio v-for="t in linkTodoItems" :key="t.id" :value="t.id">
+                {{ t.part_name || t.part_id }} — 需要 {{ t.required_qty }}
+              </n-radio>
+            </n-space>
+          </n-radio-group>
+        </n-form-item>
+        <div v-if="linkForm.orderId && linkTodoItems.length === 0 && !linkTodoLoading" style="color: #999; padding: 8px 0;">
+          该订单配件清单中没有匹配的配件
+        </div>
+        <n-spin v-if="linkTodoLoading" size="small" />
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="linkModalVisible = false">取消</n-button>
+          <n-button type="primary" :loading="linkSubmitting" :disabled="!linkForm.todoItemId" @click="doCreateLink">确认关联</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- Batch Link Modal -->
+    <n-modal v-model:show="batchLinkModalVisible" preset="card" title="批量关联订单" style="width: 500px;">
+      <n-form label-placement="left" label-width="80">
+        <n-form-item label="选择订单">
+          <n-select
+            v-model:value="batchLinkOrderId"
+            :options="orderOptions"
+            filterable
+            placeholder="搜索订单号或客户名"
+          />
+        </n-form-item>
+        <n-form-item label="勾选配件">
+          <div v-if="unlinkableItems.length === 0" style="color: #999; font-size: 13px;">
+            所有配件项已关联订单
+          </div>
+          <n-checkbox-group v-else v-model:value="batchLinkCheckedIds">
+            <n-space vertical>
+              <n-checkbox v-for="item in unlinkableItems" :key="item.id" :value="item.id">
+                {{ partMap[item.part_id]?.name || item.part_id }} — {{ item.qty }}{{ item.unit || '个' }}
+              </n-checkbox>
+            </n-space>
+          </n-checkbox-group>
+        </n-form-item>
+        <div style="color: #666; font-size: 13px; padding: 4px 0;">
+          将自动按配件编号匹配该订单配件清单中的行
+        </div>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="batchLinkModalVisible = false">取消</n-button>
+          <n-button type="primary" :loading="batchLinkSubmitting" :disabled="!batchLinkOrderId || batchLinkCheckedIds.length === 0" @click="doBatchLink">确认批量关联</n-button>
+        </n-space>
+      </template>
+    </n-modal>
 
     <!-- Addon Cost Diff Modal -->
     <n-modal v-model:show="addonCostDiffVisible" :mask-closable="false" preset="card" title="穿珠成本变动确认" style="width: 550px;">
@@ -196,7 +276,7 @@ import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
   NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon, NImage,
-  NPopover,
+  NPopover, NRadioGroup, NRadio, NCheckbox, NCheckboxGroup,
 } from 'naive-ui'
 import { CreateOutline } from '@vicons/ionicons5'
 import {
@@ -204,9 +284,11 @@ import {
   updatePurchaseOrderDeliveryImages,
   updatePurchaseOrderItem, deletePurchaseOrderItem,
   createPurchaseOrderItemAddon, updatePurchaseOrderItemAddon, deletePurchaseOrderItemAddon,
+  getPurchaseItemOrders, deletePurchaseItemOrderLink,
 } from '@/api/purchaseOrders'
+import { listOrders, getTodo, createLink, batchLink } from '@/api/orders'
 import { listParts, batchUpdatePartCosts } from '@/api/parts'
-import { renderNamedImage, fmtMoney } from '@/utils/ui'
+import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 
 const route = useRoute()
@@ -259,6 +341,176 @@ const addonCostDiffVisible = ref(false)
 const addonCostDiffs = ref([])
 const addonCostDiffSourceId = ref('')
 const addonCostDiffUpdating = ref(false)
+
+// --- Order Link ---
+const orderOptions = ref([])
+const itemOrderLinks = ref({}) // itemId -> [{order_id, customer_name, link_id}]
+
+const linkModalVisible = ref(false)
+const linkForm = ref({ itemId: null, partId: null, orderId: null, todoItemId: null })
+const linkTodoItems = ref([])
+const linkTodoLoading = ref(false)
+const linkSubmitting = ref(false)
+
+const batchLinkModalVisible = ref(false)
+const batchLinkOrderId = ref(null)
+const batchLinkSubmitting = ref(false)
+const batchLinkCheckedIds = ref([])
+
+// Items that don't yet have a link (available for batch linking)
+const unlinkableItems = computed(() => {
+  if (!order.value?.items) return []
+  return order.value.items.filter((item) => {
+    const links = itemOrderLinks.value[item.id] || []
+    return links.length === 0
+  })
+})
+
+const loadOrderOptions = async () => {
+  try {
+    const { data } = await listOrders()
+    orderOptions.value = data.map((o) => ({
+      label: `${o.id} — ${o.customer_name}`,
+      value: o.id,
+    }))
+  } catch (_) {}
+}
+
+const loadItemOrderLinks = async () => {
+  if (!order.value?.items) return
+  const map = {}
+  await Promise.all(order.value.items.map(async (item) => {
+    try {
+      const { data } = await getPurchaseItemOrders(route.params.id, item.id)
+      map[item.id] = data
+    } catch (_) {
+      map[item.id] = []
+    }
+  }))
+  itemOrderLinks.value = map
+}
+
+const openLinkModal = (row) => {
+  linkForm.value = { itemId: row.id, partId: row.part_id, orderId: null, todoItemId: null }
+  linkTodoItems.value = []
+  linkModalVisible.value = true
+  loadOrderOptions()
+}
+
+const onLinkOrderSelect = async (orderId) => {
+  linkForm.value.todoItemId = null
+  linkTodoItems.value = []
+  if (!orderId) return
+  linkTodoLoading.value = true
+  try {
+    const { data } = await getTodo(orderId)
+    linkTodoItems.value = data.filter((t) => t.part_id === linkForm.value.partId)
+    if (linkTodoItems.value.length === 1) {
+      linkForm.value.todoItemId = linkTodoItems.value[0].id
+    }
+  } catch (_) {
+    linkTodoItems.value = []
+  } finally {
+    linkTodoLoading.value = false
+  }
+}
+
+const doCreateLink = async () => {
+  if (!linkForm.value.todoItemId) return
+  linkSubmitting.value = true
+  try {
+    await createLink(linkForm.value.orderId, {
+      order_todo_item_id: linkForm.value.todoItemId,
+      purchase_order_item_id: linkForm.value.itemId,
+    })
+    message.success('关联成功')
+    linkModalVisible.value = false
+    await loadItemOrderLinks()
+  } catch (e) {
+    message.error(e.response?.data?.detail || '关联失败')
+  } finally {
+    linkSubmitting.value = false
+  }
+}
+
+const openBatchLinkModal = () => {
+  batchLinkOrderId.value = null
+  batchLinkCheckedIds.value = unlinkableItems.value.map((i) => i.id)
+  batchLinkModalVisible.value = true
+  loadOrderOptions()
+}
+
+const doBatchLink = async () => {
+  if (!batchLinkOrderId.value || batchLinkCheckedIds.value.length === 0) return
+  batchLinkSubmitting.value = true
+  try {
+    const { data } = await batchLink(batchLinkOrderId.value, {
+      order_id: batchLinkOrderId.value,
+      purchase_order_item_ids: batchLinkCheckedIds.value,
+    })
+    const msg = [`成功关联 ${data.linked} 项`]
+    if (data.skipped.length > 0) {
+      msg.push(`跳过: ${data.skipped.join(', ')}`)
+    }
+    message.success(msg.join('，'))
+    batchLinkModalVisible.value = false
+    await loadItemOrderLinks()
+  } catch (e) {
+    message.error(e.response?.data?.detail || '批量关联失败')
+  } finally {
+    batchLinkSubmitting.value = false
+  }
+}
+
+const doUnlinkPurchaseItem = (itemId, link) => {
+  dialog.warning({
+    title: '解除关联',
+    content: `确认解除与订单「${link.order_id}」的关联？`,
+    positiveText: '确认',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await deletePurchaseItemOrderLink(route.params.id, itemId, link.link_id)
+        message.success('已解除关联')
+        await loadItemOrderLinks()
+      } catch (_) {}
+    },
+  })
+}
+
+const renderOrderLinkCell = (row) => {
+  const links = itemOrderLinks.value[row.id] || []
+  if (links.length === 0) {
+    return h(NButton, {
+      size: 'small',
+      text: true,
+      type: 'primary',
+      onClick: () => openLinkModal(row),
+    }, { default: () => '关联订单' })
+  }
+  const children = links.map((link) => h('span', {
+    style: 'display: inline-flex; align-items: center; gap: 2px; background: #f0f9eb; border: 1px solid #c2e7b0; border-radius: 4px; padding: 1px 6px; font-size: 12px;',
+  }, [
+    h('span', null, link.order_id),
+    h(NButton, {
+      size: 'tiny',
+      quaternary: true,
+      type: 'error',
+      style: 'padding: 0 2px;',
+      onClick: () => doUnlinkPurchaseItem(row.id, link),
+    }, { default: () => '×' }),
+  ]))
+  // purchase_order_item_id has unique constraint — only show + if no link exists
+  if (links.length === 0) {
+    children.push(h(NButton, {
+      size: 'tiny',
+      text: true,
+      type: 'primary',
+      onClick: () => openLinkModal(row),
+    }, { default: () => '+' }))
+  }
+  return h('div', { style: 'display: flex; flex-wrap: wrap; gap: 4px; align-items: center;' }, children)
+}
 
 // Addon (穿珠费用)
 const addonEditing = ref({})   // { [itemId]: { qty: null, price: null, saving: false } }
@@ -676,10 +928,8 @@ const rowClassName = (row) => {
   return ''
 }
 
-// Format helpers: keep precision constraints but strip trailing zeros
+// Format helper: keep precision constraints but strip trailing zeros
 const fmtQty = (v) => v == null ? '' : parseFloat(Number(v).toFixed(4)).toString()
-const fmtPrice = (v) => v == null ? '' : parseFloat(Number(v).toFixed(7)).toString()
-const parseNum = (v) => { if (v == null || String(v).trim() === '') return null; const n = Number(v); return Number.isNaN(n) ? null : n }
 
 const ADDON_TYPE_LABELS = { bead_stringing: '穿珠子' }
 
@@ -853,6 +1103,15 @@ const itemColumns = [
     },
   },
   {
+    title: '关联订单',
+    key: 'order_link',
+    minWidth: 140,
+    render: (row) => {
+      if (row._rowType === 'addon' || row._rowType === 'addon_new') return null
+      return renderOrderLinkCell(row)
+    },
+  },
+  {
     title: '操作',
     key: 'actions',
     width: 180,
@@ -927,6 +1186,7 @@ onMounted(async () => {
       // parts list failure should not block order loading
     }
     await loadData()
+    await loadItemOrderLinks()
   } finally {
     loading.value = false
   }
