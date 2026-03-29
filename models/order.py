@@ -43,7 +43,8 @@ class OrderItemLink(Base):
     order_todo_item_id = Column(Integer, ForeignKey("order_todo_item.id"), nullable=True)
     # 饰品项直接关联订单
     order_id = Column(String, ForeignKey("order.id"), nullable=True)
-    # 三选一：关联的生产项（unique 保证同一生产项只能关联一个订单）
+    # 四选一：关联的生产项（unique 保证同一生产项只能关联一个订单）
     plating_order_item_id = Column(Integer, ForeignKey("plating_order_item.id"), nullable=True, unique=True)
     handcraft_part_item_id = Column(Integer, ForeignKey("handcraft_part_item.id"), nullable=True, unique=True)
     handcraft_jewelry_item_id = Column(Integer, ForeignKey("handcraft_jewelry_item.id"), nullable=True, unique=True)
+    purchase_order_item_id = Column(Integer, ForeignKey("purchase_order_item.id"), nullable=True, unique=True)

@@ -6,6 +6,7 @@ from models.order import Order, OrderItem, OrderTodoItem, OrderItemLink
 from models.part import Part
 from models.plating_order import PlatingOrderItem
 from models.handcraft_order import HandcraftPartItem, HandcraftJewelryItem
+from models.purchase_order import PurchaseOrderItem
 from services.bom import get_bom
 from services.inventory import get_stock
 
@@ -116,16 +117,27 @@ def _get_linked_production(db: Session, todo_item_id: int) -> list[dict]:
                     "part_id": hpi.part_id,
                     "status": hpi.status,
                 })
+        elif link.purchase_order_item_id:
+            poi = db.get(PurchaseOrderItem, link.purchase_order_item_id)
+            if poi:
+                result.append({
+                    "link_id": link.id,
+                    "type": "purchase",
+                    "order_id": poi.purchase_order_id,
+                    "item_id": poi.id,
+                    "part_id": poi.part_id,
+                    "status": "已采购",
+                })
     return result
 
 
 def create_link(db: Session, data: dict) -> OrderItemLink:
     """创建单个关联。"""
-    # 校验三选一
-    production_keys = ["plating_order_item_id", "handcraft_part_item_id", "handcraft_jewelry_item_id"]
+    # 校验四选一
+    production_keys = ["plating_order_item_id", "handcraft_part_item_id", "handcraft_jewelry_item_id", "purchase_order_item_id"]
     set_keys = [k for k in production_keys if data.get(k) is not None]
     if len(set_keys) != 1:
-        raise ValueError("必须指定且仅指定一个生产项（plating_order_item_id / handcraft_part_item_id / handcraft_jewelry_item_id）")
+        raise ValueError("必须指定且仅指定一个生产项（plating_order_item_id / handcraft_part_item_id / handcraft_jewelry_item_id / purchase_order_item_id）")
 
     # 校验关联目标（todo_item 或 order_id 二选一）
     has_todo = data.get("order_todo_item_id") is not None
@@ -140,7 +152,7 @@ def create_link(db: Session, data: dict) -> OrderItemLink:
         raise ValueError("手工饰品项只能关联 order_id，不能关联 TodoList 行")
 
     # 配件项只能用 order_todo_item_id
-    if (data.get("plating_order_item_id") or data.get("handcraft_part_item_id")) and has_order:
+    if (data.get("plating_order_item_id") or data.get("handcraft_part_item_id") or data.get("purchase_order_item_id")) and has_order:
         raise ValueError("配件项只能关联 TodoList 行，不能直接关联 order_id")
 
     # 校验 todo_item 存在
@@ -181,6 +193,11 @@ def create_link(db: Session, data: dict) -> OrderItemLink:
             if hpi is None:
                 raise ValueError(f"HandcraftPartItem not found: {data['handcraft_part_item_id']}")
             prod_part_id = hpi.part_id
+        elif data.get("purchase_order_item_id"):
+            poi = db.get(PurchaseOrderItem, data["purchase_order_item_id"])
+            if poi is None:
+                raise ValueError(f"PurchaseOrderItem not found: {data['purchase_order_item_id']}")
+            prod_part_id = poi.part_id
         if prod_part_id and prod_part_id != todo.part_id:
             raise ValueError(f"生产项配件 {prod_part_id} 与 TodoList 行配件 {todo.part_id} 不匹配")
 
@@ -199,6 +216,7 @@ def create_link(db: Session, data: dict) -> OrderItemLink:
         plating_order_item_id=data.get("plating_order_item_id"),
         handcraft_part_item_id=data.get("handcraft_part_item_id"),
         handcraft_jewelry_item_id=data.get("handcraft_jewelry_item_id"),
+        purchase_order_item_id=data.get("purchase_order_item_id"),
     )
     db.add(link)
     db.flush()
@@ -219,6 +237,7 @@ def batch_link(
     order_id: str,
     plating_order_item_ids: list[int] = None,
     handcraft_part_item_ids: list[int] = None,
+    purchase_order_item_ids: list[int] = None,
 ) -> dict:
     """批量关联：按 part_id 自动匹配 TodoList 行。
 
@@ -274,6 +293,26 @@ def batch_link(
         ))
         linked += 1
 
+    for poi_id in (purchase_order_item_ids or []):
+        poi = db.get(PurchaseOrderItem, poi_id)
+        if poi is None:
+            continue
+        existing = db.query(OrderItemLink).filter(
+            OrderItemLink.purchase_order_item_id == poi_id
+        ).first()
+        if existing:
+            continue
+        todo_id = todo_by_part.get(poi.part_id)
+        if todo_id is None:
+            part = db.get(Part, poi.part_id)
+            skipped.append(part.name if part else poi.part_id)
+            continue
+        db.add(OrderItemLink(
+            order_todo_item_id=todo_id,
+            purchase_order_item_id=poi_id,
+        ))
+        linked += 1
+
     db.flush()
     return {"linked": linked, "skipped": skipped}
 
@@ -283,8 +322,9 @@ def get_links_for_production_item(
     plating_order_item_id: int = None,
     handcraft_part_item_id: int = None,
     handcraft_jewelry_item_id: int = None,
+    purchase_order_item_id: int = None,
 ) -> list[dict]:
-    """获取某个生产项关联的订单信息（反向查询，用于电镀/手工单详情页）。"""
+    """获取某个生产项关联的订单信息（反向查询，用于电镀/手工/采购单详情页）。"""
     q = db.query(OrderItemLink)
     if plating_order_item_id:
         q = q.filter(OrderItemLink.plating_order_item_id == plating_order_item_id)
@@ -292,6 +332,8 @@ def get_links_for_production_item(
         q = q.filter(OrderItemLink.handcraft_part_item_id == handcraft_part_item_id)
     elif handcraft_jewelry_item_id:
         q = q.filter(OrderItemLink.handcraft_jewelry_item_id == handcraft_jewelry_item_id)
+    elif purchase_order_item_id:
+        q = q.filter(OrderItemLink.purchase_order_item_id == purchase_order_item_id)
     else:
         return []
 
@@ -345,6 +387,11 @@ def get_order_progress(db: Session, order_id: str) -> dict:
         elif link.handcraft_jewelry_item_id:
             hji = db.get(HandcraftJewelryItem, link.handcraft_jewelry_item_id)
             if hji and hji.status == "已收回":
+                completed += 1
+        elif link.purchase_order_item_id:
+            # 采购单配件项存在即视为已完成
+            poi = db.get(PurchaseOrderItem, link.purchase_order_item_id)
+            if poi:
                 completed += 1
 
     return {"order_id": order_id, "total": total, "completed": completed}

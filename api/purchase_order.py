@@ -19,6 +19,7 @@ from schemas.purchase_order import (
     PurchaseOrderStatusUpdate,
 )
 from services.cost_sync import auto_set_initial_bead_cost, auto_set_initial_purchase_cost, auto_set_initial_purchase_costs, detect_purchase_cost_diffs, detect_addon_cost_diffs
+from services.order_todo import get_links_for_production_item, delete_link
 from services.purchase_order import (
     create_purchase_order,
     create_purchase_item_addon,
@@ -167,3 +168,26 @@ def api_delete_addon(order_id: str, item_id: int, addon_id: int, db: Session = D
         raise HTTPException(status_code=404, detail=f"PurchaseOrder {order_id} not found")
     with service_errors():
         delete_purchase_item_addon(db, order_id, item_id, addon_id)
+
+
+@router.get("/{order_id}/items/{item_id}/orders")
+def api_get_purchase_item_orders(order_id: str, item_id: int, db: Session = Depends(get_db)):
+    """获取采购配件项关联的订单列表"""
+    poi = db.get(PurchaseOrderItem, item_id)
+    if poi is None or poi.purchase_order_id != order_id:
+        raise HTTPException(status_code=404, detail="配件项不存在或不属于该采购单")
+    return get_links_for_production_item(db, purchase_order_item_id=item_id)
+
+
+@router.delete("/{order_id}/items/{item_id}/orders/{link_id}", status_code=204)
+def api_delete_purchase_item_order_link(order_id: str, item_id: int, link_id: int, db: Session = Depends(get_db)):
+    """从采购单侧解除关联"""
+    from models.order import OrderItemLink
+    poi = db.get(PurchaseOrderItem, item_id)
+    if poi is None or poi.purchase_order_id != order_id:
+        raise HTTPException(status_code=404, detail="配件项不存在或不属于该采购单")
+    link = db.get(OrderItemLink, link_id)
+    if link is None or link.purchase_order_item_id != item_id:
+        raise HTTPException(status_code=404, detail="关联不存在或不属于该配件项")
+    with service_errors():
+        delete_link(db, link_id)

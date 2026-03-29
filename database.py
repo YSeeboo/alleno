@@ -157,6 +157,15 @@ def ensure_schema_compat(target_engine=None):
                 conn.execute(text('ALTER TABLE "order" ADD COLUMN packaging_cost NUMERIC(18,7) NULL'))
                 logger.warning("Added missing order.packaging_cost column")
 
+        if inspector.has_table("order_item_link"):
+            columns = {col["name"] for col in inspector.get_columns("order_item_link")}
+            if "purchase_order_item_id" not in columns:
+                conn.execute(text(
+                    "ALTER TABLE order_item_link ADD COLUMN purchase_order_item_id INTEGER NULL "
+                    "REFERENCES purchase_order_item(id) UNIQUE"
+                ))
+                logger.warning("Added missing order_item_link.purchase_order_item_id column")
+
         # Trim whitespace from supplier/vendor name columns
         _name_columns = [
             ("plating_order", "supplier_name"),

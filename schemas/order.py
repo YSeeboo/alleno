@@ -68,6 +68,7 @@ class LinkCreateRequest(BaseModel):
     plating_order_item_id: Optional[int] = None
     handcraft_part_item_id: Optional[int] = None
     handcraft_jewelry_item_id: Optional[int] = None
+    purchase_order_item_id: Optional[int] = None
 
 
 class BatchLinkRequest(BaseModel):
@@ -75,6 +76,7 @@ class BatchLinkRequest(BaseModel):
     order_id: str
     plating_order_item_ids: list[int] = Field(default_factory=list)
     handcraft_part_item_ids: list[int] = Field(default_factory=list)
+    purchase_order_item_ids: list[int] = Field(default_factory=list)
 
 
 class BatchLinkResponse(BaseModel):
@@ -91,6 +93,7 @@ class LinkResponse(BaseModel):
     plating_order_item_id: Optional[int] = None
     handcraft_part_item_id: Optional[int] = None
     handcraft_jewelry_item_id: Optional[int] = None
+    purchase_order_item_id: Optional[int] = None
 
 
 class OrderProgressResponse(BaseModel):

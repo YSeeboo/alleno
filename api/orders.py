@@ -190,6 +190,7 @@ def api_batch_link(order_id: str, body: BatchLinkRequest, db: Session = Depends(
             order_id=order_id,
             plating_order_item_ids=body.plating_order_item_ids,
             handcraft_part_item_ids=body.handcraft_part_item_ids,
+            purchase_order_item_ids=body.purchase_order_item_ids,
         )
     return result
 
