@@ -12,6 +12,7 @@ from .handcraft_receipt import HandcraftReceipt, HandcraftReceiptItem
 from .user import User
 from .supplier import Supplier
 from .order_cost_snapshot import OrderCostSnapshot, OrderCostSnapshotItem
+from .jewelry_template import JewelryTemplate, JewelryTemplateItem
 
 __all__ = [
     "Part",
@@ -40,4 +41,6 @@ __all__ = [
     "Supplier",
     "OrderCostSnapshot",
     "OrderCostSnapshotItem",
+    "JewelryTemplate",
+    "JewelryTemplateItem",
 ]
