@@ -90,6 +90,7 @@ const loadBom = async () => {
     ...b,
     part_name: partMap.value[b.part_id]?.name || b.part_id,
     part_image: partMap.value[b.part_id]?.image || '',
+    part_unit: partMap.value[b.part_id]?.unit || '',
     editQty: null,
   }))
 }
@@ -167,6 +168,12 @@ const bomColumns = [
         onInput: (e) => { row.editQty = parseFloat(e.target.value) },
         onBlur: () => saveQty(row),
       }),
+  },
+  {
+    title: '单位',
+    key: 'part_unit',
+    width: 60,
+    render: (row) => row.part_unit || '-',
   },
   {
     title: '操作',
