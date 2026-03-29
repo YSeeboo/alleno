@@ -37,6 +37,7 @@ class OrderResponse(BaseModel):
     customer_name: str
     status: str
     total_amount: Optional[float] = None
+    packaging_cost: Optional[float] = None
     created_at: datetime
 
 

@@ -10,6 +10,7 @@ class JewelryCreate(BaseModel):
     unit: Optional[str] = None
     retail_price: Optional[float] = None
     wholesale_price: Optional[float] = None
+    handcraft_cost: Optional[float] = None
     status: Optional[str] = "active"
 
 
@@ -21,6 +22,7 @@ class JewelryUpdate(BaseModel):
     unit: Optional[str] = None
     retail_price: Optional[float] = None
     wholesale_price: Optional[float] = None
+    handcraft_cost: Optional[float] = None
 
 
 class StatusUpdate(BaseModel):
@@ -38,4 +40,5 @@ class JewelryResponse(BaseModel):
     unit: Optional[str] = None
     retail_price: Optional[float] = None
     wholesale_price: Optional[float] = None
+    handcraft_cost: Optional[float] = None
     status: str
