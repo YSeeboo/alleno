@@ -56,12 +56,13 @@ def api_create_handcraft_receipt(body: HandcraftReceiptCreate, db: Session = Dep
             status=body.status,
             note=body.note,
         )
-    # Sync handcraft_cost for jewelry items
+    # Detect diffs BEFORE auto-setting (so old values are still visible)
+    cost_diffs = detect_handcraft_bead_cost_diffs(db, receipt)
+    cost_diffs += detect_handcraft_jewelry_cost_diffs(db, receipt)
+    # Then sync handcraft_cost for jewelry items
     for item in receipt.items:
         if item.item_type == "jewelry" and item.price is not None:
             auto_set_initial_handcraft_cost(db, item.item_id, float(item.price))
-    cost_diffs = detect_handcraft_bead_cost_diffs(db, receipt)
-    cost_diffs += detect_handcraft_jewelry_cost_diffs(db, receipt)
     resp = HandcraftReceiptResponse.model_validate(receipt)
     resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]
     return resp
@@ -78,12 +79,13 @@ def api_add_handcraft_receipt_items(receipt_id: str, body: HandcraftReceiptAddIt
             receipt_id=receipt_id,
             items=[item.model_dump() for item in body.items],
         )
-    # Sync handcraft_cost for jewelry items
+    # Detect diffs BEFORE auto-setting
+    cost_diffs = detect_handcraft_bead_cost_diffs(db, receipt)
+    cost_diffs += detect_handcraft_jewelry_cost_diffs(db, receipt)
+    # Then sync
     for item in receipt.items:
         if item.item_type == "jewelry" and item.price is not None:
             auto_set_initial_handcraft_cost(db, item.item_id, float(item.price))
-    cost_diffs = detect_handcraft_bead_cost_diffs(db, receipt)
-    cost_diffs += detect_handcraft_jewelry_cost_diffs(db, receipt)
     resp = HandcraftReceiptResponse.model_validate(receipt)
     resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]
     return resp

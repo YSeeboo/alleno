@@ -549,8 +549,8 @@ def test_jewelry_handcraft_cost_synced_on_create(client, db):
     assert float(jewelry.handcraft_cost) == pytest.approx(5.0)
 
 
-def test_jewelry_handcraft_cost_sync_overwrites_old_value(client, db):
-    """When jewelry already has a different handcraft_cost, auto_set updates it."""
+def test_jewelry_handcraft_cost_diff_returned_and_synced(client, db):
+    """When jewelry has a different handcraft_cost, diff is returned AND value is synced."""
     part, jewelry, order, pi, ji = _create_sent_handcraft(db)
     jewelry.handcraft_cost = 3.0
     db.flush()
@@ -559,6 +559,13 @@ def test_jewelry_handcraft_cost_sync_overwrites_old_value(client, db):
         "items": [{"handcraft_jewelry_item_id": ji.id, "qty": 2, "price": 7.0}],
     })
     assert resp.status_code == 201
+    data = resp.json()
+    # Diff should show old→new (detected before auto-set)
+    hc_diffs = [d for d in data["cost_diffs"] if d["field"] == "handcraft_cost"]
+    assert len(hc_diffs) == 1
+    assert hc_diffs[0]["current_value"] == pytest.approx(3.0)
+    assert hc_diffs[0]["new_value"] == pytest.approx(7.0)
+    # Value should be synced after
     db.refresh(jewelry)
     assert float(jewelry.handcraft_cost) == pytest.approx(7.0)
 
