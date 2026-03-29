@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from sqlalchemy.orm import Session
 
+from pydantic import BaseModel as _BaseModel
+
 from database import get_db
 from schemas.order import (
     OrderCreate, OrderResponse, OrderItemResponse, StatusUpdate,
@@ -9,6 +11,7 @@ from schemas.order import (
     BatchLinkRequest, BatchLinkResponse, OrderProgressResponse,
 )
 from schemas.order import OrderItemCreate
+from schemas.order_cost_snapshot import OrderCostSnapshotResponse
 from services.order import (
     add_order_item,
     create_order,
@@ -17,13 +20,19 @@ from services.order import (
     get_order_items,
     get_parts_summary,
     update_order_status,
+    update_packaging_cost,
     list_orders,
 )
+from services.order_cost_snapshot import get_cost_snapshot
 from services.order_todo import (
     generate_todo, get_todo, create_link, delete_link,
     batch_link, get_order_progress,
 )
 from api._errors import service_errors
+
+
+class PackagingCostUpdate(_BaseModel):
+    packaging_cost: float
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
@@ -97,6 +106,29 @@ def api_update_order_status(order_id: str, body: StatusUpdate, db: Session = Dep
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
     with service_errors():
         order = update_order_status(db, order_id, body.status)
+    return order
+
+
+@router.get("/{order_id}/cost-snapshot", response_model=OrderCostSnapshotResponse)
+def api_get_cost_snapshot(order_id: str, db: Session = Depends(get_db)):
+    """获取订单的成本快照"""
+    order = get_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    snapshot = get_cost_snapshot(db, order_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail=f"订单 {order_id} 尚未生成成本快照")
+    return snapshot
+
+
+@router.patch("/{order_id}/packaging-cost", response_model=OrderResponse)
+def api_update_packaging_cost(order_id: str, body: PackagingCostUpdate, db: Session = Depends(get_db)):
+    """更新订单包装费"""
+    order = get_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    with service_errors():
+        order = update_packaging_cost(db, order_id, body.packaging_cost)
     return order
 
 
