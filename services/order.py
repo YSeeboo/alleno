@@ -7,7 +7,7 @@ from models.order import Order, OrderItem
 from services._helpers import _next_id
 from services.bom import get_bom
 
-_VALID_STATUSES = {"待生产", "生产中", "已完成"}
+_VALID_STATUSES = {"待生产", "生产中", "已完成", "已取消"}
 _Q7 = Decimal("0.0000001")
 
 
@@ -115,6 +115,20 @@ def update_order_status(db: Session, order_id: str, status: str) -> Order:
     order = get_order(db, order_id)
     if order is None:
         raise ValueError(f"Order not found: {order_id}")
+    if order.status == status:
+        return order  # no-op，避免重复生成快照
+    if status == "已完成":
+        from services.order_cost_snapshot import generate_cost_snapshot
+        generate_cost_snapshot(db, order_id)
     order.status = status
+    db.flush()
+    return order
+
+
+def update_packaging_cost(db: Session, order_id: str, packaging_cost: float) -> Order:
+    order = get_order(db, order_id)
+    if order is None:
+        raise ValueError(f"Order not found: {order_id}")
+    order.packaging_cost = packaging_cost
     db.flush()
     return order

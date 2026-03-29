@@ -64,7 +64,8 @@ def test_get_parts_summary(client, db):
 
 
 def test_update_order_status(client, db):
-    _, jewelry = _setup(db)
+    part, jewelry = _setup(db)
+    set_bom(db, jewelry.id, part.id, 1)
     created = client.post("/api/orders/", json={
         "customer_name": "Carol",
         "items": [{"jewelry_id": jewelry.id, "quantity": 1, "unit_price": 50.0}]
