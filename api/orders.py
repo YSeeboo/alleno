@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from sqlalchemy.orm import Session
 
-from pydantic import BaseModel as _BaseModel
+from pydantic import BaseModel as _BaseModel, Field as _Field
 
 from database import get_db
 from schemas.order import (
@@ -32,7 +32,7 @@ from api._errors import service_errors
 
 
 class PackagingCostUpdate(_BaseModel):
-    packaging_cost: float
+    packaging_cost: float = _Field(ge=0)
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 

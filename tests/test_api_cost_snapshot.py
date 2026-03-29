@@ -146,3 +146,43 @@ def test_cancel_order(client, db):
     resp = client.patch(f"/api/orders/{order_id}/status", json={"status": "已取消"})
     assert resp.status_code == 200
     assert resp.json()["status"] == "已取消"
+
+
+def test_zero_unit_price_preserved_in_snapshot(client, db):
+    """unit_price=0 should be stored as 0, not null."""
+    part = create_part(db, {"name": "P", "category": "小配件"})
+    update_part_cost(db, part.id, "purchase_cost", 1.0)
+    jewelry = create_jewelry(db, {"name": "赠品", "retail_price": 0.0, "category": "单件"})
+    set_bom(db, jewelry.id, part.id, 1)
+
+    resp = client.post("/api/orders/", json={
+        "customer_name": "测试",
+        "items": [{"jewelry_id": jewelry.id, "quantity": 1, "unit_price": 0.0}],
+    })
+    order_id = resp.json()["id"]
+    client.patch(f"/api/orders/{order_id}/status", json={"status": "已完成"})
+
+    snapshot = client.get(f"/api/orders/{order_id}/cost-snapshot").json()
+    assert snapshot["items"][0]["unit_price"] == 0.0  # not None
+
+
+def test_zero_packaging_cost_preserved_in_snapshot(client, db):
+    """packaging_cost=0 should be stored as 0, not null."""
+    order_id, _, _, _ = _setup_order_with_cost(db, client)
+    client.patch(f"/api/orders/{order_id}/packaging-cost", json={"packaging_cost": 0.0})
+    client.patch(f"/api/orders/{order_id}/status", json={"status": "已完成"})
+
+    snapshot = client.get(f"/api/orders/{order_id}/cost-snapshot").json()
+    assert snapshot["packaging_cost"] == 0.0  # not None
+
+
+def test_negative_packaging_cost_rejected(client, db):
+    """Negative packaging_cost should be rejected."""
+    jewelry = create_jewelry(db, {"name": "J", "retail_price": 10.0, "category": "单件"})
+    resp = client.post("/api/orders/", json={
+        "customer_name": "测试",
+        "items": [{"jewelry_id": jewelry.id, "quantity": 1, "unit_price": 10.0}],
+    })
+    order_id = resp.json()["id"]
+    resp = client.patch(f"/api/orders/{order_id}/packaging-cost", json={"packaging_cost": -100})
+    assert resp.status_code == 422

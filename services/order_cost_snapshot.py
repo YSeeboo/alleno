@@ -66,7 +66,7 @@ def generate_cost_snapshot(db: Session, order_id: str) -> OrderCostSnapshot:
             "jewelry_id": item.jewelry_id,
             "jewelry_name": jewelry.name if jewelry else None,
             "quantity": item.quantity,
-            "unit_price": float(item.unit_price) if item.unit_price else None,
+            "unit_price": float(item.unit_price) if item.unit_price is not None else None,
             "handcraft_cost": float(hc_cost),
             "jewelry_unit_cost": float(jewelry_unit_cost),
             "jewelry_total_cost": float(jewelry_total_cost),
@@ -85,7 +85,7 @@ def generate_cost_snapshot(db: Session, order_id: str) -> OrderCostSnapshot:
     snapshot = OrderCostSnapshot(
         order_id=order_id,
         total_cost=total_cost,
-        packaging_cost=pkg_cost if pkg_cost else None,
+        packaging_cost=pkg_cost if order.packaging_cost is not None else None,
         total_amount=order.total_amount,
         profit=profit,
         has_incomplete_cost=1 if has_incomplete else 0,
