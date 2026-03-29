@@ -111,9 +111,18 @@ def delete_purchase_order(db: Session, order_id: str) -> None:
     if order.status == "已付款":
         raise ValueError("已付款的采购单不能删除")
 
+    from models.order import OrderItemLink
+
     items = get_purchase_items(db, order_id)
     for item in items:
         deduct_stock(db, "part", item.part_id, float(item.qty), "采购单删除")
+
+    # Clean up order links referencing these items
+    item_ids = [item.id for item in items]
+    if item_ids:
+        db.query(OrderItemLink).filter(
+            OrderItemLink.purchase_order_item_id.in_(item_ids)
+        ).delete(synchronize_session=False)
 
     for item in items:
         db.delete(item)
@@ -219,6 +228,11 @@ def delete_purchase_item(db: Session, order_id: str, item_id: int) -> None:
     ).count()
     if remaining == 0:
         raise ValueError("不能删除最后一条明细，请直接删除整个采购单")
+
+    from models.order import OrderItemLink
+    db.query(OrderItemLink).filter(
+        OrderItemLink.purchase_order_item_id == item_id
+    ).delete(synchronize_session=False)
 
     deduct_stock(db, "part", item.part_id, float(item.qty), "采购明细删除")
     db.delete(item)

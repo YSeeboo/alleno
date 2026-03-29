@@ -455,6 +455,56 @@ def test_purchase_link_progress_counts_as_completed(client, db):
     assert data["completed"] == 1
 
 
+def test_delete_purchase_order_with_link(client, db):
+    """Deleting a purchase order with linked items should not cause FK error."""
+    order_id, part_a, _, _ = _setup_order_with_bom(db, client)
+    client.post(f"/api/orders/{order_id}/todo")
+    todos = client.get(f"/api/orders/{order_id}/todo").json()
+    a_todo_id = next(t["id"] for t in todos if t["part_id"] == part_a.id)
+
+    po_id, poi_id = _setup_purchase_order(db, client, part_a)
+    client.post(f"/api/orders/{order_id}/links", json={
+        "order_todo_item_id": a_todo_id,
+        "purchase_order_item_id": poi_id,
+    })
+
+    # Delete the purchase order — should succeed, not FK error
+    resp = client.delete(f"/api/purchase-orders/{po_id}")
+    assert resp.status_code == 204
+
+    # Link should be gone
+    resp = client.get(f"/api/orders/{order_id}/progress")
+    assert resp.json()["total"] == 0
+
+
+def test_delete_purchase_item_with_link(client, db):
+    """Deleting a single purchase item with a link should clean up the link."""
+    order_id, part_a, part_b, _ = _setup_order_with_bom(db, client)
+    client.post(f"/api/orders/{order_id}/todo")
+    todos = client.get(f"/api/orders/{order_id}/todo").json()
+    a_todo_id = next(t["id"] for t in todos if t["part_id"] == part_a.id)
+
+    # Create PO with 2 items so we can delete one (can't delete last item)
+    resp = client.post("/api/purchase-orders/", json={
+        "vendor_name": "供应商A",
+        "items": [
+            {"part_id": part_a.id, "qty": 500, "price": 1.0},
+            {"part_id": part_b.id, "qty": 100, "price": 2.0},
+        ],
+    })
+    po_id = resp.json()["id"]
+    poi_a_id = next(i["id"] for i in resp.json()["items"] if i["part_id"] == part_a.id)
+
+    client.post(f"/api/orders/{order_id}/links", json={
+        "order_todo_item_id": a_todo_id,
+        "purchase_order_item_id": poi_a_id,
+    })
+
+    # Delete the linked item
+    resp = client.delete(f"/api/purchase-orders/{po_id}/items/{poi_a_id}")
+    assert resp.status_code == 204
+
+
 def test_linked_production_shows_purchase_type(client, db):
     """TodoList linked_production 显示采购单类型。"""
     order_id, part_a, _, _ = _setup_order_with_bom(db, client)
