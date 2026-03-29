@@ -308,6 +308,24 @@ def test_plating_unlink_wrong_item_rejected(client, db):
     assert resp.status_code == 404
 
 
+def test_plating_unlink_wrong_order_id_rejected(client, db):
+    """删除关联时 item_id 必须属于路径中的 order_id。"""
+    order_id, part_a, _, _ = _setup_order_with_bom(db, client)
+    client.post(f"/api/orders/{order_id}/todo")
+    todos = client.get(f"/api/orders/{order_id}/todo").json()
+    a_todo_id = next(t["id"] for t in todos if t["part_id"] == part_a.id)
+
+    plating_id, poi_id = _setup_plating_order(db, client, part_a)
+    link = client.post(f"/api/orders/{order_id}/links", json={
+        "order_todo_item_id": a_todo_id,
+        "plating_order_item_id": poi_id,
+    }).json()
+
+    # Try to delete with wrong plating order_id
+    resp = client.delete(f"/api/plating/EP-9999/items/{poi_id}/orders/{link['id']}")
+    assert resp.status_code == 404
+
+
 # --- Fix: body order_id mismatch rejected ---
 
 def test_create_link_body_order_id_mismatch_rejected(client, db):
