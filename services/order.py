@@ -62,6 +62,46 @@ def get_parts_summary(db: Session, order_id: str) -> dict:
     return summary
 
 
+def _recalc_total(db: Session, order: Order) -> None:
+    items = get_order_items(db, order.id)
+    total = sum(
+        (Decimal(str(i.quantity)) * Decimal(str(i.unit_price))).quantize(_Q7, rounding=ROUND_HALF_UP)
+        for i in items
+    )
+    order.total_amount = total
+    db.flush()
+
+
+def add_order_item(db: Session, order_id: str, data: dict) -> OrderItem:
+    order = get_order(db, order_id)
+    if order is None:
+        raise ValueError(f"Order not found: {order_id}")
+    unit_price = Decimal(str(data["unit_price"])).quantize(_Q7, rounding=ROUND_HALF_UP)
+    item = OrderItem(
+        order_id=order_id,
+        jewelry_id=data["jewelry_id"],
+        quantity=data["quantity"],
+        unit_price=unit_price,
+        remarks=data.get("remarks"),
+    )
+    db.add(item)
+    db.flush()
+    _recalc_total(db, order)
+    return item
+
+
+def delete_order_item(db: Session, order_id: str, item_id: int) -> None:
+    item = db.query(OrderItem).filter(
+        OrderItem.id == item_id, OrderItem.order_id == order_id
+    ).first()
+    if item is None:
+        raise ValueError(f"OrderItem not found: {item_id}")
+    db.delete(item)
+    db.flush()
+    order = get_order(db, order_id)
+    _recalc_total(db, order)
+
+
 def update_order_status(db: Session, order_id: str, status: str) -> Order:
     if status not in _VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Must be one of: {_VALID_STATUSES}")

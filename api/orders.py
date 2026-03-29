@@ -8,8 +8,11 @@ from schemas.order import (
     OrderTodoItemResponse, LinkCreateRequest, LinkResponse,
     BatchLinkRequest, BatchLinkResponse, OrderProgressResponse,
 )
+from schemas.order import OrderItemCreate
 from services.order import (
+    add_order_item,
     create_order,
+    delete_order_item,
     get_order,
     get_order_items,
     get_parts_summary,
@@ -57,6 +60,24 @@ def api_get_order_items(order_id: str, db: Session = Depends(get_db)):
     if order is None:
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
     return get_order_items(db, order_id)
+
+
+@router.post("/{order_id}/items", response_model=OrderItemResponse, status_code=201)
+def api_add_order_item(order_id: str, body: OrderItemCreate, db: Session = Depends(get_db)):
+    order = get_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    with service_errors():
+        return add_order_item(db, order_id, body.model_dump())
+
+
+@router.delete("/{order_id}/items/{item_id}", status_code=204)
+def api_delete_order_item(order_id: str, item_id: int, db: Session = Depends(get_db)):
+    order = get_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    with service_errors():
+        delete_order_item(db, order_id, item_id)
 
 
 @router.get("/{order_id}/parts-summary")
