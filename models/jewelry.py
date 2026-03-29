@@ -15,3 +15,4 @@ class Jewelry(Base):
     retail_price = Column(Numeric(18, 7), nullable=True)
     wholesale_price = Column(Numeric(18, 7), nullable=True)
     status = Column(String, nullable=False, default="active")
+    handcraft_cost = Column(Numeric(18, 7), nullable=True)

@@ -54,6 +54,26 @@ def ensure_schema_compat(target_engine=None):
                 conn.execute(text("ALTER TABLE plating_order_item ADD COLUMN receive_part_id VARCHAR NULL REFERENCES part(id)"))
                 logger.warning("Added missing plating_order_item.receive_part_id column")
 
+        # Upgrade qty columns from Numeric(10,4) to Numeric(18,4)
+        _qty_columns = [
+            ("inventory_log", "change_qty", "NUMERIC(18,4)"),
+        ]
+        for table, col, new_type in _qty_columns:
+            if not inspector.has_table(table):
+                continue
+            for c in inspector.get_columns(table):
+                if c["name"] != col:
+                    continue
+                ct = c["type"]
+                needs_upgrade = (
+                    hasattr(ct, "precision") and ct.precision is not None
+                    and ct.precision < 18
+                )
+                if needs_upgrade:
+                    conn.execute(text(f'ALTER TABLE "{table}" ALTER COLUMN {col} TYPE {new_type}'))
+                    logger.warning("Upgraded %s.%s to %s", table, col, new_type)
+                break
+
         # Upgrade price/amount columns to Numeric(18,7)
         _price_columns = [
             ("jewelry", "retail_price", "NUMERIC(18,7)"),
@@ -84,12 +104,66 @@ def ensure_schema_compat(target_engine=None):
                     logger.warning("Upgraded %s.%s to %s", table, col, new_type)
                 break
 
+        # HandcraftPartItem: add received_qty and status columns + data migration
+        if inspector.has_table("handcraft_part_item"):
+            columns = {col["name"] for col in inspector.get_columns("handcraft_part_item")}
+            if "received_qty" not in columns:
+                conn.execute(text("ALTER TABLE handcraft_part_item ADD COLUMN received_qty NUMERIC(10,4) DEFAULT 0"))
+                logger.warning("Added missing handcraft_part_item.received_qty column")
+            if "status" not in columns:
+                conn.execute(text("ALTER TABLE handcraft_part_item ADD COLUMN status VARCHAR NOT NULL DEFAULT '未送出'"))
+                logger.warning("Added missing handcraft_part_item.status column")
+                # Data migration: fix status for existing rows
+                conn.execute(text(
+                    "UPDATE handcraft_part_item SET status = '制作中' "
+                    "WHERE handcraft_order_id IN (SELECT id FROM handcraft_order WHERE status = 'processing')"
+                ))
+                conn.execute(text(
+                    "UPDATE handcraft_part_item SET status = '已收回' "
+                    "WHERE handcraft_order_id IN (SELECT id FROM handcraft_order WHERE status = 'completed')"
+                ))
+
+        # Migrate historical supplier/vendor names into supplier table
+        if inspector.has_table("supplier"):
+            _supplier_migrations = [
+                ("plating_order", "supplier_name", "plating"),
+                ("handcraft_order", "supplier_name", "handcraft"),
+                ("purchase_order", "vendor_name", "parts"),
+                ("plating_receipt", "vendor_name", "plating"),
+                ("handcraft_receipt", "supplier_name", "handcraft"),
+            ]
+            for table, col, stype in _supplier_migrations:
+                if inspector.has_table(table):
+                    conn.execute(text(
+                        f'INSERT INTO supplier (name, type, created_at) '
+                        f'SELECT DISTINCT TRIM({col}), :stype, now() FROM "{table}" '
+                        f'WHERE {col} IS NOT NULL AND TRIM({col}) != \'\' '
+                        f'ON CONFLICT (name, type) DO NOTHING'
+                    ), {"stype": stype})
+            # Backfill NULL created_at for rows from earlier migration runs
+            conn.execute(text(
+                "UPDATE supplier SET created_at = now() WHERE created_at IS NULL"
+            ))
+
+        if inspector.has_table("jewelry"):
+            columns = {col["name"] for col in inspector.get_columns("jewelry")}
+            if "handcraft_cost" not in columns:
+                conn.execute(text("ALTER TABLE jewelry ADD COLUMN handcraft_cost NUMERIC(18,7) NULL"))
+                logger.warning("Added missing jewelry.handcraft_cost column")
+
+        if inspector.has_table("order"):
+            columns = {col["name"] for col in inspector.get_columns("order")}
+            if "packaging_cost" not in columns:
+                conn.execute(text('ALTER TABLE "order" ADD COLUMN packaging_cost NUMERIC(18,7) NULL'))
+                logger.warning("Added missing order.packaging_cost column")
+
         # Trim whitespace from supplier/vendor name columns
         _name_columns = [
             ("plating_order", "supplier_name"),
             ("handcraft_order", "supplier_name"),
             ("plating_receipt", "vendor_name"),
             ("purchase_order", "vendor_name"),
+            ("handcraft_receipt", "supplier_name"),
         ]
         for table, col in _name_columns:
             if inspector.has_table(table):

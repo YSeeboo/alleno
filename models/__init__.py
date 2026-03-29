@@ -11,6 +11,7 @@ from .plating_receipt import PlatingReceipt, PlatingReceiptItem
 from .handcraft_receipt import HandcraftReceipt, HandcraftReceiptItem
 from .user import User
 from .supplier import Supplier
+from .order_cost_snapshot import OrderCostSnapshot, OrderCostSnapshotItem
 
 __all__ = [
     "Part",
@@ -37,4 +38,6 @@ __all__ = [
     "HandcraftReceiptItem",
     "User",
     "Supplier",
+    "OrderCostSnapshot",
+    "OrderCostSnapshotItem",
 ]

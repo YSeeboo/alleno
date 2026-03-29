@@ -11,6 +11,7 @@ class Order(Base):
     customer_name = Column(String, nullable=False)
     status = Column(String, nullable=False, default="待生产")
     total_amount = Column(Numeric(18, 7), nullable=True)
+    packaging_cost = Column(Numeric(18, 7), nullable=True)
     created_at = Column(DateTime, default=now_beijing)
 
 
