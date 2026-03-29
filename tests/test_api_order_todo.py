@@ -337,3 +337,141 @@ def test_create_link_body_order_id_mismatch_rejected(client, db):
         "handcraft_jewelry_item_id": 1,
     })
     assert resp.status_code == 400
+
+
+# --- 采购单关联 ---
+
+def _setup_purchase_order(db, client, part):
+    """创建采购单，返回 order_id 和 item_id。"""
+    resp = client.post("/api/purchase-orders/", json={
+        "vendor_name": "供应商A",
+        "items": [{"part_id": part.id, "qty": 500, "price": 1.0}],
+    })
+    assert resp.status_code == 201
+    po_id = resp.json()["id"]
+    item_id = resp.json()["items"][0]["id"]
+    return po_id, item_id
+
+
+def test_create_link_purchase_order_item(client, db):
+    """采购单配件项可以关联 TodoList 行。"""
+    order_id, part_a, _, _ = _setup_order_with_bom(db, client)
+    client.post(f"/api/orders/{order_id}/todo")
+    todos = client.get(f"/api/orders/{order_id}/todo").json()
+    a_todo_id = next(t["id"] for t in todos if t["part_id"] == part_a.id)
+
+    po_id, poi_id = _setup_purchase_order(db, client, part_a)
+
+    resp = client.post(f"/api/orders/{order_id}/links", json={
+        "order_todo_item_id": a_todo_id,
+        "purchase_order_item_id": poi_id,
+    })
+    assert resp.status_code == 201
+    assert resp.json()["purchase_order_item_id"] == poi_id
+
+
+def test_batch_link_purchase_order_items(client, db):
+    """采购单配件项可以批量关联。"""
+    order_id, part_a, part_b, _ = _setup_order_with_bom(db, client)
+    client.post(f"/api/orders/{order_id}/todo")
+
+    resp = client.post("/api/purchase-orders/", json={
+        "vendor_name": "供应商A",
+        "items": [
+            {"part_id": part_a.id, "qty": 500, "price": 1.0},
+            {"part_id": part_b.id, "qty": 50, "price": 2.0},
+        ],
+    })
+    po_id = resp.json()["id"]
+    poi_ids = [item["id"] for item in resp.json()["items"]]
+
+    resp = client.post(f"/api/orders/{order_id}/links/batch", json={
+        "order_id": order_id,
+        "purchase_order_item_ids": poi_ids,
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["linked"] == 2
+    assert data["skipped"] == []
+
+
+def test_purchase_item_orders_reverse_lookup(client, db):
+    """采购单配件项可以反向查询关联的订单。"""
+    order_id, part_a, _, _ = _setup_order_with_bom(db, client)
+    client.post(f"/api/orders/{order_id}/todo")
+    todos = client.get(f"/api/orders/{order_id}/todo").json()
+    a_todo_id = next(t["id"] for t in todos if t["part_id"] == part_a.id)
+
+    po_id, poi_id = _setup_purchase_order(db, client, part_a)
+    client.post(f"/api/orders/{order_id}/links", json={
+        "order_todo_item_id": a_todo_id,
+        "purchase_order_item_id": poi_id,
+    })
+
+    resp = client.get(f"/api/purchase-orders/{po_id}/items/{poi_id}/orders")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["order_id"] == order_id
+
+
+def test_purchase_item_unlink(client, db):
+    """采购单侧可以解除关联。"""
+    order_id, part_a, _, _ = _setup_order_with_bom(db, client)
+    client.post(f"/api/orders/{order_id}/todo")
+    todos = client.get(f"/api/orders/{order_id}/todo").json()
+    a_todo_id = next(t["id"] for t in todos if t["part_id"] == part_a.id)
+
+    po_id, poi_id = _setup_purchase_order(db, client, part_a)
+    link = client.post(f"/api/orders/{order_id}/links", json={
+        "order_todo_item_id": a_todo_id,
+        "purchase_order_item_id": poi_id,
+    }).json()
+
+    resp = client.delete(f"/api/purchase-orders/{po_id}/items/{poi_id}/orders/{link['id']}")
+    assert resp.status_code == 204
+
+    # Verify unlinked
+    resp = client.get(f"/api/purchase-orders/{po_id}/items/{poi_id}/orders")
+    assert resp.json() == []
+
+
+def test_purchase_link_progress_counts_as_completed(client, db):
+    """采购单关联的配件项在进度中视为已完成。"""
+    order_id, part_a, _, _ = _setup_order_with_bom(db, client)
+    client.post(f"/api/orders/{order_id}/todo")
+    todos = client.get(f"/api/orders/{order_id}/todo").json()
+    a_todo_id = next(t["id"] for t in todos if t["part_id"] == part_a.id)
+
+    po_id, poi_id = _setup_purchase_order(db, client, part_a)
+    client.post(f"/api/orders/{order_id}/links", json={
+        "order_todo_item_id": a_todo_id,
+        "purchase_order_item_id": poi_id,
+    })
+
+    resp = client.get(f"/api/orders/{order_id}/progress")
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["completed"] == 1
+
+
+def test_linked_production_shows_purchase_type(client, db):
+    """TodoList linked_production 显示采购单类型。"""
+    order_id, part_a, _, _ = _setup_order_with_bom(db, client)
+    client.post(f"/api/orders/{order_id}/todo")
+    todos = client.get(f"/api/orders/{order_id}/todo").json()
+    a_todo_id = next(t["id"] for t in todos if t["part_id"] == part_a.id)
+
+    po_id, poi_id = _setup_purchase_order(db, client, part_a)
+    client.post(f"/api/orders/{order_id}/links", json={
+        "order_todo_item_id": a_todo_id,
+        "purchase_order_item_id": poi_id,
+    })
+
+    todos = client.get(f"/api/orders/{order_id}/todo").json()
+    a_todo = next(t for t in todos if t["part_id"] == part_a.id)
+    assert len(a_todo["linked_production"]) == 1
+    lp = a_todo["linked_production"][0]
+    assert lp["type"] == "purchase"
+    assert lp["status"] == "已采购"
+    assert lp["order_id"] == po_id
