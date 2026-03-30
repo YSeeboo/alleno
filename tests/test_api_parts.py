@@ -331,11 +331,16 @@ def test_create_variant_duplicate_color_returns_existing(client):
     assert resp.json()["id"] == variant["id"]
 
 
-def test_create_variant_from_variant_rejected(client):
-    _, variant = _create_root_and_variant(client)
-    resp = client.post(f"/api/parts/{variant['id']}/create-variant", json={"color_code": "S"})
-    assert resp.status_code == 400
-    assert "非原色配件" in resp.json()["detail"]
+def test_create_variant_from_variant_resolves_to_root(client):
+    """Creating a variant from another variant should resolve to root and succeed (re-plating)."""
+    root, gold_variant = _create_root_and_variant(client)  # gold_variant is G
+    # Create S variant from the G variant (返镀 scenario)
+    resp = client.post(f"/api/parts/{gold_variant['id']}/create-variant", json={"color_code": "S"})
+    assert resp.status_code == 201
+    silver = resp.json()
+    assert silver["color"] == "白K"
+    assert silver["parent_part_id"] == root["id"]  # linked to root, not to gold variant
+    assert silver["name"] == f"{root['name']}_白K"
 
 
 def test_create_variant_invalid_color_code(client):

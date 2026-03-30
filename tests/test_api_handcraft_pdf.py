@@ -65,7 +65,7 @@ def test_download_handcraft_pdf_moves_image_three_and_four_to_second_page(client
         "/api/handcraft/",
         json={
             "supplier_name": "PDF分页厂",
-            "parts": [{"part_id": part.id, "qty": 5, "unit": "个"} for _ in range(10)],
+            "parts": [{"part_id": part.id, "qty": 5, "unit": "个"} for _ in range(18)],
             "jewelries": [{"jewelry_id": jewelry.id, "qty": 2}],
         },
     )
@@ -93,7 +93,7 @@ def test_download_handcraft_pdf_moves_all_images_after_detail_pages_when_more_th
 
     jewelry = create_jewelry(db, {"name": "成品C", "category": "单件"})
     items = []
-    for index in range(11):
+    for index in range(20):
         part = create_part(
             db,
             {

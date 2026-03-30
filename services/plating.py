@@ -373,6 +373,18 @@ def get_plating_supplier_names(db: Session) -> list[str]:
     return [row[0] for row in rows]
 
 
+def update_plating_order(db: Session, order_id: str, data: dict) -> PlatingOrder:
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise ValueError(f"PlatingOrder not found: {order_id}")
+    if order.status != "pending":
+        raise ValueError("只有待处理状态的订单可以修改供应商")
+    if "supplier_name" in data:
+        order.supplier_name = data["supplier_name"]
+    db.flush()
+    return order
+
+
 def update_plating_delivery_images(db: Session, order_id: str, delivery_images: Optional[list]) -> PlatingOrder:
     order = get_plating_order(db, order_id)
     if order is None:

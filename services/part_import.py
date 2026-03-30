@@ -35,6 +35,7 @@ _HEADER_ALIASES = {
     "单位": "unit",
     "unit": "unit",
     "单件成本": "unit_cost",
+    "采购成本": "unit_cost",
     "成本": "unit_cost",
     "unitcost": "unit_cost",
     "unit_cost": "unit_cost",
@@ -127,7 +128,7 @@ def import_parts_excel(db: Session, file_bytes: bytes, filename: str | None) -> 
 
 def build_parts_import_template() -> bytes:
     return _build_xlsx_bytes([
-        ["名称", "类目", "颜色", "单位", "单件成本", "默认电镀工艺", "入库数量"],
+        ["名称", "类目", "颜色", "单位", "采购成本", "默认电镀工艺", "入库数量"],
         ["示例铜扣", "小配件", "金色", "个", 1.5, "真金", 10],
     ])
 
@@ -315,7 +316,7 @@ def _parse_row(row: list[str], header_map: dict[str, int], row_number: int) -> _
         categories = "、".join(PART_CATEGORIES.keys())
         raise ValueError(f"类目无效，必须是：{categories}")
     if unit_cost is not None and unit_cost < 0:
-        raise ValueError("单件成本不能小于 0")
+        raise ValueError("采购成本不能小于 0")
     if qty is None:
         qty = 0.0
     if qty < 0:
@@ -354,7 +355,7 @@ def _get_number(
     try:
         return float(raw)
     except ValueError as exc:
-        label = "单件成本" if key == "unit_cost" else "入库数量"
+        label = "采购成本" if key == "unit_cost" else "入库数量"
         raise ValueError(f"{label}必须是数字") from exc
 
 

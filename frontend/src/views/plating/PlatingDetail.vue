@@ -203,26 +203,22 @@
         <n-form-item v-if="addForm.part_id" label="电镀颜色">
           <div>
             <n-space size="small" style="margin-bottom: 6px;">
-              <n-tooltip v-for="cv in colorVariantList" :key="cv.code" :disabled="!isVariantPart(addForm.part_id)">
-                <template #trigger>
-                  <span
-                    :style="{
-                      display: 'inline-block',
-                      fontSize: '11px',
-                      fontWeight: 'bold',
-                      color: addFormColor === cv.code ? '#fff' : BADGE_COLORS[cv.code],
-                      background: addFormColor === cv.code ? BADGE_COLORS[cv.code] : '#f5f5f5',
-                      padding: '2px 10px',
-                      borderRadius: '4px',
-                      cursor: isVariantPart(addForm.part_id) ? 'not-allowed' : 'pointer',
-                      opacity: isVariantPart(addForm.part_id) ? 0.5 : 1,
-                      border: `1px solid ${BADGE_COLORS[cv.code]}`,
-                    }"
-                    @click="!isVariantPart(addForm.part_id) && toggleAddColor(cv.code)"
-                  >{{ cv.code }}</span>
-                </template>
-                当前非原色配件，不可创建变体
-              </n-tooltip>
+              <span
+                v-for="cv in colorVariantList"
+                :key="cv.code"
+                :style="{
+                  display: 'inline-block',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  color: addFormColor === cv.code ? '#fff' : BADGE_COLORS[cv.code],
+                  background: addFormColor === cv.code ? BADGE_COLORS[cv.code] : '#f5f5f5',
+                  padding: '2px 10px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  border: `1px solid ${BADGE_COLORS[cv.code]}`,
+                }"
+                @click="toggleAddColor(cv.code)"
+              >{{ cv.code }}</span>
             </n-space>
             <div v-if="addFormColor && addVariantInfo" style="font-size: 13px; color: #333;">
               <template v-if="addVariantInfo.part">
@@ -440,7 +436,6 @@ const unitOptions = [
 ]
 
 const BADGE_COLORS = { G: '#DAA520', S: '#C0C0C0', RG: '#B76E79' }
-const COLOR_SUFFIXES = ['_金色', '_白K', '_玫瑰金']
 const COLOR_SUFFIX_MAP = { '_金色': 'G', '_白K': 'S', '_玫瑰金': 'RG' }
 const COLOR_CODE_TO_METHOD = { G: '金', S: '白K', RG: '玫瑰金' }
 const METHOD_TO_CODE = { '金': 'G', '白K': 'S', '玫瑰金': 'RG' }
@@ -448,11 +443,15 @@ const METHOD_TO_CODE = { '金': 'G', '白K': 'S', '玫瑰金': 'RG' }
 const colorVariantList = ref([])
 let addVariantRequestSeq = 0
 
-const isVariantPart = (partId) => {
-  if (!partId) return false
-  const part = allParts.value.find((p) => p.id === partId)
-  if (!part) return false
-  return COLOR_SUFFIXES.some((suffix) => part.name.endsWith(suffix))
+const COLOR_LABEL_TO_CODE = { '金色': 'G', '白K': 'S', '玫瑰金': 'RG' }
+
+const getPartColorCode = (part) => {
+  if (!part) return null
+  if (part.color && COLOR_LABEL_TO_CODE[part.color]) return COLOR_LABEL_TO_CODE[part.color]
+  for (const [suffix, code] of Object.entries(COLOR_SUFFIX_MAP)) {
+    if (part.name?.endsWith(suffix)) return code
+  }
+  return null
 }
 
 const getColorBadge = (partName) => {
@@ -672,14 +671,11 @@ const onAddPartSelect = (val) => {
   addVariantInfo.value = null
   addVariantLoading.value = false
   ++addVariantRequestSeq
-  if (val && !isVariantPart(val)) {
-    // Default select G for non-variant parts
-    toggleAddColor('G')
-  } else if (val) {
-    // Variant part: auto-set plating_method from its suffix
+  if (val) {
     const part = allParts.value.find((p) => p.id === val)
-    const code = getColorBadge(part?.name)
-    addForm.value.plating_method = code ? (COLOR_CODE_TO_METHOD[code] || '金') : '金'
+    const existingCode = getPartColorCode(part)
+    // Default: use existing color if variant, otherwise G
+    toggleAddColor(existingCode || 'G')
   }
 }
 
@@ -693,6 +689,7 @@ const toggleAddColor = async (code) => {
   }
   addFormColor.value = code
   addForm.value.plating_method = COLOR_CODE_TO_METHOD[code] || '金'
+  addForm.value.receive_part_id = null
   addVariantInfo.value = null
   addVariantLoading.value = true
   const seq = ++addVariantRequestSeq
@@ -747,6 +744,8 @@ const doCreateVariantInAdd = () => {
   })
 }
 
+const inlineColorSeq = ref({}) // key: row.id, value: request sequence number
+
 const toggleInlineColor = async (row, code) => {
   const currentBadge = getColorBadge(row.receive_part_name) || METHOD_TO_CODE[row.plating_method] || null
   if (currentBadge === code) {
@@ -759,17 +758,22 @@ const toggleInlineColor = async (row, code) => {
     }
     return
   }
-  // Find or create variant
+  // Find or create variant with stale-response protection
+  const seq = (inlineColorSeq.value[row.id] || 0) + 1
+  inlineColorSeq.value[row.id] = seq
+  const isStale = () => inlineColorSeq.value[row.id] !== seq
   try {
     const { data } = await findOrCreateVariant(row.part_id, { color_code: code })
+    if (isStale()) return
     if (data.part) {
       // Variant exists, update directly
       await updatePlatingItem(route.params.id, row.id, {
         receive_part_id: data.part.id,
         plating_method: COLOR_CODE_TO_METHOD[code] || '金',
       })
-      await loadData()
+      if (!isStale()) await loadData()
     } else {
+      if (isStale()) return
       // Variant doesn't exist, confirm creation
       dialog.info({
         title: '确认新建',
@@ -777,6 +781,7 @@ const toggleInlineColor = async (row, code) => {
         positiveText: '确认',
         negativeText: '取消',
         onPositiveClick: async () => {
+          if (isStale()) return
           try {
             const { data: newPart } = await createPartVariant(row.part_id, { color_code: code })
             await updatePlatingItem(route.params.id, row.id, {
@@ -804,13 +809,15 @@ const toggleInlineColor = async (row, code) => {
       })
     }
   } catch (e) {
-    message.error(e.response?.data?.detail || '查询变体失败')
+    if (!isStale()) message.error(e.response?.data?.detail || '查询变体失败')
   }
 }
 
 const doAddItem = async () => {
   if (!addForm.value.part_id) { message.warning('请选择配件'); return }
   if (!addForm.value.qty || addForm.value.qty < 1) { message.warning('数量不能小于 1'); return }
+  if (addVariantLoading.value) { message.warning('正在查询变体，请稍候'); return }
+  if (addFormColor.value && !addForm.value.receive_part_id) { message.warning('变体配件未就绪，请重新选择颜色'); return }
   addSubmitting.value = true
   try {
     await addPlatingItem(route.params.id, addForm.value)
@@ -1203,12 +1210,10 @@ const itemColumns = [
     width: 120,
     render: (row) => {
       const currentBadge = getColorBadge(row.receive_part_name) || METHOD_TO_CODE[row.plating_method] || null
-      const variantPart = isVariantPart(row.part_id)
       const pending = isPending()
       return h('div', { style: 'display: flex; gap: 4px; align-items: center;' },
         colorVariantList.value.map((cv) => {
           const isActive = currentBadge === cv.code
-          const disabled = !pending || variantPart
           return h('span', {
             style: {
               display: 'inline-block',
@@ -1218,12 +1223,11 @@ const itemColumns = [
               background: isActive ? BADGE_COLORS[cv.code] : '#f5f5f5',
               padding: '2px 8px',
               borderRadius: '4px',
-              cursor: disabled ? 'default' : 'pointer',
-              opacity: disabled ? 0.5 : 1,
+              cursor: pending ? 'pointer' : 'default',
+              opacity: pending ? 1 : 0.5,
               border: `1px solid ${BADGE_COLORS[cv.code]}`,
             },
-            title: variantPart ? '当前非原色配件，不可创建变体' : '',
-            onClick: disabled ? undefined : () => toggleInlineColor(row, cv.code),
+            onClick: pending ? () => toggleInlineColor(row, cv.code) : undefined,
           }, cv.code)
         }),
       )

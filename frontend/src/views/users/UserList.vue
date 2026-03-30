@@ -17,6 +17,7 @@
     </n-spin>
 
     <n-modal v-model:show="showModal" preset="card" :title="editingUser ? '修改用户' : '新建用户'" style="width: 480px;">
+      <form @submit.prevent="handleSave">
       <n-form ref="modalFormRef" :model="modalForm" :rules="modalRules" label-placement="top">
         <n-form-item label="账号" path="username">
           <n-input v-model:value="modalForm.username" :disabled="!!editingUser" placeholder="请输入账号" />
@@ -35,6 +36,7 @@
           </n-checkbox-group>
         </n-form-item>
       </n-form>
+      </form>
       <template #action>
         <n-space justify="end">
           <n-button @click="showModal = false">取消</n-button>

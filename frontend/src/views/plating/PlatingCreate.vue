@@ -56,12 +56,10 @@
                 background: item._selectedColor === cv.code ? BADGE_COLORS[cv.code] : '#f5f5f5',
                 padding: '2px 10px',
                 borderRadius: '4px',
-                cursor: isVariantPart(item.part_id) ? 'not-allowed' : 'pointer',
-                opacity: isVariantPart(item.part_id) ? 0.5 : 1,
+                cursor: 'pointer',
                 border: `1px solid ${BADGE_COLORS[cv.code]}`,
               }"
-              :title="isVariantPart(item.part_id) ? '当前非原色配件，不可创建变体' : ''"
-              @click="!isVariantPart(item.part_id) && toggleColor(item, cv.code)"
+              @click="toggleColor(item, cv.code)"
             >{{ cv.code }}</span>
           </n-space>
           <div v-if="item._selectedColor && item._variantInfo" style="font-size: 13px; color: #333;">
@@ -101,7 +99,8 @@ import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2 } from 'naive-ui'
 import { listParts, findOrCreateVariant, createPartVariant, getColorVariants } from '@/api/parts'
-import { createPlating, getPlatingSuppliers } from '@/api/plating'
+import { createPlating } from '@/api/plating'
+import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { renderOptionWithImage } from '@/utils/ui'
 
 const router = useRouter()
@@ -117,18 +116,10 @@ const allParts = ref([])
 const colorVariants = ref([])
 
 const BADGE_COLORS = { G: '#DAA520', S: '#C0C0C0', RG: '#B76E79' }
-const COLOR_SUFFIXES = ['_金色', '_白K', '_玫瑰金']
 const COLOR_CODE_TO_METHOD = { G: '金', S: '白K', RG: '玫瑰金' }
 
 function createEmptyItem() {
   return { part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金', note: '', _selectedColor: null, _variantInfo: null, _variantLoading: false, _creatingVariant: false, _reqSeq: 0 }
-}
-
-const isVariantPart = (partId) => {
-  if (!partId) return false
-  const part = allParts.value.find((p) => p.id === partId)
-  if (!part) return false
-  return COLOR_SUFFIXES.some((suffix) => part.name.endsWith(suffix))
 }
 
 const unitOptions = [
@@ -139,10 +130,15 @@ const unitOptions = [
   { label: 'kg', value: 'kg' },
 ]
 
-const getColorFromSuffix = (partName) => {
-  if (!partName) return null
+const COLOR_LABEL_TO_CODE = { '金色': 'G', '白K': 'S', '玫瑰金': 'RG' }
+
+const getPartColorCode = (part) => {
+  if (!part) return null
+  // Prefer the color field (authoritative)
+  if (part.color && COLOR_LABEL_TO_CODE[part.color]) return COLOR_LABEL_TO_CODE[part.color]
+  // Fallback: parse name suffix
   for (const [suffix, code] of Object.entries({ '_金色': 'G', '_白K': 'S', '_玫瑰金': 'RG' })) {
-    if (partName.endsWith(suffix)) return code
+    if (part.name?.endsWith(suffix)) return code
   }
   return null
 }
@@ -155,14 +151,11 @@ const onPartSelect = (item, val) => {
   item._variantInfo = null
   item._variantLoading = false
   ++item._reqSeq
-  if (val && !isVariantPart(val)) {
-    // Default select G for non-variant parts
-    toggleColor(item, 'G')
-  } else if (val) {
-    // Variant part: auto-set plating_method from its suffix
+  if (val) {
     const part = allParts.value.find((p) => p.id === val)
-    const code = getColorFromSuffix(part?.name)
-    item.plating_method = code ? (COLOR_CODE_TO_METHOD[code] || '金') : '金'
+    const existingCode = getPartColorCode(part)
+    // Default: use existing color if variant, otherwise G
+    toggleColor(item, existingCode || 'G')
   }
 }
 
@@ -177,6 +170,7 @@ const toggleColor = async (item, code) => {
   }
   item._selectedColor = code
   item.plating_method = COLOR_CODE_TO_METHOD[code] || '金'
+  item.receive_part_id = null
   item._variantInfo = null
   item._variantLoading = true
   const seq = ++item._reqSeq
@@ -240,6 +234,11 @@ const submit = async () => {
   if (items.some((i) => !i.part_id)) { message.warning('请选择配件'); return }
   submitting.value = true
   try {
+    // Auto-create supplier if new (swallow duplicate 400, rethrow others)
+    const isNew = !supplierOptions.value.some((o) => o.value === supplierName.value)
+    if (isNew) {
+      try { await createSupplier({ name: supplierName.value, type: 'plating' }) } catch (e) { if (e.response?.status !== 400) throw e }
+    }
     // Strip internal fields before submit
     const cleanItems = items.map(({ _selectedColor, _variantInfo, _variantLoading, _creatingVariant, ...rest }) => rest)
     const { data } = await createPlating({ supplier_name: supplierName.value, items: cleanItems, note: note.value })
@@ -253,7 +252,7 @@ const submit = async () => {
 onMounted(async () => {
   try {
     const [partsRes, colorsRes, suppliersRes] = await Promise.all([
-      listParts(), getColorVariants(), getPlatingSuppliers(),
+      listParts(), getColorVariants(), listSuppliers({ type: 'plating' }),
     ])
     allParts.value = partsRes.data
     partOptions.value = partsRes.data.map((p) => ({
@@ -265,7 +264,7 @@ onMounted(async () => {
       unit: p.unit,
     }))
     colorVariants.value = colorsRes.data
-    supplierOptions.value = suppliersRes.data.map((v) => ({ label: v, value: v }))
+    supplierOptions.value = suppliersRes.data.map((s) => ({ label: s.name, value: s.name }))
   } catch (_) {
     // error already shown by axios interceptor
   }

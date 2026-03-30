@@ -131,4 +131,8 @@ def update_packaging_cost(db: Session, order_id: str, packaging_cost: float) -> 
         raise ValueError(f"Order not found: {order_id}")
     order.packaging_cost = packaging_cost
     db.flush()
+    # 如果订单已完成，仅更新快照中的包装费相关字段（不重算 BOM 明细）
+    if order.status == "已完成":
+        from services.order_cost_snapshot import update_snapshot_packaging_cost
+        update_snapshot_packaging_cost(db, order_id, packaging_cost)
     return order

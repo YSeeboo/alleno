@@ -184,26 +184,28 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "receive_handcraft_jewelries",
-            "description": "收回手工饰品：按饰品明细项 ID 记录收回数量，更新库存",
+            "name": "create_handcraft_receipt",
+            "description": "创建手工回收单：收回配件或饰品，更新库存。支持跨手工单",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "handcraft_order_id": {"type": "string", "description": "手工单 ID，如 HC-0001"},
-                    "receipts": {
+                    "supplier_name": {"type": "string", "description": "手工商家名称"},
+                    "items": {
                         "type": "array",
-                        "description": "收回明细列表，每项包含 handcraft_jewelry_item_id 和 qty",
+                        "description": "收回明细列表，每项指定 handcraft_part_item_id 或 handcraft_jewelry_item_id（二选一）和 qty",
                         "items": {
                             "type": "object",
                             "properties": {
+                                "handcraft_part_item_id": {"type": "integer", "description": "手工配件明细行 ID"},
                                 "handcraft_jewelry_item_id": {"type": "integer", "description": "手工饰品明细行 ID"},
                                 "qty": {"type": "number", "description": "本次收回数量"},
+                                "price": {"type": "number", "description": "手工费单价（可选）"},
                             },
-                            "required": ["handcraft_jewelry_item_id", "qty"],
+                            "required": ["qty"],
                         },
                     },
                 },
-                "required": ["handcraft_order_id", "receipts"],
+                "required": ["supplier_name", "items"],
             },
         },
     },
@@ -356,17 +358,18 @@ def execute_tool(name: str, inputs: dict, db) -> str:
                 )
             return "\n".join(lines)
 
-        elif name == "receive_handcraft_jewelries":
-            from services.handcraft import receive_handcraft_jewelries
-            updated = receive_handcraft_jewelries(
-                db, inputs["handcraft_order_id"], inputs["receipts"]
+        elif name == "create_handcraft_receipt":
+            from services.handcraft_receipt import create_handcraft_receipt
+            receipt = create_handcraft_receipt(
+                db,
+                supplier_name=inputs["supplier_name"],
+                items=inputs["items"],
             )
             db.commit()
-            lines = [
-                f"明细#{ji.id} {ji.jewelry_id} 已收:{ji.received_qty}/{ji.qty} 状态:{ji.status}"
-                for ji in updated
-            ]
-            return "手工收回成功:\n" + "\n".join(lines)
+            lines = [f"回收单 {receipt.id} 创建成功"]
+            for ri in receipt.items:
+                lines.append(f"  {ri.item_type} {ri.item_id} qty:{float(ri.qty)}")
+            return "\n".join(lines)
 
         else:
             return f"未知工具: {name}"

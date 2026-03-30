@@ -39,7 +39,7 @@
             :options="unitOptions"
             style="width: 90px;"
           />
-          <n-input-number v-model:value="item.price" :min="0" :precision="7" :step="0.1" placeholder="单价" style="width: 130px;" />
+          <n-input-number v-model:value="item.price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" :step="0.1" placeholder="单价" style="width: 130px;" />
           <span style="min-width: 80px; color: #666;">{{ formatAmount(item.qty, item.price) }}</span>
           <n-button type="error" size="small" @click="items.splice(idx, 1)">删除</n-button>
         </n-space>
@@ -98,8 +98,9 @@ import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NRadioGroup, NRadio, NModal, NDataTable } from 'naive-ui'
 import { listParts, batchUpdatePartCosts } from '@/api/parts'
-import { createPurchaseOrder, getPurchaseOrderVendors } from '@/api/purchaseOrders'
-import { renderOptionWithImage, fmtMoney } from '@/utils/ui'
+import { createPurchaseOrder } from '@/api/purchaseOrders'
+import { listSuppliers, createSupplier } from '@/api/suppliers'
+import { renderOptionWithImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 
 const router = useRouter()
 const message = useMessage()
@@ -188,6 +189,11 @@ const submit = async () => {
   if (items.some((i) => !i.part_id)) { message.warning('请选择配件'); return }
   submitting.value = true
   try {
+    // Auto-create supplier if new (swallow duplicate 400, rethrow others)
+    const isNew = !vendorOptions.value.some((o) => o.value === vendorName.value)
+    if (isNew) {
+      try { await createSupplier({ name: vendorName.value.trim(), type: 'parts' }) } catch (e) { if (e.response?.status !== 400) throw e }
+    }
     const { data } = await createPurchaseOrder({
       vendor_name: vendorName.value.trim(),
       items,
@@ -213,8 +219,8 @@ onMounted(async () => {
       purchase_cost: p.purchase_cost,
     }))
   }).catch(() => {})
-  const vendorsPromise = getPurchaseOrderVendors().then(({ data }) => {
-    vendorOptions.value = data.map((v) => ({ label: v, value: v }))
+  const vendorsPromise = listSuppliers({ type: 'parts' }).then(({ data }) => {
+    vendorOptions.value = data.map((s) => ({ label: s.name, value: s.name }))
   }).catch(() => {})
   await Promise.all([partsPromise, vendorsPromise])
 })

@@ -33,14 +33,6 @@ class HandcraftCreate(BaseModel):
         return v
 
 
-class ReceiptItem(BaseModel):
-    handcraft_jewelry_item_id: int
-    qty: int = Field(gt=0)
-
-
-class ReceiptRequest(BaseModel):
-    receipts: List[ReceiptItem]
-
 
 class HandcraftJewelryItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -62,6 +54,8 @@ class HandcraftPartItemResponse(BaseModel):
     handcraft_order_id: str
     part_id: str
     qty: float
+    received_qty: Optional[float] = 0
+    status: str = "未送出"
     bom_qty: Optional[float] = None
     color: Optional[str] = None
     unit: Optional[str] = None

@@ -113,18 +113,22 @@ COLOR_CODES = {v["code"]: v["label"] for v in COLOR_VARIANTS}
 
 
 def _validate_variant_request(db: Session, part_id: str, color_code: str):
-    """Validate part exists, is not a variant, and color_code is valid. Returns (parent, color_label)."""
+    """Validate part exists and color_code is valid. If source is a variant, resolve to root. Returns (root_part, color_label)."""
     color = COLOR_CODES.get(color_code)
     if color is None:
         raise ValueError(
             f"Invalid color_code '{color_code}'. Must be one of: {list(COLOR_CODES.keys())}"
         )
-    parent = get_part(db, part_id)
-    if parent is None:
+    part = get_part(db, part_id)
+    if part is None:
         raise ValueError(f"Part not found: {part_id}")
-    if _is_color_variant(parent.name) or parent.parent_part_id is not None:
-        raise ValueError("当前非原色配件，不可创建变体")
-    return parent, color
+    # If source is a variant, resolve to root parent
+    root = part
+    if root.parent_part_id is not None:
+        root = get_part(db, root.parent_part_id)
+    elif _is_color_variant(root.name):
+        raise ValueError("该配件名称含颜色后缀但无父配件关联，请先修正数据")
+    return root, color
 
 
 def _find_existing_variant(db: Session, part_id: str, variant_name: str, color: str):
@@ -165,23 +169,23 @@ def _find_existing_variant(db: Session, part_id: str, variant_name: str, color: 
 
 
 def create_part_variant(db: Session, part_id: str, color_code: str) -> Part:
-    parent, color = _validate_variant_request(db, part_id, color_code)
-    variant_name = f"{parent.name}_{color}"
-    existing = _find_existing_variant(db, part_id, variant_name, color)
+    root, color = _validate_variant_request(db, part_id, color_code)
+    variant_name = f"{root.name}_{color}"
+    existing = _find_existing_variant(db, root.id, variant_name, color)
     if existing is not None:
         return existing
-    prefix = PART_CATEGORIES[parent.category]
+    prefix = PART_CATEGORIES[root.category]
     variant = Part(
         id=_next_id_by_category(db, Part, prefix),
         name=variant_name,
-        category=parent.category,
-        unit=parent.unit,
-        purchase_cost=parent.purchase_cost,
-        bead_cost=parent.bead_cost,
-        plating_process=parent.plating_process,
-        image=parent.image,
+        category=root.category,
+        unit=root.unit,
+        purchase_cost=root.purchase_cost,
+        bead_cost=root.bead_cost,
+        plating_process=root.plating_process,
+        image=root.image,
         color=color,
-        parent_part_id=part_id,
+        parent_part_id=root.id,
     )
     _recalc_unit_cost(variant)
     db.add(variant)
@@ -190,9 +194,9 @@ def create_part_variant(db: Session, part_id: str, color_code: str) -> Part:
 
 
 def find_or_create_variant(db: Session, part_id: str, color_code: str) -> dict:
-    parent, color = _validate_variant_request(db, part_id, color_code)
-    variant_name = f"{parent.name}_{color}"
-    existing = _find_existing_variant(db, part_id, variant_name, color)
+    root, color = _validate_variant_request(db, part_id, color_code)
+    variant_name = f"{root.name}_{color}"
+    existing = _find_existing_variant(db, root.id, variant_name, color)
     if existing is not None:
         return {"part": existing, "suggested_name": None}
     return {"part": None, "suggested_name": variant_name}

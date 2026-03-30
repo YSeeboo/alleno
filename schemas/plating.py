@@ -35,6 +35,18 @@ class ReceiptRequest(BaseModel):
     receipts: List[ReceiptItem]
 
 
+class PlatingUpdate(BaseModel):
+    supplier_name: str
+
+    @field_validator("supplier_name")
+    @classmethod
+    def supplier_name_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("supplier_name must not be blank")
+        return v
+
+
 class PlatingItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

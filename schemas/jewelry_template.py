@@ -43,3 +43,4 @@ class JewelryTemplateResponse(BaseModel):
     note: Optional[str] = None
     created_at: datetime
     items: list[JewelryTemplateItemResponse] = Field(default_factory=list)
+    item_count: int = 0

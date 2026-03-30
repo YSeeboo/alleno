@@ -17,3 +17,7 @@ export const createLink = (orderId, data) => api.post(`/orders/${orderId}/links`
 export const batchLink = (orderId, data) => api.post(`/orders/${orderId}/links/batch`, data)
 export const deleteLink = (linkId) => api.delete(`/orders/links/${linkId}`)
 export const getProgress = (id) => api.get(`/orders/${id}/progress`)
+
+// --- Cost Snapshot & Packaging Cost ---
+export const getCostSnapshot = (orderId) => api.get(`/orders/${orderId}/cost-snapshot`)
+export const updatePackagingCost = (orderId, data) => api.patch(`/orders/${orderId}/packaging-cost`, data)

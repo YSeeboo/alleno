@@ -34,6 +34,7 @@
     </n-spin>
 
     <n-modal v-model:show="showStockModal" preset="card" :title="stockAction === 'add' ? '快速入库' : '快速出库'" style="width: 380px;">
+      <form @submit.prevent="doStock">
       <n-form label-placement="left" label-width="80">
         <n-form-item label="对象">
           <div>{{ stockingRow ? `${kindLabel[stockingRow.item_type]} / ${stockingRow.item_id} ${stockingRow.name}` : '-' }}</div>
@@ -51,6 +52,7 @@
           <n-input v-model:value="stockNote" placeholder="选填" />
         </n-form-item>
       </n-form>
+      </form>
       <template #footer>
         <n-space justify="end">
           <n-button @click="showStockModal = false">取消</n-button>

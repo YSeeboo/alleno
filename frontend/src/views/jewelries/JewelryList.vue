@@ -16,6 +16,7 @@
         @update:value="load"
       />
       <div class="filter-bar-end">
+        <n-button v-if="canUseTemplates" @click="openTemplateSelect">从模板创建</n-button>
         <n-button type="primary" @click="openCreate">新增饰品</n-button>
       </div>
     </div>
@@ -26,6 +27,7 @@
     </n-spin>
 
     <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑饰品' : '新增饰品'" style="width: 480px;">
+      <form @submit.prevent="save">
       <n-form ref="formRef" :model="form" label-placement="left" label-width="100">
         <n-form-item label="名称" path="name" :rule="{ required: true, message: '请输入名称' }">
           <n-input v-model:value="form.name" />
@@ -60,12 +62,13 @@
           <n-select v-model:value="form.unit" :options="unitOptions" placeholder="请选择单位" />
         </n-form-item>
         <n-form-item label="零售价">
-          <n-input-number v-model:value="form.retail_price" :min="0" :precision="7" style="width: 100%;" />
+          <n-input-number v-model:value="form.retail_price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" style="width: 100%;" />
         </n-form-item>
         <n-form-item label="批发价">
-          <n-input-number v-model:value="form.wholesale_price" :min="0" :precision="7" style="width: 100%;" />
+          <n-input-number v-model:value="form.wholesale_price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" style="width: 100%;" />
         </n-form-item>
       </n-form>
+      </form>
       <template #footer>
         <n-space justify="end">
           <n-button @click="showModal = false">取消</n-button>
@@ -80,11 +83,25 @@
       :entity-id="currentUploadItemId"
       @uploaded="onImageUploaded"
     />
+
+    <!-- Template selection modal for "从模板创建" -->
+    <n-modal v-model:show="showTemplateSelectModal" preset="card" title="从模板创建饰品" style="width: 520px;">
+      <n-spin :show="loadingTemplateList">
+        <n-empty v-if="!loadingTemplateList && templateList.length === 0" description="暂无模板" />
+        <div v-for="tpl in templateList" :key="tpl.id" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
+          <div>
+            <div style="font-weight: 600;">{{ tpl.name }}</div>
+            <div style="color: #999; font-size: 12px;">{{ tpl.item_count || 0 }} 个配件</div>
+          </div>
+          <n-button size="small" type="primary" @click="selectTemplate(tpl)">选择</n-button>
+        </div>
+      </n-spin>
+    </n-modal>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch, h } from 'vue'
+import { ref, reactive, computed, onMounted, watch, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
@@ -93,11 +110,15 @@ import {
 } from 'naive-ui'
 import { listJewelries, createJewelry, updateJewelry, updateJewelryStatus, deleteJewelry } from '@/api/jewelries'
 import { getStock } from '@/api/inventory'
-import { renderNamedImage, fmtMoney } from '@/utils/ui'
+import { listTemplates, applyTemplate } from '@/api/jewelryTemplates'
+import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
+import { useAuthStore } from '@/stores/auth'
 import ImageUploadModal from '../../components/ImageUploadModal.vue'
 
 const router = useRouter()
 const message = useMessage()
+const authStore = useAuthStore()
+const canUseTemplates = computed(() => authStore.hasPermission('parts'))
 const loading = ref(true)
 const rows = ref([])
 const filterStatus = ref(null)
@@ -130,6 +151,12 @@ const form = reactive({ name: '', image: '', category: null, color: '', unit: nu
 const showImageModal = ref(false)
 const currentUploadItemId = ref(null)
 
+// Template selection state
+const showTemplateSelectModal = ref(false)
+const loadingTemplateList = ref(false)
+const templateList = ref([])
+const selectedTemplate = ref(null)
+
 // Auto-fill unit based on category
 watch(
   () => form.category,
@@ -155,8 +182,29 @@ const load = async () => {
   }
 }
 
+const openTemplateSelect = async () => {
+  showTemplateSelectModal.value = true
+  loadingTemplateList.value = true
+  try {
+    const { data } = await listTemplates()
+    templateList.value = data
+  } finally {
+    loadingTemplateList.value = false
+  }
+}
+
+const selectTemplate = (tpl) => {
+  selectedTemplate.value = tpl
+  showTemplateSelectModal.value = false
+  // Open create modal with template info
+  editingId.value = null
+  Object.assign(form, { name: '', image: tpl.image || '', category: null, color: '', unit: null, retail_price: null, wholesale_price: null })
+  showModal.value = true
+}
+
 const openCreate = () => {
   editingId.value = null
+  selectedTemplate.value = null
   Object.assign(form, { name: '', image: '', category: null, color: '', unit: null, retail_price: null, wholesale_price: null })
   showModal.value = true
 }
@@ -193,12 +241,28 @@ const save = async () => {
     if (editingId.value) {
       const { category, ...updateData } = form
       await updateJewelry(editingId.value, updateData)
+      message.success('保存成功')
+      showModal.value = false
+      await load()
     } else {
-      await createJewelry(form)
+      const { data: newJewelry } = await createJewelry(form)
+      // If creating from template, apply BOM
+      if (selectedTemplate.value) {
+        try {
+          await applyTemplate(selectedTemplate.value.id, newJewelry.id)
+          message.success('饰品已创建并导入模板 BOM')
+        } catch (_) {
+          message.success('饰品已创建，但模板导入失败')
+        }
+        selectedTemplate.value = null
+        showModal.value = false
+        router.push(`/jewelries/${newJewelry.id}`)
+      } else {
+        message.success('保存成功')
+        showModal.value = false
+        await load()
+      }
     }
-    message.success('保存成功')
-    showModal.value = false
-    await load()
   } finally {
     saving.value = false
   }

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy.orm import Session
@@ -111,3 +113,26 @@ def get_cost_snapshot(db: Session, order_id: str) -> OrderCostSnapshot | None:
         .order_by(OrderCostSnapshot.id.desc())
         .first()
     )
+
+
+def update_snapshot_packaging_cost(db: Session, order_id: str, packaging_cost: float) -> None:
+    """仅更新已有快照的 packaging_cost / total_cost / profit，不重算 BOM 明细。"""
+    snapshot = get_cost_snapshot(db, order_id)
+    if snapshot is None:
+        return
+
+    new_pkg = Decimal(str(packaging_cost))
+    old_pkg = Decimal(str(snapshot.packaging_cost or 0))
+
+    # total_cost = (原 total_cost - 原 packaging) + 新 packaging
+    old_total = Decimal(str(snapshot.total_cost))
+    items_cost = old_total - old_pkg
+    new_total = (items_cost + new_pkg).quantize(_Q7, rounding=ROUND_HALF_UP)
+
+    total_amount = Decimal(str(snapshot.total_amount or 0))
+    new_profit = (total_amount - new_total).quantize(_Q7, rounding=ROUND_HALF_UP)
+
+    snapshot.packaging_cost = new_pkg
+    snapshot.total_cost = new_total
+    snapshot.profit = new_profit
+    db.flush()

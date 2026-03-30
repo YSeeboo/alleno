@@ -44,7 +44,7 @@ import { NLayout, NLayoutHeader, NLayoutSider, NLayoutContent, NMenu, NButton } 
 import {
   HomeOutline, ExtensionPuzzleOutline, DiamondOutline, ReceiptOutline,
   CartOutline, ColorWandOutline, HammerOutline, ListOutline, GridOutline, ArchiveOutline,
-  PeopleOutline, StorefrontOutline,
+  PeopleOutline, StorefrontOutline, CopyOutline,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '@/stores/auth'
 
@@ -62,6 +62,7 @@ const allFlatItems = [
   { label: '仪表盘', key: 'dashboard', icon: icon(HomeOutline), perm: 'dashboard' },
   { label: '配件管理', key: 'parts', icon: icon(ExtensionPuzzleOutline), perm: 'parts' },
   { label: '饰品管理', key: 'jewelries', icon: icon(DiamondOutline), perm: 'jewelries' },
+  { label: '饰品模板', key: 'jewelry-templates', icon: icon(CopyOutline), perm: 'parts' },
   { label: '订单管理', key: 'orders', icon: icon(ReceiptOutline), perm: 'orders' },
   { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
   { label: '电镀发出', key: 'plating', icon: icon(ColorWandOutline), perm: 'plating' },
@@ -92,6 +93,7 @@ const allGroupedItems = [
     children: [
       { label: '配件管理', key: 'parts', icon: icon(ExtensionPuzzleOutline), perm: 'parts' },
       { label: '饰品管理', key: 'jewelries', icon: icon(DiamondOutline), perm: 'jewelries' },
+      { label: '饰品模板', key: 'jewelry-templates', icon: icon(CopyOutline), perm: 'parts' },
     ],
   },
   {

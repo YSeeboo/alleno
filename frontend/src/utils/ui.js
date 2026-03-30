@@ -17,6 +17,13 @@ export function fmtMoney(val) {
   return `${int}.${final}`
 }
 
+export const fmtPrice = (v) => v == null ? '' : fmtMoney(v)
+export const parseNum = (v) => {
+  if (v == null || String(v).trim() === '') return null
+  const n = Number(String(v).replace(/,/g, ''))
+  return n // NaN for truly invalid strings → NInputNumber reverts to previous value
+}
+
 export function renderImageThumb(src, alt = '图片', size = 40) {
   const side = `${size}px`
   const boxStyle = {

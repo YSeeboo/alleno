@@ -26,12 +26,16 @@
           <n-descriptions-item label="颜色">{{ jewelry.color || '-' }}</n-descriptions-item>
           <n-descriptions-item label="零售价">{{ jewelry.retail_price != null ? fmtMoney(jewelry.retail_price) : '-' }}</n-descriptions-item>
           <n-descriptions-item label="批发价">{{ jewelry.wholesale_price != null ? fmtMoney(jewelry.wholesale_price) : '-' }}</n-descriptions-item>
+          <n-descriptions-item label="手工费">{{ jewelry.handcraft_cost != null ? fmtMoney(jewelry.handcraft_cost) : '-' }}</n-descriptions-item>
           <n-descriptions-item label="状态">{{ jewelry.status }}</n-descriptions-item>
           <n-descriptions-item label="当前库存">{{ stock }}</n-descriptions-item>
         </n-descriptions>
       </n-card>
 
       <n-card title="BOM 配置">
+        <template #header-extra>
+          <n-button v-if="canUseTemplates" size="small" @click="showTemplateModal = true">导入模板</n-button>
+        </template>
         <n-data-table v-if="bomRows.length > 0" :columns="bomColumns" :data="bomRows" :bordered="false" />
         <n-empty v-else description="暂无BOM配置" style="margin: 16px 0;" />
 
@@ -51,6 +55,23 @@
         </n-space>
       </n-card>
     </n-spin>
+
+    <!-- Template import modal -->
+    <n-modal v-model:show="showTemplateModal" preset="card" title="导入饰品模板" style="width: 520px;">
+      <n-alert type="info" style="margin-bottom: 12px;">
+        导入会覆盖已有相同配件的用量
+      </n-alert>
+      <n-spin :show="loadingTemplates">
+        <n-empty v-if="!loadingTemplates && templates.length === 0" description="暂无模板" />
+        <div v-for="tpl in templates" :key="tpl.id" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
+          <div>
+            <div style="font-weight: 600;">{{ tpl.name }}</div>
+            <div style="color: #999; font-size: 12px;">{{ tpl.item_count || 0 }} 个配件</div>
+          </div>
+          <n-button size="small" type="primary" :loading="applyingTemplate === tpl.id" @click="doApplyTemplate(tpl)">导入</n-button>
+        </div>
+      </n-spin>
+    </n-modal>
   </div>
 </template>
 
@@ -61,16 +82,21 @@ import { useMessage } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NEmpty, NDivider, NSelect, NInputNumber, NPopconfirm, NImage,
+  NModal, NAlert,
 } from 'naive-ui'
 import { getJewelry } from '@/api/jewelries'
 import { getBom, setBom, deleteBom } from '@/api/bom'
 import { getStock } from '@/api/inventory'
 import { listParts } from '@/api/parts'
+import { listTemplates, applyTemplate } from '@/api/jewelryTemplates'
 import { renderNamedImage, renderOptionWithImage, fmtMoney } from '@/utils/ui'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
+const authStore = useAuthStore()
+const canUseTemplates = authStore.hasPermission('parts')
 
 const loading = ref(true)
 const jewelry = ref(null)
@@ -80,6 +106,12 @@ const partOptions = ref([])
 const newPartId = ref(null)
 const newQty = ref(1)
 const adding = ref(false)
+
+// Template modal
+const showTemplateModal = ref(false)
+const loadingTemplates = ref(false)
+const templates = ref([])
+const applyingTemplate = ref(null)
 
 // Map part_id -> name for display
 const partMap = ref({})
@@ -93,6 +125,28 @@ const loadBom = async () => {
     part_unit: partMap.value[b.part_id]?.unit || '',
     editQty: null,
   }))
+}
+
+const loadTemplateList = async () => {
+  loadingTemplates.value = true
+  try {
+    const { data } = await listTemplates()
+    templates.value = data
+  } finally {
+    loadingTemplates.value = false
+  }
+}
+
+const doApplyTemplate = async (tpl) => {
+  applyingTemplate.value = tpl.id
+  try {
+    await applyTemplate(tpl.id, route.params.id)
+    message.success('模板已导入')
+    showTemplateModal.value = false
+    await loadBom()
+  } finally {
+    applyingTemplate.value = null
+  }
 }
 
 onMounted(async () => {
@@ -114,6 +168,7 @@ onMounted(async () => {
       image: p.image,
     }))
     await loadBom()
+    if (canUseTemplates) await loadTemplateList()
   } finally {
     loading.value = false
   }

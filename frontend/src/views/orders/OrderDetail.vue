@@ -31,6 +31,20 @@
         </n-space>
       </n-card>
 
+      <!-- Packaging cost -->
+      <n-card title="包装费" style="margin-bottom: 16px;">
+        <n-space align="center">
+          <n-input-number
+            v-model:value="packagingCost"
+            :min="0"
+            :precision="2"
+            placeholder="包装费"
+            style="width: 180px;"
+          />
+          <n-button type="primary" size="small" :loading="savingPkg" @click="savePackagingCost">保存</n-button>
+        </n-space>
+      </n-card>
+
       <!-- Order items — full width -->
       <n-card title="饰品清单" style="margin-bottom: 16px;">
         <n-data-table v-if="orderItems.length > 0" :columns="itemColumns" :data="orderItems" :bordered="false" size="small" />
@@ -65,6 +79,45 @@
         </template>
       </n-card>
 
+      <!-- Cost Snapshot -->
+      <n-card v-if="snapshot" title="成本快照" style="margin-bottom: 16px;">
+        <n-alert v-if="snapshot.has_incomplete_cost" type="warning" style="margin-bottom: 12px;">
+          部分配件缺少成本数据，成本可能不完整
+        </n-alert>
+        <n-descriptions :column="4" bordered style="margin-bottom: 16px;">
+          <n-descriptions-item label="订单总成本">{{ fmtMoney(snapshot.total_cost) }}</n-descriptions-item>
+          <n-descriptions-item label="包装费">{{ snapshot.packaging_cost != null ? fmtMoney(snapshot.packaging_cost) : '-' }}</n-descriptions-item>
+          <n-descriptions-item label="售价总额">{{ snapshot.total_amount != null ? fmtMoney(snapshot.total_amount) : '-' }}</n-descriptions-item>
+          <n-descriptions-item label="利润">
+            <span :style="{ color: snapshot.profit >= 0 ? '#18a058' : '#d03050', fontWeight: 600 }">
+              {{ fmtMoney(snapshot.profit) }}
+            </span>
+          </n-descriptions-item>
+        </n-descriptions>
+
+        <n-data-table
+          :columns="snapshotColumns"
+          :data="snapshot.items"
+          :bordered="false"
+          size="small"
+          :row-key="(r) => r.id"
+          :expand-column="false"
+          :expanded-row-keys="expandedKeys"
+          @update:expanded-row-keys="(keys) => expandedKeys = keys"
+        >
+          <template #expand="{ row }">
+            <div style="padding: 8px 0 8px 32px;">
+              <n-data-table
+                :columns="bomDetailColumns"
+                :data="row.bom_details || []"
+                :bordered="false"
+                size="small"
+              />
+            </div>
+          </template>
+        </n-data-table>
+      </n-card>
+
       <!-- TodoList -->
       <n-card title="配件清单" style="margin-bottom: 16px;">
         <template #header-extra>
@@ -96,9 +149,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
-  NSpace, NButton, NH2, NTag, NEmpty, NSelect, NInputNumber, NInput, NDivider, NPopconfirm,
+  NSpace, NButton, NH2, NTag, NEmpty, NSelect, NInputNumber, NInput, NDivider, NPopconfirm, NAlert,
 } from 'naive-ui'
-import { getOrder, getOrderItems, getPartsSummary, updateOrderStatus, generateTodo, getTodo, deleteLink, addOrderItem, deleteOrderItem } from '@/api/orders'
+import { getOrder, getOrderItems, getPartsSummary, updateOrderStatus, generateTodo, getTodo, deleteLink, addOrderItem, deleteOrderItem, getCostSnapshot, updatePackagingCost } from '@/api/orders'
 import { listParts } from '@/api/parts'
 import { listJewelries } from '@/api/jewelries'
 import { renderNamedImage, renderOptionWithImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
@@ -112,17 +165,21 @@ const loading = ref(true)
 const updating = ref(false)
 const generatingTodo = ref(false)
 const addingItem = ref(false)
+const savingPkg = ref(false)
 const order = ref(null)
 const orderItems = ref([])
 const partsSummaryRows = ref([])
 const todoItems = ref([])
+const snapshot = ref(null)
+const expandedKeys = ref([])
+const packagingCost = ref(null)
 
 const jewelryMap = ref({})
 const jewelryOptions = ref([])
 
 const newItem = reactive({ jewelry_id: null, quantity: 1, unit_price: 0, remarks: '' })
 
-const statusColor = { '待生产': 'default', '生产中': 'info', '已完成': 'success' }
+const statusColor = { '待生产': 'default', '生产中': 'info', '已完成': 'success', '已取消': 'error' }
 const statusFlow = { '待生产': '生产中', '生产中': '已完成' }
 const statusFlowLabel = { '待生产': '开始生产', '生产中': '标记完成' }
 
@@ -135,6 +192,27 @@ const onNewJewelrySelect = (v) => {
   if (j) newItem.unit_price = j.wholesale_price ?? 0
 }
 
+const savePackagingCost = async () => {
+  if (!order.value) return
+  savingPkg.value = true
+  try {
+    await updatePackagingCost(order.value.id, { packaging_cost: packagingCost.value || 0 })
+    message.success('包装费已保存')
+    await reloadOrder()
+  } finally {
+    savingPkg.value = false
+  }
+}
+
+const loadSnapshot = async () => {
+  try {
+    const { data } = await getCostSnapshot(route.params.id)
+    snapshot.value = data
+  } catch (_) {
+    snapshot.value = null
+  }
+}
+
 const reloadOrder = async () => {
   const id = route.params.id
   const [oRes, iRes, sRes] = await Promise.all([
@@ -143,6 +221,7 @@ const reloadOrder = async () => {
     getPartsSummary(id),
   ])
   order.value = oRes.data
+  packagingCost.value = oRes.data.packaging_cost ?? null
   orderItems.value = iRes.data.map((i) => ({
     ...i,
     jewelry_name: jewelryMap.value[i.jewelry_id]?.name || i.jewelry_id,
@@ -157,6 +236,7 @@ const reloadOrder = async () => {
     total_qty,
   }))
   await loadTodo()
+  await loadSnapshot()
 }
 
 const doAddItem = async () => {
@@ -192,7 +272,10 @@ const advanceStatus = async () => {
   try {
     const { data } = await updateOrderStatus(order.value.id, nextStatus.value)
     order.value = data
+    packagingCost.value = data.packaging_cost ?? null
     message.success('状态已更新')
+    // Reload to show cost snapshot if completed
+    await reloadOrder()
   } finally {
     updating.value = false
   }
@@ -261,6 +344,7 @@ const prodStatusBadge = {
   '未送出': 'badge-gray',
   '制作中': 'badge-blue',
   '已收回': 'badge-green',
+  '已采购': 'badge-green',
 }
 
 const itemColumns = computed(() => {
@@ -291,6 +375,23 @@ const itemColumns = computed(() => {
   }
   return cols
 })
+
+const snapshotColumns = [
+  { type: 'expand' },
+  { title: '饰品', key: 'jewelry_name', minWidth: 160 },
+  { title: '数量', key: 'quantity', width: 80 },
+  { title: '售价单价', key: 'unit_price', width: 100, render: (r) => r.unit_price != null ? fmtMoney(r.unit_price) : '-' },
+  { title: '手工费', key: 'handcraft_cost', width: 100, render: (r) => r.handcraft_cost != null ? fmtMoney(r.handcraft_cost) : '-' },
+  { title: '饰品单位成本', key: 'jewelry_unit_cost', width: 120, render: (r) => fmtMoney(r.jewelry_unit_cost) },
+  { title: '饰品总成本', key: 'jewelry_total_cost', width: 120, render: (r) => fmtMoney(r.jewelry_total_cost) },
+]
+
+const bomDetailColumns = [
+  { title: '配件', key: 'part_name', minWidth: 140, render: (r) => r.part_name || r.part_id },
+  { title: '配件单位成本', key: 'unit_cost', width: 120, render: (r) => r.unit_cost != null ? fmtMoney(r.unit_cost) : '-' },
+  { title: 'BOM 用量', key: 'qty_per_unit', width: 100 },
+  { title: '小计', key: 'subtotal', width: 100, render: (r) => r.subtotal != null ? fmtMoney(r.subtotal) : '-' },
+]
 
 const todoColumns = [
   { title: '配件编号', key: 'part_id', width: 110 },
@@ -331,7 +432,7 @@ const todoColumns = [
           h('span', {
             class: `badge ${prodStatusBadge[p.status] || 'badge-gray'}`,
             style: 'font-size: 12px;',
-          }, `${p.type === 'plating' ? 'EP' : 'HC'}:${p.order_id} ${p.status || ''}`),
+          }, `${p.type === 'plating' ? 'EP' : p.type === 'purchase' ? 'PO' : 'HC'}:${p.order_id} ${p.status || ''}`),
           h(NButton, {
             size: 'tiny',
             quaternary: true,
@@ -375,6 +476,7 @@ onMounted(async () => {
       listJewelries(),
     ])
     order.value = oRes.data
+    packagingCost.value = oRes.data.packaging_cost ?? null
 
     jRes.data.forEach((j) => { jewelryMap.value[j.id] = j })
     jewelryOptions.value = jRes.data
@@ -405,6 +507,7 @@ onMounted(async () => {
     }))
 
     await loadTodo()
+    await loadSnapshot()
   } finally {
     loading.value = false
   }

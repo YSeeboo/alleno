@@ -12,3 +12,7 @@ export const deletePurchaseOrderItem = (id, itemId) => api.delete(`/purchase-ord
 export const createPurchaseOrderItemAddon = (id, itemId, data) => api.post(`/purchase-orders/${id}/items/${itemId}/addons`, data)
 export const updatePurchaseOrderItemAddon = (id, itemId, addonId, data) => api.put(`/purchase-orders/${id}/items/${itemId}/addons/${addonId}`, data)
 export const deletePurchaseOrderItemAddon = (id, itemId, addonId) => api.delete(`/purchase-orders/${id}/items/${itemId}/addons/${addonId}`)
+
+// --- Order Links ---
+export const getPurchaseItemOrders = (id, itemId) => api.get(`/purchase-orders/${id}/items/${itemId}/orders`)
+export const deletePurchaseItemOrderLink = (id, itemId, linkId) => api.delete(`/purchase-orders/${id}/items/${itemId}/orders/${linkId}`)

@@ -142,6 +142,7 @@
 
     <!-- Edit Item Modal -->
     <n-modal v-model:show="editModalVisible" preset="card" title="修改明细" style="width: 500px;">
+      <form @submit.prevent="doEditItem">
       <n-form label-placement="left" label-width="90">
         <n-form-item label="数量">
           <n-input-number v-model:value="editForm.qty" :min="0.0001" :precision="4" :step="1" style="width: 100%;" />
@@ -150,12 +151,13 @@
           <n-select v-model:value="editForm.unit" :options="unitOptions" />
         </n-form-item>
         <n-form-item label="单价">
-          <n-input-number v-model:value="editForm.price" :min="0" :precision="7" :step="0.1" style="width: 100%;" />
+          <n-input-number v-model:value="editForm.price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" :step="0.1" style="width: 100%;" />
         </n-form-item>
         <n-form-item label="备注">
           <n-input v-model:value="editForm.note" placeholder="备注（可选）" />
         </n-form-item>
       </n-form>
+      </form>
       <template #footer>
         <n-space justify="end">
           <n-button @click="editModalVisible = false">取消</n-button>
@@ -257,7 +259,7 @@ import {
 } from '@/api/platingReceipts'
 import { listPendingReceiveItems } from '@/api/plating'
 import { batchUpdatePartCosts } from '@/api/parts'
-import { renderNamedImage, fmtMoney } from '@/utils/ui'
+import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 
 const route = useRoute()
@@ -694,7 +696,7 @@ const fetchAddItemsPending = async () => {
   try {
     const existingPoiIds = receipt.value.items.map((i) => i.plating_order_item_id).filter(Boolean)
     const params = { supplier_name: receipt.value.vendor_name }
-    if (existingPoiIds.length > 0) params.exclude_item_ids = existingPoiIds.join(',')
+    if (existingPoiIds.length > 0) params.exclude_item_ids = existingPoiIds
     if (addItemsFilterKeyword.value) params.part_keyword = addItemsFilterKeyword.value
     if (addItemsFilterDateOn.value) {
       const d = new Date(addItemsFilterDateOn.value)
@@ -848,6 +850,8 @@ const addItemsColumns = [
         value: input.price,
         min: 0,
         precision: 7,
+        format: fmtPrice,
+        parse: parseNum,
         step: 0.1,
         size: 'small',
         style: 'width: 100px;',

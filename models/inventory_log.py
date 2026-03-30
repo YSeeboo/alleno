@@ -10,7 +10,7 @@ class InventoryLog(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     item_type = Column(String, nullable=False)   # part / jewelry
     item_id = Column(String, nullable=False)
-    change_qty = Column(Numeric(10, 4), nullable=False)
+    change_qty = Column(Numeric(18, 4), nullable=False)
     reason = Column(String, nullable=False)
     note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now_beijing)

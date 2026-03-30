@@ -568,3 +568,55 @@ def test_plating_supplier_name_stripped(client, db):
     })
     assert resp.status_code == 201
     assert resp.json()["supplier_name"] == "厂Z"
+
+
+def test_update_plating_order_supplier_name(client, db):
+    part = create_part(db, {"name": "PU1", "category": "小配件"})
+    db.commit()
+
+    create_resp = client.post("/api/plating/", json={
+        "supplier_name": "Old Supplier",
+        "items": [{"part_id": part.id, "qty": 5.0}],
+    })
+    order_id = create_resp.json()["id"]
+
+    resp = client.patch(f"/api/plating/{order_id}", json={"supplier_name": "New Supplier"})
+    assert resp.status_code == 200
+    assert resp.json()["supplier_name"] == "New Supplier"
+    assert resp.json()["id"] == order_id
+
+
+def test_update_plating_order_blank_supplier_name(client, db):
+    part = create_part(db, {"name": "PU2", "category": "小配件"})
+    db.commit()
+
+    create_resp = client.post("/api/plating/", json={
+        "supplier_name": "Some Supplier",
+        "items": [{"part_id": part.id, "qty": 5.0}],
+    })
+    order_id = create_resp.json()["id"]
+
+    resp = client.patch(f"/api/plating/{order_id}", json={"supplier_name": "   "})
+    assert resp.status_code == 422
+
+
+def test_update_plating_order_not_pending(client, db):
+    part = create_part(db, {"name": "PU3", "category": "小配件"})
+    add_stock(db, "part", part.id, 100.0, "initial")
+    db.commit()
+
+    create_resp = client.post("/api/plating/", json={
+        "supplier_name": "Some Supplier",
+        "items": [{"part_id": part.id, "qty": 5.0}],
+    })
+    order_id = create_resp.json()["id"]
+
+    client.post(f"/api/plating/{order_id}/send")
+
+    resp = client.patch(f"/api/plating/{order_id}", json={"supplier_name": "New"})
+    assert resp.status_code == 400
+
+
+def test_update_plating_order_not_found(client, db):
+    resp = client.patch("/api/plating/EP-9999", json={"supplier_name": "X"})
+    assert resp.status_code == 400

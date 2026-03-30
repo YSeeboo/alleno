@@ -28,6 +28,8 @@
             v-model:value="item.unit_price"
             :min="0"
             :precision="7"
+            :format="fmtPrice"
+            :parse="parseNum"
             placeholder="单价"
             style="width: 120px;"
           />
@@ -54,7 +56,7 @@ import { useMessage } from 'naive-ui'
 import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NText, NH2 } from 'naive-ui'
 import { listJewelries } from '@/api/jewelries'
 import { createOrder } from '@/api/orders'
-import { renderOptionWithImage, fmtMoney } from '@/utils/ui'
+import { renderOptionWithImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 
 const router = useRouter()
 const message = useMessage()

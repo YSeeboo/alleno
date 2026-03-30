@@ -31,6 +31,7 @@
 
     <!-- Create / Edit Modal -->
     <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑配件' : '新增配件'" style="width: 480px;">
+      <form @submit.prevent="save">
       <n-form ref="formRef" :model="form" label-placement="left" label-width="100">
         <n-form-item label="名称" path="name" :rule="{ required: true, message: '请输入名称' }">
           <n-input v-model:value="form.name" />
@@ -68,7 +69,7 @@
           <n-select v-model:value="form.unit" :options="unitOptions" placeholder="请选择单位" />
         </n-form-item>
         <n-form-item label="单件成本">
-          <n-input-number v-model:value="form.unit_cost" :min="0" :precision="7" style="width: 100%;" />
+          <n-input-number v-model:value="form.unit_cost" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" style="width: 100%;" />
         </n-form-item>
         <n-form-item label="关联原色配件">
           <n-select
@@ -81,7 +82,7 @@
           />
           <span v-if="editingIsVariant" style="color: #999; font-size: 12px; margin-left: 8px;">变体不可修改</span>
         </n-form-item>
-        <n-form-item v-if="editingId && !editingIsVariant" label="创建变体">
+        <n-form-item v-if="editingId" label="创建变体">
           <n-space>
             <n-button
               v-for="vc in variantColorOptions"
@@ -97,6 +98,7 @@
           </n-space>
         </n-form-item>
       </n-form>
+      </form>
       <template #footer>
         <n-space justify="end">
           <n-button @click="showModal = false">取消</n-button>
@@ -107,6 +109,7 @@
 
     <!-- Quick Stock-In Modal -->
     <n-modal v-model:show="showStockModal" preset="card" title="快速入库" style="width: 360px;">
+      <form @submit.prevent="doStock">
       <n-form label-placement="left" label-width="80">
         <n-form-item label="数量">
           <n-input-number v-model:value="stockQty" :min="0.01" style="width: 100%;" />
@@ -115,6 +118,7 @@
           <n-input v-model:value="stockNote" />
         </n-form-item>
       </n-form>
+      </form>
       <template #footer>
         <n-space justify="end">
           <n-button @click="showStockModal = false">取消</n-button>
@@ -127,7 +131,7 @@
       <n-space vertical :size="16" style="width: 100%;">
         <div style="padding: 14px 16px; border-radius: 14px; background: #fff9ec; color: #6f5214; line-height: 1.75;">
           仅支持 `.xlsx` 文件。系统按首个工作表导入，表头建议使用：
-          名称、类目、颜色、单位、单件成本、默认电镀工艺、入库数量。
+          名称、类目、颜色、单位、采购成本、默认电镀工艺、入库数量。
           配件编号会由系统自动生成；如果系统里已存在同名同类目的配件，会自动更新该配件并追加入库数量。
         </div>
         <n-space align="center" justify="space-between">
@@ -178,7 +182,7 @@ import {
 } from 'naive-ui'
 import { listParts, createPart, updatePart, deletePart, importPartsExcel, downloadPartsImportTemplate, getPartVariants, createPartVariant } from '@/api/parts'
 import { getStock, addStock } from '@/api/inventory'
-import { renderNamedImage, fmtMoney } from '@/utils/ui'
+import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import ImageUploadModal from '../../components/ImageUploadModal.vue'
 
 const router = useRouter()
@@ -350,20 +354,20 @@ const openEdit = async (row) => {
     parent_part_id: row.parent_part_id || null,
   })
   showModal.value = true
-  // Load existing variants for root parts (non-blocking, buttons disabled until done)
-  if (!row.parent_part_id) {
-    loadingVariants.value = true
-    try {
-      const { data: variants } = await getPartVariants(rowId)
-      if (editingId.value !== rowId) return
-      existingVariantColors.value = variants
-        .map((v) => COLOR_CODE_REVERSE[v.color])
-        .filter(Boolean)
-    } catch {
-      // ignore — buttons will show all options as fallback
-    } finally {
-      if (editingId.value === rowId) loadingVariants.value = false
-    }
+  // Load existing variants (non-blocking, buttons disabled until done)
+  // For variants, query via root parent; for root parts, query directly
+  const variantQueryId = row.parent_part_id || rowId
+  loadingVariants.value = true
+  try {
+    const { data: variants } = await getPartVariants(variantQueryId)
+    if (editingId.value !== rowId) return
+    existingVariantColors.value = variants
+      .map((v) => COLOR_CODE_REVERSE[v.color])
+      .filter(Boolean)
+  } catch {
+    // ignore — buttons will show all options as fallback
+  } finally {
+    if (editingId.value === rowId) loadingVariants.value = false
   }
 }
 

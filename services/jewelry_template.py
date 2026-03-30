@@ -55,13 +55,15 @@ def get_template(db: Session, template_id: int) -> Optional[dict]:
     template = db.get(JewelryTemplate, template_id)
     if template is None:
         return None
+    enriched_items = _enrich_items(db, template.items)
     return {
         "id": template.id,
         "name": template.name,
         "image": template.image,
         "note": template.note,
         "created_at": template.created_at,
-        "items": _enrich_items(db, template.items),
+        "items": enriched_items,
+        "item_count": len(enriched_items),
     }
 
 
@@ -81,6 +83,8 @@ def update_template(db: Session, template_id: int, data: dict) -> dict:
 
     # 如果提供了 items，全量替换
     if "items" in data and data["items"] is not None:
+        if len(data["items"]) == 0:
+            raise ValueError("模板至少需要一个配件")
         for item in data["items"]:
             _require_part(db, item["part_id"])
         # 删除旧的

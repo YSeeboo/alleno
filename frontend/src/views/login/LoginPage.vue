@@ -5,17 +5,19 @@
         <span class="brand-icon">◈</span>
         <span class="brand-en">ALLENOP</span>
       </div>
-      <n-form ref="formRef" :model="form" :rules="rules" label-placement="top">
-        <n-form-item label="账号" path="username">
-          <n-input v-model:value="form.username" placeholder="请输入账号" @keyup.enter="handleLogin" />
-        </n-form-item>
-        <n-form-item label="密码" path="password">
-          <n-input v-model:value="form.password" type="password" show-password-on="click" placeholder="请输入密码" @keyup.enter="handleLogin" />
-        </n-form-item>
-        <n-button type="primary" block :loading="loading" @click="handleLogin" style="margin-top: 8px;">
-          登录
-        </n-button>
-      </n-form>
+      <form @submit.prevent="handleLogin">
+        <n-form ref="formRef" :model="form" :rules="rules" label-placement="top">
+          <n-form-item label="账号" path="username">
+            <n-input v-model:value="form.username" placeholder="请输入账号" />
+          </n-form-item>
+          <n-form-item label="密码" path="password">
+            <n-input v-model:value="form.password" type="password" show-password-on="click" placeholder="请输入密码" />
+          </n-form-item>
+          <n-button type="primary" block :loading="loading" @click="handleLogin" style="margin-top: 8px;">
+            登录
+          </n-button>
+        </n-form>
+      </form>
     </div>
   </div>
 </template>

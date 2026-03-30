@@ -40,6 +40,8 @@ class HandcraftPartItem(Base):
     handcraft_order_id = Column(String, ForeignKey("handcraft_order.id"), nullable=False)
     part_id = Column(String, ForeignKey("part.id"), nullable=False)
     qty = Column(Numeric(10, 4), nullable=False)
+    received_qty = Column(Numeric(10, 4), nullable=True, default=0)
+    status = Column(String, nullable=False, default="未送出")
     bom_qty = Column(Numeric(10, 4), nullable=True)
     unit = Column(String, nullable=True, default="个")
     note = Column(Text, nullable=True)

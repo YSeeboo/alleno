@@ -61,7 +61,7 @@ def test_download_plating_pdf_moves_image_three_and_four_to_second_page(client, 
         "/api/plating/",
         json={
             "supplier_name": "PDF分页厂",
-            "items": [{"part_id": part.id, "qty": 5, "unit": "个"} for _ in range(10)],
+            "items": [{"part_id": part.id, "qty": 5, "unit": "个"} for _ in range(18)],
         },
     )
     order_id = create_resp.json()["id"]
@@ -87,7 +87,7 @@ def test_download_plating_pdf_moves_all_images_after_detail_pages_when_more_than
     monkeypatch.setattr("services.plating_pdf.download_image_bytes", _fake_download_image_bytes)
 
     items = []
-    for index in range(11):
+    for index in range(20):
         part = create_part(
             db,
             {

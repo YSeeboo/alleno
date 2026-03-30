@@ -12,6 +12,7 @@
         </n-button>
       </template>
 
+      <form @submit.prevent="handleSubmit">
       <n-form label-placement="left" label-width="64" :model="form">
         <!-- 厂家 -->
         <n-form-item label="厂家">
@@ -89,6 +90,7 @@
           </div>
         </n-form-item>
       </n-form>
+      </form>
 
       <template #footer>
         <n-space justify="end">

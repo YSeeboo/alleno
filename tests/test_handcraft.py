@@ -7,7 +7,7 @@ from services.part import update_part
 from services.jewelry import create_jewelry
 from services.inventory import add_stock, get_stock
 from services.handcraft import (
-    create_handcraft_order, send_handcraft_order, receive_handcraft_jewelries,
+    create_handcraft_order, send_handcraft_order,
     get_handcraft_order, get_handcraft_parts, list_handcraft_orders, update_handcraft_delivery_images,
 )
 
@@ -88,6 +88,7 @@ def test_send_handcraft_order_insufficient_stock(setup):
 
 
 def test_receive_handcraft_jewelries_partial(setup):
+    from services.handcraft_receipt import create_handcraft_receipt
     db, p1, p2, j1 = setup
     order = create_handcraft_order(
         db, "手工坊",
@@ -99,7 +100,7 @@ def test_receive_handcraft_jewelries_partial(setup):
     ji = db.query(HandcraftJewelryItem).filter(
         HandcraftJewelryItem.handcraft_order_id == order.id
     ).first()
-    receive_handcraft_jewelries(db, order.id, [{"handcraft_jewelry_item_id": ji.id, "qty": 6}])
+    create_handcraft_receipt(db, "手工坊", [{"handcraft_jewelry_item_id": ji.id, "qty": 6}])
     db.refresh(ji)
     assert ji.received_qty == 6
     assert ji.status == "制作中"  # not yet complete
@@ -107,6 +108,8 @@ def test_receive_handcraft_jewelries_partial(setup):
 
 
 def test_receive_handcraft_jewelries_completes_order(setup):
+    from services.handcraft_receipt import create_handcraft_receipt
+    from models.handcraft_order import HandcraftJewelryItem, HandcraftPartItem
     db, p1, p2, j1 = setup
     order = create_handcraft_order(
         db, "手工坊",
@@ -114,15 +117,26 @@ def test_receive_handcraft_jewelries_completes_order(setup):
         jewelries=[{"jewelry_id": j1.id, "qty": 10}],
     )
     send_handcraft_order(db, order.id)
-    from models.handcraft_order import HandcraftJewelryItem
     ji = db.query(HandcraftJewelryItem).filter(
         HandcraftJewelryItem.handcraft_order_id == order.id
     ).first()
-    receive_handcraft_jewelries(db, order.id, [{"handcraft_jewelry_item_id": ji.id, "qty": 6}])
-    receive_handcraft_jewelries(db, order.id, [{"handcraft_jewelry_item_id": ji.id, "qty": 4}])
+    pi = db.query(HandcraftPartItem).filter(
+        HandcraftPartItem.handcraft_order_id == order.id
+    ).first()
+    # Receive all jewelry and all parts
+    create_handcraft_receipt(db, "手工坊", [
+        {"handcraft_jewelry_item_id": ji.id, "qty": 6},
+        {"handcraft_part_item_id": pi.id, "qty": 25},
+    ])
+    create_handcraft_receipt(db, "手工坊", [
+        {"handcraft_jewelry_item_id": ji.id, "qty": 4},
+        {"handcraft_part_item_id": pi.id, "qty": 25},
+    ])
     db.refresh(ji)
+    db.refresh(pi)
     db.refresh(order)
     assert ji.status == "已收回"
+    assert pi.status == "已收回"
     assert order.status == "completed"
     assert order.completed_at is not None
     assert get_stock(db, "jewelry", j1.id) == 10.0

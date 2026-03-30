@@ -92,7 +92,8 @@ import { useMessage } from 'naive-ui'
 import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NGrid, NGi } from 'naive-ui'
 import { listParts } from '@/api/parts'
 import { listJewelries } from '@/api/jewelries'
-import { createHandcraft, getHandcraftSuppliers } from '@/api/handcraft'
+import { createHandcraft } from '@/api/handcraft'
+import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { renderOptionWithImage } from '@/utils/ui'
 
 const router = useRouter()
@@ -148,6 +149,11 @@ const submit = async () => {
   if (validParts.length === 0) { message.warning('请至少添加一条配件'); return }
   submitting.value = true
   try {
+    // Auto-create supplier if new (swallow duplicate 400, rethrow others)
+    const isNew = !supplierOptions.value.some((o) => o.value === supplierName.value)
+    if (isNew) {
+      try { await createSupplier({ name: supplierName.value, type: 'handcraft' }) } catch (e) { if (e.response?.status !== 400) throw e }
+    }
     const { data } = await createHandcraft({
       supplier_name: supplierName.value,
       parts: validParts,
@@ -164,7 +170,7 @@ const submit = async () => {
 onMounted(async () => {
   try {
     const [pRes, jRes, sRes] = await Promise.all([
-      listParts(), listJewelries({ status: 'active' }), getHandcraftSuppliers(),
+      listParts(), listJewelries({ status: 'active' }), listSuppliers({ type: 'handcraft' }),
     ])
     partOptions.value = pRes.data.map((p) => ({
       label: `${p.id} ${p.name}`,
@@ -182,7 +188,7 @@ onMounted(async () => {
       image: j.image,
       unit: j.unit,
     }))
-    supplierOptions.value = sRes.data.map((v) => ({ label: v, value: v }))
+    supplierOptions.value = sRes.data.map((s) => ({ label: s.name, value: s.name }))
   } catch (_) {
     // error already shown by axios interceptor
   }

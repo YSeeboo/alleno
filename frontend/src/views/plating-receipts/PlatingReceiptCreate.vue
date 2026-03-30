@@ -108,7 +108,7 @@ import {
 import { listPendingReceiveItems } from '@/api/plating'
 import { createPlatingReceipt } from '@/api/platingReceipts'
 import { batchUpdatePartCosts } from '@/api/parts'
-import { renderNamedImage, fmtMoney } from '@/utils/ui'
+import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 
 const router = useRouter()
 const message = useMessage()
@@ -272,6 +272,8 @@ const pendingColumns = [
         value: input.price,
         min: 0,
         precision: 7,
+        format: fmtPrice,
+        parse: parseNum,
         step: 0.1,
         size: 'small',
         style: 'width: 110px;',
