@@ -310,6 +310,23 @@ def test_download_parts_import_template(client):
     assert data["created_count"] == 1
 
 
+def test_import_response_includes_image(client):
+    """Import response results should include image field."""
+    file_bytes = _build_xlsx([
+        ["名称", "类目", "入库数量"],
+        ["测试吊坠", "吊坠", 10],
+    ])
+    resp = client.post(
+        "/api/parts/import?filename=test.xlsx",
+        content=file_bytes,
+        headers={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["results"]) > 0
+    assert "image" in data["results"][0]
+
+
 def _create_root_and_variant(client):
     root = client.post("/api/parts/", json={"name": "铜扣", "category": "小配件"}).json()
     variant = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G"}).json()
@@ -415,3 +432,210 @@ def test_update_variant_full_payload_allows_other_fields(client):
     })
     assert resp.status_code == 200
     assert resp.json()["unit"] == "条"
+
+
+# ── Spec variant tests ──
+
+
+def test_create_spec_variant(client):
+    root = client.post("/api/parts/", json={"name": "链条", "category": "链条"}).json()
+    resp = client.post(f"/api/parts/{root['id']}/create-variant", json={"spec": "45cm"})
+    assert resp.status_code == 201
+    v = resp.json()
+    assert v["spec"] == "45cm"
+    assert v["color"] is None
+    assert v["parent_part_id"] == root["id"]
+    assert v["name"] == "链条_45cm"
+
+
+def test_create_color_and_spec_variant(client):
+    root = client.post("/api/parts/", json={"name": "链条", "category": "链条"}).json()
+    resp = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G", "spec": "45cm"})
+    assert resp.status_code == 201
+    v = resp.json()
+    assert v["color"] == "金色"
+    assert v["spec"] == "45cm"
+    assert v["name"] == "链条_金色_45cm"
+
+
+def test_create_spec_variant_duplicate_rejected(client):
+    root = client.post("/api/parts/", json={"name": "链条", "category": "链条"}).json()
+    resp1 = client.post(f"/api/parts/{root['id']}/create-variant", json={"spec": "45cm"})
+    assert resp1.status_code == 201
+    resp2 = client.post(f"/api/parts/{root['id']}/create-variant", json={"spec": "45cm"})
+    # Returns existing variant (idempotent)
+    assert resp2.status_code == 201
+    assert resp2.json()["id"] == resp1.json()["id"]
+
+
+def test_create_variant_color_only_backward_compat(client):
+    """Only color_code (no spec) should still work as before."""
+    root = client.post("/api/parts/", json={"name": "链条", "category": "链条"}).json()
+    resp = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "S"})
+    assert resp.status_code == 201
+    assert resp.json()["color"] == "白K"
+    assert resp.json()["spec"] is None
+
+
+def test_create_variant_neither_color_nor_spec_rejected(client):
+    root = client.post("/api/parts/", json={"name": "链条", "category": "链条"}).json()
+    resp = client.post(f"/api/parts/{root['id']}/create-variant", json={})
+    assert resp.status_code == 400
+
+
+def test_create_spec_variant_not_confused_with_color_spec_variant(client):
+    """Bug regression: color+spec variant should not be reused for spec-only request."""
+    root = client.post("/api/parts/", json={"name": "链条", "category": "链条"}).json()
+    # Create color+spec variant first
+    r1 = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G", "spec": "45cm"})
+    assert r1.status_code == 201
+    assert r1.json()["name"] == "链条_金色_45cm"
+    # Create spec-only variant — must be a different part
+    r2 = client.post(f"/api/parts/{root['id']}/create-variant", json={"spec": "45cm"})
+    assert r2.status_code == 201
+    assert r2.json()["name"] == "链条_45cm"
+    assert r2.json()["id"] != r1.json()["id"]
+
+
+def test_create_spec_variant_whitespace_normalized(client):
+    """Whitespace-only spec should be rejected, leading/trailing spaces stripped."""
+    root = client.post("/api/parts/", json={"name": "链条", "category": "链条"}).json()
+    # Pure whitespace → rejected
+    resp = client.post(f"/api/parts/{root['id']}/create-variant", json={"spec": "   "})
+    assert resp.status_code == 400
+    # Leading/trailing spaces → stripped, creates valid variant
+    resp2 = client.post(f"/api/parts/{root['id']}/create-variant", json={"spec": "  45cm  "})
+    assert resp2.status_code == 201
+    assert resp2.json()["spec"] == "45cm"
+    assert resp2.json()["name"] == "链条_45cm"
+
+
+def test_create_part_spec_whitespace_normalized(client):
+    """create_part should strip spec whitespace and store None for blank."""
+    resp = client.post("/api/parts/", json={"name": "链条A", "category": "链条", "spec": "  45cm  "})
+    assert resp.status_code == 201
+    assert resp.json()["spec"] == "45cm"
+    resp2 = client.post("/api/parts/", json={"name": "链条B", "category": "链条", "spec": "   "})
+    assert resp2.status_code == 201
+    assert resp2.json()["spec"] is None
+
+
+def test_update_part_spec_whitespace_normalized(client):
+    """update_part should strip spec whitespace and store None for blank."""
+    root = client.post("/api/parts/", json={"name": "链条C", "category": "链条"}).json()
+    resp = client.patch(f"/api/parts/{root['id']}", json={"spec": "  50cm  "})
+    assert resp.status_code == 200
+    assert resp.json()["spec"] == "50cm"
+    resp2 = client.patch(f"/api/parts/{root['id']}", json={"spec": "   "})
+    assert resp2.status_code == 200
+    assert resp2.json()["spec"] is None
+
+
+def test_create_spec_variant_from_color_variant(client):
+    """Creating a spec variant from a color variant should inherit color/image and hang under root."""
+    root = client.post("/api/parts/", json={"name": "扁链 4mm", "category": "链条", "image": "root.jpg"}).json()
+    gold = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G"}).json()
+    assert gold["name"] == "扁链 4mm_金色"
+    # Update gold variant's image to differ from root
+    client.patch(f"/api/parts/{gold['id']}", json={"image": "gold.jpg"})
+    # Create spec variant from the gold variant
+    resp = client.post(f"/api/parts/{gold['id']}/create-variant", json={"spec": "45cm"})
+    assert resp.status_code == 201
+    v = resp.json()
+    assert v["name"] == "扁链 4mm_金色_45cm"
+    assert v["parent_part_id"] == root["id"]  # flat: under root, not gold
+    assert v["spec"] == "45cm"
+    assert v["color"] == "金色"  # inherited from source color variant
+    assert v["image"] == "gold.jpg"  # inherited from source, not root
+    # Visible in root's variant list
+    variants = client.get(f"/api/parts/{root['id']}/variants").json()
+    variant_ids = [vv["id"] for vv in variants]
+    assert v["id"] in variant_ids
+    assert gold["id"] in variant_ids
+
+
+def test_orphan_adoption_rejects_conflicting_color_spec(client):
+    """Orphan with same name but different color/spec should not be adopted."""
+    root = client.post("/api/parts/", json={"name": "扁链 4mm", "category": "链条"}).json()
+    # Manually create an orphan with matching name but wrong structured fields
+    orphan = client.post("/api/parts/", json={
+        "name": "扁链 4mm_金色_45cm", "category": "链条", "color": "白K", "spec": "50cm",
+    }).json()
+    assert orphan["parent_part_id"] is None
+    # Creating variant should NOT adopt the orphan — fields conflict
+    resp = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G", "spec": "45cm"})
+    assert resp.status_code == 201
+    v = resp.json()
+    assert v["id"] != orphan["id"]
+    assert v["color"] == "金色"
+    assert v["spec"] == "45cm"
+
+
+def test_orphan_adoption_rejects_extra_fields(client):
+    """Orphan with extra color/spec not in request should not be adopted."""
+    root = client.post("/api/parts/", json={"name": "链条", "category": "链条"}).json()
+    # Orphan has same name but extra color field
+    client.post("/api/parts/", json={
+        "name": "链条_45cm", "category": "链条", "color": "金色", "spec": "45cm",
+    })
+    # Spec-only request — orphan has extra color, should not be adopted
+    resp = client.post(f"/api/parts/{root['id']}/create-variant", json={"spec": "45cm"})
+    assert resp.status_code == 201
+    v = resp.json()
+    assert v["color"] is None
+    assert v["spec"] == "45cm"
+
+
+def test_color_only_variant_after_color_spec_variant(client):
+    """Pure color variant should still be creatable after a color+spec variant exists."""
+    root = client.post("/api/parts/", json={"name": "链条", "category": "链条"}).json()
+    # Create color+spec variant first
+    r1 = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G", "spec": "45cm"})
+    assert r1.status_code == 201
+    assert r1.json()["name"] == "链条_金色_45cm"
+    # Create pure color variant — must succeed as a different part
+    r2 = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G"})
+    assert r2.status_code == 201
+    assert r2.json()["name"] == "链条_金色"
+    assert r2.json()["id"] != r1.json()["id"]
+    assert r2.json()["spec"] is None
+
+
+def test_cross_color_variant_uses_root_attributes(client):
+    """Creating a different color variant from a color variant should use root's attributes, not source's."""
+    root = client.post("/api/parts/", json={"name": "扁链", "category": "链条", "image": "root.jpg"}).json()
+    gold = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G"}).json()
+    client.patch(f"/api/parts/{gold['id']}", json={"image": "gold.jpg"})
+    # Create silver variant from gold — should inherit root's image, not gold's
+    resp = client.post(f"/api/parts/{gold['id']}/create-variant", json={"color_code": "S"})
+    assert resp.status_code == 201
+    assert resp.json()["image"] == "root.jpg"
+
+
+def test_explicit_same_color_spec_variant_inherits_source(client):
+    """Explicitly passing same color_code as source should still inherit source's attributes."""
+    root = client.post("/api/parts/", json={"name": "扁链", "category": "链条", "image": "root.jpg"}).json()
+    gold = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G"}).json()
+    client.patch(f"/api/parts/{gold['id']}", json={"image": "gold.jpg"})
+    # Explicit color_code=G + spec from gold variant — same color, should use source
+    resp = client.post(f"/api/parts/{gold['id']}/create-variant", json={"color_code": "G", "spec": "45cm"})
+    assert resp.status_code == 201
+    assert resp.json()["image"] == "gold.jpg"
+    assert resp.json()["color"] == "金色"
+
+
+def test_variant_inherits_all_costs_including_plating(client):
+    """Variant should inherit plating_cost from donor so unit_cost is correct."""
+    root = client.post("/api/parts/", json={"name": "链条", "category": "链条"}).json()
+    # Set all three cost fields on root
+    for field, val in [("purchase_cost", 1), ("bead_cost", 2), ("plating_cost", 3)]:
+        client.post("/api/parts/batch-update-costs", json={
+            "updates": [{"part_id": root["id"], "field": field, "value": val}]
+        })
+    resp = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G", "spec": "45cm"})
+    assert resp.status_code == 201
+    v = resp.json()
+    assert v["purchase_cost"] == 1
+    assert v["bead_cost"] == 2
+    assert v["plating_cost"] == 3
+    assert v["unit_cost"] == 6

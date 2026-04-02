@@ -8,6 +8,7 @@ class PartCreate(BaseModel):
     category: str
     image: Optional[str] = None
     color: Optional[str] = None
+    spec: Optional[str] = None
     unit: Optional[str] = None
     plating_process: Optional[str] = None
     parent_part_id: Optional[str] = None
@@ -18,6 +19,7 @@ class PartUpdate(BaseModel):
     image: Optional[str] = None
     category: Optional[str] = None
     color: Optional[str] = None
+    spec: Optional[str] = None
     unit: Optional[str] = None
     plating_process: Optional[str] = None
     parent_part_id: Optional[str] = None
@@ -31,6 +33,7 @@ class PartResponse(BaseModel):
     image: Optional[str] = None
     category: str
     color: Optional[str] = None
+    spec: Optional[str] = None
     unit: Optional[str] = None
     unit_cost: Optional[float] = None
     purchase_cost: Optional[float] = None
@@ -41,7 +44,8 @@ class PartResponse(BaseModel):
 
 
 class PartVariantCreate(BaseModel):
-    color_code: str
+    color_code: Optional[str] = None
+    spec: Optional[str] = None
 
 
 class FindOrCreateVariantResponse(BaseModel):
@@ -53,6 +57,7 @@ class PartImportRowResult(BaseModel):
     row_number: int
     part_id: str
     name: str
+    image: str | None = None
     action: str
     stock_added: float
 
