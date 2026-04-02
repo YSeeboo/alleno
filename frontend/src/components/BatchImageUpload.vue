@@ -45,8 +45,8 @@
                 v-else
                 :class="['upload-area', { 'upload-focus': focusedPartId === part.part_id, 'upload-loading': uploadingPartId === part.part_id }]"
                 tabindex="0"
-                @click="setFocus(part.part_id)"
-                @focus="setFocus(part.part_id)"
+                @click="setFocus(part.part_id, $event)"
+                @focus="focusedPartId = part.part_id"
                 @paste="handlePaste($event, part.part_id)"
               >
                 <n-spin v-if="uploadingPartId === part.part_id" size="small" />
@@ -67,7 +67,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useMessage } from 'naive-ui'
+import { NModal, NTable, NImage, NButton, NIcon, NSpin, NSpace, useMessage } from 'naive-ui'
 import { CloseOutline } from '@vicons/ionicons5'
 import { uploadImageToOss } from '@/api/uploads'
 import { updatePart } from '@/api/parts'
@@ -84,8 +84,9 @@ const uploadedImages = ref({})
 const focusedPartId = ref(null)
 const uploadingPartId = ref(null)
 
-function setFocus(partId) {
+function setFocus(partId, event) {
   focusedPartId.value = partId
+  event?.currentTarget?.focus()
 }
 
 async function handlePaste(event, partId) {
