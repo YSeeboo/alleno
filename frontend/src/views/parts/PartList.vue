@@ -7,7 +7,7 @@
     </div>
 
     <div class="filter-bar">
-      <n-input v-model:value="searchName" placeholder="搜索配件名称" clearable style="width: 200px;" @update:value="load" />
+      <n-input v-model:value="searchName" placeholder="搜索配件名称" clearable style="width: 200px;" @update:value="debouncedLoad" />
       <n-select
         v-model:value="searchCategory"
         :options="categoryOptions"
@@ -82,7 +82,10 @@
           />
           <span v-if="editingIsVariant" style="color: #999; font-size: 12px; margin-left: 8px;">变体不可修改</span>
         </n-form-item>
-        <n-form-item v-if="editingId" label="创建变体">
+        <n-form-item label="规格">
+          <n-input v-model:value="form.spec" placeholder="如 45cm" />
+        </n-form-item>
+        <n-form-item v-if="editingId" label="创建颜色变体">
           <n-space>
             <n-button
               v-for="vc in variantColorOptions"
@@ -94,6 +97,27 @@
               @click="doCreateVariant(vc.code)"
             >
               {{ vc.label }}{{ vc.exists ? ' ✓' : '' }}
+            </n-button>
+          </n-space>
+        </n-form-item>
+        <n-form-item v-if="editingId" label="创建规格变体">
+          <n-space align="center">
+            <n-select
+              v-model:value="specVariantColor"
+              :options="specVariantColorOptions"
+              clearable
+              placeholder="颜色（可选）"
+              style="width: 120px;"
+            />
+            <n-input v-model:value="specVariantInput" placeholder="规格，如 45cm" style="width: 140px;" />
+            <n-button
+              size="small"
+              type="primary"
+              secondary
+              :disabled="!specVariantInput || creatingVariant || loadingVariants"
+              @click="doCreateSpecVariant"
+            >
+              创建
             </n-button>
           </n-space>
         </n-form-item>
@@ -162,6 +186,11 @@
       @uploaded="onImageUploaded"
     />
 
+    <BatchImageUpload
+      v-model:show="showBatchImageUpload"
+      :parts="batchImageParts"
+    />
+
     <input
       ref="importFileInputRef"
       type="file"
@@ -173,7 +202,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, h } from 'vue'
+import { ref, reactive, computed, onMounted, watch, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import {
@@ -181,9 +210,10 @@ import {
   NModal, NDataTable, NSpin, NEmpty, NDropdown, NImage,
 } from 'naive-ui'
 import { listParts, createPart, updatePart, deletePart, importPartsExcel, downloadPartsImportTemplate, getPartVariants, createPartVariant } from '@/api/parts'
-import { getStock, addStock } from '@/api/inventory'
+import { batchGetStock, addStock } from '@/api/inventory'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import ImageUploadModal from '../../components/ImageUploadModal.vue'
+import BatchImageUpload from '@/components/BatchImageUpload.vue'
 
 const router = useRouter()
 const message = useMessage()
@@ -211,6 +241,8 @@ const unitOptions = [
 const existingVariantColors = ref([])
 const creatingVariant = ref(false)
 const loadingVariants = ref(false)
+const specVariantInput = ref('')
+const specVariantColor = ref(null)
 
 const COLOR_CODE_REVERSE = { '金色': 'G', '白K': 'S', '玫瑰金': 'RG' }
 const VARIANT_COLORS = [
@@ -231,11 +263,31 @@ const doCreateVariant = async (colorCode) => {
   try {
     await createPartVariant(editingId.value, { color_code: colorCode })
     message.success(`变体 ${colorCode} 创建成功`)
-    // Refresh existing variants
     const { data: variants } = await getPartVariants(editingId.value)
     existingVariantColors.value = variants
+      .filter((v) => !v.spec)
       .map((v) => COLOR_CODE_REVERSE[v.color])
       .filter(Boolean)
+    await load()
+  } catch (error) {
+    message.error(error.response?.data?.detail || '创建变体失败')
+  } finally {
+    creatingVariant.value = false
+  }
+}
+
+const specVariantColorOptions = VARIANT_COLORS.map((vc) => ({ label: vc.label, value: vc.code }))
+
+const doCreateSpecVariant = async () => {
+  if (!specVariantInput.value) return
+  creatingVariant.value = true
+  const body = { spec: specVariantInput.value }
+  if (specVariantColor.value) body.color_code = specVariantColor.value
+  try {
+    await createPartVariant(editingId.value, body)
+    message.success(`规格变体 ${specVariantInput.value} 创建成功`)
+    specVariantInput.value = ''
+    specVariantColor.value = null
     await load()
   } catch (error) {
     message.error(error.response?.data?.detail || '创建变体失败')
@@ -250,7 +302,7 @@ const editingId = ref(null)
 const editingIsVariant = ref(false)
 const saving = ref(false)
 const formRef = ref(null)
-const form = reactive({ name: '', image: '', category: null, color: '', unit: '个', unit_cost: null, plating_process: '', parent_part_id: null })
+const form = reactive({ name: '', image: '', category: null, color: '', spec: '', unit: '个', unit_cost: null, plating_process: '', parent_part_id: null })
 
 // Image upload modal state
 const showImageModal = ref(false)
@@ -269,28 +321,39 @@ const importFileInputRef = ref(null)
 const importFile = ref(null)
 const importing = ref(false)
 const importError = ref('')
+const showBatchImageUpload = ref(false)
+const batchImageParts = ref([])
+watch(showBatchImageUpload, (val) => {
+  if (!val) load()
+})
+
+const loadAllPartsForSelect = async () => {
+  const { data } = await listParts()
+  allPartsForSelect.value = data
+}
 
 const load = async () => {
   loading.value = true
   try {
-    const [filteredRes, allRes] = await Promise.all([
-      listParts((() => {
-        const params = {}
-        if (searchName.value) params.name = searchName.value
-        if (searchCategory.value) params.category = searchCategory.value
-        return params
-      })()),
-      listParts(),
-    ])
-    allPartsForSelect.value = allRes.data
-    const parts = filteredRes.data
-    const stocks = await Promise.all(
-      parts.map((p) => getStock('part', p.id).then((r) => r.data.current).catch(() => 0))
-    )
-    rows.value = parts.map((p, i) => ({ ...p, stock: stocks[i] }))
+    const params = {}
+    if (searchName.value) params.name = searchName.value
+    if (searchCategory.value) params.category = searchCategory.value
+    const { data: parts } = await listParts(params)
+    if (parts.length > 0) {
+      const { data: stockMap } = await batchGetStock('part', parts.map((p) => p.id))
+      rows.value = parts.map((p) => ({ ...p, stock: stockMap[p.id] ?? 0 }))
+    } else {
+      rows.value = []
+    }
   } finally {
     loading.value = false
   }
+}
+
+let _searchTimer = null
+const debouncedLoad = () => {
+  clearTimeout(_searchTimer)
+  _searchTimer = setTimeout(load, 300)
 }
 
 const VALID_CATEGORIES = categoryOptions.map((o) => o.value)
@@ -321,7 +384,9 @@ const openCreate = () => {
   editingId.value = null
   editingIsVariant.value = false
   existingVariantColors.value = []
-  Object.assign(form, { name: '', image: '', category: null, color: '', unit: '个', unit_cost: null, plating_process: '', parent_part_id: null })
+  specVariantInput.value = ''
+  specVariantColor.value = null
+  Object.assign(form, { name: '', image: '', category: null, color: '', spec: '', unit: '个', unit_cost: null, plating_process: '', parent_part_id: null })
   showModal.value = true
 }
 
@@ -342,12 +407,15 @@ const openEdit = async (row) => {
   editingId.value = rowId
   editingIsVariant.value = !!row.parent_part_id
   existingVariantColors.value = []
+  specVariantInput.value = ''
+  specVariantColor.value = null
   const cat = row.category && VALID_CATEGORIES.includes(row.category) ? row.category : null
   Object.assign(form, {
     name: row.name,
     image: row.image || '',
     category: cat,
     color: row.color || '',
+    spec: row.spec || '',
     unit: row.unit || '个',
     unit_cost: row.unit_cost ?? null,
     plating_process: row.plating_process || '',
@@ -362,6 +430,7 @@ const openEdit = async (row) => {
     const { data: variants } = await getPartVariants(variantQueryId)
     if (editingId.value !== rowId) return
     existingVariantColors.value = variants
+      .filter((v) => !v.spec)
       .map((v) => COLOR_CODE_REVERSE[v.color])
       .filter(Boolean)
   } catch {
@@ -398,6 +467,7 @@ const save = async () => {
     }
     message.success('保存成功')
     showModal.value = false
+    loadAllPartsForSelect()
     await load()
   } finally {
     saving.value = false
@@ -460,7 +530,27 @@ const doImport = async () => {
   try {
     const { data } = await importPartsExcel(importFile.value)
     message.success(`导入成功：新增 ${data.created_count} 条，更新 ${data.updated_count} 条，入库 ${data.stock_entry_count} 条`)
+
+    const partsWithoutImage = (data.results || []).filter(r => !r.image)
+    if (partsWithoutImage.length > 0) {
+      const doUpload = await new Promise(resolve => {
+        dialog.info({
+          title: '上传图片',
+          content: `有 ${partsWithoutImage.length} 个配件没有图片，是否现在上传？`,
+          positiveText: '是',
+          negativeText: '否',
+          onPositiveClick: () => resolve(true),
+          onNegativeClick: () => resolve(false),
+          onClose: () => resolve(false),
+        })
+      })
+      if (doUpload) {
+        batchImageParts.value = partsWithoutImage
+        showBatchImageUpload.value = true
+      }
+    }
     closeImportModal()
+    loadAllPartsForSelect()
     await load()
   } catch (error) {
     importError.value = error.response?.data?.detail || error.message || '导入失败'
@@ -479,6 +569,7 @@ const confirmDelete = (row) => {
       try {
         await deletePart(row.id)
         message.success('已删除')
+        loadAllPartsForSelect()
         await load()
       } catch (error) {
         message.error(error.response?.data?.detail || '删除失败')
@@ -497,6 +588,7 @@ const columns = [
   },
   { title: '类目', key: 'category' },
   { title: '颜色', key: 'color' },
+  { title: '规格', key: 'spec' },
   { title: '单位', key: 'unit', width: 60 },
   { title: '单件成本', key: 'unit_cost', width: 100, render: (r) => r.unit_cost != null ? fmtMoney(r.unit_cost) : '-' },
   {
@@ -540,7 +632,10 @@ const columns = [
   },
 ]
 
-onMounted(load)
+onMounted(() => {
+  loadAllPartsForSelect()
+  load()
+})
 </script>
 
 <style scoped>
