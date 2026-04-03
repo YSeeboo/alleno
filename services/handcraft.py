@@ -232,15 +232,16 @@ def add_handcraft_jewelry(db: Session, order_id: str, item: dict) -> HandcraftJe
     order = get_handcraft_order(db, order_id)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
-    if order.status != "pending":
-        raise ValueError(f"Cannot add jewelry: order {order_id} status is '{order.status}', must be 'pending'")
+    if order.status not in ("pending", "processing"):
+        raise ValueError(f"Cannot add jewelry: order {order_id} status is '{order.status}', must be 'pending' or 'processing'")
     _require_jewelry(db, item["jewelry_id"])
+    item_status = "制作中" if order.status == "processing" else "未送出"
     new_item = HandcraftJewelryItem(
         handcraft_order_id=order_id,
         jewelry_id=item["jewelry_id"],
         qty=item["qty"],
         received_qty=0,
-        status="未送出",
+        status=item_status,
         unit=item.get("unit", "套"),
         note=item.get("note"),
     )

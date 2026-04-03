@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from api._errors import service_errors
 from database import get_db
 from schemas.inventory import InventoryOverviewItem, LogEntryResponse, PaginatedLogResponse, StockResponse
-from services.inventory import add_stock, deduct_stock, get_inventory_overview, get_stock, get_stock_log, list_stock_logs
+from services.inventory import add_stock, batch_get_stock, deduct_stock, get_inventory_overview, get_stock, get_stock_log, list_stock_logs
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
@@ -52,6 +52,17 @@ def api_get_stock(item_type: str, item_id: str, db: Session = Depends(get_db)):
     with service_errors():
         stock = get_stock(db, item_type, item_id)
     return StockResponse(item_type=item_type, item_id=item_id, current=stock)
+
+
+class BatchStockRequest(BaseModel):
+    item_type: str
+    item_ids: List[str]
+
+
+@router.post("/batch-stock", response_model=dict[str, float])
+def api_batch_get_stock(body: BatchStockRequest, db: Session = Depends(get_db)):
+    with service_errors():
+        return batch_get_stock(db, body.item_type, body.item_ids)
 
 
 @router.get("/overview", response_model=List[InventoryOverviewItem])

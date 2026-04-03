@@ -28,7 +28,7 @@ def test_upload_policy(client, monkeypatch):
 def test_upload_policy_rejects_invalid_type(client):
     resp = client.post(
         "/api/uploads/policy",
-        json={"kind": "order", "filename": "sample.png", "content_type": "image/png"},
+        json={"kind": "invoice", "filename": "sample.png", "content_type": "image/png"},
     )
     assert resp.status_code == 400
 
@@ -60,6 +60,42 @@ def test_upload_policy_rejects_invalid_extension(client):
         json={"kind": "part", "filename": "sample.pdf", "content_type": "application/pdf"},
     )
     assert resp.status_code == 400
+
+
+def test_upload_policy_jewelry_template_string_entity_id(client, monkeypatch):
+    """Regression: jewelry template IDs are integers; frontend converts to string before sending."""
+    monkeypatch.setattr(settings, "OSS_BUCKET", "allenop-images")
+    monkeypatch.setattr(settings, "OSS_ENDPOINT", "oss-cn-guangzhou.aliyuncs.com")
+    monkeypatch.setattr(settings, "OSS_ACCESS_KEY_ID", "test-id")
+    monkeypatch.setattr(settings, "OSS_ACCESS_KEY_SECRET", "test-secret")
+    monkeypatch.setattr(settings, "OSS_PUBLIC_BASE_URL", "https://img.ycbhomeland.top")
+
+    resp = client.post(
+        "/api/uploads/policy",
+        json={
+            "kind": "jewelry-template",
+            "filename": "photo.jpg",
+            "content_type": "image/jpeg",
+            "entity_id": "3",
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["public_url"].startswith("https://img.ycbhomeland.top/jewelry-templates/3/")
+
+
+def test_upload_policy_rejects_integer_entity_id(client):
+    """entity_id must be a string; raw integer should be rejected by Pydantic."""
+    resp = client.post(
+        "/api/uploads/policy",
+        json={
+            "kind": "jewelry-template",
+            "filename": "photo.jpg",
+            "content_type": "image/jpeg",
+            "entity_id": 3,
+        },
+    )
+    assert resp.status_code == 422
 
 
 def test_upload_policy_supports_handcraft(client, monkeypatch):

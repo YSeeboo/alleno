@@ -234,13 +234,31 @@ def test_add_jewelry_order_not_found(client):
     assert resp.status_code == 404
 
 
-def test_add_jewelry_non_pending_order_rejected(client, sent_order, jewelry2):
+def test_add_jewelry_processing_order_ok(client, sent_order, jewelry2):
+    """Adding jewelry to a processing order should succeed with status '制作中'."""
     order_id = sent_order["id"]
     resp = client.post(f"/api/handcraft/{order_id}/jewelries", json={
         "jewelry_id": jewelry2.id, "qty": 5,
     })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["jewelry_id"] == jewelry2.id
+    assert data["status"] == "制作中"
+
+
+def test_add_jewelry_completed_order_rejected(client, db, sent_order, jewelry2):
+    """Adding jewelry to a completed order should be rejected."""
+    order_id = sent_order["id"]
+    # Force order to completed for this test
+    from models.handcraft_order import HandcraftOrder
+    order = db.query(HandcraftOrder).filter(HandcraftOrder.id == order_id).first()
+    order.status = "completed"
+    db.commit()
+    resp = client.post(f"/api/handcraft/{order_id}/jewelries", json={
+        "jewelry_id": jewelry2.id, "qty": 5,
+    })
     assert resp.status_code == 400
-    assert "pending" in resp.json()["detail"].lower()
+    assert "pending" in resp.json()["detail"].lower() or "processing" in resp.json()["detail"].lower()
 
 
 def test_add_jewelry_zero_qty_rejected(client, pending_order, jewelry2):

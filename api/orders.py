@@ -1,4 +1,7 @@
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from typing import Optional
 from sqlalchemy.orm import Session
 
@@ -12,6 +15,7 @@ from schemas.order import (
 )
 from schemas.order import OrderItemCreate
 from schemas.order_cost_snapshot import OrderCostSnapshotResponse
+from schemas.order import ExtraInfoUpdate
 from services.order import (
     add_order_item,
     create_order,
@@ -19,6 +23,7 @@ from services.order import (
     get_order,
     get_order_items,
     get_parts_summary,
+    update_extra_info,
     update_order_status,
     update_packaging_cost,
     list_orders,
@@ -26,8 +31,11 @@ from services.order import (
 from services.order_cost_snapshot import get_cost_snapshot
 from services.order_todo import (
     generate_todo, get_todo, create_link, delete_link,
-    batch_link, get_order_progress,
+    batch_link, get_order_progress, get_jewelry_status,
+    get_jewelry_for_batch, create_batch, get_batches, link_supplier, delete_batch,
 )
+from schemas.order import TodoBatchCreateRequest, LinkSupplierRequest
+from services.order_todo_pdf import build_order_todo_pdf
 from api._errors import service_errors
 
 
@@ -109,16 +117,44 @@ def api_update_order_status(order_id: str, body: StatusUpdate, db: Session = Dep
     return order
 
 
-@router.get("/{order_id}/cost-snapshot", response_model=OrderCostSnapshotResponse)
+@router.get("/{order_id}/cost-snapshot", response_model=OrderCostSnapshotResponse | None)
 def api_get_cost_snapshot(order_id: str, db: Session = Depends(get_db)):
     """获取订单的成本快照"""
     order = get_order(db, order_id)
     if order is None:
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
-    snapshot = get_cost_snapshot(db, order_id)
-    if snapshot is None:
-        raise HTTPException(status_code=404, detail=f"订单 {order_id} 尚未生成成本快照")
-    return snapshot
+    return get_cost_snapshot(db, order_id)
+
+
+@router.get("/{order_id}/todo-pdf")
+def api_download_todo_pdf(order_id: str, batch_id: int | None = None, db: Session = Depends(get_db)):
+    """导出配件清单 PDF"""
+    order = get_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    file_bytes, filename = build_order_todo_pdf(
+        db, order_id, order.customer_name, order.created_at,
+        batch_id=batch_id,
+    )
+    return Response(
+        content=file_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="todo-{order_id}.pdf"; filename*=UTF-8\'\'{quote(filename)}'
+            )
+        },
+    )
+
+
+@router.patch("/{order_id}/extra-info", response_model=OrderResponse)
+def api_update_extra_info(order_id: str, body: ExtraInfoUpdate, db: Session = Depends(get_db)):
+    order = get_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    with service_errors():
+        order = update_extra_info(db, order_id, body.model_dump(exclude_unset=True))
+    return order
 
 
 @router.patch("/{order_id}/packaging-cost", response_model=OrderResponse)
@@ -204,9 +240,51 @@ def api_delete_link(link_id: int, db: Session = Depends(get_db)):
 
 # --- Progress ---
 
+@router.get("/{order_id}/jewelry-status")
+def api_jewelry_status(order_id: str, db: Session = Depends(get_db)):
+    with service_errors():
+        return get_jewelry_status(db, order_id)
+
+
+@router.get("/{order_id}/jewelry-for-batch")
+def api_jewelry_for_batch(order_id: str, db: Session = Depends(get_db)):
+    with service_errors():
+        return get_jewelry_for_batch(db, order_id)
+
+
+@router.post("/{order_id}/todo-batch")
+def api_create_todo_batch(order_id: str, req: TodoBatchCreateRequest, db: Session = Depends(get_db)):
+    items = [(item.jewelry_id, item.quantity) for item in req.items]
+    with service_errors():
+        return create_batch(db, order_id, items)
+
+
+@router.get("/{order_id}/todo-batches")
+def api_get_todo_batches(order_id: str, db: Session = Depends(get_db)):
+    with service_errors():
+        return {"batches": get_batches(db, order_id)}
+
+
+@router.post("/{order_id}/todo-batch/{batch_id}/link-supplier")
+def api_link_batch_supplier(
+    order_id: str,
+    batch_id: int,
+    req: LinkSupplierRequest,
+    db: Session = Depends(get_db),
+):
+    with service_errors():
+        return link_supplier(db, order_id, batch_id, req.supplier_name)
+
+
+@router.delete("/{order_id}/todo-batch/{batch_id}", status_code=204)
+def api_delete_batch(order_id: str, batch_id: int, db: Session = Depends(get_db)):
+    with service_errors():
+        delete_batch(db, order_id, batch_id)
+
+
 @router.get("/{order_id}/progress", response_model=OrderProgressResponse)
 def api_get_order_progress(order_id: str, db: Session = Depends(get_db)):
-    """获取订单生产进度概要"""
+    """获取订单备料进度概要"""
     order = get_order(db, order_id)
     if order is None:
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")

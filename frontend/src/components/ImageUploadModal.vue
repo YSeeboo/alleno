@@ -70,7 +70,11 @@ const uploadFile = async (file) => {
     }
     visible.value = false
   } catch (error) {
-    message.error(error.response?.data || error.message || '图片上传失败')
+    const detail = error.response?.data?.detail
+    const msg = Array.isArray(detail)
+      ? detail.map((d) => d.msg).join('; ')
+      : detail || error.message || '图片上传失败'
+    message.error(msg)
   } finally {
     uploading.value = false
   }

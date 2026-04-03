@@ -12,6 +12,11 @@ class Order(Base):
     status = Column(String, nullable=False, default="待生产")
     total_amount = Column(Numeric(18, 7), nullable=True)
     packaging_cost = Column(Numeric(18, 7), nullable=True)
+    barcode_text = Column(Text, nullable=True)
+    barcode_image = Column(String, nullable=True)
+    mark_text = Column(Text, nullable=True)
+    mark_image = Column(String, nullable=True)
+    note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now_beijing)
 
 
@@ -33,6 +38,24 @@ class OrderTodoItem(Base):
     order_id = Column(String, ForeignKey("order.id"), nullable=False)
     part_id = Column(String, ForeignKey("part.id"), nullable=False)
     required_qty = Column(Numeric(10, 4), nullable=False)
+    batch_id = Column(Integer, ForeignKey("order_todo_batch.id"), nullable=True)
+
+
+class OrderTodoBatch(Base):
+    __tablename__ = "order_todo_batch"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(String, ForeignKey("order.id"), nullable=False)
+    handcraft_order_id = Column(String, ForeignKey("handcraft_order.id"), nullable=True)
+    created_at = Column(DateTime, default=now_beijing)
+
+
+class OrderTodoBatchJewelry(Base):
+    __tablename__ = "order_todo_batch_jewelry"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id = Column(Integer, ForeignKey("order_todo_batch.id"), nullable=False)
+    jewelry_id = Column(String, ForeignKey("jewelry.id"), nullable=False)
+    quantity = Column(Integer, nullable=False)
+    handcraft_jewelry_item_id = Column(Integer, ForeignKey("handcraft_jewelry_item.id"), nullable=True)
 
 
 class OrderItemLink(Base):

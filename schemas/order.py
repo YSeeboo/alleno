@@ -38,7 +38,20 @@ class OrderResponse(BaseModel):
     status: str
     total_amount: Optional[float] = None
     packaging_cost: Optional[float] = None
+    barcode_text: Optional[str] = None
+    barcode_image: Optional[str] = None
+    mark_text: Optional[str] = None
+    mark_image: Optional[str] = None
+    note: Optional[str] = None
     created_at: datetime
+
+
+class ExtraInfoUpdate(BaseModel):
+    barcode_text: Optional[str] = None
+    barcode_image: Optional[str] = None
+    mark_text: Optional[str] = None
+    mark_image: Optional[str] = None
+    note: Optional[str] = None
 
 
 # --- TodoList ---
@@ -97,7 +110,76 @@ class LinkResponse(BaseModel):
 
 
 class OrderProgressResponse(BaseModel):
-    """订单列表页的生产进度概要"""
+    """订单列表页的备货进度概要"""
     order_id: str
     total: int
     completed: int
+
+
+# --- Batch schemas ---
+
+class TodoBatchItemInput(BaseModel):
+    jewelry_id: str
+    quantity: int = Field(..., gt=0, strict=True)
+
+
+class TodoBatchCreateRequest(BaseModel):
+    items: list[TodoBatchItemInput] = Field(..., min_length=1)
+
+
+class TodoBatchJewelryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    jewelry_id: str
+    jewelry_name: str
+    jewelry_image: str | None = None
+    quantity: int
+
+
+class TodoBatchResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    order_id: str
+    handcraft_order_id: str | None = None
+    supplier_name: str | None = None
+    created_at: datetime
+    jewelries: list[TodoBatchJewelryResponse] = []
+    items: list[OrderTodoItemResponse] = []
+
+
+class TodoBatchListResponse(BaseModel):
+    batches: list[TodoBatchResponse]
+
+
+class LinkSupplierRequest(BaseModel):
+    supplier_name: str
+
+
+class LinkSupplierResponse(BaseModel):
+    handcraft_order_id: str
+
+
+class JewelryStatusResponse(BaseModel):
+    jewelry_id: str
+    jewelry_name: str
+    jewelry_image: str | None = None
+    quantity: int
+    status: str
+
+
+class JewelryForBatchResponse(BaseModel):
+    jewelry_id: str
+    jewelry_name: str
+    jewelry_image: str | None = None
+    order_quantity: int
+    allocated_quantity: int
+    remaining_quantity: int
+    selectable: bool
+    disabled_reason: str | None = None
+
+
+class PartsSummaryItemResponse(BaseModel):
+    part_id: str
+    part_name: str
+    part_image: str | None = None
+    total_qty: float
+    remaining_qty: float

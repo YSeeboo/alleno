@@ -84,14 +84,14 @@ const columns = [
     },
   },
   {
-    title: '生产进度',
+    title: '备货进度',
     key: 'progress',
     width: 100,
     render: (r) => {
       const p = progressMap.value[r.id]
       if (!p || p.total === 0) return h('span', { style: 'color: #999;' }, '-')
       const color = p.completed === p.total ? '#18a058' : '#2080f0'
-      return h('span', { style: `font-weight: 600; color: ${color};` }, `${p.completed}/${p.total} 已完成`)
+      return h('span', { style: `font-weight: 600; color: ${color};` }, `${p.completed}/${p.total}`)
     },
   },
   { title: '总金额', key: 'total_amount', render: (r) => r.total_amount != null ? fmtMoney(r.total_amount) : '-' },

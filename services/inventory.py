@@ -16,6 +16,21 @@ def get_stock(db: Session, item_type: str, item_id: str) -> float:
     return float(result) if result is not None else 0.0
 
 
+def batch_get_stock(db: Session, item_type: str, item_ids: list[str]) -> dict[str, float]:
+    if not item_ids:
+        return {}
+    rows = (
+        db.query(InventoryLog.item_id, func.sum(InventoryLog.change_qty))
+        .filter(InventoryLog.item_type == item_type, InventoryLog.item_id.in_(item_ids))
+        .group_by(InventoryLog.item_id)
+        .all()
+    )
+    result = {item_id: 0.0 for item_id in item_ids}
+    for item_id, total in rows:
+        result[item_id] = float(total) if total is not None else 0.0
+    return result
+
+
 def add_stock(db: Session, item_type: str, item_id: str, qty: float, reason: str, note: str = None) -> InventoryLog:
     if qty <= 0:
         raise ValueError(f"qty must be positive, got {qty}")

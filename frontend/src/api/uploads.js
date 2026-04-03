@@ -92,7 +92,7 @@ export async function uploadImageToOss({ kind, file, entityId }) {
     kind,
     filename: uploadFile.name,
     content_type: uploadFile.type,
-    entity_id: entityId,
+    entity_id: entityId != null ? String(entityId) : undefined,
   })
 
   const formData = new FormData()

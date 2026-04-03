@@ -73,13 +73,13 @@ def api_batch_update_costs(body: BatchCostUpdateRequest, db: Session = Depends(g
 @router.post("/{part_id}/find-or-create-variant", response_model=FindOrCreateVariantResponse)
 def api_find_or_create_variant(part_id: str, body: PartVariantCreate, db: Session = Depends(get_db)):
     with service_errors():
-        return find_or_create_variant(db, part_id, body.color_code)
+        return find_or_create_variant(db, part_id, body.color_code, body.spec)
 
 
 @router.post("/{part_id}/create-variant", response_model=PartResponse, status_code=201)
 def api_create_part_variant(part_id: str, body: PartVariantCreate, db: Session = Depends(get_db)):
     with service_errors():
-        return create_part_variant(db, part_id, body.color_code)
+        return create_part_variant(db, part_id, body.color_code, body.spec)
 
 
 @router.get("/{part_id}/variants", response_model=List[PartResponse])

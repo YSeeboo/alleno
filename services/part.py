@@ -44,6 +44,8 @@ def create_part(db: Session, data: dict) -> Part:
         if parent.parent_part_id is not None:
             raise ValueError("不支持多层嵌套：目标配件已有父配件")
     data.pop("unit_cost", None)
+    if "spec" in data:
+        data["spec"] = (data["spec"].strip() if data["spec"] else None) or None
     prefix = PART_CATEGORIES[category]
     part = Part(id=_next_id_by_category(db, Part, prefix), **data)
     db.add(part)
@@ -103,6 +105,8 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
         if has_children:
             raise ValueError("不支持多层嵌套：当前配件已有子配件，不能再挂到其他配件下")
     data.pop("unit_cost", None)
+    if "spec" in data:
+        data["spec"] = (data["spec"].strip() if data["spec"] else None) or None
     for key, value in data.items():
         setattr(part, key, value)
     db.flush()
@@ -112,33 +116,52 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
 COLOR_CODES = {v["code"]: v["label"] for v in COLOR_VARIANTS}
 
 
-def _validate_variant_request(db: Session, part_id: str, color_code: str):
-    """Validate part exists and color_code is valid. If source is a variant, resolve to root. Returns (root_part, color_label)."""
-    color = COLOR_CODES.get(color_code)
-    if color is None:
-        raise ValueError(
-            f"Invalid color_code '{color_code}'. Must be one of: {list(COLOR_CODES.keys())}"
-        )
+def _validate_variant_request(db: Session, part_id: str, color_code: Optional[str] = None, spec: Optional[str] = None):
+    """Validate part exists and params are valid. Returns (source_part, root_part, color_label_or_None, spec_or_None)."""
+    # Normalize spec: strip whitespace, treat blank as None
+    if spec is not None:
+        spec = spec.strip() or None
+    if not color_code and not spec:
+        raise ValueError("必须提供 color_code 或 spec 中的至少一个")
+    color = None
+    if color_code:
+        color = COLOR_CODES.get(color_code)
+        if color is None:
+            raise ValueError(
+                f"Invalid color_code '{color_code}'. Must be one of: {list(COLOR_CODES.keys())}"
+            )
     part = get_part(db, part_id)
     if part is None:
         raise ValueError(f"Part not found: {part_id}")
-    # If source is a variant, resolve to root parent
+    # Always resolve to root — all variants are flat siblings under root
+    source = part
     root = part
     if root.parent_part_id is not None:
+        # When creating spec-only from a color variant, inherit its color
+        if not color and root.color:
+            color = root.color
         root = get_part(db, root.parent_part_id)
     elif _is_color_variant(root.name):
         raise ValueError("该配件名称含颜色后缀但无父配件关联，请先修正数据")
-    return root, color
+    return source, root, color, spec
 
 
-def _find_existing_variant(db: Session, part_id: str, variant_name: str, color: str):
-    """Find existing variant by name or color under the same parent, with fallback to global name match."""
-    # First: look among children of this parent
+def _build_variant_name(root_name: str, color: Optional[str], spec: Optional[str]) -> str:
+    parts = [root_name]
+    if color:
+        parts.append(color)
+    if spec:
+        parts.append(spec)
+    return "_".join(parts)
+
+
+def _find_existing_variant(db: Session, part_id: str, variant_name: str, color: Optional[str], spec: Optional[str] = None):
+    """Find existing variant by exact name under the same parent, with fallback to global name match."""
     by_parent = (
         db.query(Part)
         .filter(
             Part.parent_part_id == part_id,
-            or_(Part.name == variant_name, Part.color == color),
+            Part.name == variant_name,
         )
         .first()
     )
@@ -159,32 +182,40 @@ def _find_existing_variant(db: Session, part_id: str, variant_name: str, color: 
         .first()
     )
     if by_name is not None:
-        # Adopt: set parent_part_id so future lookups find it directly
+        # Orphan's color/spec must exactly match the request
+        orphan_color = by_name.color or None
+        orphan_spec = by_name.spec or None
+        if orphan_color != color or orphan_spec != spec:
+            return None
         by_name.parent_part_id = part_id
-        if not by_name.color:
-            by_name.color = color
         db.flush()
         return by_name
     return None
 
 
-def create_part_variant(db: Session, part_id: str, color_code: str) -> Part:
-    root, color = _validate_variant_request(db, part_id, color_code)
-    variant_name = f"{root.name}_{color}"
-    existing = _find_existing_variant(db, root.id, variant_name, color)
+def create_part_variant(db: Session, part_id: str, color_code: Optional[str] = None, spec: Optional[str] = None) -> Part:
+    source, root, color, spec = _validate_variant_request(db, part_id, color_code, spec)
+    variant_name = _build_variant_name(root.name, color, spec)
+    existing = _find_existing_variant(db, root.id, variant_name, color, spec)
     if existing is not None:
         return existing
+    # Same-color derivation (e.g. xx_金色 → xx_金色_45cm): inherit source's attributes
+    # Cross-color (e.g. xx_金色 → xx_白K): inherit from root to avoid pollution
+    same_color = source.id != root.id and (not color or color == source.color)
+    donor = source if same_color else root
     prefix = PART_CATEGORIES[root.category]
     variant = Part(
         id=_next_id_by_category(db, Part, prefix),
         name=variant_name,
         category=root.category,
-        unit=root.unit,
-        purchase_cost=root.purchase_cost,
-        bead_cost=root.bead_cost,
-        plating_process=root.plating_process,
-        image=root.image,
+        unit=donor.unit,
+        purchase_cost=donor.purchase_cost,
+        bead_cost=donor.bead_cost,
+        plating_cost=donor.plating_cost,
+        plating_process=donor.plating_process,
+        image=donor.image,
         color=color,
+        spec=spec,
         parent_part_id=root.id,
     )
     _recalc_unit_cost(variant)
@@ -193,10 +224,10 @@ def create_part_variant(db: Session, part_id: str, color_code: str) -> Part:
     return variant
 
 
-def find_or_create_variant(db: Session, part_id: str, color_code: str) -> dict:
-    root, color = _validate_variant_request(db, part_id, color_code)
-    variant_name = f"{root.name}_{color}"
-    existing = _find_existing_variant(db, root.id, variant_name, color)
+def find_or_create_variant(db: Session, part_id: str, color_code: Optional[str] = None, spec: Optional[str] = None) -> dict:
+    _source, root, color, spec = _validate_variant_request(db, part_id, color_code, spec)
+    variant_name = _build_variant_name(root.name, color, spec)
+    existing = _find_existing_variant(db, root.id, variant_name, color, spec)
     if existing is not None:
         return {"part": existing, "suggested_name": None}
     return {"part": None, "suggested_name": variant_name}
@@ -242,6 +273,10 @@ def _recalc_unit_cost(part: Part) -> None:
 def update_part_cost(
     db: Session, part_id: str, field: str, value: float, source_id: Optional[str] = None,
 ) -> Optional[PartCostLog]:
+    # handcraft_cost targets Jewelry, not Part
+    if field == "handcraft_cost":
+        return _update_jewelry_handcraft_cost(db, part_id, value, source_id)
+
     if field not in _COST_FIELDS:
         raise ValueError(f"无效的成本字段: {field}")
     part = get_part(db, part_id)
@@ -272,6 +307,38 @@ def update_part_cost(
     db.add(log)
     db.flush()
     return log
+
+
+def _update_jewelry_handcraft_cost(
+    db: Session, jewelry_id: str, value: float, source_id: Optional[str] = None,
+) -> Optional[PartCostLog]:
+    """Update handcraft_cost on Jewelry model.
+
+    Returns a transient PartCostLog (not persisted) to signal success,
+    since PartCostLog.part_id has FK to part table and cannot store jewelry IDs.
+    """
+    from models.jewelry import Jewelry
+    jewelry = db.get(Jewelry, jewelry_id)
+    if jewelry is None:
+        raise ValueError(f"Jewelry not found: {jewelry_id}")
+
+    old_value = jewelry.handcraft_cost
+    new_value = Decimal(str(value)).quantize(_Q7, rounding=ROUND_HALF_UP)
+
+    old_comparable = Decimal(str(old_value)).quantize(_Q7, rounding=ROUND_HALF_UP) if old_value is not None else None
+    if old_comparable == new_value:
+        return None
+
+    jewelry.handcraft_cost = new_value
+    db.flush()
+
+    # Return a transient object to indicate update happened (not added to session)
+    return PartCostLog(
+        part_id=jewelry_id,
+        field="handcraft_cost",
+        cost_before=old_value,
+        cost_after=new_value,
+    )
 
 
 def list_part_cost_logs(db: Session, part_id: str) -> list[PartCostLog]:

@@ -31,6 +31,85 @@
         </n-space>
       </n-card>
 
+      <!-- 附加信息 (collapsible, default collapsed) -->
+      <n-card style="margin-bottom: 16px;">
+        <n-collapse>
+          <n-collapse-item title="附加信息" name="extra-info">
+            <!-- 条码要求 -->
+            <div style="margin-bottom: 20px;">
+              <div style="font-weight: 500; margin-bottom: 8px;">条码要求</div>
+              <div style="display: flex; gap: 16px;">
+                <n-input
+                  v-model:value="extraInfo.barcode_text"
+                  type="textarea"
+                  :rows="3"
+                  placeholder="条码要求说明..."
+                  style="flex: 1;"
+                />
+                <div style="width: 100px;">
+                  <div v-if="extraInfo.barcode_image" style="position: relative; display: inline-block;">
+                    <n-image :src="extraInfo.barcode_image" width="100" height="80" object-fit="cover" style="border-radius: 4px;" />
+                    <n-button circle size="tiny" type="error" style="position: absolute; top: -6px; right: -6px;" @click="clearImage('barcode')">
+                      <template #icon><n-icon :component="CloseIcon" /></template>
+                    </n-button>
+                  </div>
+                  <n-button v-else dashed style="width: 100px; height: 80px;" @click="openImageUpload('barcode')">
+                    上传图片
+                  </n-button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 唛头要求 -->
+            <div style="margin-bottom: 20px;">
+              <div style="font-weight: 500; margin-bottom: 8px;">唛头要求</div>
+              <div style="display: flex; gap: 16px;">
+                <n-input
+                  v-model:value="extraInfo.mark_text"
+                  type="textarea"
+                  :rows="3"
+                  placeholder="唛头要求说明..."
+                  style="flex: 1;"
+                />
+                <div style="width: 100px;">
+                  <div v-if="extraInfo.mark_image" style="position: relative; display: inline-block;">
+                    <n-image :src="extraInfo.mark_image" width="100" height="80" object-fit="cover" style="border-radius: 4px;" />
+                    <n-button circle size="tiny" type="error" style="position: absolute; top: -6px; right: -6px;" @click="clearImage('mark')">
+                      <template #icon><n-icon :component="CloseIcon" /></template>
+                    </n-button>
+                  </div>
+                  <n-button v-else dashed style="width: 100px; height: 80px;" @click="openImageUpload('mark')">
+                    上传图片
+                  </n-button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 总备注 -->
+            <div style="margin-bottom: 16px;">
+              <div style="font-weight: 500; margin-bottom: 8px;">总备注</div>
+              <n-input
+                v-model:value="extraInfo.note"
+                type="textarea"
+                :rows="3"
+                placeholder="其他注意事项..."
+              />
+            </div>
+
+            <n-button type="primary" :loading="savingExtraInfo" @click="saveExtraInfo">保存</n-button>
+
+            <!-- Image upload modal (reused) -->
+            <ImageUploadModal
+              v-model:show="showImageUpload"
+              kind="order"
+              :entity-id="order?.id"
+              :suppress-success="true"
+              @uploaded="onImageUploaded"
+            />
+          </n-collapse-item>
+        </n-collapse>
+      </n-card>
+
       <!-- Packaging cost -->
       <n-card title="包装费" style="margin-bottom: 16px;">
         <n-space align="center">
@@ -101,37 +180,82 @@
           :bordered="false"
           size="small"
           :row-key="(r) => r.id"
-          :expand-column="false"
           :expanded-row-keys="expandedKeys"
           @update:expanded-row-keys="(keys) => expandedKeys = keys"
-        >
-          <template #expand="{ row }">
-            <div style="padding: 8px 0 8px 32px;">
-              <n-data-table
-                :columns="bomDetailColumns"
-                :data="row.bom_details || []"
-                :bordered="false"
-                size="small"
-              />
-            </div>
-          </template>
-        </n-data-table>
+        />
       </n-card>
 
-      <!-- TodoList -->
+      <!-- TodoList — Batch-based collapsible structure -->
       <n-card title="配件清单" style="margin-bottom: 16px;">
         <template #header-extra>
           <n-button
             type="primary"
             size="small"
-            :loading="generatingTodo"
-            @click="doGenerateTodo"
+            @click="openBatchModal"
           >
-            {{ todoItems.length > 0 ? '重新生成' : '生成配件清单' }}
+            生成指定配件清单
           </n-button>
         </template>
-        <n-data-table v-if="todoItems.length > 0" :columns="todoColumns" :data="todoItems" :bordered="false" size="small" />
-        <n-empty v-else description="暂无配件清单，请点击「生成配件清单」" style="margin-top: 16px;" />
+
+        <!-- Batch-based collapsible list -->
+        <div v-if="batches.length > 0" style="margin-bottom: 16px;">
+          <div v-for="(batch, batchIndex) in batches" :key="batch.id" class="batch-row">
+            <!-- Big row (header) -->
+            <div class="batch-header" @click="toggleBatch(batch.id)">
+              <div class="batch-header-left">
+                <span class="batch-chevron">{{ expandedBatchIds.has(batch.id) ? '▾' : '▸' }}</span>
+                <span class="batch-title">批次 {{ batchIndex + 1 }}</span>
+                <span class="batch-date">{{ formatBatchDate(batch.created_at) }}</span>
+              </div>
+              <div class="batch-header-right" @click.stop>
+                <n-button size="small" class="export-pdf-btn" @click="doBatchPdfExport(batch, batchIndex)">导出 PDF</n-button>
+                <template v-if="batch.supplier_name">
+                  <n-tag type="success" :bordered="false" strong>✓ 已分配给：{{ batch.supplier_name }}</n-tag>
+                </template>
+                <template v-else>
+                  <n-button size="small" type="primary" @click="openSupplierModal(batch)">关联手工商家</n-button>
+                </template>
+                <n-popconfirm @positive-click="doDeleteBatch(batch)">
+                  <template #trigger>
+                    <n-button size="small" type="error" ghost>删除</n-button>
+                  </template>
+                  确定删除该批次？关联的手工单也会一并删除。
+                </n-popconfirm>
+              </div>
+            </div>
+
+            <!-- Small row (detail), with transition -->
+            <div v-show="expandedBatchIds.has(batch.id)" class="batch-detail">
+              <!-- Jewelry header row -->
+              <div class="batch-jewelry-row">
+                <div
+                  v-for="j in batch.jewelries"
+                  :key="j.jewelry_id"
+                  class="jewelry-card"
+                  @mouseenter="startHover(j, batch, $event)"
+                  @mouseleave="cancelHover()"
+                >
+                  <n-image
+                    v-if="j.jewelry_image"
+                    :src="j.jewelry_image"
+                    :width="64"
+                    :height="64"
+                    object-fit="cover"
+                    preview-disabled
+                  />
+                  <div v-else class="jewelry-card-placeholder">{{ j.jewelry_name?.charAt(0) || '?' }}</div>
+                  <div class="jewelry-card-label">{{ j.jewelry_id }}</div>
+                </div>
+              </div>
+              <!-- Parts detail table -->
+              <n-data-table :columns="batchItemColumns" :data="batch.items" :bordered="false" size="small" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Legacy flat todo list (for orders without batches) -->
+        <n-data-table v-if="todoItems.length > 0 && batches.length === 0" :columns="todoColumns" :data="todoItems" :bordered="false" size="small" />
+        <n-empty v-if="todoItems.length === 0 && batches.length === 0" description="暂无配件清单，请点击「生成指定配件清单」" style="margin-top: 16px;" />
       </n-card>
 
       <!-- Parts summary -->
@@ -140,20 +264,86 @@
         <n-empty v-else description="暂无配件汇总" style="margin-top: 16px;" />
       </n-card>
     </n-spin>
+
+    <!-- Hover tooltip for jewelry cards -->
+    <teleport to="body">
+      <div
+        v-if="hoverJewelry"
+        class="jewelry-hover-tooltip"
+        :style="{ left: hoverPosition.x + 'px', top: hoverPosition.y + 'px' }"
+      >
+        <div style="font-weight: 600; margin-bottom: 6px;">{{ hoverJewelry.jewelry_name }}</div>
+        <div v-for="item in hoverParts" :key="item.part_id" class="hover-part-row">
+          <span>{{ item._label || item.part_name }}</span>
+          <span>需要: {{ item.required_qty }}</span>
+          <span>库存: {{ item.stock_qty }}</span>
+          <span :style="{ color: item.gap > 0 ? '#d03050' : '#18a058' }">缺口: {{ item.gap }}</span>
+        </div>
+      </div>
+    </teleport>
+
+    <!-- Batch select modal -->
+    <n-modal v-model:show="showBatchModal" preset="card" title="选择饰品生成配件清单" style="width: 620px;">
+      <n-data-table
+        :columns="batchSelectColumns"
+        :data="batchJewelryList"
+        :row-key="row => row.jewelry_id"
+        :row-class-name="row => row.selectable ? '' : 'row-disabled'"
+        v-model:checked-row-keys="selectedJewelryIds"
+        size="small"
+      />
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showBatchModal = false">取消</n-button>
+          <n-button type="primary" :loading="batchGenerating" :disabled="selectedJewelryIds.length === 0" @click="confirmCreateBatch">
+            生成配件清单
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- Supplier modal -->
+    <n-modal v-model:show="showSupplierModal" preset="card" title="关联手工商家" style="width: 440px;">
+      <n-auto-complete
+        v-model:value="supplierName"
+        :options="supplierOptions"
+        placeholder="输入商家名称"
+        clearable
+      />
+      <div style="font-size: 12px; color: #999; margin-top: 6px;">输入商家名称，可选择已有商家或自动新建</div>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showSupplierModal = false">取消</n-button>
+          <n-button type="primary" :loading="linkingSupplier" :disabled="!supplierName.trim()" @click="confirmLinkSupplier">
+            确定
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, h } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NSelect, NInputNumber, NInput, NDivider, NPopconfirm, NAlert,
+  NModal, NImage, NAutoComplete, NIcon, NCollapse, NCollapseItem,
 } from 'naive-ui'
-import { getOrder, getOrderItems, getPartsSummary, updateOrderStatus, generateTodo, getTodo, deleteLink, addOrderItem, deleteOrderItem, getCostSnapshot, updatePackagingCost } from '@/api/orders'
+import { Close as CloseIcon } from '@vicons/ionicons5'
+import ImageUploadModal from '@/components/ImageUploadModal.vue'
+import {
+  getOrder, getOrderItems, getPartsSummary, updateOrderStatus,
+  getTodo, deleteLink, addOrderItem, deleteOrderItem,
+  getCostSnapshot, updatePackagingCost, updateExtraInfo,
+  getJewelryStatus, getJewelryForBatch, createTodoBatch, getTodoBatches,
+  linkBatchSupplier, downloadBatchPdf, deleteTodoBatch,
+} from '@/api/orders'
 import { listParts } from '@/api/parts'
 import { listJewelries } from '@/api/jewelries'
+import { listSuppliers } from '@/api/suppliers'
 import { renderNamedImage, renderOptionWithImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 
 const route = useRoute()
@@ -163,7 +353,6 @@ const dialog = useDialog()
 
 const loading = ref(true)
 const updating = ref(false)
-const generatingTodo = ref(false)
 const addingItem = ref(false)
 const savingPkg = ref(false)
 const order = ref(null)
@@ -173,6 +362,61 @@ const todoItems = ref([])
 const snapshot = ref(null)
 const expandedKeys = ref([])
 const packagingCost = ref(null)
+
+// --- Extra Info ---
+const extraInfo = ref({
+  barcode_text: '',
+  barcode_image: null,
+  mark_text: '',
+  mark_image: null,
+  note: '',
+})
+const savingExtraInfo = ref(false)
+const showImageUpload = ref(false)
+const imageUploadTarget = ref('')
+
+function initExtraInfo(o) {
+  extraInfo.value = {
+    barcode_text: o.barcode_text || '',
+    barcode_image: o.barcode_image || null,
+    mark_text: o.mark_text || '',
+    mark_image: o.mark_image || null,
+    note: o.note || '',
+  }
+}
+
+async function saveExtraInfo() {
+  savingExtraInfo.value = true
+  try {
+    await updateExtraInfo(order.value.id, extraInfo.value)
+    message.success('附加信息已保存')
+  } catch (err) {
+    message.error('保存失败')
+  } finally {
+    savingExtraInfo.value = false
+  }
+}
+
+function openImageUpload(target) {
+  imageUploadTarget.value = target
+  showImageUpload.value = true
+}
+
+function onImageUploaded(url) {
+  if (imageUploadTarget.value === 'barcode') {
+    extraInfo.value.barcode_image = url
+  } else {
+    extraInfo.value.mark_image = url
+  }
+}
+
+function clearImage(target) {
+  if (target === 'barcode') {
+    extraInfo.value.barcode_image = null
+  } else {
+    extraInfo.value.mark_image = null
+  }
+}
 
 const jewelryMap = ref({})
 const jewelryOptions = ref([])
@@ -187,6 +431,206 @@ const nextStatus = computed(() => order.value ? statusFlow[order.value.status] :
 const nextStatusLabel = computed(() => order.value ? statusFlowLabel[order.value.status] : null)
 const canEditItems = computed(() => order.value?.status === '待生产')
 
+// --- Jewelry status ---
+const jewelryStatusMap = ref({})
+
+async function loadJewelryStatus() {
+  try {
+    const { data } = await getJewelryStatus(route.params.id)
+    // Use array to support duplicate jewelry_id across order items
+    jewelryStatusMap.value = data
+  } catch (_) {
+    jewelryStatusMap.value = {}
+  }
+}
+
+// --- Batch state ---
+const batches = ref([])
+const expandedBatchIds = ref(new Set())
+const showBatchModal = ref(false)
+const batchJewelryList = ref([])
+const selectedJewelryIds = ref([])
+const batchQuantities = ref({})  // jewelry_id → user-specified quantity
+const batchGenerating = ref(false)
+
+async function loadBatches() {
+  try {
+    const { data } = await getTodoBatches(route.params.id)
+    batches.value = data.batches
+  } catch (_) {
+    batches.value = []
+  }
+}
+
+async function loadJewelryForBatch() {
+  try {
+    const { data } = await getJewelryForBatch(route.params.id)
+    batchJewelryList.value = data
+  } catch (_) {
+    batchJewelryList.value = []
+  }
+}
+
+function toggleBatch(batchId) {
+  const s = new Set(expandedBatchIds.value)
+  if (s.has(batchId)) {
+    s.delete(batchId)
+  } else {
+    s.add(batchId)
+  }
+  expandedBatchIds.value = s
+}
+
+function formatBatchDate(dt) {
+  if (!dt) return ''
+  return new Date(dt).toLocaleString('zh-CN')
+}
+
+async function openBatchModal() {
+  selectedJewelryIds.value = []
+  batchQuantities.value = {}
+  await loadJewelryForBatch()
+  // Initialize quantities to remaining_quantity
+  for (const item of batchJewelryList.value) {
+    if (item.selectable) {
+      batchQuantities.value[item.jewelry_id] = item.remaining_quantity
+    }
+  }
+  showBatchModal.value = true
+}
+
+async function confirmCreateBatch() {
+  // Build items with quantities
+  const items = selectedJewelryIds.value.map(jid => ({
+    jewelry_id: jid,
+    quantity: batchQuantities.value[jid] || 0,
+  }))
+  // Validate
+  for (const item of items) {
+    if (!item.quantity || item.quantity <= 0) {
+      message.warning('请为所有已选饰品填写数量')
+      return
+    }
+  }
+  dialog.warning({
+    title: '确认',
+    content: '会根据已选择的饰品生成指定的配件清单，确定要生成吗？',
+    positiveText: '确定',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      batchGenerating.value = true
+      try {
+        await createTodoBatch(route.params.id, items)
+        showBatchModal.value = false
+        message.success('配件清单已生成')
+        await loadBatches()
+        await loadJewelryStatus()
+      } catch (e) {
+        message.error(e.response?.data?.detail || '生成失败')
+      } finally {
+        batchGenerating.value = false
+      }
+    },
+  })
+}
+
+// --- Batch PDF export ---
+async function doBatchPdfExport(batch, index) {
+  try {
+    const { data } = await downloadBatchPdf(route.params.id, batch.id)
+    const url = window.URL.createObjectURL(data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `配件清单_${route.params.id}_批次${index + 1}.pdf`
+    a.click()
+    window.URL.revokeObjectURL(url)
+  } catch (_) {
+    message.error('PDF 下载失败')
+  }
+}
+
+// --- Hover tooltip for jewelry cards ---
+const hoverTimer = ref(null)
+const hoverJewelry = ref(null)
+const hoverParts = ref([])
+const hoverPosition = ref({ x: 0, y: 0 })
+
+function startHover(jewelry, batch, event) {
+  cancelHover()
+  hoverTimer.value = setTimeout(() => {
+    hoverJewelry.value = jewelry
+    // Show batch-level part info (items include stock_qty, required_qty, gap)
+    // If batch has only one jewelry, these are exactly its parts.
+    // For multi-jewelry batches, label accordingly.
+    const isSingleJewelry = batch.jewelries.length === 1
+    hoverParts.value = (batch.items || []).map((item) => ({
+      ...item,
+      _label: isSingleJewelry ? item.part_name : `${item.part_name} (批次合计)`,
+    }))
+    hoverPosition.value = { x: event.clientX + 12, y: event.clientY + 12 }
+  }, 1000)
+}
+
+function cancelHover() {
+  if (hoverTimer.value) clearTimeout(hoverTimer.value)
+  hoverTimer.value = null
+  hoverJewelry.value = null
+  hoverParts.value = []
+}
+
+onBeforeUnmount(() => {
+  cancelHover()
+})
+
+// --- Supplier modal state ---
+const showSupplierModal = ref(false)
+const supplierBatchId = ref(null)
+const supplierName = ref('')
+const supplierOptions = ref([])
+const linkingSupplier = ref(false)
+
+function openSupplierModal(batch) {
+  supplierBatchId.value = batch.id
+  supplierName.value = ''
+  showSupplierModal.value = true
+  loadSuppliers()
+}
+
+async function loadSuppliers() {
+  try {
+    const { data } = await listSuppliers({ type: 'handcraft' })
+    supplierOptions.value = data.map((s) => ({ label: s.name, value: s.name }))
+  } catch (_) {
+    supplierOptions.value = []
+  }
+}
+
+async function confirmLinkSupplier() {
+  if (!supplierName.value.trim()) return
+  linkingSupplier.value = true
+  try {
+    const { data } = await linkBatchSupplier(route.params.id, supplierBatchId.value, supplierName.value.trim())
+    showSupplierModal.value = false
+    message.success('已关联手工商家')
+    router.push(`/handcraft/${data.handcraft_order_id}`)
+  } catch (e) {
+    message.error(e.response?.data?.detail || '关联失败')
+  } finally {
+    linkingSupplier.value = false
+  }
+}
+
+const doDeleteBatch = async (batch) => {
+  try {
+    await deleteTodoBatch(route.params.id, batch.id)
+    message.success('批次已删除')
+    await reloadOrder()
+  } catch (e) {
+    message.error(e.response?.data?.detail || '删除失败')
+  }
+}
+
+// --- Existing functions ---
 const onNewJewelrySelect = (v) => {
   const j = jewelryMap.value[v]
   if (j) newItem.unit_price = j.wholesale_price ?? 0
@@ -222,20 +666,27 @@ const reloadOrder = async () => {
   ])
   order.value = oRes.data
   packagingCost.value = oRes.data.packaging_cost ?? null
+  initExtraInfo(oRes.data)
   orderItems.value = iRes.data.map((i) => ({
     ...i,
     jewelry_name: jewelryMap.value[i.jewelry_id]?.name || i.jewelry_id,
     jewelry_image: jewelryMap.value[i.jewelry_id]?.image || '',
   }))
-  const partMap = {}
-  ;(await listParts()).data.forEach((p) => { partMap[p.id] = p })
-  partsSummaryRows.value = Object.entries(sRes.data).map(([part_id, total_qty]) => ({
-    part_id,
-    part_name: partMap[part_id]?.name || part_id,
-    part_image: partMap[part_id]?.image || '',
-    total_qty,
-  }))
+
+  // parts-summary now returns list[dict] with part_id, part_name, part_image, total_qty, remaining_qty
+  partsSummaryRows.value = Array.isArray(sRes.data)
+    ? sRes.data
+    : Object.entries(sRes.data).map(([part_id, total_qty]) => ({
+        part_id,
+        part_name: part_id,
+        part_image: '',
+        total_qty,
+        remaining_qty: total_qty,
+      }))
+
   await loadTodo()
+  await loadBatches()
+  await loadJewelryStatus()
   await loadSnapshot()
 }
 
@@ -274,38 +725,9 @@ const advanceStatus = async () => {
     order.value = data
     packagingCost.value = data.packaging_cost ?? null
     message.success('状态已更新')
-    // Reload to show cost snapshot if completed
     await reloadOrder()
   } finally {
     updating.value = false
-  }
-}
-
-const doGenerateTodo = async () => {
-  if (!order.value) return
-  if (todoItems.value.length > 0) {
-    dialog.warning({
-      title: '重新生成配件清单',
-      content: '重新生成会根据当前 BOM 更新清单，已有的订单关联会保留。确认继续？',
-      positiveText: '确认',
-      negativeText: '取消',
-      onPositiveClick: async () => {
-        await execGenerateTodo()
-      },
-    })
-  } else {
-    await execGenerateTodo()
-  }
-}
-
-const execGenerateTodo = async () => {
-  generatingTodo.value = true
-  try {
-    const { data } = await generateTodo(order.value.id)
-    todoItems.value = data
-    message.success('配件清单已生成')
-  } finally {
-    generatingTodo.value = false
   }
 }
 
@@ -347,6 +769,13 @@ const prodStatusBadge = {
   '已采购': 'badge-green',
 }
 
+const jewelryStatusColorMap = {
+  '等待配件备齐': { color: '#fa8c16', bg: '#fff7e6' },
+  '等待发往手工': { color: '#13c2c2', bg: '#e6fffb' },
+  '等待手工返回': { color: '#1890ff', bg: '#e6f7ff' },
+  '完成备货': { color: '#52c41a', bg: '#f6ffed' },
+}
+
 const itemColumns = computed(() => {
   const cols = [
     { title: '饰品编号', key: 'jewelry_id', width: 110 },
@@ -359,6 +788,26 @@ const itemColumns = computed(() => {
     { title: '数量', key: 'quantity' },
     { title: '单价', key: 'unit_price', render: (r) => r.unit_price != null ? fmtMoney(r.unit_price) : '-' },
     { title: '小计', key: 'subtotal', render: (r) => fmtMoney((r.quantity || 0) * (r.unit_price || 0)) },
+    {
+      title: '状态',
+      key: 'status',
+      align: 'center',
+      width: 140,
+      render(row) {
+        // Match by order_item id to handle duplicate jewelry_id
+        const statusList = jewelryStatusMap.value
+        const match = Array.isArray(statusList)
+          ? statusList.find((s) => s.jewelry_id === row.jewelry_id)
+          : null
+        const status = match?.status
+        const c = jewelryStatusColorMap[status] || { color: '#999', bg: '#f5f5f5' }
+        return h(NTag, {
+          size: 'small',
+          bordered: false,
+          style: { color: c.color, backgroundColor: c.bg },
+        }, { default: () => status || '—' })
+      },
+    },
     { title: '备注', key: 'remarks', render: (r) => r.remarks || '-' },
   ]
   if (canEditItems.value) {
@@ -377,7 +826,19 @@ const itemColumns = computed(() => {
 })
 
 const snapshotColumns = [
-  { type: 'expand' },
+  {
+    type: 'expand',
+    renderExpand: (row) => {
+      return h('div', { style: 'padding: 8px 0 8px 32px;' }, [
+        h(NDataTable, {
+          columns: bomDetailColumns,
+          data: row.bom_details || [],
+          bordered: false,
+          size: 'small',
+        }),
+      ])
+    },
+  },
   { title: '饰品', key: 'jewelry_name', minWidth: 160 },
   { title: '数量', key: 'quantity', width: 80 },
   { title: '售价单价', key: 'unit_price', width: 100, render: (r) => r.unit_price != null ? fmtMoney(r.unit_price) : '-' },
@@ -454,15 +915,153 @@ const todoColumns = [
   },
 ]
 
+// --- Batch item columns (used in expanded batch detail) ---
+const batchItemColumns = [
+  { title: '配件编号', key: 'part_id', width: 110 },
+  {
+    title: '配件',
+    key: 'part_name',
+    minWidth: 160,
+    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name),
+  },
+  { title: '需要数量', key: 'required_qty', width: 100 },
+  {
+    title: '库存数量',
+    key: 'stock_qty',
+    width: 100,
+    render: (r) => r.stock_qty != null ? r.stock_qty : '-',
+  },
+  {
+    title: '缺口',
+    key: 'gap',
+    width: 80,
+    render: (r) => {
+      if (r.gap == null) return '-'
+      if (r.gap > 0) return h('span', { style: 'color: #d03050; font-weight: 600;' }, r.gap)
+      return h('span', { style: 'color: #18a058;' }, '0')
+    },
+  },
+  {
+    title: '生产单状态',
+    key: 'linked_production',
+    minWidth: 200,
+    render: (row) => {
+      const prods = row.linked_production || []
+      if (prods.length === 0) return h('span', { style: 'color: #999;' }, '-')
+      return h('div', { style: 'display: flex; flex-wrap: wrap; gap: 4px;' },
+        prods.map((p) => {
+          const prefix = p.type === 'plating' ? 'EP' : p.type === 'purchase' ? 'PO' : 'HC'
+          const routePath = p.type === 'plating' ? `/plating/${p.order_id}`
+            : p.type === 'purchase' ? `/purchase-orders/${p.order_id}`
+            : `/handcraft/${p.order_id}`
+          return h('span', {
+            class: `badge ${prodStatusBadge[p.status] || 'badge-gray'}`,
+            style: 'font-size: 12px; display: inline-flex; align-items: center; gap: 4px;',
+          }, [
+            h('span', {
+              style: 'color: rgb(100,101,232); cursor: pointer; font-size: 12px;',
+              onClick: () => router.push(routePath),
+            }, `${prefix}:${p.order_id}`),
+            p.status || '',
+          ])
+        }),
+      )
+    },
+  },
+  {
+    title: '配货状态',
+    key: 'is_allocated',
+    width: 90,
+    render: (r) => {
+      if (r.is_allocated) return h('span', { style: 'background: #18a058; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 12px;' }, '已分配')
+      return h('span', { style: 'background: #d03050; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 12px;' }, '未分配')
+    },
+  },
+]
+
+// --- Batch select modal columns ---
+const batchSelectColumns = [
+  {
+    type: 'selection',
+    disabled(row) { return !row.selectable },
+  },
+  { title: '饰品编号', key: 'jewelry_id', width: 110 },
+  {
+    title: '饰品',
+    key: 'jewelry_name',
+    minWidth: 180,
+    render(row) {
+      return h('div', { style: 'display:flex;align-items:center;gap:6px' }, [
+        row.jewelry_image
+          ? h(NImage, { src: row.jewelry_image, width: 28, height: 28, objectFit: 'cover', previewDisabled: true })
+          : null,
+        row.jewelry_name,
+      ])
+    },
+  },
+  {
+    title: '数量',
+    key: 'remaining_quantity',
+    width: 160,
+    render(row) {
+      if (!row.selectable) {
+        return h('span', { style: 'color: #999;' }, row.remaining_quantity)
+      }
+      const maxQty = row.remaining_quantity
+      return h('div', { style: 'display:flex;align-items:center;gap:4px' }, [
+        h(NInputNumber, {
+          value: batchQuantities.value[row.jewelry_id],
+          onUpdateValue: (v) => { batchQuantities.value[row.jewelry_id] = v },
+          min: 1,
+          max: maxQty,
+          precision: 0,
+          size: 'small',
+          style: 'width: 90px;',
+        }),
+        h('span', { style: 'color: #999; font-size: 12px;' }, `/ ${maxQty}`),
+      ])
+    },
+  },
+  {
+    title: '原因',
+    key: 'disabled_reason',
+    width: 120,
+    render(row) {
+      if (!row.selectable && row.disabled_reason) {
+        return h('span', { style: 'color: #999; font-size: 12px;' }, row.disabled_reason)
+      }
+      return ''
+    },
+  },
+]
+
+// --- Parts summary columns (updated with remaining_qty) ---
 const partsColumns = [
   { title: '配件编号', key: 'part_id' },
   {
     title: '配件',
     key: 'part_name',
     minWidth: 180,
-    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name),
+    render(row) {
+      return h('div', { style: 'display:flex;align-items:center;gap:6px' }, [
+        row.part_image
+          ? h(NImage, { src: row.part_image, width: 28, height: 28, objectFit: 'cover', previewDisabled: true })
+          : null,
+        row.part_name,
+      ])
+    },
   },
-  { title: '所需总量', key: 'total_qty', render: (r) => r.total_qty },
+  { title: '总需求量', key: 'total_qty', align: 'center' },
+  {
+    title: '剩余需求量',
+    key: 'remaining_qty',
+    align: 'center',
+    render(row) {
+      if (row.remaining_qty == null) return '-'
+      const color = row.remaining_qty > 0 ? '#ff4d4f' : '#52c41a'
+      return h('span', { style: { color, fontWeight: '500' } }, row.remaining_qty)
+    },
+  },
 ]
 
 onMounted(async () => {
@@ -477,6 +1076,7 @@ onMounted(async () => {
     ])
     order.value = oRes.data
     packagingCost.value = oRes.data.packaging_cost ?? null
+    initExtraInfo(oRes.data)
 
     jRes.data.forEach((j) => { jewelryMap.value[j.id] = j })
     jewelryOptions.value = jRes.data
@@ -495,21 +1095,141 @@ onMounted(async () => {
       jewelry_image: jewelryMap.value[i.jewelry_id]?.image || '',
     }))
 
-    const partMap = {}
-    pRes.data.forEach((p) => { partMap[p.id] = p })
+    // parts-summary: support both new list format and legacy dict format
+    if (Array.isArray(sRes.data)) {
+      partsSummaryRows.value = sRes.data
+    } else {
+      const partMap = {}
+      pRes.data.forEach((p) => { partMap[p.id] = p })
+      partsSummaryRows.value = Object.entries(sRes.data).map(([part_id, total_qty]) => ({
+        part_id,
+        part_name: partMap[part_id]?.name || part_id,
+        part_image: partMap[part_id]?.image || '',
+        total_qty,
+        remaining_qty: total_qty,
+      }))
+    }
 
-    // parts-summary returns dict {part_id: qty}
-    partsSummaryRows.value = Object.entries(sRes.data).map(([part_id, total_qty]) => ({
-      part_id,
-      part_name: partMap[part_id]?.name || part_id,
-      part_image: partMap[part_id]?.image || '',
-      total_qty,
-    }))
-
-    await loadTodo()
+    await Promise.all([
+      loadTodo(),
+      loadBatches(),
+      loadJewelryStatus(),
+    ])
     await loadSnapshot()
   } finally {
     loading.value = false
   }
 })
 </script>
+
+<style scoped>
+.export-pdf-btn {
+  background: #d84243;
+  color: #fff;
+  border-color: #d84243;
+}
+.export-pdf-btn:hover,
+.export-pdf-btn:focus {
+  background: #bf3a3b;
+  color: #fff;
+  border-color: #bf3a3b;
+}
+
+/* Batch structure styles */
+.batch-row {
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.batch-header {
+  padding: 12px 16px;
+  background: #fafafa;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+.batch-header:hover {
+  background: #f0f0f0;
+}
+.batch-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.batch-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.batch-chevron {
+  font-size: 14px;
+  color: #666;
+  width: 14px;
+}
+.batch-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+.batch-date {
+  font-size: 12px;
+  color: #999;
+}
+.batch-detail {
+  padding: 16px;
+  border-top: 1px solid #e8e8e8;
+}
+.batch-jewelry-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.jewelry-card {
+  text-align: center;
+  cursor: pointer;
+}
+.jewelry-card-label {
+  font-size: 11px;
+  color: #666;
+  margin-top: 4px;
+}
+.jewelry-card-placeholder {
+  width: 64px;
+  height: 64px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  font-size: 18px;
+}
+
+/* Hover tooltip */
+.jewelry-hover-tooltip {
+  position: fixed;
+  z-index: 9999;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  padding: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  max-width: 320px;
+  font-size: 13px;
+}
+.hover-part-row {
+  display: flex;
+  gap: 12px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+/* Disabled rows in batch select modal */
+:deep(.row-disabled) {
+  opacity: 0.45;
+  pointer-events: none;
+}
+</style>

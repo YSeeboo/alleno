@@ -50,16 +50,75 @@ def get_order_items(db: Session, order_id: str) -> list:
     return db.query(OrderItem).filter(OrderItem.order_id == order_id).all()
 
 
-def get_parts_summary(db: Session, order_id: str) -> dict:
+def get_parts_summary(db: Session, order_id: str) -> list[dict]:
+    """Get aggregated parts summary with total and remaining quantities."""
+    from models.part import Part
+
     items = get_order_items(db, order_id)
-    summary: dict = {}
-    for item in items:
-        bom_rows = get_bom(db, item.jewelry_id)
-        for row in bom_rows:
-            part_id = row.part_id
-            needed = float(row.qty_per_unit) * item.quantity
-            summary[part_id] = summary.get(part_id, 0.0) + needed
-    return summary
+    if not items:
+        return []
+
+    # Calculate total BOM requirements
+    total_map: dict[str, float] = {}
+    for oi in items:
+        bom_rows = get_bom(db, oi.jewelry_id)
+        for bom in bom_rows:
+            pid = bom.part_id
+            total_map[pid] = total_map.get(pid, 0) + float(bom.qty_per_unit) * oi.quantity
+
+    # Calculate deduction based on concrete handled quantities, not status.
+    # "Handled" = allocated to handcraft OR covered by jewelry stock.
+    # This avoids the problem where a binary status (e.g. 等待发往手工)
+    # deducts the full order qty even when nothing has been allocated.
+    from services.inventory import batch_get_stock
+    from services.order_todo import get_jewelry_for_batch
+
+    # Aggregate order quantities by jewelry_id
+    agg_qty: dict[str, int] = {}
+    for oi in items:
+        agg_qty[oi.jewelry_id] = agg_qty.get(oi.jewelry_id, 0) + oi.quantity
+
+    # Get allocated quantities from handcraft orders
+    for_batch = get_jewelry_for_batch(db, order_id)
+    allocated_map = {fb["jewelry_id"]: fb["allocated_quantity"] for fb in for_batch}
+
+    # Get jewelry stock to check 完成备货
+    jewelry_ids = list(agg_qty.keys())
+    jewelry_stocks = batch_get_stock(db, "jewelry", jewelry_ids)
+
+    deduct_map: dict[str, float] = {}
+    for jid, total in agg_qty.items():
+        # If jewelry stock covers the order → fully handled
+        if jewelry_stocks.get(jid, 0) >= total:
+            deduct_qty = total
+        else:
+            # Otherwise, only the allocated portion is handled
+            deduct_qty = min(total, allocated_map.get(jid, 0))
+
+        if deduct_qty > 0:
+            bom_rows = get_bom(db, jid)
+            for bom in bom_rows:
+                pid = bom.part_id
+                deduct_map[pid] = deduct_map.get(pid, 0) + float(bom.qty_per_unit) * deduct_qty
+
+    # Enrich with part info
+    part_ids = list(total_map.keys())
+    parts = db.query(Part).filter(Part.id.in_(part_ids)).all() if part_ids else []
+    part_info = {p.id: p for p in parts}
+
+    result = []
+    for pid, total_qty in total_map.items():
+        p = part_info.get(pid)
+        remaining = total_qty - deduct_map.get(pid, 0)
+        result.append({
+            "part_id": pid,
+            "part_name": p.name if p else "",
+            "part_image": p.image if p else None,
+            "total_qty": total_qty,
+            "remaining_qty": max(0.0, remaining),
+        })
+
+    return result
 
 
 def _recalc_total(db: Session, order: Order) -> None:
@@ -121,6 +180,17 @@ def update_order_status(db: Session, order_id: str, status: str) -> Order:
         from services.order_cost_snapshot import generate_cost_snapshot
         generate_cost_snapshot(db, order_id)
     order.status = status
+    db.flush()
+    return order
+
+
+def update_extra_info(db: Session, order_id: str, data: dict) -> Order:
+    order = db.query(Order).filter_by(id=order_id).first()
+    if not order:
+        raise ValueError(f"订单 {order_id} 不存在")
+    for key, value in data.items():
+        if hasattr(order, key):
+            setattr(order, key, value)
     db.flush()
     return order
 

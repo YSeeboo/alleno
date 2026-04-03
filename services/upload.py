@@ -21,6 +21,7 @@ ALLOWED_KINDS = {
     "plating-receipts": "plating-receipts",
     "handcraft-receipts": "handcraft-receipts",
     "jewelry-template": "jewelry-templates",
+    "order": "orders",
 }
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024

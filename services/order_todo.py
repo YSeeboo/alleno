@@ -2,13 +2,15 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from models.order import Order, OrderItem, OrderTodoItem, OrderItemLink
+from models.order import Order, OrderItem, OrderTodoItem, OrderItemLink, OrderTodoBatch, OrderTodoBatchJewelry
 from models.part import Part
 from models.plating_order import PlatingOrderItem
 from models.handcraft_order import HandcraftPartItem, HandcraftJewelryItem
 from models.purchase_order import PurchaseOrderItem
+from models.bom import Bom
+from models.jewelry import Jewelry
 from services.bom import get_bom
-from services.inventory import get_stock
+from services.inventory import get_stock, batch_get_stock
 
 
 def generate_todo(db: Session, order_id: str) -> list[dict]:
@@ -354,44 +356,614 @@ def get_links_for_production_item(
     return result
 
 
-def get_order_progress(db: Session, order_id: str) -> dict:
-    """获取订单的生产进度概要。"""
-    # 通过 TodoList 关联的配件项
-    todo_ids = [t.id for t in db.query(OrderTodoItem).filter(OrderTodoItem.order_id == order_id).all()]
+def get_jewelry_status(db: Session, order_id: str) -> list[dict]:
+    """Compute status for each jewelry item in the order.
 
-    links = []
-    if todo_ids:
-        links.extend(
-            db.query(OrderItemLink)
-            .filter(OrderItemLink.order_todo_item_id.in_(todo_ids))
+    Priority (highest first):
+    1. 完成备货  — jewelry stock >= order quantity
+    2. 等待手工返回 — linked to HandcraftJewelryItem (via OrderItemLink or batch)
+    3. 等待发往手工 — all BOM parts have sufficient stock
+    4. 等待配件备齐 — default
+    """
+    order = db.query(Order).filter_by(id=order_id).first()
+    if not order:
+        raise ValueError(f"订单 {order_id} 不存在")
+
+    items = db.query(OrderItem).filter_by(order_id=order_id).all()
+    if not items:
+        return []
+
+    # Aggregate by jewelry_id (same jewelry may appear multiple times)
+    agg_qty: dict[str, int] = {}
+    for it in items:
+        agg_qty[it.jewelry_id] = agg_qty.get(it.jewelry_id, 0) + it.quantity
+    jewelry_ids = list(agg_qty.keys())
+
+    # Batch fetch jewelry stock
+    jewelry_stocks = batch_get_stock(db, "jewelry", jewelry_ids)
+
+    # Batch fetch part stock for BOM check
+    all_bom = db.query(Bom).filter(Bom.jewelry_id.in_(jewelry_ids)).all()
+    all_part_ids = list({b.part_id for b in all_bom})
+    part_stocks = batch_get_stock(db, "part", all_part_ids) if all_part_ids else {}
+
+    # Check handcraft links: via OrderItemLink
+    linked_jewelry_ids_via_link = set()
+    links = (
+        db.query(OrderItemLink.handcraft_jewelry_item_id)
+        .filter(
+            OrderItemLink.order_id == order_id,
+            OrderItemLink.handcraft_jewelry_item_id.isnot(None),
+        )
+        .all()
+    )
+    if links:
+        hc_item_ids = [l[0] for l in links]
+        hc_items = db.query(HandcraftJewelryItem).filter(
+            HandcraftJewelryItem.id.in_(hc_item_ids)
+        ).all()
+        linked_jewelry_ids_via_link = {hci.jewelry_id for hci in hc_items}
+
+    # Check handcraft links: via batch
+    linked_jewelry_ids_via_batch = set()
+    batches = (
+        db.query(OrderTodoBatch)
+        .filter(
+            OrderTodoBatch.order_id == order_id,
+            OrderTodoBatch.handcraft_order_id.isnot(None),
+        )
+        .all()
+    )
+    for batch in batches:
+        hc_j_items = (
+            db.query(HandcraftJewelryItem)
+            .filter_by(handcraft_order_id=batch.handcraft_order_id)
             .all()
         )
-    # 直接关联 order_id 的饰品项
-    links.extend(
-        db.query(OrderItemLink)
-        .filter(OrderItemLink.order_id == order_id)
+        for hci in hc_j_items:
+            linked_jewelry_ids_via_batch.add(hci.jewelry_id)
+
+    linked_jewelry_ids = linked_jewelry_ids_via_link | linked_jewelry_ids_via_batch
+
+    # Build BOM lookup: jewelry_id -> [(part_id, qty_per_unit)]
+    bom_map: dict[str, list[tuple[str, float]]] = {}
+    for b in all_bom:
+        bom_map.setdefault(b.jewelry_id, []).append((b.part_id, float(b.qty_per_unit)))
+
+    # Fetch jewelry info
+    jewelries = db.query(Jewelry).filter(Jewelry.id.in_(jewelry_ids)).all()
+    jewelry_info = {j.id: j for j in jewelries}
+
+    result = []
+    for jid, qty in agg_qty.items():
+        j = jewelry_info.get(jid)
+
+        # Priority 1: 完成备货
+        if jewelry_stocks.get(jid, 0) >= qty:
+            status = "完成备货"
+        # Priority 2: 等待手工返回
+        elif jid in linked_jewelry_ids:
+            status = "等待手工返回"
+        # Priority 3: 等待发往手工
+        elif _all_parts_sufficient(bom_map.get(jid, []), qty, part_stocks):
+            status = "等待发往手工"
+        # Priority 4: default
+        else:
+            status = "等待配件备齐"
+
+        result.append({
+            "jewelry_id": jid,
+            "jewelry_name": j.name if j else "",
+            "jewelry_image": j.image if j else None,
+            "quantity": qty,
+            "status": status,
+        })
+
+    return result
+
+
+def _all_parts_sufficient(bom_parts: list[tuple[str, float]], order_qty: int, part_stocks: dict[str, float]) -> bool:
+    """Check if all BOM parts have sufficient stock for the given order quantity."""
+    if not bom_parts:
+        return True
+    for part_id, qty_per_unit in bom_parts:
+        needed = qty_per_unit * order_qty
+        if part_stocks.get(part_id, 0) < needed:
+            return False
+    return True
+
+
+def create_batch(db: Session, order_id: str, items: list[tuple[str, int]]) -> dict:
+    """Create a new todo batch for selected jewelry items with quantities.
+
+    items: list of (jewelry_id, quantity) tuples
+    """
+    if not items:
+        raise ValueError("items 不能为空")
+    jewelry_ids = [jid for jid, _ in items]
+    if len(jewelry_ids) != len(set(jewelry_ids)):
+        raise ValueError("jewelry_ids 中存在重复项")
+
+    order = db.query(Order).filter_by(id=order_id).first()
+    if not order:
+        raise ValueError(f"订单 {order_id} 不存在")
+
+    order_items_db = db.query(OrderItem).filter_by(order_id=order_id).all()
+    order_jewelry_ids = {oi.jewelry_id for oi in order_items_db}
+    for jid in jewelry_ids:
+        if jid not in order_jewelry_ids:
+            raise ValueError(f"饰品 {jid} 不在订单 {order_id} 中")
+
+    # Get allocation info and validate selectability
+    for_batch = get_jewelry_for_batch(db, order_id)
+    allocation_map = {fb["jewelry_id"]: fb for fb in for_batch}
+    for jid, qty in items:
+        if type(qty) is not int or qty <= 0:
+            raise ValueError(f"饰品 {jid} 数量必须为正整数")
+        alloc = allocation_map.get(jid)
+        if alloc and not alloc["selectable"]:
+            reason = alloc.get("disabled_reason") or "不可选"
+            raise ValueError(f"饰品 {jid} 不可选择：{reason}")
+        remaining = alloc["remaining_quantity"] if alloc else 0
+        if remaining <= 0:
+            raise ValueError(f"饰品 {jid} 无剩余可分配数量")
+        if qty > remaining:
+            raise ValueError(f"饰品 {jid} 数量 {qty} 超过剩余可分配数量 {remaining}")
+
+    batch = OrderTodoBatch(order_id=order_id)
+    db.add(batch)
+    db.flush()
+
+    batch_jewelries = []
+    for jid, qty in items:
+        bj = OrderTodoBatchJewelry(
+            batch_id=batch.id,
+            jewelry_id=jid,
+            quantity=qty,
+        )
+        db.add(bj)
+        batch_jewelries.append(bj)
+    db.flush()
+
+    # Generate BOM-based todo items for this batch
+    part_qty_map: dict[str, float] = {}
+    for bj in batch_jewelries:
+        bom_rows = get_bom(db, bj.jewelry_id)
+        for bom in bom_rows:
+            pid = bom.part_id
+            part_qty_map[pid] = part_qty_map.get(pid, 0) + float(bom.qty_per_unit) * bj.quantity
+
+    todo_items = []
+    for part_id, required_qty in part_qty_map.items():
+        todo = OrderTodoItem(
+            order_id=order_id,
+            part_id=part_id,
+            required_qty=required_qty,
+            batch_id=batch.id,
+        )
+        db.add(todo)
+        todo_items.append(todo)
+    db.flush()
+
+    return _build_batch_response(db, batch, batch_jewelries, todo_items)
+
+
+def get_batches(db: Session, order_id: str) -> list[dict]:
+    """Get all batches for an order with enriched details."""
+    order = db.query(Order).filter_by(id=order_id).first()
+    if not order:
+        raise ValueError(f"订单 {order_id} 不存在")
+
+    batches = (
+        db.query(OrderTodoBatch)
+        .filter_by(order_id=order_id)
+        .order_by(OrderTodoBatch.created_at)
         .all()
     )
 
-    total = len(links)
-    completed = 0
-    for link in links:
-        if link.plating_order_item_id:
-            poi = db.get(PlatingOrderItem, link.plating_order_item_id)
-            if poi and poi.status == "已收回":
-                completed += 1
-        elif link.handcraft_part_item_id:
-            hpi = db.get(HandcraftPartItem, link.handcraft_part_item_id)
-            if hpi and hpi.status == "已收回":
-                completed += 1
-        elif link.handcraft_jewelry_item_id:
-            hji = db.get(HandcraftJewelryItem, link.handcraft_jewelry_item_id)
-            if hji and hji.status == "已收回":
-                completed += 1
-        elif link.purchase_order_item_id:
-            # 采购单配件项存在即视为已完成
-            poi = db.get(PurchaseOrderItem, link.purchase_order_item_id)
-            if poi:
-                completed += 1
+    result = []
+    for batch in batches:
+        batch_jewelries = (
+            db.query(OrderTodoBatchJewelry)
+            .filter_by(batch_id=batch.id)
+            .all()
+        )
+        todo_items = (
+            db.query(OrderTodoItem)
+            .filter_by(batch_id=batch.id)
+            .all()
+        )
+        result.append(_build_batch_response(db, batch, batch_jewelries, todo_items))
+
+    return result
+
+
+def _build_batch_response(db: Session, batch, batch_jewelries, todo_items) -> dict:
+    """Build enriched batch response dict."""
+    from models.handcraft_order import HandcraftOrder as HCOrder
+
+    supplier_name = None
+    if batch.handcraft_order_id:
+        hc = db.query(HCOrder).filter_by(id=batch.handcraft_order_id).first()
+        if hc:
+            supplier_name = hc.supplier_name
+        else:
+            batch.handcraft_order_id = None
+            db.flush()
+
+    # Enrich jewelry info
+    jewelry_ids = [bj.jewelry_id for bj in batch_jewelries]
+    jewelries = db.query(Jewelry).filter(Jewelry.id.in_(jewelry_ids)).all() if jewelry_ids else []
+    j_info = {j.id: j for j in jewelries}
+
+    jewelry_list = []
+    for bj in batch_jewelries:
+        j = j_info.get(bj.jewelry_id)
+        jewelry_list.append({
+            "jewelry_id": bj.jewelry_id,
+            "jewelry_name": j.name if j else "",
+            "jewelry_image": j.image if j else None,
+            "quantity": bj.quantity,
+        })
+
+    # Enrich todo items
+    part_ids = [t.part_id for t in todo_items]
+    parts_db = db.query(Part).filter(Part.id.in_(part_ids)).all() if part_ids else []
+    part_info = {p.id: p for p in parts_db}
+    part_stocks = batch_get_stock(db, "part", part_ids) if part_ids else {}
+
+    allocated = batch.handcraft_order_id is not None
+
+    items_list = []
+    for t in todo_items:
+        p = part_info.get(t.part_id)
+        req = float(t.required_qty)
+        if allocated:
+            stock_val = None
+            gap_val = None
+        else:
+            stock = part_stocks.get(t.part_id, 0.0)
+            stock_val = stock
+            gap_val = max(0.0, req - stock)
+        items_list.append({
+            "id": t.id,
+            "order_id": t.order_id,
+            "part_id": t.part_id,
+            "required_qty": req,
+            "batch_id": t.batch_id,
+            "part_name": p.name if p else "",
+            "part_image": p.image if p else None,
+            "stock_qty": stock_val,
+            "gap": gap_val,
+            "is_allocated": allocated,
+            "linked_production": _get_linked_production(db, t.id),
+        })
+
+    return {
+        "id": batch.id,
+        "order_id": batch.order_id,
+        "handcraft_order_id": batch.handcraft_order_id,
+        "supplier_name": supplier_name,
+        "created_at": batch.created_at.isoformat() if batch.created_at else None,
+        "jewelries": jewelry_list,
+        "items": items_list,
+    }
+
+
+def link_supplier(db: Session, order_id: str, batch_id: int, supplier_name: str) -> dict:
+    """Link a handcraft supplier to a batch, creating a HandcraftOrder."""
+    from models.supplier import Supplier
+    from models.handcraft_order import HandcraftOrder as HCOrder
+    from services._helpers import _next_id
+
+    batch = db.query(OrderTodoBatch).filter_by(id=batch_id, order_id=order_id).first()
+    if not batch:
+        raise ValueError(f"批次 {batch_id} 不存在")
+    if batch.handcraft_order_id:
+        hc_exists = db.query(HCOrder).filter_by(id=batch.handcraft_order_id).first()
+        if hc_exists:
+            raise ValueError("该批次已关联手工商家")
+        batch.handcraft_order_id = None
+        db.flush()
+
+    # Check stock sufficiency (accounting for pending handcraft reservations)
+    # Lock pending HandcraftPartItem rows (FOR UPDATE) to serialize concurrent allocations
+    todo_items_check = db.query(OrderTodoItem).filter_by(batch_id=batch_id).all()
+    if todo_items_check:
+        check_part_ids = [t.part_id for t in todo_items_check]
+        check_stocks = batch_get_stock(db, "part", check_part_ids)
+
+        # Sum quantities reserved by pending (unsent) handcraft orders
+        from sqlalchemy import func as sqla_func
+        reserved_rows = (
+            db.query(HandcraftPartItem.part_id, sqla_func.sum(HandcraftPartItem.qty))
+            .join(HCOrder, HandcraftPartItem.handcraft_order_id == HCOrder.id)
+            .filter(
+                HCOrder.status == "pending",
+                HandcraftPartItem.part_id.in_(check_part_ids),
+            )
+            .group_by(HandcraftPartItem.part_id)
+            .all()
+        )
+        reserved: dict[str, float] = {}
+        for pid, total in reserved_rows:
+            reserved[pid] = float(total)
+
+        insufficient = []
+        for t in todo_items_check:
+            stock = check_stocks.get(t.part_id, 0.0)
+            available = stock - reserved.get(t.part_id, 0.0)
+            req = float(t.required_qty)
+            if available < req:
+                insufficient.append(f"{t.part_id} 可用 {available}（库存 {stock}，已预留 {reserved.get(t.part_id, 0.0)}），需要 {req}")
+        if insufficient:
+            raise ValueError("库存数量不足：" + "；".join(insufficient))
+
+    # Find or create supplier
+    supplier = db.query(Supplier).filter_by(name=supplier_name, type="handcraft").first()
+    if not supplier:
+        supplier = Supplier(name=supplier_name, type="handcraft")
+        db.add(supplier)
+        db.flush()
+
+    # Create handcraft order
+    hc_id = _next_id(db, HCOrder, "HC")
+    hc = HCOrder(id=hc_id, supplier_name=supplier_name, status="pending")
+    db.add(hc)
+    db.flush()
+
+    # Migrate parts: batch todo items → HandcraftPartItem
+    todo_items = db.query(OrderTodoItem).filter_by(batch_id=batch_id).all()
+    for todo in todo_items:
+        hc_part = HandcraftPartItem(
+            handcraft_order_id=hc_id,
+            part_id=todo.part_id,
+            qty=float(todo.required_qty),
+        )
+        db.add(hc_part)
+        db.flush()
+        link = OrderItemLink(
+            order_todo_item_id=todo.id,
+            handcraft_part_item_id=hc_part.id,
+        )
+        db.add(link)
+
+    # Migrate jewelry: batch jewelry → HandcraftJewelryItem
+    batch_jewelries = db.query(OrderTodoBatchJewelry).filter_by(batch_id=batch_id).all()
+    for bj in batch_jewelries:
+        hc_jewelry = HandcraftJewelryItem(
+            handcraft_order_id=hc_id,
+            jewelry_id=bj.jewelry_id,
+            qty=bj.quantity,
+        )
+        db.add(hc_jewelry)
+        db.flush()
+        # Record the exact HC jewelry item this batch entry created
+        bj.handcraft_jewelry_item_id = hc_jewelry.id
+        link = OrderItemLink(
+            order_id=order_id,
+            handcraft_jewelry_item_id=hc_jewelry.id,
+        )
+        db.add(link)
+
+    batch.handcraft_order_id = hc_id
+    db.flush()
+
+    return {"handcraft_order_id": hc_id}
+
+
+def delete_batch(db: Session, order_id: str, batch_id: int) -> None:
+    """Delete a batch and all associated data.
+
+    - Unlinked batch: delete batch, batch_jewelries, todo_items
+    - Pending HC: also delete HC order, HC items, and links
+    - Processing/completed HC: reject
+    """
+    from models.handcraft_order import HandcraftOrder as HCOrder
+
+    batch = db.query(OrderTodoBatch).filter_by(id=batch_id, order_id=order_id).first()
+    if not batch:
+        raise ValueError(f"批次 {batch_id} 不存在")
+
+    # If linked to a handcraft order, check status
+    if batch.handcraft_order_id:
+        hc = db.query(HCOrder).filter_by(id=batch.handcraft_order_id).first()
+        if hc and hc.status != "pending":
+            raise ValueError(f"手工单 {hc.id} 已发出，无法删除该批次")
+
+        if hc:
+            # Only delete HC items that were created by this batch (via OrderItemLink),
+            # not manually-added items. Keep HC order alive if it still has other items.
+
+            # Collect IDs of HC items to delete (linked from this batch)
+            hc_part_ids_to_delete = set()
+            hc_jewelry_ids_to_delete = set()
+
+            batch_todo_ids = [
+                t.id for t in db.query(OrderTodoItem).filter_by(batch_id=batch_id).all()
+            ]
+            if batch_todo_ids:
+                part_links = (
+                    db.query(OrderItemLink)
+                    .filter(
+                        OrderItemLink.order_todo_item_id.in_(batch_todo_ids),
+                        OrderItemLink.handcraft_part_item_id.isnot(None),
+                    )
+                    .all()
+                )
+                for link in part_links:
+                    hc_part_ids_to_delete.add(link.handcraft_part_item_id)
+
+            # Precisely identify HC jewelry items created by this batch
+            # via the recorded handcraft_jewelry_item_id on OrderTodoBatchJewelry
+            batch_jewelry_entries = db.query(OrderTodoBatchJewelry).filter_by(
+                batch_id=batch_id
+            ).all()
+            for bj in batch_jewelry_entries:
+                if bj.handcraft_jewelry_item_id:
+                    hc_jewelry_ids_to_delete.add(bj.handcraft_jewelry_item_id)
+
+            # Step 1: Delete all links and clear batch jewelry FKs
+            if batch_todo_ids:
+                db.query(OrderItemLink).filter(
+                    OrderItemLink.order_todo_item_id.in_(batch_todo_ids),
+                    OrderItemLink.handcraft_part_item_id.isnot(None),
+                ).delete(synchronize_session=False)
+            for jid in hc_jewelry_ids_to_delete:
+                db.query(OrderItemLink).filter_by(
+                    handcraft_jewelry_item_id=jid
+                ).delete()
+            # Clear batch jewelry FK references before deleting HC items
+            for bj in batch_jewelry_entries:
+                bj.handcraft_jewelry_item_id = None
+            db.flush()
+
+            # Step 2: Delete the HC items
+            if hc_part_ids_to_delete:
+                db.query(HandcraftPartItem).filter(
+                    HandcraftPartItem.id.in_(hc_part_ids_to_delete)
+                ).delete(synchronize_session=False)
+            if hc_jewelry_ids_to_delete:
+                db.query(HandcraftJewelryItem).filter(
+                    HandcraftJewelryItem.id.in_(hc_jewelry_ids_to_delete)
+                ).delete(synchronize_session=False)
+
+            # Step 3: Clear batch FK
+            batch.handcraft_order_id = None
+            db.flush()
+
+            # Step 4: Delete HC order only if it has no remaining items
+            remaining_parts = db.query(HandcraftPartItem).filter_by(
+                handcraft_order_id=hc.id
+            ).count()
+            remaining_jewelry = db.query(HandcraftJewelryItem).filter_by(
+                handcraft_order_id=hc.id
+            ).count()
+            if remaining_parts == 0 and remaining_jewelry == 0:
+                db.delete(hc)
+                db.flush()
+
+    # Delete links referencing todo items in this batch
+    todo_item_ids = [
+        t.id for t in db.query(OrderTodoItem).filter_by(batch_id=batch_id).all()
+    ]
+    if todo_item_ids:
+        db.query(OrderItemLink).filter(
+            OrderItemLink.order_todo_item_id.in_(todo_item_ids)
+        ).delete(synchronize_session=False)
+    # Delete todo items for this batch
+    db.query(OrderTodoItem).filter_by(batch_id=batch_id).delete()
+    # Delete batch jewelries
+    db.query(OrderTodoBatchJewelry).filter_by(batch_id=batch_id).delete()
+    # Delete the batch itself
+    db.delete(batch)
+    db.flush()
+
+
+def get_jewelry_for_batch(db: Session, order_id: str) -> list[dict]:
+    """Get jewelry list for batch selection modal."""
+    order = db.query(Order).filter_by(id=order_id).first()
+    if not order:
+        raise ValueError(f"订单 {order_id} 不存在")
+
+    items = db.query(OrderItem).filter_by(order_id=order_id).all()
+    if not items:
+        return []
+
+    # Aggregate by jewelry_id
+    agg_qty: dict[str, int] = {}
+    for it in items:
+        agg_qty[it.jewelry_id] = agg_qty.get(it.jewelry_id, 0) + it.quantity
+    jewelry_ids = list(agg_qty.keys())
+
+    # Get jewelry status for disable check
+    statuses = get_jewelry_status(db, order_id)
+    status_map = {s["jewelry_id"]: s["status"] for s in statuses}
+
+    # Calculate allocated quantities per jewelry_id
+    allocated_map: dict[str, int] = {}
+
+    # 1. Count from all batches (including those not yet linked to a supplier)
+    batch_jewelries = (
+        db.query(OrderTodoBatchJewelry)
+        .join(OrderTodoBatch, OrderTodoBatchJewelry.batch_id == OrderTodoBatch.id)
+        .filter(OrderTodoBatch.order_id == order_id)
+        .all()
+    )
+    for bj in batch_jewelries:
+        allocated_map[bj.jewelry_id] = allocated_map.get(bj.jewelry_id, 0) + bj.quantity
+
+    # 2. Count from direct HC jewelry links (legacy, not via batch flow)
+    batch_hc_ids = {
+        b.handcraft_order_id
+        for b in db.query(OrderTodoBatch).filter_by(order_id=order_id).all()
+        if b.handcraft_order_id
+    }
+    links = (
+        db.query(OrderItemLink)
+        .filter(
+            OrderItemLink.order_id == order_id,
+            OrderItemLink.handcraft_jewelry_item_id.isnot(None),
+        )
+        .all()
+    )
+    if links:
+        hc_item_ids = [l.handcraft_jewelry_item_id for l in links]
+        hc_items = db.query(HandcraftJewelryItem).filter(
+            HandcraftJewelryItem.id.in_(hc_item_ids)
+        ).all()
+        for hci in hc_items:
+            # Skip items already counted via batch flow
+            if hci.handcraft_order_id in batch_hc_ids:
+                continue
+            allocated_map[hci.jewelry_id] = allocated_map.get(hci.jewelry_id, 0) + hci.qty
+
+    jewelries = db.query(Jewelry).filter(Jewelry.id.in_(jewelry_ids)).all()
+    jewelry_info = {j.id: j for j in jewelries}
+
+    result = []
+    for jid, total_qty in agg_qty.items():
+        j = jewelry_info.get(jid)
+        allocated = allocated_map.get(jid, 0)
+        remaining = total_qty - allocated
+        status = status_map.get(jid, "等待配件备齐")
+
+        selectable = True
+        disabled_reason = None
+        if status == "完成备货":
+            selectable = False
+            disabled_reason = status
+        elif remaining <= 0:
+            selectable = False
+            disabled_reason = "已全部分配"
+
+        result.append({
+            "jewelry_id": jid,
+            "jewelry_name": j.name if j else "",
+            "jewelry_image": j.image if j else None,
+            "order_quantity": total_qty,
+            "allocated_quantity": allocated,
+            "remaining_quantity": max(0, remaining),
+            "selectable": selectable,
+            "disabled_reason": disabled_reason,
+        })
+
+    result.sort(key=lambda x: (not x["selectable"], x["jewelry_id"]))
+    return result
+
+
+def get_order_progress(db: Session, order_id: str) -> dict:
+    """获取订单的备货进度。
+
+    x = jewelry items with status '完成备货'
+    y = distinct jewelry types in the order
+    """
+    order = db.query(Order).filter_by(id=order_id).first()
+    if not order:
+        raise ValueError(f"订单 {order_id} 不存在")
+
+    statuses = get_jewelry_status(db, order_id)
+    total = len(statuses)
+    completed = sum(1 for s in statuses if s["status"] == "完成备货")
 
     return {"order_id": order_id, "total": total, "completed": completed}

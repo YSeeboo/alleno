@@ -43,6 +43,9 @@ def ensure_schema_compat(target_engine=None):
             if "parent_part_id" not in columns:
                 conn.execute(text("ALTER TABLE part ADD COLUMN parent_part_id VARCHAR NULL REFERENCES part(id)"))
                 logger.warning("Added missing part.parent_part_id column")
+            if "spec" not in columns:
+                conn.execute(text("ALTER TABLE part ADD COLUMN spec VARCHAR NULL"))
+                logger.warning("Added missing part.spec column")
             for cost_col in ("purchase_cost", "bead_cost", "plating_cost"):
                 if cost_col not in columns:
                     conn.execute(text(f"ALTER TABLE part ADD COLUMN {cost_col} NUMERIC(18,7) NULL"))
@@ -157,6 +160,22 @@ def ensure_schema_compat(target_engine=None):
                 conn.execute(text('ALTER TABLE "order" ADD COLUMN packaging_cost NUMERIC(18,7) NULL'))
                 logger.warning("Added missing order.packaging_cost column")
 
+        # --- order extra info fields ---
+        if inspector.has_table("order"):
+            cols = [c["name"] for c in inspector.get_columns("order")]
+            for col_name, col_type in [
+                ("barcode_text", "TEXT"),
+                ("barcode_image", "VARCHAR"),
+                ("mark_text", "TEXT"),
+                ("mark_image", "VARCHAR"),
+                ("note", "TEXT"),
+            ]:
+                if col_name not in cols:
+                    conn.execute(text(
+                        f'ALTER TABLE "order" ADD COLUMN {col_name} {col_type}'
+                    ))
+                    logger.warning("Added missing order.%s column", col_name)
+
         if inspector.has_table("order_item_link"):
             columns = {col["name"] for col in inspector.get_columns("order_item_link")}
             if "purchase_order_item_id" not in columns:
@@ -165,6 +184,54 @@ def ensure_schema_compat(target_engine=None):
                     "REFERENCES purchase_order_item(id) UNIQUE"
                 ))
                 logger.warning("Added missing order_item_link.purchase_order_item_id column")
+
+        # --- order_todo_item.batch_id ---
+        if inspector.has_table("order_todo_item"):
+            columns = {col["name"] for col in inspector.get_columns("order_todo_item")}
+            if "batch_id" not in columns:
+                conn.execute(text(
+                    "ALTER TABLE order_todo_item ADD COLUMN batch_id INTEGER"
+                ))
+                logger.warning("Added missing order_todo_item.batch_id column")
+
+        # --- order_todo_batch_jewelry.handcraft_jewelry_item_id ---
+        if inspector.has_table("order_todo_batch_jewelry"):
+            columns = {col["name"] for col in inspector.get_columns("order_todo_batch_jewelry")}
+            if "handcraft_jewelry_item_id" not in columns:
+                conn.execute(text(
+                    "ALTER TABLE order_todo_batch_jewelry ADD COLUMN handcraft_jewelry_item_id INTEGER"
+                ))
+                logger.warning("Added missing order_todo_batch_jewelry.handcraft_jewelry_item_id column")
+                # Backfill for existing linked batches: pair by jewelry_id + row order
+                # Uses row_number() to handle duplicate jewelry_ids within the same batch
+                result = conn.execute(text(
+                    """
+                    UPDATE order_todo_batch_jewelry bj
+                    SET handcraft_jewelry_item_id = matched.hji_id
+                    FROM (
+                        SELECT bj_ranked.bj_id, hji_ranked.hji_id
+                        FROM (
+                            SELECT bj.id AS bj_id, bj.jewelry_id, b.handcraft_order_id,
+                                   ROW_NUMBER() OVER (PARTITION BY bj.batch_id, bj.jewelry_id ORDER BY bj.id) AS rn
+                            FROM order_todo_batch_jewelry bj
+                            JOIN order_todo_batch b ON b.id = bj.batch_id
+                            WHERE b.handcraft_order_id IS NOT NULL
+                              AND bj.handcraft_jewelry_item_id IS NULL
+                        ) bj_ranked
+                        JOIN (
+                            SELECT hji.id AS hji_id, hji.jewelry_id, hji.handcraft_order_id,
+                                   ROW_NUMBER() OVER (PARTITION BY hji.handcraft_order_id, hji.jewelry_id ORDER BY hji.id) AS rn
+                            FROM handcraft_jewelry_item hji
+                        ) hji_ranked
+                        ON bj_ranked.handcraft_order_id = hji_ranked.handcraft_order_id
+                           AND bj_ranked.jewelry_id = hji_ranked.jewelry_id
+                           AND bj_ranked.rn = hji_ranked.rn
+                    ) matched
+                    WHERE bj.id = matched.bj_id
+                    """
+                ))
+                if result.rowcount:
+                    logger.warning("Backfilled %d order_todo_batch_jewelry.handcraft_jewelry_item_id rows", result.rowcount)
 
         # Trim whitespace from supplier/vendor name columns
         _name_columns = [
