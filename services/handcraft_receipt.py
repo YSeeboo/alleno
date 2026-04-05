@@ -203,6 +203,8 @@ def _enrich_receipt(db: Session, receipt: HandcraftReceipt) -> HandcraftReceipt:
             oi = db.query(HandcraftPartItem).filter(HandcraftPartItem.id == item.handcraft_part_item_id).first()
             if oi:
                 item.handcraft_order_id = oi.handcraft_order_id
+                item.source_qty = float(oi.qty)
+                item.source_received_qty = float(oi.received_qty or 0)
             part = db.get(Part, item.item_id)
             if part:
                 item.item_name = part.name
@@ -211,6 +213,8 @@ def _enrich_receipt(db: Session, receipt: HandcraftReceipt) -> HandcraftReceipt:
             oi = db.query(HandcraftJewelryItem).filter(HandcraftJewelryItem.id == item.handcraft_jewelry_item_id).first()
             if oi:
                 item.handcraft_order_id = oi.handcraft_order_id
+                item.source_qty = float(oi.qty)
+                item.source_received_qty = float(oi.received_qty or 0)
             jewelry = db.get(Jewelry, item.item_id)
             if jewelry:
                 item.item_name = jewelry.name

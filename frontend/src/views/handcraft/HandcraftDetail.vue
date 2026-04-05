@@ -309,6 +309,33 @@
       </template>
     </n-modal>
 
+    <!-- Confirm Loss Modal -->
+    <n-modal v-model:show="showLossModal" preset="card" title="确认损耗" style="width: 420px;">
+      <n-form label-placement="left" label-width="80">
+        <n-form-item label="差额信息">
+          <span v-if="lossTarget">已收回 {{ lossTarget.received_qty || 0 }} / 发出 {{ lossTarget.qty }}，差额 {{ lossTarget.qty - (lossTarget.received_qty || 0) }}</span>
+        </n-form-item>
+        <n-form-item label="损耗数量">
+          <n-input-number v-model:value="lossForm.loss_qty" :min="lossTargetType === 'jewelry' ? 1 : 0.01" :precision="lossTargetType === 'jewelry' ? 0 : undefined" :max="lossTarget ? lossTarget.qty - (lossTarget.received_qty || 0) : 0" style="width: 100%;" />
+        </n-form-item>
+        <n-form-item label="扣款金额">
+          <n-input-number v-model:value="lossForm.deduct_amount" :min="0" placeholder="不扣款留空" style="width: 100%;" />
+        </n-form-item>
+        <n-form-item label="原因">
+          <n-input v-model:value="lossForm.reason" placeholder="如：品质不良、加工损坏" />
+        </n-form-item>
+        <n-form-item label="备注">
+          <n-input v-model:value="lossForm.note" type="textarea" :rows="2" />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showLossModal = false">取消</n-button>
+          <n-button type="warning" :loading="lossSubmitting" @click="doConfirmLoss">确认损耗</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
   </div>
 </template>
 
@@ -330,6 +357,7 @@ import {
   getHandcraftPartOrders, deleteHandcraftPartOrderLink,
   getHandcraftJewelryOrders, deleteHandcraftJewelryOrderLink,
 } from '@/api/handcraft'
+import { confirmHandcraftLoss } from '@/api/productionLoss'
 import { changeOrderStatus } from '@/api/kanban'
 import { listParts, updatePart } from '@/api/parts'
 import { listJewelries } from '@/api/jewelries'
@@ -354,6 +382,42 @@ const showDeliveryImageModal = ref(false)
 const deliveryImagesSaving = ref(false)
 const pendingDeliveryImages = ref([])
 const retryingPendingImage = ref('')
+
+// Confirm loss modal
+const showLossModal = ref(false)
+const lossTarget = ref(null)
+const lossTargetType = ref('part') // "part" or "jewelry"
+const lossForm = ref({ loss_qty: 0, deduct_amount: null, reason: '', note: '' })
+const lossSubmitting = ref(false)
+
+const openLossModal = (item, itemType) => {
+  lossTarget.value = item
+  lossTargetType.value = itemType
+  const gap = item.qty - (item.received_qty || 0)
+  lossForm.value = { loss_qty: gap, deduct_amount: null, reason: '', note: '' }
+  showLossModal.value = true
+}
+
+const doConfirmLoss = async () => {
+  lossSubmitting.value = true
+  try {
+    const payload = {
+      ...lossForm.value,
+      item_type: lossTargetType.value,
+    }
+    if (!payload.deduct_amount) payload.deduct_amount = null
+    if (!payload.reason) payload.reason = null
+    if (!payload.note) payload.note = null
+    await confirmHandcraftLoss(route.params.id, lossTarget.value.id, payload)
+    showLossModal.value = false
+    message.success('损耗已确认')
+    await loadData()
+  } catch (err) {
+    // error handled by interceptor
+  } finally {
+    lossSubmitting.value = false
+  }
+}
 
 const statusType = { pending: 'default', processing: 'info', completed: 'success' }
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
@@ -1058,7 +1122,13 @@ const itemColumns = [
     render: (row) => renderEditableCell('color', row, '添加颜色'),
   },
   { title: '发出数量', key: 'qty' },
-  { title: '已回收', key: 'received_qty', width: 80, render: (r) => r.received_qty ?? 0 },
+  { title: '已回收', key: 'received_qty', width: 80, render: (r) => (r.received_qty ?? 0) - (r.loss_qty ?? 0) },
+  {
+    title: '损耗',
+    key: 'loss_qty',
+    width: 60,
+    render: (r) => r.loss_qty ? h(NTag, { type: 'warning', size: 'small' }, { default: () => r.loss_qty }) : null,
+  },
   {
     title: '状态',
     key: 'status',
@@ -1120,7 +1190,17 @@ const itemColumns = [
           default: () => '当前单子进行中/已完成，不允许删除',
         },
       )
-      return h(NSpace, { size: 'small' }, { default: () => [editBtn, deleteBtn] })
+      const btns = [editBtn, deleteBtn]
+      // Confirm loss button for part items
+      const gap = row.qty - (row.received_qty || 0)
+      if (gap > 0 && row.status === '制作中') {
+        btns.push(h(NButton, {
+          size: 'small',
+          type: 'warning',
+          onClick: () => openLossModal(row, 'part'),
+        }, { default: () => '确认损耗' }))
+      }
+      return h(NSpace, { size: 'small' }, { default: () => btns })
     },
   },
 ]
@@ -1134,7 +1214,13 @@ const jewelryColumns = [
     render: (row) => renderNamedImage(row.jewelry_name, row.jewelry_image, row.jewelry_name),
   },
   { title: '数量', key: 'qty' },
-  { title: '已回收', key: 'received_qty', width: 80, render: (r) => r.received_qty ?? 0 },
+  { title: '已回收', key: 'received_qty', width: 80, render: (r) => (r.received_qty ?? 0) - (r.loss_qty ?? 0) },
+  {
+    title: '损耗',
+    key: 'loss_qty',
+    width: 60,
+    render: (r) => r.loss_qty ? h(NTag, { type: 'warning', size: 'small' }, { default: () => r.loss_qty }) : null,
+  },
   {
     title: '状态',
     key: 'status',
@@ -1146,6 +1232,24 @@ const jewelryColumns = [
     key: 'order_link',
     minWidth: 140,
     render: (row) => renderJewelryOrderLinkCell(row),
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 100,
+    render: (row) => {
+      const btns = []
+      const gap = row.qty - (row.received_qty || 0)
+      if (gap > 0 && row.status === '制作中') {
+        btns.push(h(NButton, {
+          size: 'small',
+          type: 'warning',
+          onClick: () => openLossModal(row, 'jewelry'),
+        }, { default: () => '确认损耗' }))
+      }
+      if (btns.length === 0) return null
+      return h(NSpace, { size: 'small' }, { default: () => btns })
+    },
   },
 ]
 

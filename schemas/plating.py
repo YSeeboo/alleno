@@ -60,6 +60,7 @@ class PlatingItemResponse(BaseModel):
     unit: Optional[str] = None
     note: Optional[str] = None
     receive_part_id: Optional[str] = None
+    loss_qty: Optional[float] = None
 
 
 class PlatingResponse(BaseModel):

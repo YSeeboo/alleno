@@ -18,6 +18,8 @@ from schemas.handcraft import (
     HandcraftPartItemResponse,
     HandcraftResponse,
 )
+from schemas.production_loss import ConfirmLossHandcraftRequest, ProductionLossResponse
+from services.production_loss import confirm_handcraft_loss
 from services.order_todo import get_links_for_production_item, delete_link
 from services.handcraft_excel import build_handcraft_order_excel
 from services.handcraft_pdf import build_handcraft_order_pdf
@@ -237,6 +239,22 @@ def api_delete_handcraft_jewelry(order_id: str, item_id: int, db: Session = Depe
         raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
     with service_errors():
         delete_handcraft_jewelry(db, order_id, item_id)
+
+
+@router.post("/{order_id}/items/{item_id}/confirm-loss", response_model=ProductionLossResponse)
+def api_confirm_handcraft_loss(order_id: str, item_id: int, body: ConfirmLossHandcraftRequest, db: Session = Depends(get_db)):
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
+    with service_errors():
+        return confirm_handcraft_loss(
+            db, order_id, item_id,
+            item_type=body.item_type,
+            loss_qty=body.loss_qty,
+            deduct_amount=body.deduct_amount,
+            reason=body.reason,
+            note=body.note,
+        )
 
 
 @router.patch("/{order_id}/status", response_model=HandcraftResponse)

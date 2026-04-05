@@ -140,6 +140,20 @@ def get_handcraft_supplier_names(db: Session) -> list[str]:
     return [row[0] for row in rows]
 
 
+def _attach_loss_qty(db, items, order_id: str, item_type: str) -> list:
+    """Enrich items with loss_qty from production_loss table."""
+    from models.production_loss import ProductionLoss
+    losses = (
+        db.query(ProductionLoss)
+        .filter(ProductionLoss.order_id == order_id, ProductionLoss.item_type == item_type)
+        .all()
+    )
+    loss_map = {l.item_id: float(l.loss_qty) for l in losses}
+    for item in items:
+        item.loss_qty = loss_map.get(item.id)
+    return items
+
+
 def get_handcraft_parts(db: Session, order_id: str) -> list:
     items = (
         db.query(HandcraftPartItem)
@@ -147,13 +161,15 @@ def get_handcraft_parts(db: Session, order_id: str) -> list:
         .order_by(HandcraftPartItem.id.asc())
         .all()
     )
-    return _attach_part_colors(db, items)
+    items = _attach_part_colors(db, items)
+    return _attach_loss_qty(db, items, order_id, "handcraft_part")
 
 
 def get_handcraft_jewelries(db: Session, order_id: str) -> list:
-    return db.query(HandcraftJewelryItem).filter(
+    items = db.query(HandcraftJewelryItem).filter(
         HandcraftJewelryItem.handcraft_order_id == order_id
     ).all()
+    return _attach_loss_qty(db, items, order_id, "handcraft_jewelry")
 
 
 def update_handcraft_delivery_images(db: Session, order_id: str, delivery_images: Optional[list]) -> HandcraftOrder:

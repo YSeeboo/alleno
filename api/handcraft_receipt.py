@@ -20,6 +20,9 @@ from schemas.handcraft_receipt import (
     HandcraftReceiptResponse,
     HandcraftReceiptStatusUpdate,
 )
+from models.handcraft_order import HandcraftPartItem, HandcraftJewelryItem
+from schemas.production_loss import BatchConfirmLossHandcraftRequest, BatchConfirmLossResponse
+from services.production_loss import confirm_handcraft_loss
 from services.handcraft_receipt import (
     add_handcraft_receipt_items,
     create_handcraft_receipt,
@@ -136,6 +139,40 @@ def api_update_handcraft_receipt_item(receipt_id: str, item_id: int, body: Handc
     with service_errors():
         item = update_handcraft_receipt_item(db, receipt_id, item_id, body.model_dump(exclude_unset=True))
     return item
+
+
+@router.post("/{receipt_id}/confirm-loss", response_model=BatchConfirmLossResponse)
+def api_batch_confirm_handcraft_loss(receipt_id: str, body: BatchConfirmLossHandcraftRequest, db: Session = Depends(get_db)):
+    receipt = get_handcraft_receipt(db, receipt_id)
+    if receipt is None:
+        raise HTTPException(status_code=404, detail=f"收回单 {receipt_id} 不存在")
+
+    # Build sets of item IDs that belong to this receipt
+    receipt_part_ids = {ri.handcraft_part_item_id for ri in receipt.items if ri.handcraft_part_item_id}
+    receipt_jewelry_ids = {ri.handcraft_jewelry_item_id for ri in receipt.items if ri.handcraft_jewelry_item_id}
+
+    count = 0
+    with service_errors():
+        for item in body.items:
+            if item.item_type == "part" and item.item_id not in receipt_part_ids:
+                raise ValueError(f"配件项 {item.item_id} 不属于收回单 {receipt_id}")
+            if item.item_type == "jewelry" and item.item_id not in receipt_jewelry_ids:
+                raise ValueError(f"饰品项 {item.item_id} 不属于收回单 {receipt_id}")
+
+            if item.item_type == "part":
+                hc_item = db.query(HandcraftPartItem).filter_by(id=item.item_id).first()
+            else:
+                hc_item = db.query(HandcraftJewelryItem).filter_by(id=item.item_id).first()
+            if hc_item and float(hc_item.qty) > float(hc_item.received_qty or 0):
+                confirm_handcraft_loss(
+                    db, hc_item.handcraft_order_id, item.item_id,
+                    item_type=item.item_type,
+                    loss_qty=item.loss_qty,
+                    deduct_amount=item.deduct_amount,
+                    reason=item.reason,
+                )
+                count += 1
+    return {"confirmed_count": count}
 
 
 @router.delete("/{receipt_id}/items/{item_id}", status_code=204)

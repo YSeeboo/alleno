@@ -45,6 +45,7 @@ class HandcraftJewelryItemResponse(BaseModel):
     status: str
     unit: Optional[str] = None
     note: Optional[str] = None
+    loss_qty: Optional[float] = None
 
 
 class HandcraftPartItemResponse(BaseModel):
@@ -60,6 +61,7 @@ class HandcraftPartItemResponse(BaseModel):
     color: Optional[str] = None
     unit: Optional[str] = None
     note: Optional[str] = None
+    loss_qty: Optional[float] = None
 
 
 class HandcraftResponse(BaseModel):

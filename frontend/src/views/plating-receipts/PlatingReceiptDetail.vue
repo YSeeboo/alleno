@@ -238,6 +238,34 @@
         </n-space>
       </template>
     </n-modal>
+
+    <!-- Confirm Loss Modal -->
+    <n-modal v-model:show="showLossModal" preset="card" title="确认损耗" style="width: 420px;">
+      <n-form label-placement="left" label-width="80">
+        <n-form-item label="差额信息">
+          <span v-if="lossTarget">已收回 {{ lossTarget.source_received_qty || 0 }} / 发出 {{ lossTarget.source_qty || 0 }}，差额 {{ (lossTarget.source_qty || 0) - (lossTarget.source_received_qty || 0) }}</span>
+        </n-form-item>
+        <n-form-item label="损耗数量">
+          <n-input-number v-model:value="lossForm.loss_qty" :min="0.01" :max="lossTarget ? (lossTarget.source_qty || 0) - (lossTarget.source_received_qty || 0) : 0" style="width: 100%;" />
+        </n-form-item>
+        <n-form-item label="扣款金额">
+          <n-input-number v-model:value="lossForm.deduct_amount" :min="0" placeholder="不扣款留空" style="width: 100%;" />
+        </n-form-item>
+        <n-form-item label="原因">
+          <n-input v-model:value="lossForm.reason" placeholder="如：品质不良、加工损坏" />
+        </n-form-item>
+        <n-form-item label="备注">
+          <n-input v-model:value="lossForm.note" type="textarea" :rows="2" />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showLossModal = false">取消</n-button>
+          <n-button type="warning" :loading="lossSubmitting" @click="doConfirmLoss">确认损耗</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
   </div>
 </template>
 
@@ -259,6 +287,7 @@ import {
 } from '@/api/platingReceipts'
 import { listPendingReceiveItems } from '@/api/plating'
 import { batchUpdatePartCosts } from '@/api/parts'
+import { confirmPlatingLoss } from '@/api/productionLoss'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 
@@ -269,6 +298,38 @@ const dialog = useDialog()
 
 const loading = ref(true)
 const receipt = ref(null)
+
+// Confirm loss modal
+const showLossModal = ref(false)
+const lossTarget = ref(null)
+const lossForm = ref({ loss_qty: 0, deduct_amount: null, reason: '', note: '' })
+const lossSubmitting = ref(false)
+
+const openLossModal = (item) => {
+  lossTarget.value = item
+  const gap = (item.source_qty || 0) - (item.source_received_qty || 0)
+  lossForm.value = { loss_qty: gap, deduct_amount: null, reason: '', note: '' }
+  showLossModal.value = true
+}
+
+const doConfirmLoss = async () => {
+  lossSubmitting.value = true
+  try {
+    const payload = { ...lossForm.value }
+    if (!payload.deduct_amount) payload.deduct_amount = null
+    if (!payload.reason) payload.reason = null
+    if (!payload.note) payload.note = null
+    await confirmPlatingLoss(lossTarget.value.plating_order_id, lossTarget.value.plating_order_item_id, payload)
+    showLossModal.value = false
+    message.success('损耗已确认')
+    await loadData()
+  } catch (err) {
+    // error handled by interceptor
+  } finally {
+    lossSubmitting.value = false
+  }
+}
+
 const showDeliveryImageModal = ref(false)
 const deliveryImagesSaving = ref(false)
 const pendingDeliveryImages = ref([])
@@ -319,7 +380,7 @@ let addItemsDebounceTimer = null
 let addItemsFetchSeq = 0
 const addItemsFetchError = ref(false)
 
-// Cost diff modal (for add-items)
+// Cost diff modal (shared for edit-item and add-items)
 const addItemsCostDiffVisible = ref(false)
 const addItemsCostDiffs = ref([])
 const addItemsCostDiffUpdating = ref(false)
@@ -370,9 +431,13 @@ const doEditItem = async () => {
   editSubmitting.value = true
   try {
     const { id, ...body } = editForm.value
-    await updatePlatingReceiptItem(route.params.id, id, body)
+    const { data } = await updatePlatingReceiptItem(route.params.id, id, body)
     message.success('修改已保存')
     editModalVisible.value = false
+    if (data.cost_diffs && data.cost_diffs.length > 0) {
+      addItemsCostDiffs.value = data.cost_diffs
+      addItemsCostDiffVisible.value = true
+    }
     await loadData()
   } finally {
     editSubmitting.value = false
@@ -525,8 +590,8 @@ const saveNote = async (row) => {
 
   savingNoteItemId.value = itemId
   try {
-    const { data } = await updatePlatingReceiptItem(route.params.id, itemId, { note: nextNote })
-    row.note = data.note || ''
+    await updatePlatingReceiptItem(route.params.id, itemId, { note: nextNote })
+    row.note = nextNote
     message.success(nextNote ? '备注已保存' : '备注已清空')
     stopEditNote(itemId)
   } finally {
@@ -673,7 +738,17 @@ const itemColumns = [
           default: () => '已付款状态不允许删除',
         },
       )
-      return h(NSpace, { size: 'small' }, { default: () => [editBtn, deleteBtn] })
+      const btns = [editBtn, deleteBtn]
+      // Confirm loss button: show when source item has a gap
+      const sourceGap = (row.source_qty || 0) - (row.source_received_qty || 0)
+      if (sourceGap > 0) {
+        btns.push(h(NButton, {
+          size: 'small',
+          type: 'warning',
+          onClick: () => openLossModal(row),
+        }, { default: () => '确认损耗' }))
+      }
+      return h(NSpace, { size: 'small' }, { default: () => btns })
     },
   },
 ]

@@ -77,6 +77,8 @@ class HandcraftReceiptItemResponse(BaseModel):
     item_name: Optional[str] = None
     handcraft_order_id: Optional[str] = None
     color: Optional[str] = None
+    source_qty: Optional[float] = None
+    source_received_qty: Optional[float] = None
 
 
 class HandcraftReceiptResponse(BaseModel):

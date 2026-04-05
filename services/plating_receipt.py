@@ -414,6 +414,8 @@ def _enrich_receipt(db: Session, receipt: PlatingReceipt) -> PlatingReceipt:
         if poi:
             item.plating_order_id = poi.plating_order_id
             item.plating_method = poi.plating_method
+            item.source_qty = float(poi.qty)
+            item.source_received_qty = float(poi.received_qty or 0)
         part = db.get(Part, item.part_id)
         if part:
             item.part_name = part.name

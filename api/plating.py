@@ -18,6 +18,8 @@ from schemas.plating import (
     PlatingResponse,
     PlatingUpdate,
 )
+from schemas.production_loss import ConfirmLossRequest, ProductionLossResponse
+from services.production_loss import confirm_plating_loss
 from services.order_todo import get_links_for_production_item, delete_link
 from services.plating_excel import build_plating_order_excel
 from services.plating_pdf import build_plating_order_pdf
@@ -195,6 +197,21 @@ def api_delete_plating_item(order_id: str, item_id: int, db: Session = Depends(g
         raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
     with service_errors():
         delete_plating_item(db, order_id, item_id)
+
+
+@router.post("/{order_id}/items/{item_id}/confirm-loss", response_model=ProductionLossResponse)
+def api_confirm_plating_loss(order_id: str, item_id: int, body: ConfirmLossRequest, db: Session = Depends(get_db)):
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
+    with service_errors():
+        return confirm_plating_loss(
+            db, order_id, item_id,
+            loss_qty=body.loss_qty,
+            deduct_amount=body.deduct_amount,
+            reason=body.reason,
+            note=body.note,
+        )
 
 
 @router.patch("/{order_id}/status", response_model=PlatingResponse)

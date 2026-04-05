@@ -106,12 +106,23 @@ def list_plating_orders(db: Session, status: str = None, supplier_name: str = No
 
 
 def get_plating_items(db: Session, order_id: str) -> list:
-    return (
+    from models.production_loss import ProductionLoss
+    items = (
         db.query(PlatingOrderItem)
         .filter(PlatingOrderItem.plating_order_id == order_id)
         .order_by(PlatingOrderItem.id.asc())
         .all()
     )
+    # Enrich with loss_qty
+    losses = (
+        db.query(ProductionLoss)
+        .filter(ProductionLoss.order_id == order_id, ProductionLoss.order_type == "plating")
+        .all()
+    )
+    loss_map = {l.item_id: float(l.loss_qty) for l in losses}
+    for item in items:
+        item.loss_qty = loss_map.get(item.id)
+    return items
 
 
 def add_plating_item(db: Session, order_id: str, item: dict) -> PlatingOrderItem:

@@ -248,6 +248,34 @@
         </n-space>
       </template>
     </n-modal>
+
+    <!-- Confirm Loss Modal -->
+    <n-modal v-model:show="showLossModal" preset="card" title="确认损耗" style="width: 420px;">
+      <n-form label-placement="left" label-width="80">
+        <n-form-item label="差额信息">
+          <span v-if="lossTarget">已收回 {{ lossTarget.source_received_qty || 0 }} / 发出 {{ lossTarget.source_qty || 0 }}，差额 {{ (lossTarget.source_qty || 0) - (lossTarget.source_received_qty || 0) }}</span>
+        </n-form-item>
+        <n-form-item label="损耗数量">
+          <n-input-number v-model:value="lossForm.loss_qty" :min="lossTarget?.item_type === 'jewelry' ? 1 : 0.01" :precision="lossTarget?.item_type === 'jewelry' ? 0 : undefined" :max="lossTarget ? (lossTarget.source_qty || 0) - (lossTarget.source_received_qty || 0) : 0" style="width: 100%;" />
+        </n-form-item>
+        <n-form-item label="扣款金额">
+          <n-input-number v-model:value="lossForm.deduct_amount" :min="0" placeholder="不扣款留空" style="width: 100%;" />
+        </n-form-item>
+        <n-form-item label="原因">
+          <n-input v-model:value="lossForm.reason" placeholder="如：品质不良、加工损坏" />
+        </n-form-item>
+        <n-form-item label="备注">
+          <n-input v-model:value="lossForm.note" type="textarea" :rows="2" />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showLossModal = false">取消</n-button>
+          <n-button type="warning" :loading="lossSubmitting" @click="doConfirmLoss">确认损耗</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
   </div>
 </template>
 
@@ -270,6 +298,7 @@ import {
   listHandcraftPendingReceiveItems,
 } from '@/api/handcraftReceipts'
 import { batchUpdatePartCosts } from '@/api/parts'
+import { confirmHandcraftLoss } from '@/api/productionLoss'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 
@@ -280,6 +309,44 @@ const dialog = useDialog()
 
 const loading = ref(true)
 const receipt = ref(null)
+
+// Confirm loss modal
+const showLossModal = ref(false)
+const lossTarget = ref(null)
+const lossForm = ref({ loss_qty: 0, deduct_amount: null, reason: '', note: '' })
+const lossSubmitting = ref(false)
+
+const openLossModal = (item) => {
+  lossTarget.value = item
+  const gap = (item.source_qty || 0) - (item.source_received_qty || 0)
+  lossForm.value = { loss_qty: gap, deduct_amount: null, reason: '', note: '' }
+  showLossModal.value = true
+}
+
+const doConfirmLoss = async () => {
+  lossSubmitting.value = true
+  try {
+    const payload = {
+      ...lossForm.value,
+      item_type: lossTarget.value.item_type,
+    }
+    if (!payload.deduct_amount) payload.deduct_amount = null
+    if (!payload.reason) payload.reason = null
+    if (!payload.note) payload.note = null
+    const itemId = lossTarget.value.item_type === 'part'
+      ? lossTarget.value.handcraft_part_item_id
+      : lossTarget.value.handcraft_jewelry_item_id
+    await confirmHandcraftLoss(lossTarget.value.handcraft_order_id, itemId, payload)
+    showLossModal.value = false
+    message.success('损耗已确认')
+    await loadData()
+  } catch (err) {
+    // error handled by interceptor
+  } finally {
+    lossSubmitting.value = false
+  }
+}
+
 const showDeliveryImageModal = ref(false)
 const deliveryImagesSaving = ref(false)
 const pendingDeliveryImages = ref([])
@@ -693,7 +760,17 @@ const itemColumns = [
           default: () => '已付款状态不允许删除',
         },
       )
-      return h(NSpace, { size: 'small' }, { default: () => [editBtn, deleteBtn] })
+      const btns = [editBtn, deleteBtn]
+      // Confirm loss button: show when source item has a gap
+      const sourceGap = (row.source_qty || 0) - (row.source_received_qty || 0)
+      if (sourceGap > 0) {
+        btns.push(h(NButton, {
+          size: 'small',
+          type: 'warning',
+          onClick: () => openLossModal(row),
+        }, { default: () => '确认损耗' }))
+      }
+      return h(NSpace, { size: 'small' }, { default: () => btns })
     },
   },
 ]

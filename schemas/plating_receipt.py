@@ -64,6 +64,8 @@ class PlatingReceiptItemResponse(BaseModel):
     part_name: Optional[str] = None
     plating_order_id: Optional[str] = None
     plating_method: Optional[str] = None
+    source_qty: Optional[float] = None
+    source_received_qty: Optional[float] = None
 
 
 class PlatingReceiptResponse(BaseModel):

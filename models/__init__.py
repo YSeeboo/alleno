@@ -13,6 +13,8 @@ from .user import User
 from .supplier import Supplier
 from .order_cost_snapshot import OrderCostSnapshot, OrderCostSnapshotItem
 from .jewelry_template import JewelryTemplate, JewelryTemplateItem
+from .id_counter import IdCounter
+from .production_loss import ProductionLoss
 
 __all__ = [
     "Part",
@@ -43,4 +45,6 @@ __all__ = [
     "OrderCostSnapshotItem",
     "JewelryTemplate",
     "JewelryTemplateItem",
+    "IdCounter",
+    "ProductionLoss",
 ]
