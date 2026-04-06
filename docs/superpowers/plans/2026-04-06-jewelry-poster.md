@@ -104,7 +104,7 @@ def test_generate_poster_preview(client, db):
     resp = client.get(f"/api/orders/{order.id}/jewelry-poster-preview")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
-    assert "测试饰品0" in resp.text
+    assert "数量:" in resp.text
 
 
 def test_poster_includes_customer_code(client, db):
@@ -153,7 +153,7 @@ PER_PAGE = COLS * ROWS
 CELL_W = (PAGE_W - MARGIN * 2) / COLS
 CELL_H = (PAGE_H - MARGIN * 2 - 30) / ROWS  # 30pt reserved for page header
 IMG_PADDING = 6
-TEXT_AREA_H = 52  # space for text below image
+TEXT_AREA_H = CELL_H * 0.2  # text area ≤ 20% of cell height
 
 
 def build_jewelry_poster_pdf(db: Session, order_id: str) -> tuple[bytes, str]:
@@ -183,11 +183,11 @@ def build_jewelry_poster_pdf(db: Session, order_id: str) -> tuple[bytes, str]:
     for it in items:
         j = j_map.get(it.jewelry_id)
         poster_items.append({
-            "name": j.name if j else it.jewelry_id,
             "image_url": j.image if j else None,
             "quantity": it.quantity,
             "unit_price": float(it.unit_price) if it.unit_price else 0,
             "customer_code": getattr(it, "customer_code", None),
+            "remarks": it.remarks,
         })
 
     buf = BytesIO()
@@ -249,29 +249,30 @@ def build_jewelry_poster_pdf(db: Session, order_id: str) -> tuple[bytes, str]:
             else:
                 _draw_no_image(pdf, img_x, img_y, img_max_w, img_max_h)
 
-            # Text area
+            # Text area (≤ 20% of cell height)
             text_x = x + IMG_PADDING
             text_y = y + TEXT_AREA_H - 12
+            max_text_w = CELL_W - IMG_PADDING * 2
 
-            pdf.setFont(FONT_NAME, 8)
+            pdf.setFont(FONT_NAME, 7)
             pdf.setFillColorRGB(0, 0, 0)
 
-            # Name (truncate if too long)
-            name = item["name"]
-            max_text_w = CELL_W - IMG_PADDING * 2
-            while stringWidth(name, FONT_NAME, 8) > max_text_w and len(name) > 1:
-                name = name[:-1]
-            pdf.drawString(text_x, text_y, name)
-
             # Quantity + Price
-            text_y -= 12
             price_str = f"{item['unit_price']:.0f}" if item["unit_price"] == int(item["unit_price"]) else f"{item['unit_price']:.2f}"
             pdf.drawString(text_x, text_y, f"数量: {item['quantity']}    单价: ¥{price_str}")
 
-            # Customer code
+            # Customer code (if any)
             if item.get("customer_code"):
-                text_y -= 12
-                pdf.drawString(text_x, text_y, f"客户货号: {item['customer_code']}")
+                text_y -= 11
+                pdf.drawString(text_x, text_y, f"货号: {item['customer_code']}")
+
+            # Remarks (if any, truncate to fit)
+            if item.get("remarks"):
+                text_y -= 11
+                remarks = item["remarks"]
+                while stringWidth(remarks, FONT_NAME, 7) > max_text_w and len(remarks) > 1:
+                    remarks = remarks[:-1]
+                pdf.drawString(text_x, text_y, remarks)
 
     pdf.save()
     filename = f"饰品大图_{order_id}.pdf"
@@ -311,26 +312,27 @@ def build_jewelry_poster_html(db: Session, order_id: str) -> str:
     cards_html = ""
     for it in items:
         j = j_map.get(it.jewelry_id)
-        name = j.name if j else it.jewelry_id
         image_url = j.image if j and j.image else ""
         price = float(it.unit_price) if it.unit_price else 0
         price_str = f"{price:.0f}" if price == int(price) else f"{price:.2f}"
         customer_code = getattr(it, "customer_code", None) or ""
+        remarks = it.remarks or ""
 
         img_html = (
-            f'<img src="{image_url}" style="width:100%;height:200px;object-fit:contain;background:#f5f5f5;">'
+            f'<img src="{image_url}" style="width:100%;height:80%;object-fit:contain;background:#f5f5f5;">'
             if image_url
-            else '<div style="width:100%;height:200px;background:#f5f5f5;display:flex;align-items:center;justify-content:center;color:#999;">暂无图片</div>'
+            else '<div style="width:100%;height:80%;background:#f5f5f5;display:flex;align-items:center;justify-content:center;color:#999;">暂无图片</div>'
         )
 
-        code_html = f'<div style="color:#888;">客户货号: {customer_code}</div>' if customer_code else ""
+        code_html = f'<div style="color:#888;font-size:12px;">货号: {customer_code}</div>' if customer_code else ""
+        remarks_html = f'<div style="color:#888;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{remarks}</div>' if remarks else ""
 
         cards_html += f"""
-        <div style="border:1px solid #e8e8e8;border-radius:4px;padding:8px;text-align:center;">
+        <div style="border:1px solid #e8e8e8;border-radius:4px;padding:8px;text-align:center;display:flex;flex-direction:column;">
             {img_html}
-            <div style="margin-top:8px;font-weight:500;">{name}</div>
-            <div>数量: {it.quantity} &nbsp; 单价: ¥{price_str}</div>
+            <div style="font-size:13px;">数量: {it.quantity} &nbsp; 单价: ¥{price_str}</div>
             {code_html}
+            {remarks_html}
         </div>
         """
 
