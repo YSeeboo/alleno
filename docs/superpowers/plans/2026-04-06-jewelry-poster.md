@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Generate a jewelry poster PDF (3x3 grid per page) for order items, showing large product images with name, quantity, price, and customer code.
+**Goal:** Generate a jewelry poster PDF with auto-layout for order items, showing large product images with quantity, price, customer code, and remarks.
 
-**Architecture:** New `services/jewelry_poster.py` using ReportLab. Two endpoints: PDF download and HTML preview. Reuse existing image download helpers. Frontend adds two buttons on OrderDetail.
+**Architecture:** New `services/jewelry_poster.py` generates HTML with CSS Flexbox layout, uses weasyprint to convert to PDF. HTML preview and PDF share the same template. Frontend adds two buttons on OrderDetail.
 
-**Tech Stack:** FastAPI, ReportLab, Vue 3 + Naive UI
+**Tech Stack:** FastAPI, weasyprint, Vue 3 + Naive UI
 
 **Spec:** `docs/superpowers/specs/2026-04-06-jewelry-poster-design.md`
 
@@ -16,7 +16,8 @@
 
 | File | Changes |
 |------|---------|
-| `services/jewelry_poster.py` | New: PDF generation + HTML preview |
+| `requirements.txt` | Add `weasyprint` |
+| `services/jewelry_poster.py` | New: HTML template + PDF generation |
 | `api/orders.py` | Add 2 endpoints (PDF download + HTML preview) |
 | `frontend/src/api/orders.js` | Add API functions |
 | `frontend/src/views/orders/OrderDetail.vue` | Add buttons |
@@ -24,13 +25,43 @@
 
 ---
 
-## Task 1: Backend — PDF Generation Service
+## Task 1: Install weasyprint
+
+**Files:**
+- Modify: `requirements.txt`
+
+- [ ] **Step 1: Add weasyprint to requirements**
+
+Add `weasyprint` to `requirements.txt`.
+
+- [ ] **Step 2: Install**
+
+Run: `pip install weasyprint`
+
+On macOS, if not already installed: `brew install pango` (system dependency).
+
+- [ ] **Step 3: Verify import**
+
+Run: `python -c "import weasyprint; print('OK')"`
+Expected: `OK`
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add requirements.txt
+git commit -m "chore: add weasyprint dependency for jewelry poster PDF"
+```
+
+---
+
+## Task 2: Backend — Poster Service + API
 
 **Files:**
 - Create: `services/jewelry_poster.py`
+- Modify: `api/orders.py`
 - Test: `tests/test_jewelry_poster.py`
 
-- [ ] **Step 1: Write failing test**
+- [ ] **Step 1: Write failing tests**
 
 Create `tests/test_jewelry_poster.py`:
 
@@ -77,13 +108,12 @@ def test_generate_poster_pdf(client, db):
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "application/pdf"
     assert len(resp.content) > 0
-    # PDF magic bytes
     assert resp.content[:5] == b"%PDF-"
 
 
-def test_generate_poster_pdf_pagination(client, db):
-    """More than 9 items should produce multi-page PDF."""
-    order, jewelries = _setup_order_with_jewelry(db, count=12)
+def test_generate_poster_pdf_many_items(client, db):
+    """Many items should produce multi-page PDF."""
+    order, jewelries = _setup_order_with_jewelry(db, count=15)
     resp = client.get(f"/api/orders/{order.id}/jewelry-poster-pdf")
     assert resp.status_code == 200
     assert resp.content[:5] == b"%PDF-"
@@ -116,6 +146,17 @@ def test_poster_includes_customer_code(client, db):
     resp = client.get(f"/api/orders/{order.id}/jewelry-poster-preview")
     assert resp.status_code == 200
     assert "MG-01" in resp.text
+
+
+def test_poster_includes_remarks(client, db):
+    """Poster preview includes remarks when set."""
+    order, jewelries = _setup_order_with_jewelry(db, count=1)
+    item = db.query(OrderItem).filter_by(order_id=order.id).first()
+    item.remarks = "特殊包装要求"
+    db.flush()
+    resp = client.get(f"/api/orders/{order.id}/jewelry-poster-preview")
+    assert resp.status_code == 200
+    assert "特殊包装要求" in resp.text
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -128,170 +169,18 @@ Expected: FAIL
 Create `services/jewelry_poster.py`:
 
 ```python
-import math
-from io import BytesIO
-from decimal import Decimal
 from sqlalchemy.orm import Session
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.utils import ImageReader
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-from reportlab.pdfbase.pdfmetrics import registerFont, stringWidth
-from reportlab.pdfgen import canvas
-
 from models.order import Order, OrderItem
 from models.jewelry import Jewelry
-from services.plating_export import download_pdf_image_bytes
-from PIL import Image as PILImage
-
-FONT_NAME = "STSong-Light"
-PAGE_W, PAGE_H = A4  # 595 x 842
-MARGIN = 20
-COLS = 3
-ROWS = 3
-PER_PAGE = COLS * ROWS
-
-CELL_W = (PAGE_W - MARGIN * 2) / COLS
-CELL_H = (PAGE_H - MARGIN * 2 - 30) / ROWS  # 30pt reserved for page header
-IMG_PADDING = 6
-TEXT_AREA_H = CELL_H * 0.2  # text area ≤ 20% of cell height
 
 
-def build_jewelry_poster_pdf(db: Session, order_id: str) -> tuple[bytes, str]:
-    """Generate a 3x3 grid jewelry poster PDF for an order."""
-    registerFont(UnicodeCIDFont(FONT_NAME))
+def _build_poster_html(db: Session, order_id: str, for_pdf: bool = False) -> str:
+    """Generate HTML for jewelry poster.
 
-    order = db.query(Order).filter_by(id=order_id).first()
-    if not order:
-        raise ValueError(f"订单 {order_id} 不存在")
-
-    items = (
-        db.query(OrderItem)
-        .filter_by(order_id=order_id)
-        .order_by(OrderItem.id)
-        .all()
-    )
-    if not items:
-        raise ValueError("订单中没有饰品")
-
-    # Fetch jewelry info
-    jewelry_ids = [it.jewelry_id for it in items]
-    jewelries = db.query(Jewelry).filter(Jewelry.id.in_(jewelry_ids)).all()
-    j_map = {j.id: j for j in jewelries}
-
-    # Build data list
-    poster_items = []
-    for it in items:
-        j = j_map.get(it.jewelry_id)
-        poster_items.append({
-            "image_url": j.image if j else None,
-            "quantity": it.quantity,
-            "unit_price": float(it.unit_price) if it.unit_price else 0,
-            "customer_code": getattr(it, "customer_code", None),
-            "remarks": it.remarks,
-        })
-
-    buf = BytesIO()
-    pdf = canvas.Canvas(buf, pagesize=A4)
-    total_pages = math.ceil(len(poster_items) / PER_PAGE)
-
-    for page_idx in range(total_pages):
-        if page_idx > 0:
-            pdf.showPage()
-
-        # Page header
-        pdf.setFont(FONT_NAME, 10)
-        header_y = PAGE_H - MARGIN - 12
-        pdf.drawString(MARGIN, header_y, f"订单：{order_id}    客户：{order.customer_name}")
-
-        grid_top = header_y - 18
-
-        start = page_idx * PER_PAGE
-        end = min(start + PER_PAGE, len(poster_items))
-        page_items = poster_items[start:end]
-
-        for idx, item in enumerate(page_items):
-            col = idx % COLS
-            row = idx // COLS
-            x = MARGIN + col * CELL_W
-            y = grid_top - (row + 1) * CELL_H
-
-            # Draw cell border (light)
-            pdf.setStrokeColorRGB(0.85, 0.85, 0.85)
-            pdf.setLineWidth(0.5)
-            pdf.rect(x, y, CELL_W, CELL_H)
-
-            # Image area
-            img_x = x + IMG_PADDING
-            img_y = y + TEXT_AREA_H
-            img_max_w = CELL_W - IMG_PADDING * 2
-            img_max_h = CELL_H - TEXT_AREA_H - IMG_PADDING
-
-            if item["image_url"]:
-                try:
-                    img_bytes = download_pdf_image_bytes(item["image_url"])
-                    if img_bytes:
-                        pil_img = PILImage.open(BytesIO(img_bytes))
-                        iw, ih = pil_img.size
-                        scale = min(img_max_w / iw, img_max_h / ih)
-                        draw_w = iw * scale
-                        draw_h = ih * scale
-                        # Center image in area
-                        offset_x = img_x + (img_max_w - draw_w) / 2
-                        offset_y = img_y + (img_max_h - draw_h) / 2
-                        reader = ImageReader(BytesIO(img_bytes))
-                        pdf.drawImage(
-                            reader, offset_x, offset_y,
-                            width=draw_w, height=draw_h,
-                            preserveAspectRatio=True, mask="auto",
-                        )
-                except Exception:
-                    _draw_no_image(pdf, img_x, img_y, img_max_w, img_max_h)
-            else:
-                _draw_no_image(pdf, img_x, img_y, img_max_w, img_max_h)
-
-            # Text area (≤ 20% of cell height)
-            text_x = x + IMG_PADDING
-            text_y = y + TEXT_AREA_H - 12
-            max_text_w = CELL_W - IMG_PADDING * 2
-
-            pdf.setFont(FONT_NAME, 7)
-            pdf.setFillColorRGB(0, 0, 0)
-
-            # Quantity + Price
-            price_str = f"{item['unit_price']:.0f}" if item["unit_price"] == int(item["unit_price"]) else f"{item['unit_price']:.2f}"
-            pdf.drawString(text_x, text_y, f"数量: {item['quantity']}    单价: ¥{price_str}")
-
-            # Customer code (if any)
-            if item.get("customer_code"):
-                text_y -= 11
-                pdf.drawString(text_x, text_y, f"货号: {item['customer_code']}")
-
-            # Remarks (if any, truncate to fit)
-            if item.get("remarks"):
-                text_y -= 11
-                remarks = item["remarks"]
-                while stringWidth(remarks, FONT_NAME, 7) > max_text_w and len(remarks) > 1:
-                    remarks = remarks[:-1]
-                pdf.drawString(text_x, text_y, remarks)
-
-    pdf.save()
-    filename = f"饰品大图_{order_id}.pdf"
-    return buf.getvalue(), filename
-
-
-def _draw_no_image(pdf, x, y, w, h):
-    """Draw a placeholder for missing images."""
-    pdf.setStrokeColorRGB(0.8, 0.8, 0.8)
-    pdf.setFillColorRGB(0.95, 0.95, 0.95)
-    pdf.rect(x, y, w, h, fill=1)
-    pdf.setFillColorRGB(0.6, 0.6, 0.6)
-    pdf.setFont(FONT_NAME, 9)
-    text_w = stringWidth("暂无图片", FONT_NAME, 9)
-    pdf.drawString(x + (w - text_w) / 2, y + h / 2 - 4, "暂无图片")
-
-
-def build_jewelry_poster_html(db: Session, order_id: str) -> str:
-    """Generate an HTML preview of the jewelry poster."""
+    Args:
+        for_pdf: If True, uses @page CSS for weasyprint PDF pagination.
+                 If False, uses screen-friendly layout.
+    """
     order = db.query(Order).filter_by(id=order_id).first()
     if not order:
         raise ValueError(f"订单 {order_id} 不存在")
@@ -318,23 +207,35 @@ def build_jewelry_poster_html(db: Session, order_id: str) -> str:
         customer_code = getattr(it, "customer_code", None) or ""
         remarks = it.remarks or ""
 
-        img_html = (
-            f'<img src="{image_url}" style="width:100%;height:80%;object-fit:contain;background:#f5f5f5;">'
-            if image_url
-            else '<div style="width:100%;height:80%;background:#f5f5f5;display:flex;align-items:center;justify-content:center;color:#999;">暂无图片</div>'
-        )
+        if image_url:
+            img_html = f'<img class="card-img" src="{image_url}">'
+        else:
+            img_html = '<div class="card-img no-image">暂无图片</div>'
 
-        code_html = f'<div style="color:#888;font-size:12px;">货号: {customer_code}</div>' if customer_code else ""
-        remarks_html = f'<div style="color:#888;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{remarks}</div>' if remarks else ""
+        info_parts = [f"数量: {it.quantity} &nbsp; 单价: ¥{price_str}"]
+        if customer_code:
+            info_parts.append(f"货号: {customer_code}")
+        if remarks:
+            info_parts.append(remarks)
+        info_html = "<br>".join(info_parts)
 
         cards_html += f"""
-        <div style="border:1px solid #e8e8e8;border-radius:4px;padding:8px;text-align:center;display:flex;flex-direction:column;">
+        <div class="card">
             {img_html}
-            <div style="font-size:13px;">数量: {it.quantity} &nbsp; 单价: ¥{price_str}</div>
-            {code_html}
-            {remarks_html}
+            <div class="card-info">{info_html}</div>
         </div>
         """
+
+    # PDF uses @page for A4 sizing and proper pagination
+    pdf_css = """
+        @page {
+            size: A4 portrait;
+            margin: 12mm;
+        }
+        body {
+            margin: 0;
+        }
+    """ if for_pdf else ""
 
     return f"""<!DOCTYPE html>
 <html>
@@ -342,12 +243,54 @@ def build_jewelry_poster_html(db: Session, order_id: str) -> str:
     <meta charset="utf-8">
     <title>饰品大图 - {order_id}</title>
     <style>
-        body {{ font-family: -apple-system, sans-serif; margin: 20px; color: #333; }}
-        .header {{ margin-bottom: 16px; font-size: 14px; color: #666; }}
-        .grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }}
-        @media print {{
-            body {{ margin: 10px; }}
-            .grid {{ gap: 8px; }}
+        {pdf_css}
+        body {{
+            font-family: "STSong", "SimSun", "PingFang SC", sans-serif;
+            color: #333;
+            padding: 8px;
+        }}
+        .header {{
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 12px;
+        }}
+        .grid {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }}
+        .card {{
+            width: calc(33.33% - 8px);
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }}
+        .card-img {{
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            object-fit: contain;
+            background: #f8f8f8;
+            display: block;
+        }}
+        .no-image {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #bbb;
+            font-size: 14px;
+        }}
+        .card-info {{
+            padding: 6px 8px;
+            font-size: 11px;
+            line-height: 1.5;
+            color: #555;
+            border-top: 1px solid #eee;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }}
     </style>
 </head>
@@ -358,6 +301,20 @@ def build_jewelry_poster_html(db: Session, order_id: str) -> str:
     </div>
 </body>
 </html>"""
+
+
+def build_jewelry_poster_pdf(db: Session, order_id: str) -> tuple[bytes, str]:
+    """Generate jewelry poster PDF using weasyprint."""
+    import weasyprint
+    html_str = _build_poster_html(db, order_id, for_pdf=True)
+    pdf_bytes = weasyprint.HTML(string=html_str).write_pdf()
+    filename = f"饰品大图_{order_id}.pdf"
+    return pdf_bytes, filename
+
+
+def build_jewelry_poster_html(db: Session, order_id: str) -> str:
+    """Generate HTML preview of jewelry poster."""
+    return _build_poster_html(db, order_id, for_pdf=False)
 ```
 
 - [ ] **Step 4: Add API endpoints**
@@ -394,7 +351,7 @@ def api_jewelry_poster_preview(order_id: str, db: Session = Depends(get_db)):
     return HTMLResponse(content=html)
 ```
 
-Ensure `from urllib.parse import quote` is imported at the top of `api/orders.py` (may already be present for the todo-pdf endpoint).
+Ensure `from urllib.parse import quote` is imported at the top of `api/orders.py`.
 
 - [ ] **Step 5: Run tests**
 
@@ -410,12 +367,12 @@ Expected: All PASS
 
 ```bash
 git add services/jewelry_poster.py api/orders.py tests/test_jewelry_poster.py
-git commit -m "feat: add jewelry poster PDF and HTML preview endpoints"
+git commit -m "feat: add jewelry poster PDF and HTML preview with auto-layout"
 ```
 
 ---
 
-## Task 2: Frontend — Buttons on OrderDetail
+## Task 3: Frontend — Buttons on OrderDetail
 
 **Files:**
 - Modify: `frontend/src/api/orders.js`
@@ -489,7 +446,7 @@ git commit -m "feat: add jewelry poster download and preview buttons"
 
 ---
 
-## Task 3: Verify
+## Task 4: Verify
 
 - [ ] **Step 1: Run full test suite**
 
@@ -504,8 +461,9 @@ Expected: Build succeeds
 - [ ] **Step 3: Manual verification**
 
 - Open order detail with jewelry items that have images
-- Click "下载饰品大图" → verify PDF downloads, 3x3 grid, images clear
-- Click "预览饰品大图" → verify HTML opens in new tab, correct layout
-- Test with >9 items → verify pagination in PDF
-- Test with customer_code set → verify it appears
+- Click "下载饰品大图" → verify PDF downloads, auto-layout, images not compressed
+- Click "预览饰品大图" → verify HTML opens in new tab, responsive layout
+- Test with >9 items → verify auto-pagination in PDF
+- Test with mixed image aspect ratios → verify layout adapts
+- Test with customer_code and remarks → verify they appear
 - Test with jewelry missing image → verify placeholder

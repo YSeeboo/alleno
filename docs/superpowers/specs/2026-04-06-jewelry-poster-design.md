@@ -15,22 +15,25 @@
 - **PDF 下载**：点击按钮直接下载 PDF
 - **网页预览**：点击按钮旁的预览入口，在新标签页中打开预览
 
-### PDF 布局
+### 布局
 
 - 纸张：A4 纵向
-- 网格：3 列 × 3 行 = 每页 9 个饰品
-- 图片尽量占满格子空间，**不压缩图片质量**
-- 每格内容（从上到下）：
-  - 饰品图片（占格子 ≥ 80% 高度）
-  - 文字区域（≤ 格子 20% 高度）：数量、单价（订单中的 unit_price）、客户货号（如有）、备注（如有）
-- 饰品数量超过 9 个时自动分页
+- **自动排版**：根据图片原始宽高比自适应布局，使用 CSS Flexbox wrap
+- 图片保持原始比例，不拉伸不裁剪，**不压缩图片质量**
+- 每个饰品卡片内容（从上到下）：
+  - 饰品图片（占卡片 ≥ 80% 高度）
+  - 文字区域（≤ 卡片 20% 高度）：数量、单价（订单中的 unit_price）、客户货号（如有）、备注（如有）
+- 自动分页
 - 页面顶部显示：订单号 + 客户名
 
 ### 图片处理
 
-- 从饰品的 `image` URL 下载原图
-- **不做压缩/缩放质量降低**，仅按格子尺寸等比缩放适配
+- 图片使用原始 URL 引用（HTML 中 `<img src>`），不下载不压缩
 - 无图片的饰品显示占位框 + "暂无图片"文字
+
+### 技术方案
+
+使用 HTML + CSS 生成布局，weasyprint 将 HTML 转为 PDF。HTML 预览和 PDF 共用同一套模板。
 
 ## API
 
@@ -50,15 +53,12 @@ Response: text/html
 
 ## 后端实现
 
-新建 `services/jewelry_poster.py`，使用 ReportLab 生成 PDF：
+新建 `services/jewelry_poster.py`：
 
-- A4 尺寸：595 × 842 pt
-- 页边距：小（约 20pt），最大化图片区域
-- 3×3 网格，每格约 185 × 255 pt
-- 图片下载使用 httpx，保持原始质量
-- 文字使用 STSong-Light 字体（与现有 PDF 一致）
-
-网页预览可以返回一个简单的 HTML 页面，以 CSS Grid 实现 3×3 布局，图片使用原始 URL。
+- 生成 HTML 字符串（CSS Flexbox 自适应布局）
+- PDF：`weasyprint.HTML(string=html).write_pdf()`
+- 预览：直接返回同一份 HTML
+- 系统依赖：`pip install weasyprint`，服务器需安装 `libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0`（Ubuntu）或 `brew install pango`（macOS）
 
 ## 前端
 
