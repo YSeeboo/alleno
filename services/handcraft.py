@@ -55,6 +55,8 @@ def create_handcraft_order(
     for j in jewelries or []:
         jewelry_id = j.get("jewelry_id")
         part_id = j.get("part_id")
+        if jewelry_id and part_id:
+            raise ValueError("产出项不能同时指定 jewelry_id 和 part_id")
         if jewelry_id:
             _require_jewelry(db, jewelry_id)
         elif part_id:
@@ -288,6 +290,8 @@ def add_handcraft_jewelry(db: Session, order_id: str, item: dict) -> HandcraftJe
         raise ValueError(f"Cannot add jewelry: order {order_id} status is '{order.status}', must be 'pending' or 'processing'")
     jewelry_id = item.get("jewelry_id")
     part_id = item.get("part_id")
+    if jewelry_id and part_id:
+        raise ValueError("产出项不能同时指定 jewelry_id 和 part_id")
     if jewelry_id:
         _require_jewelry(db, jewelry_id)
     elif part_id:
@@ -390,7 +394,15 @@ def delete_handcraft_order(db: Session, order_id: str) -> None:
         if ri.item_type == "part":
             deduct_stock(db, "part", ri.item_id, float(ri.qty), "手工收回撤回")
         else:
-            deduct_stock(db, "jewelry", ri.item_id, float(ri.qty), "手工收回撤回")
+            # Part output items have item_type="jewelry" in receipt but
+            # actual stock is "part". Check the source HandcraftJewelryItem.
+            oi = db.query(HandcraftJewelryItem).filter(
+                HandcraftJewelryItem.id == ri.handcraft_jewelry_item_id
+            ).first()
+            if oi and oi.part_id and not oi.jewelry_id:
+                deduct_stock(db, "part", ri.item_id, float(ri.qty), "手工收回撤回")
+            else:
+                deduct_stock(db, "jewelry", ri.item_id, float(ri.qty), "手工收回撤回")
         db.delete(ri)
     db.flush()
 
@@ -500,6 +512,7 @@ def list_handcraft_pending_receive_items(
             "item_name": row.item_name,
             "item_image": row.item_image,
             "item_type": "part",
+            "is_output": False,
             "color": row.color,
             "qty": float(row.qty),
             "received_qty": float(row.received_qty or 0),
@@ -565,6 +578,7 @@ def list_handcraft_pending_receive_items(
             "item_name": item_name,
             "item_image": item_image,
             "item_type": item_type,
+            "is_output": True,
             "color": None,
             "qty": int(row.qty),
             "received_qty": int(row.received_qty or 0),

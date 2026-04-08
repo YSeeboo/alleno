@@ -1,6 +1,6 @@
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class HandcraftPartIn(BaseModel):
@@ -18,15 +18,13 @@ class HandcraftJewelryIn(BaseModel):
     unit: Optional[str] = None
     note: Optional[str] = None
 
-    @field_validator("part_id")
-    @classmethod
-    def exactly_one_output_id(cls, v, info):
-        jewelry_id = info.data.get("jewelry_id")
-        if not jewelry_id and not v:
+    @model_validator(mode="after")
+    def exactly_one_output_id(self):
+        if not self.jewelry_id and not self.part_id:
             raise ValueError("产出项必须指定 jewelry_id 或 part_id")
-        if jewelry_id and v:
+        if self.jewelry_id and self.part_id:
             raise ValueError("产出项不能同时指定 jewelry_id 和 part_id")
-        return v
+        return self
 
 
 class HandcraftCreate(BaseModel):
