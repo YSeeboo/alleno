@@ -25,6 +25,8 @@
 | `services/part_bom.py` | New service: CRUD for part BOM |
 | `services/handcraft.py` | Support part_id in output items |
 | `services/handcraft_receipt.py` | Extend _apply_receive for part outputs |
+| `services/cost_sync.py` | Add assembly_cost sync for part output receipts |
+| `models/part.py` | Add `assembly_cost` field |
 | `api/parts.py` | Add part BOM endpoints |
 | `api/handcraft.py` | Adapt for output items |
 | `frontend/src/api/parts.js` | Add part BOM API functions |
@@ -625,7 +627,225 @@ git commit -m "feat: support part output in handcraft orders with auto-consume"
 
 ---
 
-## Task 6: Frontend — Part BOM Section on PartDetail
+## Task 6: Backend — Assembly Cost + Auto Unit Cost Calculation
+
+**Files:**
+- Modify: `models/part.py` (add `assembly_cost` field)
+- Modify: `database.py` (schema compat)
+- Create or modify: `services/part_bom.py` (add `recalc_part_unit_cost`)
+- Modify: `services/part_bom.py` (trigger recalc on BOM change)
+- Modify: `services/part.py` (trigger recalc on child part unit_cost change)
+- Modify: `services/cost_sync.py` (sync assembly_cost from handcraft receipt)
+- Test: `tests/test_part_bom.py`
+
+- [ ] **Step 1: Add `assembly_cost` to Part model**
+
+In `models/part.py`, add after existing cost fields:
+
+```python
+    assembly_cost = Column(Numeric(18, 7), nullable=True)
+```
+
+In `database.py`, add schema compat:
+
+```python
+# --- part.assembly_cost ---
+if inspector.has_table("part"):
+    cols = [c["name"] for c in inspector.get_columns("part")]
+    if "assembly_cost" not in cols:
+        conn.execute(text(
+            "ALTER TABLE part ADD COLUMN assembly_cost NUMERIC(18,7)"
+        ))
+```
+
+- [ ] **Step 2: Write failing tests**
+
+Add to `tests/test_part_bom.py`:
+
+```python
+def test_recalc_unit_cost_on_bom_change(client, db):
+    """Setting part BOM auto-recalculates parent unit_cost."""
+    parent, children = _setup_parts(db)
+    # Set child costs
+    children[0].unit_cost = 10.0
+    children[1].unit_cost = 20.0
+    children[2].unit_cost = 5.0
+    db.flush()
+
+    # Add BOM: e*2 + f*1 + g*3
+    client.post(f"/api/parts/{parent.id}/bom", json={"child_part_id": children[0].id, "qty_per_unit": 2.0})
+    client.post(f"/api/parts/{parent.id}/bom", json={"child_part_id": children[1].id, "qty_per_unit": 1.0})
+    client.post(f"/api/parts/{parent.id}/bom", json={"child_part_id": children[2].id, "qty_per_unit": 3.0})
+
+    db.refresh(parent)
+    # Expected: 10*2 + 20*1 + 5*3 = 55, no assembly_cost yet
+    assert float(parent.unit_cost) == 55.0
+
+
+def test_recalc_includes_assembly_cost(client, db):
+    """unit_cost includes assembly_cost."""
+    parent, children = _setup_parts(db)
+    children[0].unit_cost = 10.0
+    parent.assembly_cost = 8.0
+    db.flush()
+
+    client.post(f"/api/parts/{parent.id}/bom", json={"child_part_id": children[0].id, "qty_per_unit": 2.0})
+
+    db.refresh(parent)
+    # Expected: 10*2 + 8 = 28
+    assert float(parent.unit_cost) == 28.0
+
+
+def test_recalc_on_child_cost_change(client, db):
+    """Updating child part unit_cost triggers parent recalc."""
+    parent, children = _setup_parts(db)
+    children[0].unit_cost = 10.0
+    db.flush()
+
+    client.post(f"/api/parts/{parent.id}/bom", json={"child_part_id": children[0].id, "qty_per_unit": 2.0})
+    db.refresh(parent)
+    assert float(parent.unit_cost) == 20.0
+
+    # Update child cost
+    client.patch(f"/api/parts/{children[0].id}", json={"unit_cost": 15.0})
+    db.refresh(parent)
+    assert float(parent.unit_cost) == 30.0
+
+
+def test_recalc_on_bom_delete(client, db):
+    """Deleting a BOM row recalculates parent unit_cost."""
+    parent, children = _setup_parts(db)
+    children[0].unit_cost = 10.0
+    children[1].unit_cost = 20.0
+    db.flush()
+
+    resp1 = client.post(f"/api/parts/{parent.id}/bom", json={"child_part_id": children[0].id, "qty_per_unit": 1.0})
+    resp2 = client.post(f"/api/parts/{parent.id}/bom", json={"child_part_id": children[1].id, "qty_per_unit": 1.0})
+    db.refresh(parent)
+    assert float(parent.unit_cost) == 30.0
+
+    # Delete one BOM row
+    bom_id = resp2.json()["id"]
+    client.delete(f"/api/parts/bom/{bom_id}")
+    db.refresh(parent)
+    assert float(parent.unit_cost) == 10.0
+```
+
+- [ ] **Step 3: Run tests to verify they fail**
+
+Run: `pytest tests/test_part_bom.py -v -k "recalc"`
+Expected: FAIL
+
+- [ ] **Step 4: Implement `recalc_part_unit_cost`**
+
+In `services/part_bom.py`, add:
+
+```python
+from decimal import Decimal
+
+def recalc_part_unit_cost(db: Session, part_id: str) -> None:
+    """Recalculate unit_cost for a composite part based on its part_bom.
+
+    unit_cost = Σ(child.unit_cost × qty_per_unit) + assembly_cost
+    Only applies if the part has part_bom rows.
+    """
+    rows = db.query(PartBom).filter_by(parent_part_id=part_id).all()
+    if not rows:
+        return  # Not a composite part, don't touch unit_cost
+
+    part = db.query(Part).filter_by(id=part_id).first()
+    if not part:
+        return
+
+    total = Decimal("0")
+    for row in rows:
+        child = db.query(Part).filter_by(id=row.child_part_id).first()
+        child_cost = Decimal(str(child.unit_cost or 0)) if child else Decimal("0")
+        total += child_cost * row.qty_per_unit
+
+    assembly = Decimal(str(part.assembly_cost or 0))
+    part.unit_cost = total + assembly
+    db.flush()
+
+
+def recalc_parents_of_child(db: Session, child_part_id: str) -> None:
+    """Find all parent parts that use this child and recalculate their unit_cost."""
+    parent_boms = db.query(PartBom).filter_by(child_part_id=child_part_id).all()
+    for bom in parent_boms:
+        recalc_part_unit_cost(db, bom.parent_part_id)
+```
+
+- [ ] **Step 5: Trigger recalc in BOM CRUD**
+
+Update `set_part_bom` and `delete_part_bom_item` in `services/part_bom.py` to call `recalc_part_unit_cost` after changes:
+
+```python
+def set_part_bom(...):
+    # ... existing logic ...
+    db.flush()
+    recalc_part_unit_cost(db, parent_part_id)
+    return bom
+
+def delete_part_bom_item(...):
+    parent_id = row.parent_part_id
+    # ... existing delete ...
+    db.flush()
+    recalc_part_unit_cost(db, parent_id)
+```
+
+- [ ] **Step 6: Trigger recalc on child part cost change**
+
+In `services/part.py`, find the `update_part` function. After updating `unit_cost`, trigger parent recalc:
+
+```python
+from services.part_bom import recalc_parents_of_child
+
+def update_part(db, part_id, data):
+    # ... existing logic ...
+    if "unit_cost" in data:
+        recalc_parents_of_child(db, part_id)
+    # Also recalc self if assembly_cost changed
+    if "assembly_cost" in data:
+        from services.part_bom import recalc_part_unit_cost
+        recalc_part_unit_cost(db, part_id)
+```
+
+- [ ] **Step 7: Sync assembly_cost from handcraft receipt**
+
+In `services/cost_sync.py` (or the handcraft receipt service where cost diffs are detected), add logic:
+
+When a handcraft receipt receives a part output item (HandcraftJewelryItem with `part_id` set), detect if `price` differs from `Part.assembly_cost` and sync:
+
+```python
+# In the cost_sync / receipt creation flow:
+if output_item.part_id:
+    part = db.query(Part).filter_by(id=output_item.part_id).first()
+    if part and receipt_item_price is not None:
+        part.assembly_cost = receipt_item_price
+        recalc_part_unit_cost(db, part.id)
+        db.flush()
+```
+
+- [ ] **Step 8: Run tests**
+
+Run: `pytest tests/test_part_bom.py -v`
+Expected: All PASS
+
+- [ ] **Step 9: Run full test suite**
+
+Run: `pytest -v`
+Expected: All PASS
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add models/part.py database.py services/part_bom.py services/part.py services/cost_sync.py tests/test_part_bom.py
+git commit -m "feat: auto-calculate composite part unit_cost from part_bom + assembly_cost"
+```
+
+---
+
+## Task 7: Frontend — Part BOM Section on PartDetail
 
 **Files:**
 - Modify: `frontend/src/api/parts.js`
@@ -694,21 +914,28 @@ async function doDeletePartBom(bomId) {
 }
 ```
 
-- [ ] **Step 3: Verify build**
+- [ ] **Step 3: Add cost display for composite parts**
+
+When the part has sub-parts BOM, the `unit_cost` is auto-calculated. In PartDetail.vue:
+- Show `unit_cost` as read-only with label "自动计算"
+- Show cost breakdown: each child part cost contribution + assembly_cost = total
+- `assembly_cost` field: editable input (also auto-synced from handcraft receipts)
+
+- [ ] **Step 4: Verify build**
 
 Run: `cd frontend && npm run build`
 Expected: Build succeeds
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add frontend/src/api/parts.js frontend/src/views/parts/PartDetail.vue
-git commit -m "feat: add sub-parts BOM management section on PartDetail"
+git commit -m "feat: add sub-parts BOM management and cost display on PartDetail"
 ```
 
 ---
 
-## Task 7: Frontend — Handcraft Detail Output Items
+## Task 8: Frontend — Handcraft Detail Output Items
 
 **Files:**
 - Modify: `frontend/src/views/handcraft/HandcraftDetail.vue`
@@ -745,7 +972,7 @@ git commit -m "feat: rename to 产出明细, support part output in handcraft de
 
 ---
 
-## Task 8: Frontend — Receipt Support for Part Output
+## Task 9: Frontend — Receipt Support for Part Output
 
 **Files:**
 - Modify: Handcraft receipt create/detail pages
@@ -772,7 +999,7 @@ git commit -m "feat: support part output items in handcraft receipt pages"
 
 ---
 
-## Task 9: Verify
+## Task 10: Verify
 
 - [ ] **Step 1: Run full test suite**
 

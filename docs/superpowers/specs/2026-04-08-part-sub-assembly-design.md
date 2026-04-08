@@ -137,7 +137,47 @@
 - "待收回列表"同时显示饰品产出和配件产出
 - 配件产出项的 `item_type` 显示为"配件"而非"饰品"
 
-## 五、订单 TodoList 影响
+## 五、组合配件成本
+
+### 成本公式
+
+有 part_bom 的配件（组合件）：
+```
+unit_cost = Σ(子配件.unit_cost × part_bom.qty_per_unit) + assembly_cost
+```
+
+无 part_bom 的配件：`unit_cost` 手动维护（现有逻辑不变）。
+
+### 数据模型
+
+**`part`** 表新增字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| assembly_cost | Numeric(18,7), nullable | 组装手工费 |
+
+### assembly_cost 同步
+
+复用现有 `cost_sync` 模式：手工收回单收回配件 c 时，receipt item 的 `price` 自动同步到 `Part.assembly_cost`（与饰品的 `handcraft_cost` 同步方式一致）。
+
+### unit_cost 自动计算
+
+`unit_cost` 字段保留在数据库中，标记为"自动计算"。触发重算的时机：
+
+1. **part_bom 变化**：增删改子配件 BOM 时重算
+2. **子配件 unit_cost 变化**：更新子配件成本时，找到所有引用它的父配件并重算
+3. **assembly_cost 变化**：手工收回同步 assembly_cost 后重算
+
+重算函数：`recalc_part_unit_cost(db, part_id)`，在上述三个时机调用。
+
+### 前端
+
+配件详情页：
+- 有子配件的配件，`unit_cost` 显示为"自动计算"，不可手动编辑
+- 显示成本明细：子配件成本 + 手工费 = 总 unit_cost
+- `assembly_cost` 字段可手动编辑（也会被收回单自动同步）
+
+## 六、订单 TodoList 影响
 
 - TodoList 只展示一层，配件 c 作为整体出现
 - 配件 c 的库存判断：`get_stock("part", c)` >= 所需数量
