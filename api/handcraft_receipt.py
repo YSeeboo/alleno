@@ -95,11 +95,17 @@ def api_add_handcraft_receipt_items(receipt_id: str, body: HandcraftReceiptAddIt
             receipt_id=receipt_id,
             items=[item.model_dump() for item in body.items],
         )
-    # Only process newly added items for cost sync
+    # Only process newly added items for cost sync and diffs
     new_items = [item for item in receipt.items if item.id not in existing_item_ids]
-    cost_diffs = detect_handcraft_bead_cost_diffs(db, receipt)
-    cost_diffs += detect_handcraft_jewelry_cost_diffs(db, receipt)
-    cost_diffs += detect_handcraft_assembly_cost_diffs(db, receipt)
+
+    # Create a view with only new items for diff detection
+    class _NewItemsView:
+        def __init__(self, items):
+            self.items = items
+    new_items_view = _NewItemsView(new_items)
+    cost_diffs = detect_handcraft_bead_cost_diffs(db, new_items_view)
+    cost_diffs += detect_handcraft_jewelry_cost_diffs(db, new_items_view)
+    cost_diffs += detect_handcraft_assembly_cost_diffs(db, new_items_view)
     # Then sync — only new items
     for item in new_items:
         if item.item_type == "jewelry" and item.price is not None:
