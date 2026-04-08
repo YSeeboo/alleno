@@ -415,3 +415,98 @@ def test_delete_last_jewelry_rejected(client, pending_order):
     item_id = _get_first_jewelry_id(client, order_id)
     resp = client.delete(f"/api/handcraft/{order_id}/jewelries/{item_id}")
     assert resp.status_code == 400
+
+
+# ──────────────────────────────────────────────────────────────
+# Part output in handcraft orders (sub-assembly)
+# ──────────────────────────────────────────────────────────────
+
+def test_create_handcraft_with_part_output(client, db):
+    """Create handcraft order with a part as output item."""
+    from models.part import Part
+    parent = Part(id="PJ-X-OUT1", name="组合配件", category="小配件")
+    child1 = Part(id="PJ-X-CH1", name="子配件1", category="小配件")
+    child2 = Part(id="PJ-X-CH2", name="子配件2", category="小配件")
+    db.add_all([parent, child1, child2])
+    db.flush()
+
+    from services.part_bom import set_part_bom
+    set_part_bom(db, parent.id, child1.id, 2.0)
+    set_part_bom(db, parent.id, child2.id, 3.0)
+    db.flush()
+
+    from services.inventory import add_stock
+    add_stock(db, "part", child1.id, 100, "入库")
+    add_stock(db, "part", child2.id, 100, "入库")
+    db.flush()
+
+    resp = client.post("/api/handcraft/", json={
+        "supplier_name": "测试手工商",
+        "parts": [
+            {"part_id": child1.id, "qty": 20},
+            {"part_id": child2.id, "qty": 30},
+        ],
+        "jewelries": [
+            {"part_id": parent.id, "qty": 10},
+        ],
+    })
+    assert resp.status_code in (200, 201)
+    data = resp.json()
+    # Verify output item has part_id by getting jewelries endpoint
+    order_id = data["id"]
+    j_resp = client.get(f"/api/handcraft/{order_id}/jewelries")
+    assert j_resp.status_code == 200
+    output_items = [i for i in j_resp.json() if i.get("part_id")]
+    assert len(output_items) == 1
+    assert output_items[0]["part_id"] == parent.id
+
+
+def test_receive_part_output_adds_stock_and_consumes(client, db):
+    """Receiving a part output adds parent stock and auto-consumes child parts."""
+    from models.part import Part
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
+    from services.part_bom import set_part_bom
+    from services.inventory import add_stock, get_stock
+
+    parent = Part(id="PJ-X-RCV1", name="组合配件R", category="小配件")
+    child1 = Part(id="PJ-X-RC1", name="子配件R1", category="小配件")
+    child2 = Part(id="PJ-X-RC2", name="子配件R2", category="小配件")
+    db.add_all([parent, child1, child2])
+    db.flush()
+
+    set_part_bom(db, parent.id, child1.id, 2.0)
+    set_part_bom(db, parent.id, child2.id, 3.0)
+    db.flush()
+
+    # Create handcraft order manually
+    hc = HandcraftOrder(id="HC-PARTOUT1", supplier_name="手工商", status="processing")
+    db.add(hc)
+    db.flush()
+
+    hp1 = HandcraftPartItem(handcraft_order_id=hc.id, part_id=child1.id, qty=20, status="制作中")
+    hp2 = HandcraftPartItem(handcraft_order_id=hc.id, part_id=child2.id, qty=30, status="制作中")
+    hj = HandcraftJewelryItem(handcraft_order_id=hc.id, part_id=parent.id, qty=10, status="制作中")
+    db.add_all([hp1, hp2, hj])
+    db.flush()
+
+    # Create receipt to receive parent part
+    resp = client.post("/api/handcraft-receipts/", json={
+        "supplier_name": "手工商",
+        "items": [{
+            "handcraft_jewelry_item_id": hj.id,
+            "qty": 10,
+            "price": 5.0,
+        }],
+    })
+    assert resp.status_code == 201
+
+    # Verify parent stock increased
+    assert get_stock(db, "part", parent.id) == 10
+
+    # Verify child parts auto-consumed
+    db.refresh(hp1)
+    db.refresh(hp2)
+    assert float(hp1.received_qty) == 20  # 10 * 2.0
+    assert float(hp2.received_qty) == 30  # 10 * 3.0
+    assert hp1.status == "已收回"
+    assert hp2.status == "已收回"

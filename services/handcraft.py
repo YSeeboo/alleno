@@ -53,7 +53,14 @@ def create_handcraft_order(
     for p in parts:
         _require_part(db, p["part_id"])
     for j in jewelries or []:
-        _require_jewelry(db, j["jewelry_id"])
+        jewelry_id = j.get("jewelry_id")
+        part_id = j.get("part_id")
+        if jewelry_id:
+            _require_jewelry(db, jewelry_id)
+        elif part_id:
+            _require_part(db, part_id)
+        else:
+            raise ValueError("产出项必须指定 jewelry_id 或 part_id")
 
     # Auto-merge: reuse existing pending order for same supplier on same day
     from time_utils import now_beijing
@@ -92,13 +99,17 @@ def create_handcraft_order(
             note=p.get("note"),
         ))
     for j in jewelries or []:
+        jewelry_id = j.get("jewelry_id")
+        part_id = j.get("part_id")
+        default_unit = "套" if jewelry_id else "个"
         db.add(HandcraftJewelryItem(
             handcraft_order_id=order.id,
-            jewelry_id=j["jewelry_id"],
+            jewelry_id=jewelry_id,
+            part_id=part_id,
             qty=j["qty"],
             received_qty=0,
             status="未送出",
-            unit=j.get("unit", "套"),
+            unit=j.get("unit") or default_unit,
             note=j.get("note"),
         ))
     db.flush()
@@ -275,15 +286,24 @@ def add_handcraft_jewelry(db: Session, order_id: str, item: dict) -> HandcraftJe
         raise ValueError(f"HandcraftOrder not found: {order_id}")
     if order.status not in ("pending", "processing"):
         raise ValueError(f"Cannot add jewelry: order {order_id} status is '{order.status}', must be 'pending' or 'processing'")
-    _require_jewelry(db, item["jewelry_id"])
+    jewelry_id = item.get("jewelry_id")
+    part_id = item.get("part_id")
+    if jewelry_id:
+        _require_jewelry(db, jewelry_id)
+    elif part_id:
+        _require_part(db, part_id)
+    else:
+        raise ValueError("产出项必须指定 jewelry_id 或 part_id")
     item_status = "制作中" if order.status == "processing" else "未送出"
+    default_unit = "套" if jewelry_id else "个"
     new_item = HandcraftJewelryItem(
         handcraft_order_id=order_id,
-        jewelry_id=item["jewelry_id"],
+        jewelry_id=jewelry_id,
+        part_id=part_id,
         qty=item["qty"],
         received_qty=0,
         status=item_status,
-        unit=item.get("unit", "套"),
+        unit=item.get("unit") or default_unit,
         note=item.get("note"),
     )
     db.add(new_item)
@@ -487,22 +507,26 @@ def list_handcraft_pending_receive_items(
             "created_at": row.created_at,
         })
 
-    # Jewelry items
+    # Jewelry/output items (may be jewelry or part output)
     jq = (
         db.query(
             HandcraftJewelryItem.id,
             HandcraftJewelryItem.handcraft_order_id,
             HandcraftOrder.supplier_name,
-            HandcraftJewelryItem.jewelry_id.label("item_id"),
-            Jewelry.name.label("item_name"),
-            Jewelry.image.label("item_image"),
+            HandcraftJewelryItem.jewelry_id,
+            HandcraftJewelryItem.part_id,
+            Jewelry.name.label("jewelry_name"),
+            Jewelry.image.label("jewelry_image"),
+            Part.name.label("part_name"),
+            Part.image.label("part_image"),
             HandcraftJewelryItem.qty,
             HandcraftJewelryItem.received_qty,
             HandcraftJewelryItem.unit,
             HandcraftOrder.created_at,
         )
         .join(HandcraftOrder, HandcraftJewelryItem.handcraft_order_id == HandcraftOrder.id)
-        .join(Jewelry, HandcraftJewelryItem.jewelry_id == Jewelry.id)
+        .outerjoin(Jewelry, HandcraftJewelryItem.jewelry_id == Jewelry.id)
+        .outerjoin(Part, HandcraftJewelryItem.part_id == Part.id)
         .filter(
             HandcraftJewelryItem.status == "制作中",
             func.coalesce(HandcraftJewelryItem.received_qty, 0) < HandcraftJewelryItem.qty,
@@ -516,18 +540,31 @@ def list_handcraft_pending_receive_items(
         jq = jq.filter(HandcraftJewelryItem.id.notin_(exclude_jewelry_item_ids))
     if keyword:
         like = f"%{keyword}%"
-        jq = jq.filter(or_(Jewelry.id.ilike(like), Jewelry.name.ilike(like)))
+        jq = jq.filter(or_(
+            Jewelry.id.ilike(like), Jewelry.name.ilike(like),
+            Part.id.ilike(like), Part.name.ilike(like),
+        ))
     jq = jq.order_by(HandcraftOrder.created_at.desc())
 
     for row in jq.all():
+        if row.jewelry_id:
+            item_id = row.jewelry_id
+            item_name = row.jewelry_name
+            item_image = row.jewelry_image
+            item_type = "jewelry"
+        else:
+            item_id = row.part_id
+            item_name = row.part_name
+            item_image = row.part_image
+            item_type = "part"
         results.append({
             "id": row.id,
             "handcraft_order_id": row.handcraft_order_id,
             "supplier_name": row.supplier_name,
-            "item_id": row.item_id,
-            "item_name": row.item_name,
-            "item_image": row.item_image,
-            "item_type": "jewelry",
+            "item_id": item_id,
+            "item_name": item_name,
+            "item_image": item_image,
+            "item_type": item_type,
             "color": None,
             "qty": int(row.qty),
             "received_qty": int(row.received_qty or 0),

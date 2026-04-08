@@ -58,13 +58,19 @@ def _apply_receive(db: Session, order_item, item_type: str, qty: float) -> None:
     """Add qty to received_qty, update item status, add stock.
 
     For jewelry items, also auto-consume corresponding parts via BOM.
+    For part output items (jewelry_item with part_id), auto-consume child parts via part_bom.
     """
     order_item.received_qty = float(order_item.received_qty or 0) + qty
     if item_type == "part":
         add_stock(db, "part", order_item.part_id, qty, "手工收回")
     else:
-        add_stock(db, "jewelry", order_item.jewelry_id, qty, "手工收回")
-        _auto_consume_parts(db, order_item.handcraft_order_id, order_item.jewelry_id, qty)
+        # "jewelry" item_type covers both jewelry output and part output
+        if order_item.jewelry_id:
+            add_stock(db, "jewelry", order_item.jewelry_id, qty, "手工收回")
+            _auto_consume_parts(db, order_item.handcraft_order_id, order_item.jewelry_id, qty)
+        elif order_item.part_id:
+            add_stock(db, "part", order_item.part_id, qty, "手工收回")
+            _auto_consume_child_parts(db, order_item.handcraft_order_id, order_item.part_id, qty)
     if float(order_item.received_qty) >= float(order_item.qty):
         order_item.status = "已收回"
     else:
@@ -113,17 +119,58 @@ def _auto_consume_parts(db: Session, handcraft_order_id: str, jewelry_id: str, j
     db.flush()
 
 
+def _auto_consume_child_parts(db: Session, handcraft_order_id: str, parent_part_id: str, parent_qty: float) -> None:
+    """When a composite part is received, auto-consume child parts based on part_bom."""
+    from models.part_bom import PartBom
+
+    bom_rows = db.query(PartBom).filter_by(parent_part_id=parent_part_id).all()
+    if not bom_rows:
+        return
+
+    bom_map = {b.child_part_id: float(b.qty_per_unit) for b in bom_rows}
+    part_items = db.query(HandcraftPartItem).filter_by(handcraft_order_id=handcraft_order_id).all()
+
+    from collections import defaultdict
+    by_part: dict[str, list] = defaultdict(list)
+    for pi in part_items:
+        if pi.part_id in bom_map:
+            by_part[pi.part_id].append(pi)
+
+    for part_id, rows in by_part.items():
+        total_consumption = bom_map[part_id] * parent_qty
+        for pi in rows:
+            if total_consumption <= 0:
+                break
+            remaining = float(pi.qty) - float(pi.received_qty or 0)
+            actual = min(total_consumption, remaining)
+            if actual <= 0:
+                continue
+            pi.received_qty = float(pi.received_qty or 0) + actual
+            if float(pi.received_qty) >= float(pi.qty):
+                pi.status = "已收回"
+            else:
+                pi.status = "制作中"
+            total_consumption -= actual
+
+    db.flush()
+
+
 def _reverse_receive(db: Session, order_item, item_type: str, qty: float) -> None:
     """Reverse qty from received_qty, update item status, deduct stock.
 
     For jewelry items, also reverse the auto-consumed parts.
+    For part output items, reverse the auto-consumed child parts.
     """
     order_item.received_qty = float(order_item.received_qty or 0) - qty
     if item_type == "part":
         deduct_stock(db, "part", order_item.part_id, qty, "手工收回撤回")
     else:
-        deduct_stock(db, "jewelry", order_item.jewelry_id, qty, "手工收回撤回")
-        _reverse_auto_consume_parts(db, order_item.handcraft_order_id, order_item.jewelry_id, qty)
+        if order_item.jewelry_id:
+            deduct_stock(db, "jewelry", order_item.jewelry_id, qty, "手工收回撤回")
+            _reverse_auto_consume_parts(db, order_item.handcraft_order_id, order_item.jewelry_id, qty)
+        elif order_item.part_id:
+            deduct_stock(db, "part", order_item.part_id, qty, "手工收回撤回")
+            _reverse_auto_consume_child_parts(db, order_item.handcraft_order_id, order_item.part_id, qty)
     if float(order_item.received_qty) >= float(order_item.qty):
         order_item.status = "已收回"
     else:
@@ -170,6 +217,42 @@ def _reverse_auto_consume_parts(db: Session, handcraft_order_id: str, jewelry_id
     db.flush()
 
 
+def _reverse_auto_consume_child_parts(db: Session, handcraft_order_id: str, parent_part_id: str, parent_qty: float) -> None:
+    """Reverse the auto-consumed child parts when part output receive is reversed."""
+    from models.part_bom import PartBom
+
+    bom_rows = db.query(PartBom).filter_by(parent_part_id=parent_part_id).all()
+    if not bom_rows:
+        return
+
+    bom_map = {b.child_part_id: float(b.qty_per_unit) for b in bom_rows}
+    part_items = db.query(HandcraftPartItem).filter_by(handcraft_order_id=handcraft_order_id).all()
+
+    from collections import defaultdict
+    by_part: dict[str, list] = defaultdict(list)
+    for pi in part_items:
+        if pi.part_id in bom_map:
+            by_part[pi.part_id].append(pi)
+
+    for part_id, rows in by_part.items():
+        total_to_reverse = bom_map[part_id] * parent_qty
+        for pi in reversed(rows):
+            current = float(pi.received_qty or 0)
+            reverse_amount = min(total_to_reverse, current)
+            if reverse_amount <= 0:
+                continue
+            pi.received_qty = current - reverse_amount
+            if float(pi.received_qty) >= float(pi.qty):
+                pi.status = "已收回"
+            else:
+                pi.status = "制作中"
+            total_to_reverse -= reverse_amount
+            if total_to_reverse <= 0:
+                break
+
+    db.flush()
+
+
 def _resolve_order_item(db: Session, item_data: dict):
     """Resolve item_data to (order_item, item_id, item_type, handcraft_order_id)."""
     part_item_id = item_data.get("handcraft_part_item_id")
@@ -188,12 +271,16 @@ def _resolve_order_item(db: Session, item_data: dict):
             raise ValueError(f"HandcraftPartItem not found: {part_item_id}")
         return oi, oi.part_id, "part", oi.handcraft_order_id
     else:
-        if qty is not None and qty != int(qty):
-            raise ValueError("饰品收回数量必须为整数")
         oi = db.query(HandcraftJewelryItem).filter(HandcraftJewelryItem.id == jewelry_item_id).first()
         if oi is None:
             raise ValueError(f"HandcraftJewelryItem not found: {jewelry_item_id}")
-        return oi, oi.jewelry_id, "jewelry", oi.handcraft_order_id
+        if oi.jewelry_id:
+            if qty is not None and qty != int(qty):
+                raise ValueError("饰品收回数量必须为整数")
+            return oi, oi.jewelry_id, "jewelry", oi.handcraft_order_id
+        else:
+            # Part output item
+            return oi, oi.part_id, "jewelry", oi.handcraft_order_id
 
 
 def _enrich_receipt(db: Session, receipt: HandcraftReceipt) -> HandcraftReceipt:
@@ -215,9 +302,15 @@ def _enrich_receipt(db: Session, receipt: HandcraftReceipt) -> HandcraftReceipt:
                 item.handcraft_order_id = oi.handcraft_order_id
                 item.source_qty = float(oi.qty)
                 item.source_received_qty = float(oi.received_qty or 0)
-            jewelry = db.get(Jewelry, item.item_id)
-            if jewelry:
-                item.item_name = jewelry.name
+            if oi and oi.part_id:
+                # Part output item
+                part = db.get(Part, item.item_id)
+                if part:
+                    item.item_name = part.name
+            else:
+                jewelry = db.get(Jewelry, item.item_id)
+                if jewelry:
+                    item.item_name = jewelry.name
     return receipt
 
 
