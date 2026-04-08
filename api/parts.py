@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from schemas.part import BatchCostUpdateRequest, BatchCostUpdateResponse, BatchCostUpdateResultItem, PartCreate, FindOrCreateVariantResponse, PartCostLogResponse, PartImportResponse, PartResponse, PartUpdate, PartVariantCreate
+from schemas.part_bom import PartBomSet
 from services.part import COLOR_VARIANTS, create_part, create_part_variant, find_or_create_variant, get_part, list_part_cost_logs, list_part_variants, list_parts, update_part, update_part_cost, delete_part
+from services.part_bom import set_part_bom, get_part_bom, delete_part_bom_item
 from services.part_import import build_parts_import_template, import_parts_excel
 from api._errors import service_errors
 
@@ -68,6 +70,23 @@ def api_batch_update_costs(body: BatchCostUpdateRequest, db: Session = Depends(g
                 updated=updated,
             ))
     return BatchCostUpdateResponse(updated_count=updated_count, results=results)
+
+
+@router.delete("/bom/{bom_id}", status_code=204)
+def api_delete_part_bom(bom_id: str, db: Session = Depends(get_db)):
+    with service_errors():
+        delete_part_bom_item(db, bom_id)
+
+
+@router.get("/{part_id}/bom")
+def api_get_part_bom(part_id: str, db: Session = Depends(get_db)):
+    return get_part_bom(db, part_id)
+
+
+@router.post("/{part_id}/bom")
+def api_set_part_bom(part_id: str, body: PartBomSet, db: Session = Depends(get_db)):
+    with service_errors():
+        return set_part_bom(db, part_id, body.child_part_id, body.qty_per_unit)
 
 
 @router.post("/{part_id}/find-or-create-variant", response_model=FindOrCreateVariantResponse)
