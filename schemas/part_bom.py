@@ -1,0 +1,19 @@
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict
+
+
+class PartBomSet(BaseModel):
+    child_part_id: str
+    qty_per_unit: float
+
+
+class PartBomResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    parent_part_id: str
+    child_part_id: str
+    qty_per_unit: float
+    child_part_name: Optional[str] = None
+    child_part_image: Optional[str] = None

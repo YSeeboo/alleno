@@ -12,10 +12,21 @@ class HandcraftPartIn(BaseModel):
 
 
 class HandcraftJewelryIn(BaseModel):
-    jewelry_id: str
+    jewelry_id: Optional[str] = None
+    part_id: Optional[str] = None
     qty: int = Field(gt=0)
-    unit: Optional[str] = "套"
+    unit: Optional[str] = None
     note: Optional[str] = None
+
+    @field_validator("part_id")
+    @classmethod
+    def exactly_one_output_id(cls, v, info):
+        jewelry_id = info.data.get("jewelry_id")
+        if not jewelry_id and not v:
+            raise ValueError("产出项必须指定 jewelry_id 或 part_id")
+        if jewelry_id and v:
+            raise ValueError("产出项不能同时指定 jewelry_id 和 part_id")
+        return v
 
 
 class HandcraftCreate(BaseModel):
@@ -39,7 +50,8 @@ class HandcraftJewelryItemResponse(BaseModel):
 
     id: int
     handcraft_order_id: str
-    jewelry_id: str
+    jewelry_id: Optional[str] = None
+    part_id: Optional[str] = None
     qty: int
     received_qty: Optional[int] = None
     status: str
