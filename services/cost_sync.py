@@ -178,6 +178,48 @@ def auto_set_initial_handcraft_cost(db: Session, jewelry_id: str, price: float) 
     db.flush()
 
 
+def auto_set_initial_assembly_cost(db: Session, part_id: str, price: float) -> None:
+    """Sync handcraft receipt part-output price to Part.assembly_cost and recalc unit_cost."""
+    part = db.get(Part, part_id)
+    if part is None:
+        return
+    new_value = Decimal(str(price)).quantize(_Q7, rounding=ROUND_HALF_UP)
+    current = Decimal(str(part.assembly_cost)).quantize(_Q7, rounding=ROUND_HALF_UP) if part.assembly_cost is not None else None
+    if current == new_value:
+        return
+    part.assembly_cost = new_value
+    db.flush()
+    from services.part_bom import recalc_part_unit_cost
+    recalc_part_unit_cost(db, part_id)
+
+
+def detect_handcraft_assembly_cost_diffs(db: Session, receipt) -> list[dict]:
+    """Detect assembly_cost diffs for part output items in a handcraft receipt."""
+    from models.handcraft_order import HandcraftJewelryItem
+
+    diffs = []
+    for ri in receipt.items:
+        if ri.handcraft_jewelry_item_id is None or ri.price is None:
+            continue
+        oi = db.get(HandcraftJewelryItem, ri.handcraft_jewelry_item_id)
+        if oi is None or not oi.part_id:
+            continue
+        part = db.get(Part, oi.part_id)
+        if part is None:
+            continue
+        new_price = float(ri.price)
+        current = float(part.assembly_cost) if part.assembly_cost is not None else None
+        if _compare(current, new_price):
+            diffs.append({
+                "part_id": oi.part_id,
+                "part_name": part.name,
+                "field": "assembly_cost",
+                "current_value": current,
+                "new_value": new_price,
+            })
+    return diffs
+
+
 def detect_handcraft_bead_cost_diffs(db: Session, receipt) -> list[dict]:
     """Detect bead_cost diffs for part items in a handcraft receipt."""
     price_map: Dict[str, Optional[float]] = {}

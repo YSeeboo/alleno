@@ -71,3 +71,133 @@ def test_self_reference_rejected(client, db):
         json={"child_part_id": parent.id, "qty_per_unit": 1.0},
     )
     assert resp.status_code == 400
+
+
+# ──────────────────────────────────────────────────────────────
+# Auto unit_cost recalculation
+# ──────────────────────────────────────────────────────────────
+
+def test_recalc_unit_cost_on_bom_change(client, db):
+    """Setting part BOM auto-recalculates parent unit_cost."""
+    parent, children = _setup_parts(db)
+    # Set child costs
+    children[0].unit_cost = 10.0
+    children[1].unit_cost = 20.0
+    children[2].unit_cost = 5.0
+    db.flush()
+
+    # Add BOM: e*2 + f*1 + g*3
+    client.post(f"/api/parts/{parent.id}/bom", json={"child_part_id": children[0].id, "qty_per_unit": 2.0})
+    client.post(f"/api/parts/{parent.id}/bom", json={"child_part_id": children[1].id, "qty_per_unit": 1.0})
+    client.post(f"/api/parts/{parent.id}/bom", json={"child_part_id": children[2].id, "qty_per_unit": 3.0})
+
+    db.refresh(parent)
+    # Expected: 10*2 + 20*1 + 5*3 = 55, no assembly_cost yet
+    assert float(parent.unit_cost) == 55.0
+
+
+def test_recalc_includes_assembly_cost(client, db):
+    """unit_cost includes assembly_cost."""
+    parent, children = _setup_parts(db)
+    children[0].unit_cost = 10.0
+    parent.assembly_cost = 8.0
+    db.flush()
+
+    client.post(f"/api/parts/{parent.id}/bom", json={"child_part_id": children[0].id, "qty_per_unit": 2.0})
+
+    db.refresh(parent)
+    # Expected: 10*2 + 8 = 28
+    assert float(parent.unit_cost) == 28.0
+
+
+def test_recalc_on_child_cost_change(client, db):
+    """Updating child part unit_cost triggers parent recalc."""
+    parent, children = _setup_parts(db)
+    children[0].unit_cost = 10.0
+    db.flush()
+
+    client.post(f"/api/parts/{parent.id}/bom", json={"child_part_id": children[0].id, "qty_per_unit": 2.0})
+    db.refresh(parent)
+    assert float(parent.unit_cost) == 20.0
+
+    # Update child cost via cost update endpoint
+    from services.part import update_part_cost
+    update_part_cost(db, children[0].id, "purchase_cost", 15.0)
+    db.refresh(parent)
+    # Child unit_cost is now 15 (purchase_cost only), parent = 15*2 = 30
+    assert float(parent.unit_cost) == 30.0
+
+
+def test_recalc_on_bom_delete(client, db):
+    """Deleting a BOM row recalculates parent unit_cost."""
+    parent, children = _setup_parts(db)
+    children[0].unit_cost = 10.0
+    children[1].unit_cost = 20.0
+    db.flush()
+
+    resp1 = client.post(f"/api/parts/{parent.id}/bom", json={"child_part_id": children[0].id, "qty_per_unit": 1.0})
+    resp2 = client.post(f"/api/parts/{parent.id}/bom", json={"child_part_id": children[1].id, "qty_per_unit": 1.0})
+    db.refresh(parent)
+    assert float(parent.unit_cost) == 30.0
+
+    # Delete one BOM row
+    bom_id = resp2.json()["id"]
+    client.delete(f"/api/parts/bom/{bom_id}")
+    db.refresh(parent)
+    assert float(parent.unit_cost) == 10.0
+
+
+def test_recalc_on_assembly_cost_change(client, db):
+    """Updating assembly_cost via PATCH triggers recalc."""
+    parent, children = _setup_parts(db)
+    children[0].unit_cost = 10.0
+    db.flush()
+
+    client.post(f"/api/parts/{parent.id}/bom", json={"child_part_id": children[0].id, "qty_per_unit": 2.0})
+    db.refresh(parent)
+    assert float(parent.unit_cost) == 20.0
+
+    # Update assembly_cost
+    resp = client.patch(f"/api/parts/{parent.id}", json={"assembly_cost": 5.0})
+    assert resp.status_code == 200
+    db.refresh(parent)
+    assert float(parent.unit_cost) == 25.0
+
+
+def test_assembly_cost_synced_from_handcraft_receipt(client, db):
+    """Handcraft receipt price syncs to Part.assembly_cost and triggers recalc."""
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
+
+    parent, children = _setup_parts(db)
+    children[0].unit_cost = 10.0
+    db.flush()
+
+    from services.part_bom import set_part_bom
+    set_part_bom(db, parent.id, children[0].id, 2.0)
+    db.flush()
+
+    # Create processing handcraft order
+    hc = HandcraftOrder(id="HC-COSTSYNC1", supplier_name="手工商C", status="processing")
+    db.add(hc)
+    db.flush()
+
+    hp = HandcraftPartItem(handcraft_order_id=hc.id, part_id=children[0].id, qty=20, status="制作中")
+    hj = HandcraftJewelryItem(handcraft_order_id=hc.id, part_id=parent.id, qty=10, status="制作中")
+    db.add_all([hp, hj])
+    db.flush()
+
+    # Create receipt with price=3.0 per unit
+    resp = client.post("/api/handcraft-receipts/", json={
+        "supplier_name": "手工商C",
+        "items": [{
+            "handcraft_jewelry_item_id": hj.id,
+            "qty": 10,
+            "price": 3.0,
+        }],
+    })
+    assert resp.status_code == 201
+
+    db.refresh(parent)
+    # assembly_cost should be 3.0, unit_cost = 10*2 + 3 = 23
+    assert float(parent.assembly_cost) == 3.0
+    assert float(parent.unit_cost) == 23.0

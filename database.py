@@ -62,7 +62,7 @@ def ensure_schema_compat(target_engine=None):
             if "spec" not in columns:
                 conn.execute(text("ALTER TABLE part ADD COLUMN spec VARCHAR NULL"))
                 logger.warning("Added missing part.spec column")
-            for cost_col in ("purchase_cost", "bead_cost", "plating_cost"):
+            for cost_col in ("purchase_cost", "bead_cost", "plating_cost", "assembly_cost"):
                 if cost_col not in columns:
                     conn.execute(text(f"ALTER TABLE part ADD COLUMN {cost_col} NUMERIC(18,7) NULL"))
                     logger.warning("Added missing part.%s column", cost_col)

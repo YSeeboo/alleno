@@ -23,6 +23,7 @@ class PartUpdate(BaseModel):
     unit: Optional[str] = None
     plating_process: Optional[str] = None
     parent_part_id: Optional[str] = None
+    assembly_cost: Optional[float] = None
 
 
 class PartResponse(BaseModel):
@@ -40,6 +41,7 @@ class PartResponse(BaseModel):
     bead_cost: Optional[float] = None
     plating_cost: Optional[float] = None
     plating_process: Optional[str] = None
+    assembly_cost: Optional[float] = None
     parent_part_id: Optional[str] = None
 
 

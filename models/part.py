@@ -18,6 +18,7 @@ class Part(Base):
     bead_cost = Column(Numeric(18, 7), nullable=True)
     plating_cost = Column(Numeric(18, 7), nullable=True)
     plating_process = Column(String, nullable=True)
+    assembly_cost = Column(Numeric(18, 7), nullable=True)
     spec = Column(String, nullable=True)
     parent_part_id = Column(String, ForeignKey("part.id"), nullable=True)
 

@@ -105,11 +105,15 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
         if has_children:
             raise ValueError("不支持多层嵌套：当前配件已有子配件，不能再挂到其他配件下")
     data.pop("unit_cost", None)
+    assembly_cost_changed = "assembly_cost" in data
     if "spec" in data:
         data["spec"] = (data["spec"].strip() if data["spec"] else None) or None
     for key, value in data.items():
         setattr(part, key, value)
     db.flush()
+    if assembly_cost_changed:
+        from services.part_bom import recalc_part_unit_cost
+        recalc_part_unit_cost(db, part_id)
     return part
 
 
@@ -270,6 +274,13 @@ def _recalc_unit_cost(part: Part) -> None:
     part.unit_cost = total if total else None
 
 
+def _recalc_unit_cost_and_propagate(db: Session, part: Part) -> None:
+    """Recalc unit_cost and propagate to parent parts that reference this part."""
+    _recalc_unit_cost(part)
+    from services.part_bom import recalc_parents_of_child
+    recalc_parents_of_child(db, part.id)
+
+
 def update_part_cost(
     db: Session, part_id: str, field: str, value: float, source_id: Optional[str] = None,
 ) -> Optional[PartCostLog]:
@@ -293,7 +304,7 @@ def update_part_cost(
         return None
 
     setattr(part, field, new_value)
-    _recalc_unit_cost(part)
+    _recalc_unit_cost_and_propagate(db, part)
 
     log = PartCostLog(
         part_id=part_id,

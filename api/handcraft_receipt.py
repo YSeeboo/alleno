@@ -7,7 +7,9 @@ from api._errors import service_errors
 from database import get_db
 from schemas.part import CostDiffItem
 from services.cost_sync import (
+    auto_set_initial_assembly_cost,
     auto_set_initial_handcraft_cost,
+    detect_handcraft_assembly_cost_diffs,
     detect_handcraft_bead_cost_diffs,
     detect_handcraft_jewelry_cost_diffs,
 )
@@ -62,10 +64,15 @@ def api_create_handcraft_receipt(body: HandcraftReceiptCreate, db: Session = Dep
     # Detect diffs BEFORE auto-setting (so old values are still visible)
     cost_diffs = detect_handcraft_bead_cost_diffs(db, receipt)
     cost_diffs += detect_handcraft_jewelry_cost_diffs(db, receipt)
-    # Then sync handcraft_cost for jewelry items
+    cost_diffs += detect_handcraft_assembly_cost_diffs(db, receipt)
+    # Then sync handcraft_cost for jewelry items, assembly_cost for part output items
     for item in receipt.items:
         if item.item_type == "jewelry" and item.price is not None:
-            auto_set_initial_handcraft_cost(db, item.item_id, float(item.price))
+            oi = db.get(HandcraftJewelryItem, item.handcraft_jewelry_item_id) if item.handcraft_jewelry_item_id else None
+            if oi and oi.part_id and not oi.jewelry_id:
+                auto_set_initial_assembly_cost(db, oi.part_id, float(item.price))
+            else:
+                auto_set_initial_handcraft_cost(db, item.item_id, float(item.price))
     resp = HandcraftReceiptResponse.model_validate(receipt)
     resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]
     return resp
@@ -85,10 +92,15 @@ def api_add_handcraft_receipt_items(receipt_id: str, body: HandcraftReceiptAddIt
     # Detect diffs BEFORE auto-setting
     cost_diffs = detect_handcraft_bead_cost_diffs(db, receipt)
     cost_diffs += detect_handcraft_jewelry_cost_diffs(db, receipt)
+    cost_diffs += detect_handcraft_assembly_cost_diffs(db, receipt)
     # Then sync
     for item in receipt.items:
         if item.item_type == "jewelry" and item.price is not None:
-            auto_set_initial_handcraft_cost(db, item.item_id, float(item.price))
+            oi = db.get(HandcraftJewelryItem, item.handcraft_jewelry_item_id) if item.handcraft_jewelry_item_id else None
+            if oi and oi.part_id and not oi.jewelry_id:
+                auto_set_initial_assembly_cost(db, oi.part_id, float(item.price))
+            else:
+                auto_set_initial_handcraft_cost(db, item.item_id, float(item.price))
     resp = HandcraftReceiptResponse.model_validate(receipt)
     resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]
     return resp
