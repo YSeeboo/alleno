@@ -1,6 +1,7 @@
 from .part import Part, PartCostLog
 from .jewelry import Jewelry
 from .bom import Bom
+from .part_bom import PartBom
 from .order import Order, OrderItem, OrderTodoItem, OrderItemLink
 from .inventory_log import InventoryLog
 from .plating_order import PlatingOrder, PlatingOrderItem
@@ -21,6 +22,7 @@ __all__ = [
     "PartCostLog",
     "Jewelry",
     "Bom",
+    "PartBom",
     "Order",
     "OrderItem",
     "OrderTodoItem",
