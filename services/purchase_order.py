@@ -208,6 +208,36 @@ def update_purchase_item(db: Session, order_id: str, item_id: int, data: dict) -
     return item
 
 
+def add_purchase_item(db: Session, order_id: str, data: dict) -> PurchaseOrderItem:
+    order = get_purchase_order(db, order_id)
+    if order is None:
+        raise ValueError(f"PurchaseOrder not found: {order_id}")
+    if order.status == "已付款":
+        raise ValueError("已付款的采购单不能添加明细")
+
+    _require_part(db, data["part_id"])
+
+    price = Decimal(str(data["price"])).quantize(_Q7, rounding=ROUND_HALF_UP) if data.get("price") is not None else None
+    qty = Decimal(str(data["qty"]))
+    amount = (qty * price).quantize(_Q7, rounding=ROUND_HALF_UP) if price is not None else None
+
+    item = PurchaseOrderItem(
+        purchase_order_id=order_id,
+        part_id=data["part_id"],
+        qty=data["qty"],
+        unit=data.get("unit", "个"),
+        price=price,
+        amount=amount,
+        note=data.get("note"),
+    )
+    db.add(item)
+    add_stock(db, "part", data["part_id"], data["qty"], "采购入库")
+    db.flush()
+    _recalc_total(db, order)
+    db.flush()
+    return item
+
+
 def delete_purchase_item(db: Session, order_id: str, item_id: int) -> None:
     order = get_purchase_order(db, order_id)
     if order is None:

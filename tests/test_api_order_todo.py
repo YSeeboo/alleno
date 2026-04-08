@@ -843,6 +843,54 @@ def test_link_supplier_already_linked(client, db):
     assert resp.status_code == 400
 
 
+def test_link_supplier_merges_same_supplier_same_day(client, db):
+    """Two batches linked to the same supplier on the same day share one HC order."""
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
+    order_id, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
+    add_stock(db, "part", part_a.id, 2000, "入库")
+    add_stock(db, "part", part_b.id, 200, "入库")
+
+    qty = db.query(OrderItem).filter_by(order_id=order_id).first().quantity
+    # Create two batches, each 50 qty
+    b1 = client.post(
+        f"/api/orders/{order_id}/todo-batch",
+        json={"items": [{"jewelry_id": jewelry.id, "quantity": qty // 2}]},
+    )
+    b2 = client.post(
+        f"/api/orders/{order_id}/todo-batch",
+        json={"items": [{"jewelry_id": jewelry.id, "quantity": qty - qty // 2}]},
+    )
+    batch1_id = b1.json()["id"]
+    batch2_id = b2.json()["id"]
+
+    resp1 = client.post(
+        f"/api/orders/{order_id}/todo-batch/{batch1_id}/link-supplier",
+        json={"supplier_name": "合并商家"},
+    )
+    assert resp1.status_code == 200
+    hc_id_1 = resp1.json()["handcraft_order_id"]
+
+    resp2 = client.post(
+        f"/api/orders/{order_id}/todo-batch/{batch2_id}/link-supplier",
+        json={"supplier_name": "合并商家"},
+    )
+    assert resp2.status_code == 200
+    hc_id_2 = resp2.json()["handcraft_order_id"]
+
+    # Same handcraft order
+    assert hc_id_1 == hc_id_2
+
+    # Total HC orders should be 1
+    hc_count = db.query(HandcraftOrder).filter_by(supplier_name="合并商家").count()
+    assert hc_count == 1
+
+    # Items from both batches are on the same order
+    hc_parts = db.query(HandcraftPartItem).filter_by(handcraft_order_id=hc_id_1).all()
+    hc_jewelries = db.query(HandcraftJewelryItem).filter_by(handcraft_order_id=hc_id_1).all()
+    assert len(hc_jewelries) == 2  # one per batch
+    assert len(hc_parts) == 4  # 2 parts × 2 batches
+
+
 # --- Delete Batch ---
 
 
@@ -1666,3 +1714,301 @@ def test_get_order_includes_extra_info(client, db):
     assert "mark_text" in data
     assert "mark_image" in data
     assert "note" in data
+
+
+# --- Customer Code ---
+
+def test_update_item_customer_code(client, db):
+    """PATCH updates customer_code on a single order item."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+    item = db.query(OrderItem).filter_by(order_id=order_id).first()
+    resp = client.patch(
+        f"/api/orders/{order_id}/items/{item.id}",
+        json={"customer_code": "MG-01"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["customer_code"] == "MG-01"
+
+
+def test_update_item_customer_code_clear(client, db):
+    """PATCH can clear customer_code by setting to null."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+    item = db.query(OrderItem).filter_by(order_id=order_id).first()
+    client.patch(
+        f"/api/orders/{order_id}/items/{item.id}",
+        json={"customer_code": "MG-01"},
+    )
+    resp = client.patch(
+        f"/api/orders/{order_id}/items/{item.id}",
+        json={"customer_code": None},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["customer_code"] is None
+
+
+def test_batch_fill_customer_code(client, db):
+    """POST batch fills sequential customer codes."""
+    from models.part import Part
+    from models.jewelry import Jewelry
+    from models.bom import Bom
+
+    p1 = Part(id="PJ-X-00099", name="配件A", category="小配件")
+    db.add(p1)
+    db.flush()
+
+    jewelries = []
+    for i in range(3):
+        j = Jewelry(id=f"SP-TEST-{i}", name=f"饰品{i}", category="项链")
+        db.add(j)
+        db.flush()
+        bom = Bom(id=f"BM-TEST-{i}", jewelry_id=j.id, part_id=p1.id, qty_per_unit=1)
+        db.add(bom)
+        jewelries.append(j)
+    db.flush()
+
+    from services.order import create_order
+    order = create_order(db, "测试客户", [
+        {"jewelry_id": jewelries[0].id, "quantity": 10, "unit_price": 100},
+        {"jewelry_id": jewelries[1].id, "quantity": 20, "unit_price": 200},
+        {"jewelry_id": jewelries[2].id, "quantity": 30, "unit_price": 300},
+    ])
+    db.flush()
+
+    items = db.query(OrderItem).filter_by(order_id=order.id).order_by(OrderItem.id).all()
+    item_ids = [it.id for it in items]
+
+    resp = client.post(
+        f"/api/orders/{order.id}/items/batch-customer-code",
+        json={
+            "item_ids": item_ids,
+            "prefix": "MG-",
+            "start_number": 2,
+            "padding": 2,
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["updated_count"] == 3
+
+    items_resp = client.get(f"/api/orders/{order.id}/items")
+    codes = [it["customer_code"] for it in sorted(items_resp.json(), key=lambda x: x["id"])]
+    assert codes == ["MG-02", "MG-03", "MG-04"]
+
+
+def test_batch_fill_customer_code_padding(client, db):
+    """Batch fill respects padding parameter."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+    item = db.query(OrderItem).filter_by(order_id=order_id).first()
+    resp = client.post(
+        f"/api/orders/{order_id}/items/batch-customer-code",
+        json={
+            "item_ids": [item.id],
+            "prefix": "AB",
+            "start_number": 5,
+            "padding": 3,
+        },
+    )
+    assert resp.status_code == 200
+    updated = client.get(f"/api/orders/{order_id}/items")
+    assert updated.json()[0]["customer_code"] == "AB005"
+
+
+def test_get_items_includes_customer_code(client, db):
+    """GET items response includes customer_code field."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+    resp = client.get(f"/api/orders/{order_id}/items")
+    assert resp.status_code == 200
+    assert "customer_code" in resp.json()[0]
+
+
+def test_update_customer_code_cancelled_order_rejected(client, db):
+    """Cancelled orders reject customer_code updates."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+    client.patch(f"/api/orders/{order_id}/status", json={"status": "已取消"})
+    item = db.query(OrderItem).filter_by(order_id=order_id).first()
+    resp = client.patch(
+        f"/api/orders/{order_id}/items/{item.id}",
+        json={"customer_code": "MG-01"},
+    )
+    assert resp.status_code == 400
+
+
+def test_batch_fill_cancelled_order_rejected(client, db):
+    """Cancelled orders reject batch customer_code fill."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+    client.patch(f"/api/orders/{order_id}/status", json={"status": "已取消"})
+    item = db.query(OrderItem).filter_by(order_id=order_id).first()
+    resp = client.post(
+        f"/api/orders/{order_id}/items/batch-customer-code",
+        json={"item_ids": [item.id], "prefix": "MG-", "start_number": 1, "padding": 2},
+    )
+    assert resp.status_code == 400
+
+
+def test_patch_empty_body_rejected(client, db):
+    """PATCH with empty body (no customer_code) returns 400."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+    item = db.query(OrderItem).filter_by(order_id=order_id).first()
+    resp = client.patch(
+        f"/api/orders/{order_id}/items/{item.id}",
+        json={},
+    )
+    assert resp.status_code == 400
+
+
+def test_batch_fill_empty_prefix_rejected(client, db):
+    """Batch fill with empty prefix is rejected by schema validation."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+    item = db.query(OrderItem).filter_by(order_id=order_id).first()
+    resp = client.post(
+        f"/api/orders/{order_id}/items/batch-customer-code",
+        json={"item_ids": [item.id], "prefix": "", "start_number": 1, "padding": 2},
+    )
+    assert resp.status_code == 422
+
+
+def test_batch_fill_negative_start_rejected(client, db):
+    """Batch fill with negative start_number is rejected."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+    item = db.query(OrderItem).filter_by(order_id=order_id).first()
+    resp = client.post(
+        f"/api/orders/{order_id}/items/batch-customer-code",
+        json={"item_ids": [item.id], "prefix": "MG-", "start_number": -1, "padding": 2},
+    )
+    assert resp.status_code == 422
+
+
+def test_batch_fill_zero_padding_rejected(client, db):
+    """Batch fill with padding=0 is rejected."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+    item = db.query(OrderItem).filter_by(order_id=order_id).first()
+    resp = client.post(
+        f"/api/orders/{order_id}/items/batch-customer-code",
+        json={"item_ids": [item.id], "prefix": "MG-", "start_number": 1, "padding": 0},
+    )
+    assert resp.status_code == 422
+
+
+def test_patch_customer_code_order_not_found(client, db):
+    """PATCH on non-existent order returns 404."""
+    resp = client.patch(
+        "/api/orders/OR-9999/items/1",
+        json={"customer_code": "MG-01"},
+    )
+    assert resp.status_code == 404
+
+
+def test_batch_fill_order_not_found(client, db):
+    """Batch fill on non-existent order returns 404."""
+    resp = client.post(
+        "/api/orders/OR-9999/items/batch-customer-code",
+        json={"item_ids": [1], "prefix": "MG-", "start_number": 1, "padding": 2},
+    )
+    assert resp.status_code == 404
+
+
+# ---- batch progress API ----
+
+def test_batch_progress(client, db):
+    """GET /api/orders/batch-progress returns progress for multiple orders."""
+    order_id_1, _, _, jewelry_1 = _setup_order_with_bom(db, client)
+    order_id_2, _, _, jewelry_2 = _setup_order_with_bom(db, client)
+
+    # Give jewelry_1 enough stock to be "completed"
+    order_item_1 = db.query(OrderItem).filter_by(order_id=order_id_1).first()
+    add_stock(db, "jewelry", jewelry_1.id, order_item_1.quantity, "入库")
+    db.flush()
+
+    resp = client.get(f"/api/orders/batch-progress?order_ids={order_id_1},{order_id_2}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 2
+    by_id = {d["order_id"]: d for d in data}
+    assert by_id[order_id_1]["completed"] == 1
+    assert by_id[order_id_2]["completed"] == 0
+
+
+def test_batch_progress_empty(client, db):
+    """Batch progress with empty order_ids returns empty list."""
+    resp = client.get("/api/orders/batch-progress?order_ids=")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+# ---- batch link duplicate idempotency ----
+
+def test_batch_link_duplicate_ids(client, db):
+    """Duplicate item IDs in batch_link should be deduplicated, not cause unique constraint errors."""
+    order_id, part_a, part_b, _ = _setup_order_with_bom(db, client)
+    client.post(f"/api/orders/{order_id}/todo")
+
+    add_stock(db, "part", part_a.id, 5000, "入库")
+    resp = client.post("/api/plating/", json={
+        "supplier_name": "电镀厂A",
+        "items": [{"part_id": part_a.id, "qty": 1000}],
+    })
+    plating_id = resp.json()["id"]
+    client.post(f"/api/plating/{plating_id}/send")
+    items = client.get(f"/api/plating/{plating_id}/items").json()
+    poi_id = items[0]["id"]
+
+    # Send the same ID twice — should not crash
+    resp = client.post(f"/api/orders/{order_id}/links/batch", json={
+        "order_id": order_id,
+        "plating_order_item_ids": [poi_id, poi_id],
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["linked"] == 1
+
+
+# ---- plating batch order-links API ----
+
+def test_plating_all_item_order_links(client, db):
+    """GET /api/plating/{id}/items/order-links returns links for all items in one call."""
+    order_id, part_a, part_b, _ = _setup_order_with_bom(db, client)
+    client.post(f"/api/orders/{order_id}/todo")
+
+    add_stock(db, "part", part_a.id, 5000, "入库")
+    add_stock(db, "part", part_b.id, 5000, "入库")
+    resp = client.post("/api/plating/", json={
+        "supplier_name": "电镀厂A",
+        "items": [
+            {"part_id": part_a.id, "qty": 1000},
+            {"part_id": part_b.id, "qty": 100},
+        ],
+    })
+    plating_id = resp.json()["id"]
+    client.post(f"/api/plating/{plating_id}/send")
+    items = client.get(f"/api/plating/{plating_id}/items").json()
+    poi_ids = [item["id"] for item in items]
+
+    # Link them to the order
+    client.post(f"/api/orders/{order_id}/links/batch", json={
+        "order_id": order_id,
+        "plating_order_item_ids": poi_ids,
+    })
+
+    # Batch fetch all links
+    resp = client.get(f"/api/plating/{plating_id}/items/order-links")
+    assert resp.status_code == 200
+    data = resp.json()
+    # Should have entries for both items
+    assert len(data) == 2
+    for item_id_str, links in data.items():
+        assert len(links) == 1
+        assert links[0]["order_id"] == order_id
+
+
+def test_plating_all_item_order_links_empty(client, db):
+    """Batch order-links returns empty dict when no links exist."""
+    add_stock(db, "part", create_part(db, {"name": "P", "category": "小配件"}).id, 100, "入库")
+    part = create_part(db, {"name": "Q", "category": "小配件"})
+    add_stock(db, "part", part.id, 100, "入库")
+    resp = client.post("/api/plating/", json={
+        "supplier_name": "电镀厂B",
+        "items": [{"part_id": part.id, "qty": 10}],
+    })
+    plating_id = resp.json()["id"]
+    resp = client.get(f"/api/plating/{plating_id}/items/order-links")
+    assert resp.status_code == 200
+    assert resp.json() == {}

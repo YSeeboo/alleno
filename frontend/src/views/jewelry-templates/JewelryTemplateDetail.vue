@@ -34,9 +34,6 @@
             {{ template.created_at ? new Date(template.created_at).toLocaleString('zh-CN') : '-' }}
           </n-descriptions-item>
         </n-descriptions>
-        <n-space style="margin-top: 12px;">
-          <n-button type="primary" size="small" :loading="saving" @click="saveBasic">保存基本信息</n-button>
-        </n-space>
       </n-card>
 
       <n-card title="配件列表">
@@ -57,10 +54,11 @@
         <n-button dashed style="width: 100%; margin-bottom: 12px;" @click="items.push({ part_id: null, qty_per_unit: 1 })">
           + 添加配件行
         </n-button>
-        <n-space justify="end">
-          <n-button type="primary" :loading="savingItems" @click="saveItems">保存配件列表</n-button>
-        </n-space>
       </n-card>
+
+      <n-space justify="end" style="margin-top: 16px;">
+        <n-button type="primary" size="large" :loading="saving" @click="saveAll">保存</n-button>
+      </n-space>
     </n-spin>
 
     <ImageUploadModal
@@ -91,7 +89,6 @@ const message = useMessage()
 
 const loading = ref(true)
 const saving = ref(false)
-const savingItems = ref(false)
 const showImageModal = ref(false)
 const template = ref(null)
 const editForm = reactive({ name: '', note: '', image: '' })
@@ -110,33 +107,21 @@ const loadTemplate = async () => {
   })
 }
 
-const saveBasic = async () => {
+const saveAll = async () => {
+  const validItems = items.filter((i) => i.part_id)
+  if (validItems.length === 0) { message.warning('模板至少需要一个配件'); return }
   saving.value = true
   try {
     await updateTemplate(route.params.id, {
       name: editForm.name,
       note: editForm.note || null,
       image: editForm.image || null,
+      items: validItems.map((i) => ({ part_id: i.part_id, qty_per_unit: i.qty_per_unit })),
     })
-    message.success('基本信息已保存')
+    message.success('已保存')
     await loadTemplate()
   } finally {
     saving.value = false
-  }
-}
-
-const saveItems = async () => {
-  const validItems = items.filter((i) => i.part_id)
-  if (validItems.length === 0) { message.warning('模板至少需要一个配件'); return }
-  savingItems.value = true
-  try {
-    await updateTemplate(route.params.id, {
-      items: validItems.map((i) => ({ part_id: i.part_id, qty_per_unit: i.qty_per_unit })),
-    })
-    message.success('配件列表已保存')
-    await loadTemplate()
-  } finally {
-    savingItems.value = false
   }
 }
 

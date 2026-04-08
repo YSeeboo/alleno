@@ -29,7 +29,7 @@
 import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
-import { listOrders, getProgress } from '@/api/orders'
+import { listOrders, batchGetProgress } from '@/api/orders'
 import { fmtMoney } from '@/utils/ui'
 
 const router = useRouter()
@@ -51,15 +51,17 @@ const load = async () => {
     if (filterStatus.value) params.status = filterStatus.value
     const { data } = await listOrders(params)
     orders.value = data
-    // Load progress for all orders in parallel
-    const progressResults = await Promise.all(
-      data.map((o) => getProgress(o.id).then((r) => r.data).catch(() => null))
-    )
-    const map = {}
-    progressResults.forEach((p) => {
-      if (p) map[p.order_id] = p
-    })
-    progressMap.value = map
+    // Batch load progress for all orders in one request
+    if (data.length) {
+      const { data: progressResults } = await batchGetProgress(data.map((o) => o.id))
+      const map = {}
+      progressResults.forEach((p) => {
+        if (p) map[p.order_id] = p
+      })
+      progressMap.value = map
+    } else {
+      progressMap.value = {}
+    }
   } finally {
     loading.value = false
   }

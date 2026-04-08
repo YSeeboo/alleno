@@ -54,13 +54,37 @@ def create_handcraft_order(
         _require_part(db, p["part_id"])
     for j in jewelries or []:
         _require_jewelry(db, j["jewelry_id"])
-    order_id = _next_id(db, HandcraftOrder, "HC")
-    order = HandcraftOrder(id=order_id, supplier_name=supplier_name, status="pending", note=note)
-    db.add(order)
-    db.flush()
+
+    # Auto-merge: reuse existing pending order for same supplier on same day
+    from time_utils import now_beijing
+    today_beijing = now_beijing().date()
+    existing = (
+        db.query(HandcraftOrder)
+        .filter(
+            HandcraftOrder.supplier_name == supplier_name,
+            HandcraftOrder.status == "pending",
+            func.cast(HandcraftOrder.created_at, Date) == today_beijing,
+        )
+        .order_by(HandcraftOrder.created_at.asc())
+        .first()
+    )
+
+    merged = False
+    if existing:
+        order = existing
+        merged = True
+        if note:
+            order.note = f"{order.note}; {note}" if order.note else note
+            db.flush()
+    else:
+        order_id = _next_id(db, HandcraftOrder, "HC")
+        order = HandcraftOrder(id=order_id, supplier_name=supplier_name, status="pending", note=note)
+        db.add(order)
+        db.flush()
+
     for p in parts:
         db.add(HandcraftPartItem(
-            handcraft_order_id=order_id,
+            handcraft_order_id=order.id,
             part_id=p["part_id"],
             qty=p["qty"],
             bom_qty=p.get("bom_qty"),
@@ -69,7 +93,7 @@ def create_handcraft_order(
         ))
     for j in jewelries or []:
         db.add(HandcraftJewelryItem(
-            handcraft_order_id=order_id,
+            handcraft_order_id=order.id,
             jewelry_id=j["jewelry_id"],
             qty=j["qty"],
             received_qty=0,
@@ -78,6 +102,7 @@ def create_handcraft_order(
             note=j.get("note"),
         ))
     db.flush()
+    order.merged = merged
     return order
 
 

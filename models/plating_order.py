@@ -37,7 +37,7 @@ class PlatingOrderItem(Base):
     __tablename__ = "plating_order_item"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    plating_order_id = Column(String, ForeignKey("plating_order.id"), nullable=False)
+    plating_order_id = Column(String, ForeignKey("plating_order.id"), nullable=False, index=True)
     part_id = Column(String, ForeignKey("part.id"), nullable=False)
     qty = Column(Numeric(10, 4), nullable=False)
     received_qty = Column(Numeric(10, 4), nullable=True, default=0)

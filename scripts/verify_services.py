@@ -9,11 +9,17 @@ os.environ.setdefault("DATABASE_URL", "postgresql://allen:allen@localhost:5432/a
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from db_safety import assert_safe_test_database_url
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 import models
 from database import Base, engine
+
+assert_safe_test_database_url(
+    os.environ["DATABASE_URL"],
+    context="scripts/verify_services.py",
+)
 
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)

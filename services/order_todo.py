@@ -70,10 +70,24 @@ def get_todo(db: Session, order_id: str) -> list[dict]:
         .order_by(OrderTodoItem.id.asc())
         .all()
     )
+    if not todos:
+        return []
+
+    # Batch load parts
+    part_ids = list({t.part_id for t in todos})
+    parts_db = db.query(Part).filter(Part.id.in_(part_ids)).all()
+    part_map = {p.id: p for p in parts_db}
+
+    # Batch load stocks
+    stock_map = batch_get_stock(db, "part", part_ids)
+
+    # Batch load linked production
+    linked_map = _batch_get_linked_production(db, [t.id for t in todos])
+
     results = []
     for todo in todos:
-        part = db.get(Part, todo.part_id)
-        stock = get_stock(db, "part", todo.part_id)
+        part = part_map.get(todo.part_id)
+        stock = stock_map.get(todo.part_id, 0.0)
         required = float(todo.required_qty)
         results.append({
             "id": todo.id,
@@ -85,52 +99,69 @@ def get_todo(db: Session, order_id: str) -> list[dict]:
             "stock_qty": stock,
             "gap": max(0.0, required - stock),
             "is_complete": stock >= required,
-            "linked_production": _get_linked_production(db, todo.id),
+            "linked_production": linked_map.get(todo.id, []),
         })
     return results
 
 
+def _batch_get_linked_production(db: Session, todo_item_ids: list[int]) -> dict[int, list[dict]]:
+    """Batch-load linked production items for multiple todo items. Returns {todo_item_id: [...]]}."""
+    if not todo_item_ids:
+        return {}
+
+    links = db.query(OrderItemLink).filter(
+        OrderItemLink.order_todo_item_id.in_(todo_item_ids)
+    ).all()
+    if not links:
+        return {}
+
+    # Collect all production item IDs by type
+    plating_ids = [l.plating_order_item_id for l in links if l.plating_order_item_id]
+    handcraft_ids = [l.handcraft_part_item_id for l in links if l.handcraft_part_item_id]
+    purchase_ids = [l.purchase_order_item_id for l in links if l.purchase_order_item_id]
+
+    # Batch load all production items
+    poi_map = {}
+    if plating_ids:
+        for poi in db.query(PlatingOrderItem).filter(PlatingOrderItem.id.in_(plating_ids)).all():
+            poi_map[poi.id] = poi
+    hpi_map = {}
+    if handcraft_ids:
+        for hpi in db.query(HandcraftPartItem).filter(HandcraftPartItem.id.in_(handcraft_ids)).all():
+            hpi_map[hpi.id] = hpi
+    pui_map = {}
+    if purchase_ids:
+        for pui in db.query(PurchaseOrderItem).filter(PurchaseOrderItem.id.in_(purchase_ids)).all():
+            pui_map[pui.id] = pui
+
+    # Build result grouped by todo_item_id
+    result: dict[int, list[dict]] = {}
+    for link in links:
+        tid = link.order_todo_item_id
+        entry = None
+        if link.plating_order_item_id:
+            poi = poi_map.get(link.plating_order_item_id)
+            if poi:
+                entry = {"link_id": link.id, "type": "plating", "order_id": poi.plating_order_id,
+                         "item_id": poi.id, "part_id": poi.part_id, "status": poi.status}
+        elif link.handcraft_part_item_id:
+            hpi = hpi_map.get(link.handcraft_part_item_id)
+            if hpi:
+                entry = {"link_id": link.id, "type": "handcraft_part", "order_id": hpi.handcraft_order_id,
+                         "item_id": hpi.id, "part_id": hpi.part_id, "status": hpi.status}
+        elif link.purchase_order_item_id:
+            pui = pui_map.get(link.purchase_order_item_id)
+            if pui:
+                entry = {"link_id": link.id, "type": "purchase", "order_id": pui.purchase_order_id,
+                         "item_id": pui.id, "part_id": pui.part_id, "status": "已采购"}
+        if entry:
+            result.setdefault(tid, []).append(entry)
+    return result
+
+
 def _get_linked_production(db: Session, todo_item_id: int) -> list[dict]:
     """获取关联到某 TodoList 行的所有生产项及状态。"""
-    links = db.query(OrderItemLink).filter(
-        OrderItemLink.order_todo_item_id == todo_item_id
-    ).all()
-    result = []
-    for link in links:
-        if link.plating_order_item_id:
-            poi = db.get(PlatingOrderItem, link.plating_order_item_id)
-            if poi:
-                result.append({
-                    "link_id": link.id,
-                    "type": "plating",
-                    "order_id": poi.plating_order_id,
-                    "item_id": poi.id,
-                    "part_id": poi.part_id,
-                    "status": poi.status,
-                })
-        elif link.handcraft_part_item_id:
-            hpi = db.get(HandcraftPartItem, link.handcraft_part_item_id)
-            if hpi:
-                result.append({
-                    "link_id": link.id,
-                    "type": "handcraft_part",
-                    "order_id": hpi.handcraft_order_id,
-                    "item_id": hpi.id,
-                    "part_id": hpi.part_id,
-                    "status": hpi.status,
-                })
-        elif link.purchase_order_item_id:
-            poi = db.get(PurchaseOrderItem, link.purchase_order_item_id)
-            if poi:
-                result.append({
-                    "link_id": link.id,
-                    "type": "purchase",
-                    "order_id": poi.purchase_order_id,
-                    "item_id": poi.id,
-                    "part_id": poi.part_id,
-                    "status": "已采购",
-                })
-    return result
+    return _batch_get_linked_production(db, [todo_item_id]).get(todo_item_id, [])
 
 
 def create_link(db: Session, data: dict) -> OrderItemLink:
@@ -254,65 +285,89 @@ def batch_link(
     linked = 0
     skipped = []
 
-    for poi_id in (plating_order_item_ids or []):
-        poi = db.get(PlatingOrderItem, poi_id)
-        if poi is None:
-            continue
-        # 检查是否已关联
-        existing = db.query(OrderItemLink).filter(
-            OrderItemLink.plating_order_item_id == poi_id
-        ).first()
-        if existing:
+    # Deduplicate input IDs to preserve idempotency (unique constraint on link columns)
+    _plating_ids = list(dict.fromkeys(plating_order_item_ids or []))
+    _handcraft_ids = list(dict.fromkeys(handcraft_part_item_ids or []))
+    _purchase_ids = list(dict.fromkeys(purchase_order_item_ids or []))
+
+    # Batch load all production items
+    poi_map = {}
+    if _plating_ids:
+        for poi in db.query(PlatingOrderItem).filter(PlatingOrderItem.id.in_(_plating_ids)).all():
+            poi_map[poi.id] = poi
+    hpi_map = {}
+    if _handcraft_ids:
+        for hpi in db.query(HandcraftPartItem).filter(HandcraftPartItem.id.in_(_handcraft_ids)).all():
+            hpi_map[hpi.id] = hpi
+    pui_map = {}
+    if _purchase_ids:
+        for pui in db.query(PurchaseOrderItem).filter(PurchaseOrderItem.id.in_(_purchase_ids)).all():
+            pui_map[pui.id] = pui
+
+    # Batch check existing links
+    existing_plating = set()
+    if _plating_ids:
+        existing_plating = {
+            r[0] for r in db.query(OrderItemLink.plating_order_item_id)
+            .filter(OrderItemLink.plating_order_item_id.in_(_plating_ids)).all()
+        }
+    existing_handcraft = set()
+    if _handcraft_ids:
+        existing_handcraft = {
+            r[0] for r in db.query(OrderItemLink.handcraft_part_item_id)
+            .filter(OrderItemLink.handcraft_part_item_id.in_(_handcraft_ids)).all()
+        }
+    existing_purchase = set()
+    if _purchase_ids:
+        existing_purchase = {
+            r[0] for r in db.query(OrderItemLink.purchase_order_item_id)
+            .filter(OrderItemLink.purchase_order_item_id.in_(_purchase_ids)).all()
+        }
+
+    # Batch load part names for skipped items
+    all_part_ids = set()
+    for poi in poi_map.values():
+        all_part_ids.add(poi.part_id)
+    for hpi in hpi_map.values():
+        all_part_ids.add(hpi.part_id)
+    for pui in pui_map.values():
+        all_part_ids.add(pui.part_id)
+    part_name_map = {}
+    if all_part_ids:
+        for p in db.query(Part).filter(Part.id.in_(list(all_part_ids))).all():
+            part_name_map[p.id] = p.name
+
+    for poi_id in _plating_ids:
+        poi = poi_map.get(poi_id)
+        if poi is None or poi_id in existing_plating:
             continue
         todo_id = todo_by_part.get(poi.part_id)
         if todo_id is None:
-            part = db.get(Part, poi.part_id)
-            skipped.append(part.name if part else poi.part_id)
+            skipped.append(part_name_map.get(poi.part_id, poi.part_id))
             continue
-        db.add(OrderItemLink(
-            order_todo_item_id=todo_id,
-            plating_order_item_id=poi_id,
-        ))
+        db.add(OrderItemLink(order_todo_item_id=todo_id, plating_order_item_id=poi_id))
         linked += 1
 
-    for hpi_id in (handcraft_part_item_ids or []):
-        hpi = db.get(HandcraftPartItem, hpi_id)
-        if hpi is None:
-            continue
-        existing = db.query(OrderItemLink).filter(
-            OrderItemLink.handcraft_part_item_id == hpi_id
-        ).first()
-        if existing:
+    for hpi_id in _handcraft_ids:
+        hpi = hpi_map.get(hpi_id)
+        if hpi is None or hpi_id in existing_handcraft:
             continue
         todo_id = todo_by_part.get(hpi.part_id)
         if todo_id is None:
-            part = db.get(Part, hpi.part_id)
-            skipped.append(part.name if part else hpi.part_id)
+            skipped.append(part_name_map.get(hpi.part_id, hpi.part_id))
             continue
-        db.add(OrderItemLink(
-            order_todo_item_id=todo_id,
-            handcraft_part_item_id=hpi_id,
-        ))
+        db.add(OrderItemLink(order_todo_item_id=todo_id, handcraft_part_item_id=hpi_id))
         linked += 1
 
-    for poi_id in (purchase_order_item_ids or []):
-        poi = db.get(PurchaseOrderItem, poi_id)
-        if poi is None:
+    for poi_id in _purchase_ids:
+        pui = pui_map.get(poi_id)
+        if pui is None or poi_id in existing_purchase:
             continue
-        existing = db.query(OrderItemLink).filter(
-            OrderItemLink.purchase_order_item_id == poi_id
-        ).first()
-        if existing:
-            continue
-        todo_id = todo_by_part.get(poi.part_id)
+        todo_id = todo_by_part.get(pui.part_id)
         if todo_id is None:
-            part = db.get(Part, poi.part_id)
-            skipped.append(part.name if part else poi.part_id)
+            skipped.append(part_name_map.get(pui.part_id, pui.part_id))
             continue
-        db.add(OrderItemLink(
-            order_todo_item_id=todo_id,
-            purchase_order_item_id=poi_id,
-        ))
+        db.add(OrderItemLink(order_todo_item_id=todo_id, purchase_order_item_id=poi_id))
         linked += 1
 
     db.flush()
@@ -340,16 +395,42 @@ def get_links_for_production_item(
         return []
 
     links = q.all()
+    if not links:
+        return []
+
+    # Batch load todo items to resolve order_ids
+    todo_ids = [l.order_todo_item_id for l in links if l.order_todo_item_id]
+    todo_map = {}
+    if todo_ids:
+        for t in db.query(OrderTodoItem).filter(OrderTodoItem.id.in_(todo_ids)).all():
+            todo_map[t.id] = t
+
+    # Collect all order_ids
+    order_ids = set()
+    for link in links:
+        oid = link.order_id
+        if link.order_todo_item_id:
+            todo = todo_map.get(link.order_todo_item_id)
+            oid = todo.order_id if todo else None
+        if oid:
+            order_ids.add(oid)
+
+    # Batch load orders
+    order_map = {}
+    if order_ids:
+        for o in db.query(Order).filter(Order.id.in_(list(order_ids))).all():
+            order_map[o.id] = o
+
     result = []
     for link in links:
-        order_id = link.order_id
+        oid = link.order_id
         if link.order_todo_item_id:
-            todo = db.get(OrderTodoItem, link.order_todo_item_id)
-            order_id = todo.order_id if todo else None
-        if order_id:
-            order = db.query(Order).filter(Order.id == order_id).first()
+            todo = todo_map.get(link.order_todo_item_id)
+            oid = todo.order_id if todo else None
+        if oid:
+            order = order_map.get(oid)
             result.append({
-                "order_id": order_id,
+                "order_id": oid,
                 "customer_name": order.customer_name if order else None,
                 "link_id": link.id,
             })
@@ -614,6 +695,9 @@ def _build_batch_response(db: Session, batch, batch_jewelries, todo_items) -> di
 
     allocated = batch.handcraft_order_id is not None
 
+    # Batch load linked production for all todo items
+    linked_map = _batch_get_linked_production(db, [t.id for t in todo_items])
+
     items_list = []
     for t in todo_items:
         p = part_info.get(t.part_id)
@@ -636,7 +720,7 @@ def _build_batch_response(db: Session, batch, batch_jewelries, todo_items) -> di
             "stock_qty": stock_val,
             "gap": gap_val,
             "is_allocated": allocated,
-            "linked_production": _get_linked_production(db, t.id),
+            "linked_production": linked_map.get(t.id, []),
         })
 
     return {
@@ -652,6 +736,9 @@ def _build_batch_response(db: Session, batch, batch_jewelries, todo_items) -> di
 
 def link_supplier(db: Session, order_id: str, batch_id: int, supplier_name: str) -> dict:
     """Link a handcraft supplier to a batch, creating a HandcraftOrder."""
+    supplier_name = supplier_name.strip()
+    if not supplier_name:
+        raise ValueError("供应商名称不能为空")
     from models.supplier import Supplier
     from models.handcraft_order import HandcraftOrder as HCOrder
     from services._helpers import _next_id
@@ -706,11 +793,28 @@ def link_supplier(db: Session, order_id: str, batch_id: int, supplier_name: str)
         db.add(supplier)
         db.flush()
 
-    # Create handcraft order
-    hc_id = _next_id(db, HCOrder, "HC")
-    hc = HCOrder(id=hc_id, supplier_name=supplier_name, status="pending")
-    db.add(hc)
-    db.flush()
+    # Auto-merge: reuse existing pending order for same supplier on same day
+    from sqlalchemy import Date, func as sa_func
+    from time_utils import now_beijing
+    today_beijing = now_beijing().date()
+    existing_hc = (
+        db.query(HCOrder)
+        .filter(
+            HCOrder.supplier_name == supplier_name,
+            HCOrder.status == "pending",
+            sa_func.cast(HCOrder.created_at, Date) == today_beijing,
+        )
+        .order_by(HCOrder.created_at.asc())
+        .first()
+    )
+    if existing_hc:
+        hc = existing_hc
+        hc_id = hc.id
+    else:
+        hc_id = _next_id(db, HCOrder, "HC")
+        hc = HCOrder(id=hc_id, supplier_name=supplier_name, status="pending")
+        db.add(hc)
+        db.flush()
 
     # Migrate parts: batch todo items → HandcraftPartItem
     todo_items = db.query(OrderTodoItem).filter_by(batch_id=batch_id).all()
@@ -967,3 +1071,100 @@ def get_order_progress(db: Session, order_id: str) -> dict:
     completed = sum(1 for s in statuses if s["status"] == "完成备货")
 
     return {"order_id": order_id, "total": total, "completed": completed}
+
+
+def get_links_for_plating_order(db: Session, plating_order_id: str) -> dict[int, list[dict]]:
+    """Batch get order links for all items in a plating order. Returns {item_id: [...]}."""
+    plating_items = db.query(PlatingOrderItem).filter(
+        PlatingOrderItem.plating_order_id == plating_order_id
+    ).all()
+    if not plating_items:
+        return {}
+
+    item_ids = [pi.id for pi in plating_items]
+    links = db.query(OrderItemLink).filter(
+        OrderItemLink.plating_order_item_id.in_(item_ids)
+    ).all()
+    if not links:
+        return {}
+
+    # Batch load todo items → order_ids
+    todo_ids = [l.order_todo_item_id for l in links if l.order_todo_item_id]
+    todo_map = {}
+    if todo_ids:
+        for t in db.query(OrderTodoItem).filter(OrderTodoItem.id.in_(todo_ids)).all():
+            todo_map[t.id] = t
+
+    # Collect and batch load orders
+    order_ids = set()
+    for link in links:
+        oid = link.order_id
+        if link.order_todo_item_id:
+            todo = todo_map.get(link.order_todo_item_id)
+            oid = todo.order_id if todo else None
+        if oid:
+            order_ids.add(oid)
+    order_map = {}
+    if order_ids:
+        for o in db.query(Order).filter(Order.id.in_(list(order_ids))).all():
+            order_map[o.id] = o
+
+    # Build result grouped by plating_order_item_id
+    result: dict[int, list[dict]] = {}
+    for link in links:
+        oid = link.order_id
+        if link.order_todo_item_id:
+            todo = todo_map.get(link.order_todo_item_id)
+            oid = todo.order_id if todo else None
+        if oid:
+            order = order_map.get(oid)
+            result.setdefault(link.plating_order_item_id, []).append({
+                "order_id": oid,
+                "customer_name": order.customer_name if order else None,
+                "link_id": link.id,
+            })
+    return result
+
+
+def batch_get_order_progress(db: Session, order_ids: list[str]) -> list[dict]:
+    """Batch get progress for multiple orders."""
+    if not order_ids:
+        return []
+
+    orders = db.query(Order).filter(Order.id.in_(order_ids)).all()
+    order_map = {o.id: o for o in orders}
+
+    # Batch load order items
+    all_items = db.query(OrderItem).filter(OrderItem.order_id.in_(order_ids)).all()
+    items_by_order: dict[str, list] = {}
+    for it in all_items:
+        items_by_order.setdefault(it.order_id, []).append(it)
+
+    # Collect all jewelry_ids across all orders
+    all_jewelry_ids = set()
+    agg_qty_by_order: dict[str, dict[str, int]] = {}
+    for oid in order_ids:
+        if oid not in order_map:
+            continue
+        agg: dict[str, int] = {}
+        for it in items_by_order.get(oid, []):
+            agg[it.jewelry_id] = agg.get(it.jewelry_id, 0) + it.quantity
+        agg_qty_by_order[oid] = agg
+        all_jewelry_ids.update(agg.keys())
+
+    if not all_jewelry_ids:
+        return [{"order_id": oid, "total": 0, "completed": 0} for oid in order_ids if oid in order_map]
+
+    # Batch load jewelry stocks
+    jewelry_stocks = batch_get_stock(db, "jewelry", list(all_jewelry_ids))
+
+    result = []
+    for oid in order_ids:
+        if oid not in order_map:
+            continue
+        agg = agg_qty_by_order.get(oid, {})
+        total = len(agg)
+        completed = sum(1 for jid, qty in agg.items() if jewelry_stocks.get(jid, 0) >= qty)
+        result.append({"order_id": oid, "total": total, "completed": completed})
+
+    return result

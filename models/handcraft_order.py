@@ -37,7 +37,7 @@ class HandcraftPartItem(Base):
     __tablename__ = "handcraft_part_item"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    handcraft_order_id = Column(String, ForeignKey("handcraft_order.id"), nullable=False)
+    handcraft_order_id = Column(String, ForeignKey("handcraft_order.id"), nullable=False, index=True)
     part_id = Column(String, ForeignKey("part.id"), nullable=False)
     qty = Column(Numeric(10, 4), nullable=False)
     received_qty = Column(Numeric(10, 4), nullable=True, default=0)
@@ -51,7 +51,7 @@ class HandcraftJewelryItem(Base):
     __tablename__ = "handcraft_jewelry_item"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    handcraft_order_id = Column(String, ForeignKey("handcraft_order.id"), nullable=False)
+    handcraft_order_id = Column(String, ForeignKey("handcraft_order.id"), nullable=False, index=True)
     jewelry_id = Column(String, ForeignKey("jewelry.id"), nullable=False)
     qty = Column(Integer, nullable=False)
     received_qty = Column(Integer, nullable=True, default=0)

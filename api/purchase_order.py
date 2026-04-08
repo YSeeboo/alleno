@@ -13,6 +13,7 @@ from schemas.purchase_order import (
     PurchaseOrderItemAddonCreate,
     PurchaseOrderItemAddonResponse,
     PurchaseOrderItemAddonUpdate,
+    PurchaseOrderItemCreate,
     PurchaseOrderItemUpdate,
     PurchaseOrderItemResponse,
     PurchaseOrderResponse,
@@ -21,6 +22,7 @@ from schemas.purchase_order import (
 from services.cost_sync import auto_set_initial_bead_cost, auto_set_initial_purchase_cost, auto_set_initial_purchase_costs, detect_purchase_cost_diffs, detect_addon_cost_diffs
 from services.order_todo import get_links_for_production_item, delete_link
 from services.purchase_order import (
+    add_purchase_item,
     create_purchase_order,
     create_purchase_item_addon,
     delete_purchase_item,
@@ -101,6 +103,17 @@ def api_update_purchase_order_images(order_id: str, body: PurchaseOrderDeliveryI
     with service_errors():
         order = update_purchase_order_images(db, order_id, body.delivery_images)
     return order
+
+
+@router.post("/{order_id}/items", response_model=PurchaseOrderItemResponse, status_code=201)
+def api_add_purchase_item(order_id: str, body: PurchaseOrderItemCreate, db: Session = Depends(get_db)):
+    order = get_purchase_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"PurchaseOrder {order_id} not found")
+    with service_errors():
+        item = add_purchase_item(db, order_id, body.model_dump())
+        auto_set_initial_purchase_cost(db, item, source_id=order_id)
+    return item
 
 
 @router.put("/{order_id}/items/{item_id}", response_model=PurchaseOrderItemResponse)

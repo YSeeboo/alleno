@@ -24,18 +24,19 @@ class OrderItem(Base):
     __tablename__ = "order_item"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    order_id = Column(String, ForeignKey("order.id"), nullable=False)
+    order_id = Column(String, ForeignKey("order.id"), nullable=False, index=True)
     jewelry_id = Column(String, ForeignKey("jewelry.id"), nullable=False)
     quantity = Column(Integer, nullable=False)
     unit_price = Column(Numeric(18, 7), nullable=False)
     remarks = Column(Text, nullable=True)
+    customer_code = Column(String, nullable=True)
 
 
 class OrderTodoItem(Base):
     __tablename__ = "order_todo_item"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    order_id = Column(String, ForeignKey("order.id"), nullable=False)
+    order_id = Column(String, ForeignKey("order.id"), nullable=False, index=True)
     part_id = Column(String, ForeignKey("part.id"), nullable=False)
     required_qty = Column(Numeric(10, 4), nullable=False)
     batch_id = Column(Integer, ForeignKey("order_todo_batch.id"), nullable=True)
@@ -44,7 +45,7 @@ class OrderTodoItem(Base):
 class OrderTodoBatch(Base):
     __tablename__ = "order_todo_batch"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    order_id = Column(String, ForeignKey("order.id"), nullable=False)
+    order_id = Column(String, ForeignKey("order.id"), nullable=False, index=True)
     handcraft_order_id = Column(String, ForeignKey("handcraft_order.id"), nullable=True)
     created_at = Column(DateTime, default=now_beijing)
 
@@ -63,7 +64,7 @@ class OrderItemLink(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     # 配件项关联 TodoList 行
-    order_todo_item_id = Column(Integer, ForeignKey("order_todo_item.id"), nullable=True)
+    order_todo_item_id = Column(Integer, ForeignKey("order_todo_item.id"), nullable=True, index=True)
     # 饰品项直接关联订单
     order_id = Column(String, ForeignKey("order.id"), nullable=True)
     # 四选一：关联的生产项（unique 保证同一生产项只能关联一个订单）

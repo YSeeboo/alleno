@@ -63,7 +63,7 @@ class StatusUpdate(BaseModel):
 router = APIRouter(prefix="/api/handcraft", tags=["handcraft"])
 
 
-@router.post("/", response_model=HandcraftResponse, status_code=201)
+@router.post("/", response_model=HandcraftResponse, status_code=201, responses={200: {"model": HandcraftResponse, "description": "Merged into existing pending order"}})
 def api_create_handcraft_order(body: HandcraftCreate, db: Session = Depends(get_db)):
     with service_errors():
         order = create_handcraft_order(
@@ -73,7 +73,9 @@ def api_create_handcraft_order(body: HandcraftCreate, db: Session = Depends(get_
             jewelries=[j.model_dump() for j in body.jewelries],
             note=body.note,
         )
-    return order
+    from fastapi.responses import JSONResponse
+    status_code = 200 if getattr(order, "merged", False) else 201
+    return JSONResponse(content=HandcraftResponse.model_validate(order).model_dump(mode="json"), status_code=status_code)
 
 
 @router.get("/", response_model=list[HandcraftResponse])

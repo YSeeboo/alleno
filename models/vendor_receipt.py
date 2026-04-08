@@ -10,7 +10,7 @@ class VendorReceipt(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     vendor_name = Column(String, nullable=False)
     order_type = Column(String, nullable=False)   # "plating" | "handcraft"
-    order_id = Column(String, nullable=True)      # 关联订单 ID；旧数据为 null
+    order_id = Column(String, nullable=True, index=True)      # 关联订单 ID；旧数据为 null
     item_type = Column(String, nullable=False)    # "part" | "jewelry"
     item_id = Column(String, nullable=False)      # PJ-XXXX 或 SP-XXXX
     qty = Column(Float, nullable=False)

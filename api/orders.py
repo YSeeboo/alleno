@@ -12,6 +12,7 @@ from schemas.order import (
     OrderCreate, OrderResponse, OrderItemResponse, StatusUpdate,
     OrderTodoItemResponse, LinkCreateRequest, LinkResponse,
     BatchLinkRequest, BatchLinkResponse, OrderProgressResponse,
+    OrderItemUpdate, BatchCustomerCodeRequest,
 )
 from schemas.order import OrderItemCreate
 from schemas.order_cost_snapshot import OrderCostSnapshotResponse
@@ -26,12 +27,14 @@ from services.order import (
     update_extra_info,
     update_order_status,
     update_packaging_cost,
+    update_order_item_customer_code,
+    batch_fill_customer_code,
     list_orders,
 )
 from services.order_cost_snapshot import get_cost_snapshot
 from services.order_todo import (
     generate_todo, get_todo, create_link, delete_link,
-    batch_link, get_order_progress, get_jewelry_status,
+    batch_link, get_order_progress, batch_get_order_progress, get_jewelry_status,
     get_jewelry_for_batch, create_batch, get_batches, link_supplier, delete_batch,
 )
 from schemas.order import TodoBatchCreateRequest, LinkSupplierRequest
@@ -63,6 +66,15 @@ def api_create_order(body: OrderCreate, db: Session = Depends(get_db)):
     return order
 
 
+@router.get("/batch-progress")
+def api_batch_get_progress(order_ids: str, db: Session = Depends(get_db)):
+    """批量获取多个订单的备货进度。order_ids 以逗号分隔。"""
+    ids = [oid.strip() for oid in order_ids.split(",") if oid.strip()]
+    if not ids:
+        return []
+    return batch_get_order_progress(db, ids)
+
+
 @router.get("/{order_id}", response_model=OrderResponse)
 def api_get_order(order_id: str, db: Session = Depends(get_db)):
     order = get_order(db, order_id)
@@ -86,6 +98,30 @@ def api_add_order_item(order_id: str, body: OrderItemCreate, db: Session = Depen
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
     with service_errors():
         return add_order_item(db, order_id, body.model_dump())
+
+
+@router.post("/{order_id}/items/batch-customer-code")
+def api_batch_customer_code(order_id: str, body: BatchCustomerCodeRequest, db: Session = Depends(get_db)):
+    order = get_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    with service_errors():
+        count = batch_fill_customer_code(
+            db, order_id, body.item_ids, body.prefix, body.start_number, body.padding,
+        )
+        return {"updated_count": count}
+
+
+@router.patch("/{order_id}/items/{item_id}", response_model=OrderItemResponse)
+def api_update_order_item(order_id: str, item_id: int, body: OrderItemUpdate, db: Session = Depends(get_db)):
+    order = get_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    fields = body.model_dump(exclude_unset=True)
+    if "customer_code" not in fields:
+        raise HTTPException(status_code=400, detail="请提供 customer_code 字段")
+    with service_errors():
+        return update_order_item_customer_code(db, order_id, item_id, fields["customer_code"])
 
 
 @router.delete("/{order_id}/items/{item_id}", status_code=204)
@@ -145,6 +181,7 @@ def api_download_todo_pdf(order_id: str, batch_id: int | None = None, db: Sessio
             )
         },
     )
+
 
 
 @router.patch("/{order_id}/extra-info", response_model=OrderResponse)

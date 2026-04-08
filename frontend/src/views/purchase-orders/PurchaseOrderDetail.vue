@@ -126,13 +126,23 @@
 
       <n-card v-if="order" title="购入明细">
         <template #header-extra>
-          <n-button
-            v-if="order.items?.length > 0"
-            size="small"
-            @click="openBatchLinkModal"
-          >
-            批量关联订单
-          </n-button>
+          <n-space>
+            <n-button
+              v-if="!isPaid() && canAccessParts"
+              size="small"
+              type="primary"
+              @click="openAddItemModal"
+            >
+              追加配件
+            </n-button>
+            <n-button
+              v-if="order.items?.length > 0"
+              size="small"
+              @click="openBatchLinkModal"
+            >
+              批量关联订单
+            </n-button>
+          </n-space>
         </template>
         <n-data-table v-if="order.items?.length > 0" :columns="itemColumns" :data="tableData" :bordered="false" :row-class-name="rowClassName" />
         <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
@@ -161,6 +171,39 @@
         <n-space justify="end">
           <n-button @click="editModalVisible = false">取消</n-button>
           <n-button type="primary" :loading="editSubmitting" @click="doEditItem">保存修改</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- Add Item Modal -->
+    <n-modal v-model:show="addItemModalVisible" preset="card" title="追加配件" style="width: 500px;">
+      <n-form label-placement="left" label-width="90">
+        <n-form-item label="配件">
+          <n-select
+            v-model:value="addItemForm.part_id"
+            :options="addItemPartOptions"
+            :render-label="renderOptionWithImage"
+            filterable
+            placeholder="选择配件"
+          />
+        </n-form-item>
+        <n-form-item label="数量">
+          <n-input-number v-model:value="addItemForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
+        </n-form-item>
+        <n-form-item label="单位">
+          <n-select v-model:value="addItemForm.unit" :options="unitOptions" />
+        </n-form-item>
+        <n-form-item label="单价">
+          <n-input-number v-model:value="addItemForm.price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" :step="0.1" style="width: 100%;" />
+        </n-form-item>
+        <n-form-item label="备注">
+          <n-input v-model:value="addItemForm.note" placeholder="备注（可选）" />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="addItemModalVisible = false">取消</n-button>
+          <n-button type="primary" :loading="addItemSubmitting" @click="doAddItem">确认添加</n-button>
         </n-space>
       </template>
     </n-modal>
@@ -282,19 +325,22 @@ import { CreateOutline } from '@vicons/ionicons5'
 import {
   getPurchaseOrder, updatePurchaseOrderStatus,
   updatePurchaseOrderDeliveryImages,
-  updatePurchaseOrderItem, deletePurchaseOrderItem,
+  addPurchaseOrderItem, updatePurchaseOrderItem, deletePurchaseOrderItem,
   createPurchaseOrderItemAddon, updatePurchaseOrderItemAddon, deletePurchaseOrderItemAddon,
   getPurchaseItemOrders, deletePurchaseItemOrderLink,
 } from '@/api/purchaseOrders'
 import { listOrders, getTodo, createLink, batchLink } from '@/api/orders'
 import { listParts, batchUpdatePartCosts } from '@/api/parts'
-import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
+import { renderNamedImage, renderOptionWithImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
+const authStore = useAuthStore()
+const canAccessParts = authStore.hasPermission('parts')
 
 const loading = ref(true)
 const order = ref(null)
@@ -609,6 +655,40 @@ const doDeleteItem = (row) => {
       }
     },
   })
+}
+
+// Add Item Modal
+const addItemModalVisible = ref(false)
+const addItemSubmitting = ref(false)
+const addItemForm = ref({ part_id: null, qty: 1, unit: '个', price: null, note: '' })
+const addItemPartOptions = computed(() =>
+  Object.values(partMap.value).map((p) => ({
+    label: `${p.id} ${p.name}`,
+    value: p.id,
+    code: p.id,
+    name: p.name,
+    image: p.image,
+  }))
+)
+
+const openAddItemModal = () => {
+  addItemForm.value = { part_id: null, qty: 1, unit: '个', price: null, note: '' }
+  addItemModalVisible.value = true
+}
+
+const doAddItem = async () => {
+  if (!addItemForm.value.part_id) { message.warning('请选择配件'); return }
+  if (!addItemForm.value.qty || addItemForm.value.qty <= 0) { message.warning('请填写数量'); return }
+  addItemSubmitting.value = true
+  try {
+    await addPurchaseOrderItem(route.params.id, addItemForm.value)
+    message.success('配件已追加')
+    addItemModalVisible.value = false
+    await loadData()
+    await loadItemOrderLinks()
+  } finally {
+    addItemSubmitting.value = false
+  }
 }
 
 // Delivery images

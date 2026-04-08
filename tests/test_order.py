@@ -60,8 +60,9 @@ def test_get_parts_summary(setup):
     summary = get_parts_summary(db, order.id)
     # p1: 2*2 + 3*1 = 7
     # p2: 2*1 = 2
-    assert summary[p1.id] == 7.0
-    assert summary[p2.id] == 2.0
+    summary_map = {s["part_id"]: s["total_qty"] for s in summary}
+    assert summary_map[p1.id] == 7.0
+    assert summary_map[p2.id] == 2.0
 
 
 def test_get_parts_summary_no_bom(setup):
@@ -72,7 +73,7 @@ def test_get_parts_summary_no_bom(setup):
         {"jewelry_id": j3.id, "quantity": 1, "unit_price": 10.0},
     ])
     summary = get_parts_summary(db, order.id)
-    assert summary == {}
+    assert summary == []
 
 
 def test_update_order_status_valid(setup):

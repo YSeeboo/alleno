@@ -16,6 +16,8 @@ export const createLink = (orderId, data) => api.post(`/orders/${orderId}/links`
 export const batchLink = (orderId, data) => api.post(`/orders/${orderId}/links/batch`, data)
 export const deleteLink = (linkId) => api.delete(`/orders/links/${linkId}`)
 export const getProgress = (id) => api.get(`/orders/${id}/progress`)
+export const batchGetProgress = (orderIds) =>
+  api.get('/orders/batch-progress', { params: { order_ids: orderIds.join(',') } })
 
 // --- Batch & Jewelry Status ---
 export const getJewelryStatus = (orderId) => api.get(`/orders/${orderId}/jewelry-status`)
@@ -28,6 +30,12 @@ export const linkBatchSupplier = (orderId, batchId, supplierName) =>
   api.post(`/orders/${orderId}/todo-batch/${batchId}/link-supplier`, { supplier_name: supplierName })
 export const downloadBatchPdf = (orderId, batchId) =>
   api.get(`/orders/${orderId}/todo-pdf`, { params: { batch_id: batchId }, responseType: 'blob' })
+
+// --- Customer Code ---
+export const updateOrderItem = (orderId, itemId, data) =>
+  api.patch(`/orders/${orderId}/items/${itemId}`, data)
+export const batchFillCustomerCode = (orderId, data) =>
+  api.post(`/orders/${orderId}/items/batch-customer-code`, data)
 
 // --- Extra Info ---
 export const updateExtraInfo = (orderId, data) =>

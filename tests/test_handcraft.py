@@ -36,6 +36,63 @@ def test_create_handcraft_order(setup):
     assert part_item.part_id == p1.id
 
 
+def test_auto_merge_same_supplier_same_day(setup):
+    """同一天同一供应商的手工单自动合并到一张单"""
+    db, p1, p2, j1 = setup
+    order1 = create_handcraft_order(
+        db, "手工坊",
+        parts=[{"part_id": p1.id, "qty": 50}],
+        jewelries=[{"jewelry_id": j1.id, "qty": 10}],
+        note="第一批",
+    )
+    order2 = create_handcraft_order(
+        db, "手工坊",
+        parts=[{"part_id": p2.id, "qty": 30}],
+        note="第二批",
+    )
+    # Should reuse the same order
+    assert order2.id == order1.id
+    # Items should be accumulated
+    from models.handcraft_order import HandcraftPartItem, HandcraftJewelryItem
+    parts = db.query(HandcraftPartItem).filter(HandcraftPartItem.handcraft_order_id == order1.id).all()
+    jewelries = db.query(HandcraftJewelryItem).filter(HandcraftJewelryItem.handcraft_order_id == order1.id).all()
+    assert len(parts) == 2
+    assert len(jewelries) == 1
+    # Notes should be merged
+    assert "第一批" in order1.note
+    assert "第二批" in order1.note
+
+
+def test_no_merge_different_supplier(setup):
+    """不同供应商不合并"""
+    db, p1, p2, j1 = setup
+    order1 = create_handcraft_order(
+        db, "手工坊A",
+        parts=[{"part_id": p1.id, "qty": 50}],
+    )
+    order2 = create_handcraft_order(
+        db, "手工坊B",
+        parts=[{"part_id": p2.id, "qty": 30}],
+    )
+    assert order1.id != order2.id
+
+
+def test_no_merge_when_existing_is_processing(setup):
+    """已发出的单不合并"""
+    db, p1, p2, j1 = setup
+    order1 = create_handcraft_order(
+        db, "手工坊",
+        parts=[{"part_id": p1.id, "qty": 50}],
+        jewelries=[{"jewelry_id": j1.id, "qty": 10}],
+    )
+    send_handcraft_order(db, order1.id)
+    order2 = create_handcraft_order(
+        db, "手工坊",
+        parts=[{"part_id": p2.id, "qty": 30}],
+    )
+    assert order2.id != order1.id
+
+
 def test_send_handcraft_order_deducts_parts(setup):
     db, p1, p2, j1 = setup
     order = create_handcraft_order(

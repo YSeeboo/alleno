@@ -28,7 +28,7 @@ import { reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NGrid, NGi, NCard, NSpin, NH1, NText } from 'naive-ui'
 import { listParts } from '@/api/parts'
-import { getStock } from '@/api/inventory'
+import { batchGetStock } from '@/api/inventory'
 import { listOrders } from '@/api/orders'
 import { listPlating } from '@/api/plating'
 import { listHandcraft } from '@/api/handcraft'
@@ -50,13 +50,12 @@ const loadCard = (key, fn) => {
 }
 
 onMounted(async () => {
-  // Low-stock parts: fetch all parts, then fetch stock for each in parallel
+  // Low-stock parts: fetch all parts, then batch fetch stock
   loadCard('low-stock', async () => {
     const { data: parts } = await listParts()
-    const stocks = await Promise.all(
-      parts.map((p) => getStock('part', p.id).then((r) => r.data.current).catch(() => 0))
-    )
-    return stocks.filter((s) => s < 10).length
+    if (!parts.length) return 0
+    const { data: stockMap } = await batchGetStock('part', parts.map((p) => p.id))
+    return parts.filter((p) => (stockMap[p.id] ?? 0) < 10).length
   })
 
   loadCard('pending-orders', async () => {

@@ -52,24 +52,27 @@ def get_order_items(db: Session, order_id: str) -> list:
 
 def get_parts_summary(db: Session, order_id: str) -> list[dict]:
     """Get aggregated parts summary with total and remaining quantities."""
+    from models.bom import Bom
     from models.part import Part
 
     items = get_order_items(db, order_id)
     if not items:
         return []
 
+    # Batch load BOM for all jewelry_ids once
+    jewelry_ids = list({oi.jewelry_id for oi in items})
+    all_bom = db.query(Bom).filter(Bom.jewelry_id.in_(jewelry_ids)).all()
+    bom_cache: dict[str, list] = {}
+    for b in all_bom:
+        bom_cache.setdefault(b.jewelry_id, []).append(b)
+
     # Calculate total BOM requirements
     total_map: dict[str, float] = {}
     for oi in items:
-        bom_rows = get_bom(db, oi.jewelry_id)
-        for bom in bom_rows:
+        for bom in bom_cache.get(oi.jewelry_id, []):
             pid = bom.part_id
             total_map[pid] = total_map.get(pid, 0) + float(bom.qty_per_unit) * oi.quantity
 
-    # Calculate deduction based on concrete handled quantities, not status.
-    # "Handled" = allocated to handcraft OR covered by jewelry stock.
-    # This avoids the problem where a binary status (e.g. 等待发往手工)
-    # deducts the full order qty even when nothing has been allocated.
     from services.inventory import batch_get_stock
     from services.order_todo import get_jewelry_for_batch
 
@@ -83,21 +86,17 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
     allocated_map = {fb["jewelry_id"]: fb["allocated_quantity"] for fb in for_batch}
 
     # Get jewelry stock to check 完成备货
-    jewelry_ids = list(agg_qty.keys())
     jewelry_stocks = batch_get_stock(db, "jewelry", jewelry_ids)
 
     deduct_map: dict[str, float] = {}
     for jid, total in agg_qty.items():
-        # If jewelry stock covers the order → fully handled
         if jewelry_stocks.get(jid, 0) >= total:
             deduct_qty = total
         else:
-            # Otherwise, only the allocated portion is handled
             deduct_qty = min(total, allocated_map.get(jid, 0))
 
         if deduct_qty > 0:
-            bom_rows = get_bom(db, jid)
-            for bom in bom_rows:
+            for bom in bom_cache.get(jid, []):
                 pid = bom.part_id
                 deduct_map[pid] = deduct_map.get(pid, 0) + float(bom.qty_per_unit) * deduct_qty
 
@@ -193,6 +192,56 @@ def update_extra_info(db: Session, order_id: str, data: dict) -> Order:
             setattr(order, key, value)
     db.flush()
     return order
+
+
+def _check_order_not_cancelled(db: Session, order_id: str) -> None:
+    order = get_order(db, order_id)
+    if order is None:
+        raise ValueError(f"订单 {order_id} 不存在")
+    if order.status == "已取消":
+        raise ValueError("已取消的订单不允许修改客户货号")
+
+
+def update_order_item_customer_code(db: Session, order_id: str, item_id: int, customer_code: str | None) -> OrderItem:
+    _check_order_not_cancelled(db, order_id)
+    item = db.query(OrderItem).filter_by(id=item_id, order_id=order_id).first()
+    if not item:
+        raise ValueError(f"订单项 {item_id} 不存在")
+    item.customer_code = customer_code
+    db.flush()
+    return item
+
+
+def batch_fill_customer_code(
+    db: Session,
+    order_id: str,
+    item_ids: list[int],
+    prefix: str,
+    start_number: int,
+    padding: int = 2,
+) -> int:
+    _check_order_not_cancelled(db, order_id)
+    if not item_ids:
+        raise ValueError("item_ids 不能为空")
+    if not prefix:
+        raise ValueError("前缀不能为空")
+    if start_number < 0:
+        raise ValueError("起始号不能为负数")
+    if padding < 1 or padding > 6:
+        raise ValueError("位数必须在 1 到 6 之间")
+    items = (
+        db.query(OrderItem)
+        .filter(OrderItem.id.in_(item_ids), OrderItem.order_id == order_id)
+        .order_by(OrderItem.id)
+        .all()
+    )
+    if len(items) != len(item_ids):
+        raise ValueError("部分订单项不存在或不属于该订单")
+    for i, item in enumerate(items):
+        code = f"{prefix}{start_number + i:0{padding}d}"
+        item.customer_code = code
+    db.flush()
+    return len(items)
 
 
 def update_packaging_cost(db: Session, order_id: str, packaging_cost: float) -> Order:

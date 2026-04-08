@@ -109,7 +109,7 @@ import {
   NModal, NDataTable, NSpin, NEmpty, NImage, NDropdown,
 } from 'naive-ui'
 import { listJewelries, createJewelry, updateJewelry, updateJewelryStatus, deleteJewelry } from '@/api/jewelries'
-import { getStock } from '@/api/inventory'
+import { batchGetStock } from '@/api/inventory'
 import { listTemplates, applyTemplate } from '@/api/jewelryTemplates'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import { useAuthStore } from '@/stores/auth'
@@ -173,10 +173,10 @@ const load = async () => {
     const params = {}
     if (filterStatus.value) params.status = filterStatus.value
     const { data: jewelries } = await listJewelries(params)
-    const stocks = await Promise.all(
-      jewelries.map((j) => getStock('jewelry', j.id).then((r) => r.data.current).catch(() => 0))
-    )
-    rows.value = jewelries.map((j, i) => ({ ...j, stock: stocks[i] }))
+    const stockMap = jewelries.length
+      ? (await batchGetStock('jewelry', jewelries.map((j) => j.id))).data
+      : {}
+    rows.value = jewelries.map((j) => ({ ...j, stock: stockMap[j.id] ?? 0 }))
   } finally {
     loading.value = false
   }

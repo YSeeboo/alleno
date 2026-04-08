@@ -60,7 +60,7 @@ def test_get_parts_summary(client, db):
     resp = client.get(f"/api/orders/{created['id']}/parts-summary")
     assert resp.status_code == 200
     data = resp.json()
-    assert isinstance(data, dict)
+    assert isinstance(data, list)
 
 
 def test_update_order_status(client, db):

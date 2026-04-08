@@ -23,8 +23,8 @@
 import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
-import { NButton, NSpace, NDataTable, NSpin, NEmpty, NDropdown } from 'naive-ui'
-import { listTemplates, deleteTemplate } from '@/api/jewelryTemplates'
+import { NButton, NSpace, NDataTable, NSpin, NEmpty, NPopconfirm } from 'naive-ui'
+import { listTemplates, getTemplate, createTemplate, deleteTemplate } from '@/api/jewelryTemplates'
 import { renderNamedImage } from '@/utils/ui'
 
 const router = useRouter()
@@ -48,14 +48,16 @@ const doDelete = async (row) => {
   await load()
 }
 
-const confirmDelete = (row) => {
-  window.$dialog.warning({
-    title: '确认删除',
-    content: `确认删除模板「${row.name}」？`,
-    positiveText: '删除',
-    negativeText: '取消',
-    onPositiveClick: () => doDelete(row),
+const doCopy = async (row) => {
+  const { data: src } = await getTemplate(row.id)
+  const { data: created } = await createTemplate({
+    name: `${src.name} (副本)`,
+    image: src.image || null,
+    note: src.note || null,
+    items: (src.items || []).map((i) => ({ part_id: i.part_id, qty_per_unit: i.qty_per_unit })),
   })
+  message.success('已复制')
+  router.push(`/jewelry-templates/${created.id}`)
 }
 
 const columns = [
@@ -63,7 +65,7 @@ const columns = [
   {
     title: '模板名称',
     key: 'name',
-    minWidth: 180,
+    minWidth: 120,
     render: (row) => renderNamedImage(row.name, row.image, row.name),
   },
   { title: '配件数量', key: 'item_count', width: 100 },
@@ -76,15 +78,14 @@ const columns = [
   {
     title: '操作',
     key: 'actions',
-    width: 120,
+    width: 200,
     render: (row) =>
-      h(NSpace, { size: 6 }, () => [
-        h('button', { class: 'icon-btn', title: '详情', onClick: () => router.push(`/jewelry-templates/${row.id}`) }, '→'),
-        h(NDropdown, {
-          options: [{ label: '删除', key: 'delete' }],
-          onSelect: (key) => { if (key === 'delete') confirmDelete(row) },
-        }, {
-          default: () => h('button', { class: 'icon-btn', title: '更多' }, '⋮'),
+      h(NSpace, { size: 8 }, () => [
+        h(NButton, { size: 'small', onClick: () => router.push(`/jewelry-templates/${row.id}`) }, () => '详情'),
+        h(NButton, { size: 'small', onClick: () => doCopy(row) }, () => '复制'),
+        h(NPopconfirm, { onPositiveClick: () => doDelete(row) }, {
+          trigger: () => h(NButton, { size: 'small', type: 'error' }, () => '删除'),
+          default: () => `确认删除模板「${row.name}」？`,
         }),
       ]),
   },

@@ -11,16 +11,19 @@
           <n-descriptions-item label="编号">{{ jewelry.id }}</n-descriptions-item>
           <n-descriptions-item label="饰品">{{ jewelry.name }}</n-descriptions-item>
           <n-descriptions-item label="图片">
-            <n-image
-              v-if="jewelry.image"
-              :src="jewelry.image"
-              :alt="jewelry.name"
-              :width="48"
-              :height="48"
-              object-fit="cover"
-              style="border-radius: 8px; border: 1px solid #ffd6d6; overflow: hidden; display: block; cursor: zoom-in;"
-            />
-            <span v-else>无图</span>
+            <n-space align="center">
+              <n-image
+                v-if="jewelry.image"
+                :src="jewelry.image"
+                :alt="jewelry.name"
+                :width="48"
+                :height="48"
+                object-fit="cover"
+                style="border-radius: 8px; border: 1px solid #ffd6d6; overflow: hidden; display: block; cursor: zoom-in;"
+              />
+              <span v-else>无图</span>
+              <n-button size="tiny" @click="showImageModal = true">更换</n-button>
+            </n-space>
           </n-descriptions-item>
           <n-descriptions-item label="类目">{{ jewelry.category || '-' }}</n-descriptions-item>
           <n-descriptions-item label="颜色">{{ jewelry.color || '-' }}</n-descriptions-item>
@@ -72,6 +75,14 @@
         </div>
       </n-spin>
     </n-modal>
+
+    <ImageUploadModal
+      v-model:show="showImageModal"
+      kind="jewelry"
+      :entity-id="jewelry?.id"
+      suppress-success
+      @uploaded="onImageUploaded"
+    />
   </div>
 </template>
 
@@ -84,12 +95,13 @@ import {
   NSpace, NButton, NH2, NEmpty, NDivider, NSelect, NInputNumber, NPopconfirm, NImage,
   NModal, NAlert,
 } from 'naive-ui'
-import { getJewelry } from '@/api/jewelries'
+import { getJewelry, updateJewelry } from '@/api/jewelries'
 import { getBom, setBom, deleteBom } from '@/api/bom'
 import { getStock } from '@/api/inventory'
 import { listParts } from '@/api/parts'
 import { listTemplates, applyTemplate } from '@/api/jewelryTemplates'
 import { renderNamedImage, renderOptionWithImage, fmtMoney } from '@/utils/ui'
+import ImageUploadModal from '../../components/ImageUploadModal.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
@@ -106,6 +118,9 @@ const partOptions = ref([])
 const newPartId = ref(null)
 const newQty = ref(1)
 const adding = ref(false)
+
+// Image modal
+const showImageModal = ref(false)
 
 // Template modal
 const showTemplateModal = ref(false)
@@ -173,6 +188,18 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+const onImageUploaded = async (url) => {
+  if (jewelry.value) {
+    jewelry.value.image = url
+    try {
+      await updateJewelry(jewelry.value.id, { image: url })
+      message.success('图片已更新')
+    } catch {
+      message.error('图片保存失败，请刷新页面重试')
+    }
+  }
+}
 
 const addBom = async () => {
   if (!newPartId.value || !newQty.value) return

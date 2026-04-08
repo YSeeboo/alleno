@@ -20,7 +20,7 @@ from schemas.plating import (
 )
 from schemas.production_loss import ConfirmLossRequest, ProductionLossResponse
 from services.production_loss import confirm_plating_loss
-from services.order_todo import get_links_for_production_item, delete_link
+from services.order_todo import get_links_for_production_item, get_links_for_plating_order, delete_link
 from services.plating_excel import build_plating_order_excel
 from services.plating_pdf import build_plating_order_pdf
 from services.plating import (
@@ -232,6 +232,16 @@ def api_update_plating_delivery_images(order_id: str, body: PlatingDeliveryImage
     with service_errors():
         order = update_plating_delivery_images(db, order_id, body.delivery_images)
     return order
+
+
+@router.get("/{order_id}/items/order-links")
+def api_get_plating_all_item_orders(order_id: str, db: Session = Depends(get_db)):
+    """批量获取电镀单所有配件项的关联订单"""
+    from services.plating import get_plating_order
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
+    return get_links_for_plating_order(db, order_id)
 
 
 @router.get("/{order_id}/items/{item_id}/orders")

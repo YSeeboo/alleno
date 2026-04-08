@@ -26,6 +26,8 @@ export const listPendingReceiveItems = (params) =>
   api.get('/plating/items/pending-receive', { params })
 
 // --- Order links ---
+export const getPlatingAllItemOrders = (orderId) =>
+  api.get(`/plating/${orderId}/items/order-links`)
 export const getPlatingItemOrders = (orderId, itemId) =>
   api.get(`/plating/${orderId}/items/${itemId}/orders`)
 export const deletePlatingItemOrderLink = (orderId, itemId, linkId) =>

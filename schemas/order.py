@@ -28,6 +28,7 @@ class OrderItemResponse(BaseModel):
     quantity: int
     unit_price: float
     remarks: Optional[str] = None
+    customer_code: str | None = None
 
 
 class OrderResponse(BaseModel):
@@ -44,6 +45,21 @@ class OrderResponse(BaseModel):
     mark_image: Optional[str] = None
     note: Optional[str] = None
     created_at: datetime
+
+
+class OrderItemUpdate(BaseModel):
+    customer_code: str | None = None
+
+
+class BatchCustomerCodeRequest(BaseModel):
+    item_ids: list[int] = Field(..., min_length=1)
+    prefix: str = Field(..., min_length=1)
+    start_number: int = Field(..., ge=0)
+    padding: int = Field(2, ge=1, le=6)
+
+
+class BatchCustomerCodeResponse(BaseModel):
+    updated_count: int
 
 
 class ExtraInfoUpdate(BaseModel):

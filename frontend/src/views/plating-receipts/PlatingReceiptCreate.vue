@@ -153,9 +153,13 @@ const getInput = (id) => {
   return itemInputs[id]
 }
 
+const pendingIdSet = computed(() => new Set(pendingItems.value.map((p) => p.id)))
+
+const visibleCheckedKeys = computed(() => checkedKeys.value.filter((id) => pendingIdSet.value.has(id)))
+
 const totalAmount = computed(() => {
   let sum = 0
-  for (const id of checkedKeys.value) {
+  for (const id of visibleCheckedKeys.value) {
     const input = itemInputs[id]
     if (input) {
       sum += (input.qty || 0) * (input.price || 0)
@@ -211,13 +215,11 @@ const onVendorChange = async (val) => {
 const onFilterKeywordChange = () => {
   clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
-    checkedKeys.value = []
     fetchPendingItems()
   }, 300)
 }
 
 const onFilterDateChange = () => {
-  checkedKeys.value = []
   fetchPendingItems()
 }
 
@@ -321,12 +323,11 @@ const skipCostUpdate = () => {
 
 const submit = async () => {
   if (!vendorName.value?.trim()) { message.warning('请输入商家名称'); return }
-  if (checkedKeys.value.length === 0) { message.warning('请至少勾选一条待回收配件'); return }
+  if (visibleCheckedKeys.value.length === 0) { message.warning('请至少勾选一条待回收配件'); return }
 
   const items = []
-  for (const id of checkedKeys.value) {
+  for (const id of visibleCheckedKeys.value) {
     const pending = pendingItems.value.find((p) => p.id === id)
-    if (!pending) continue
     const input = itemInputs[id]
     if (!input?.qty || input.qty <= 0) { message.warning(`请填写「${pending.part_name}」的回收数量`); return }
 

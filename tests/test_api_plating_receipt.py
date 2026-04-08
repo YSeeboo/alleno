@@ -163,10 +163,39 @@ def test_update_receipt_item_qty(client, db):
     # Increase qty to 8
     update_resp = client.put(f"/api/plating-receipts/{receipt_id}/items/{item_id}", json={"qty": 8.0})
     assert update_resp.status_code == 200
-    assert update_resp.json()["qty"] == 8.0
+    updated_item = next(i for i in update_resp.json()["items"] if i["id"] == item_id)
+    assert updated_item["qty"] == 8.0
 
     # Stock should have increased by 3 more
     assert get_stock(db, "part", part.id) == pytest.approx(stock_after_create + 3.0)
+
+
+def test_update_receipt_item_price_returns_cost_diffs(client, db):
+    """Editing price should return cost_diffs when it differs from part.plating_cost."""
+    part, order = _setup_processing_plating(db, qty=10.0)
+    poi_id = get_plating_items(db, order.id)[0].id
+
+    # Set an initial plating_cost on the part
+    part.plating_cost = 1.0
+    db.flush()
+
+    resp = client.post("/api/plating-receipts/", json={
+        "vendor_name": "Supplier A",
+        "items": [{"plating_order_item_id": poi_id, "part_id": part.id, "qty": 5.0, "price": 1.0}],
+    })
+    receipt_id = resp.json()["id"]
+    item_id = resp.json()["items"][0]["id"]
+    # Same price → no cost diffs on create
+    assert resp.json()["cost_diffs"] == []
+
+    # Now change price to 2.0 → should produce a cost diff
+    update_resp = client.put(f"/api/plating-receipts/{receipt_id}/items/{item_id}", json={"price": 2.0})
+    assert update_resp.status_code == 200
+    diffs = update_resp.json()["cost_diffs"]
+    assert len(diffs) == 1
+    assert diffs[0]["part_id"] == part.id
+    assert diffs[0]["current_value"] == 1.0
+    assert diffs[0]["new_value"] == 2.0
 
 
 def test_delete_receipt_item(client, db):

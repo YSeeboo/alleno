@@ -126,7 +126,20 @@
 
       <!-- Order items — full width -->
       <n-card title="饰品清单" style="margin-bottom: 16px;">
-        <n-data-table v-if="orderItems.length > 0" :columns="itemColumns" :data="orderItems" :bordered="false" size="small" />
+        <template #header-extra>
+          <n-space>
+          </n-space>
+        </template>
+        <n-button
+          v-if="canEditCustomerCode && checkedItemIds.length > 0"
+          size="small"
+          type="primary"
+          style="margin-bottom: 8px;"
+          @click="showBatchCodeModal = true"
+        >
+          批量填入客户货号 ({{ checkedItemIds.length }})
+        </n-button>
+        <n-data-table v-if="orderItems.length > 0" :columns="itemColumns" :data="orderItems" :bordered="false" size="small" :row-key="row => row.id" v-model:checked-row-keys="checkedItemIds" />
         <n-empty v-else description="暂无饰品明细" style="margin-top: 16px;" />
 
         <!-- Add item row -->
@@ -320,6 +333,30 @@
         </n-space>
       </template>
     </n-modal>
+
+    <!-- Batch customer code modal -->
+    <n-modal v-model:show="showBatchCodeModal" preset="card" title="批量填入客户货号" style="width: 420px;">
+      <n-form label-placement="left" label-width="80">
+        <n-form-item label="前缀">
+          <n-input v-model:value="batchCodeForm.prefix" placeholder="如 MG-" />
+        </n-form-item>
+        <n-form-item label="起始号">
+          <n-input-number v-model:value="batchCodeForm.start_number" :min="0" />
+        </n-form-item>
+        <n-form-item label="位数">
+          <n-input-number v-model:value="batchCodeForm.padding" :min="1" :max="6" />
+        </n-form-item>
+      </n-form>
+      <div v-if="batchCodePreview()" style="margin-top: 8px; color: #666; font-size: 12px;">
+        预览：{{ batchCodePreview() }}
+      </div>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showBatchCodeModal = false">取消</n-button>
+          <n-button type="primary" :loading="batchCodeFilling" :disabled="!batchCodeForm.prefix" @click="confirmBatchCode">确定</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -330,7 +367,7 @@ import { useMessage, useDialog } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NSelect, NInputNumber, NInput, NDivider, NPopconfirm, NAlert,
-  NModal, NImage, NAutoComplete, NIcon, NCollapse, NCollapseItem,
+  NModal, NImage, NAutoComplete, NIcon, NCollapse, NCollapseItem, NForm, NFormItem,
 } from 'naive-ui'
 import { Close as CloseIcon } from '@vicons/ionicons5'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
@@ -340,6 +377,7 @@ import {
   getCostSnapshot, updatePackagingCost, updateExtraInfo,
   getJewelryStatus, getJewelryForBatch, createTodoBatch, getTodoBatches,
   linkBatchSupplier, downloadBatchPdf, deleteTodoBatch,
+  updateOrderItem, batchFillCustomerCode,
 } from '@/api/orders'
 import { listParts } from '@/api/parts'
 import { listJewelries } from '@/api/jewelries'
@@ -418,6 +456,60 @@ function clearImage(target) {
   }
 }
 
+// --- Customer Code inline edit + batch fill ---
+const editingCustomerCode = ref(null)
+const editingCodeValue = ref('')
+const checkedItemIds = ref([])
+const showBatchCodeModal = ref(false)
+const batchCodeForm = ref({ prefix: '', start_number: 1, padding: 2 })
+const batchCodeFilling = ref(false)
+
+function startEditCode(item) {
+  editingCustomerCode.value = item.id
+  editingCodeValue.value = item.customer_code || ''
+}
+
+async function saveCustomerCode(item) {
+  const value = editingCodeValue.value.trim() || null
+  try {
+    await updateOrderItem(order.value.id, item.id, { customer_code: value })
+    item.customer_code = value
+  } catch (err) {
+    message.error('保存失败')
+  }
+  editingCustomerCode.value = null
+}
+
+function batchCodePreview() {
+  const { prefix, start_number, padding } = batchCodeForm.value
+  const count = checkedItemIds.value.length
+  if (count === 0 || !prefix) return ''
+  const codes = []
+  for (let i = 0; i < Math.min(count, 5); i++) {
+    codes.push(prefix + String(start_number + i).padStart(padding, '0'))
+  }
+  if (count > 5) codes.push('...')
+  return codes.join(', ')
+}
+
+async function confirmBatchCode() {
+  batchCodeFilling.value = true
+  try {
+    await batchFillCustomerCode(order.value.id, {
+      item_ids: checkedItemIds.value,
+      ...batchCodeForm.value,
+    })
+    showBatchCodeModal.value = false
+    checkedItemIds.value = []
+    await reloadOrder()
+    message.success('批量填入成功')
+  } catch (err) {
+    message.error('批量填入失败')
+  } finally {
+    batchCodeFilling.value = false
+  }
+}
+
 const jewelryMap = ref({})
 const jewelryOptions = ref([])
 
@@ -430,6 +522,7 @@ const statusFlowLabel = { '待生产': '开始生产', '生产中': '标记完�
 const nextStatus = computed(() => order.value ? statusFlow[order.value.status] : null)
 const nextStatusLabel = computed(() => order.value ? statusFlowLabel[order.value.status] : null)
 const canEditItems = computed(() => order.value?.status === '待生产')
+const canEditCustomerCode = computed(() => order.value?.status !== '已取消')
 
 // --- Jewelry status ---
 const jewelryStatusMap = ref({})
@@ -679,7 +772,7 @@ const reloadOrder = async () => {
     : Object.entries(sRes.data).map(([part_id, total_qty]) => ({
         part_id,
         part_name: part_id,
-        part_image: '',
+        part_image: null,
         total_qty,
         remaining_qty: total_qty,
       }))
@@ -777,8 +870,39 @@ const jewelryStatusColorMap = {
 }
 
 const itemColumns = computed(() => {
-  const cols = [
+  const cols = []
+  if (canEditCustomerCode.value) {
+    cols.push({ type: 'selection', width: 40 })
+  }
+  cols.push(
     { title: '饰品编号', key: 'jewelry_id', width: 110 },
+    {
+      title: '客户货号',
+      key: 'customer_code',
+      width: 120,
+      render(row) {
+        if (canEditCustomerCode.value && editingCustomerCode.value === row.id) {
+          return h(NInput, {
+            value: editingCodeValue.value,
+            size: 'small',
+            autofocus: true,
+            onUpdateValue: (v) => { editingCodeValue.value = v },
+            onBlur: () => saveCustomerCode(row),
+            onKeydown: (e) => { if (e.key === 'Enter') saveCustomerCode(row) },
+          })
+        }
+        if (!canEditCustomerCode.value) {
+          return h('span', { style: { color: row.customer_code ? '#333' : '#ccc' } }, row.customer_code || '—')
+        }
+        return h('span', {
+          style: {
+            cursor: 'pointer',
+            color: row.customer_code ? '#333' : '#ccc',
+          },
+          onClick: () => startEditCode(row),
+        }, row.customer_code || '—')
+      },
+    },
     {
       title: '饰品',
       key: 'jewelry_name',
@@ -809,7 +933,7 @@ const itemColumns = computed(() => {
       },
     },
     { title: '备注', key: 'remarks', render: (r) => r.remarks || '-' },
-  ]
+  )
   if (canEditItems.value) {
     cols.push({
       title: '操作',
@@ -1067,11 +1191,12 @@ const partsColumns = [
 onMounted(async () => {
   const id = route.params.id
   try {
-    const [oRes, iRes, sRes, pRes, jRes] = await Promise.all([
+    // Core data: order, items, parts-summary load first
+    // Jewelries load in parallel but non-blocking for items table
+    const [oRes, iRes, sRes, jRes] = await Promise.all([
       getOrder(id),
       getOrderItems(id),
       getPartsSummary(id),
-      listParts(),
       listJewelries(),
     ])
     order.value = oRes.data
@@ -1096,19 +1221,15 @@ onMounted(async () => {
     }))
 
     // parts-summary: support both new list format and legacy dict format
-    if (Array.isArray(sRes.data)) {
-      partsSummaryRows.value = sRes.data
-    } else {
-      const partMap = {}
-      pRes.data.forEach((p) => { partMap[p.id] = p })
-      partsSummaryRows.value = Object.entries(sRes.data).map(([part_id, total_qty]) => ({
-        part_id,
-        part_name: partMap[part_id]?.name || part_id,
-        part_image: partMap[part_id]?.image || '',
-        total_qty,
-        remaining_qty: total_qty,
-      }))
-    }
+    partsSummaryRows.value = Array.isArray(sRes.data)
+      ? sRes.data
+      : Object.entries(sRes.data).map(([part_id, total_qty]) => ({
+          part_id,
+          part_name: part_id,
+          part_image: null,
+          total_qty,
+          remaining_qty: total_qty,
+        }))
 
     await Promise.all([
       loadTodo(),

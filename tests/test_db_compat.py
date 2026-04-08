@@ -1,6 +1,6 @@
 from sqlalchemy import inspect, text
 
-from database import ensure_schema_compat
+from database import Base, ensure_schema_compat
 
 
 def test_ensure_schema_compat_restores_missing_columns(engine):
@@ -67,3 +67,24 @@ def test_ensure_schema_compat_upgrades_from_numeric_14_7(engine):
         column = next(col for col in inspector.get_columns("jewelry") if col["name"] == "retail_price")
         assert column["type"].precision == 18
         assert column["type"].scale == 7
+
+
+def test_ensure_schema_compat_creates_missing_indexes(engine):
+    """Indexes defined in models but missing from DB should be created."""
+    # Pick one known index to drop and verify it gets recreated
+    with engine.begin() as conn:
+        conn.execute(text('DROP INDEX IF EXISTS "ix_invlog_type_id"'))
+
+    # Verify it's gone
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        idx_names = {idx["name"] for idx in inspector.get_indexes("inventory_log")}
+        assert "ix_invlog_type_id" not in idx_names
+
+    ensure_schema_compat(engine)
+
+    # Verify it's back
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        idx_names = {idx["name"] for idx in inspector.get_indexes("inventory_log")}
+        assert "ix_invlog_type_id" in idx_names

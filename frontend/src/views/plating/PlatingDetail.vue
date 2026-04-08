@@ -369,7 +369,7 @@ import {
   addPlatingItem, updatePlatingItem, deletePlatingItem,
   updatePlatingDeliveryImages, updatePlatingOrder,
   downloadPlatingExcel, downloadPlatingPdf,
-  getPlatingItemOrders, deletePlatingItemOrderLink,
+  getPlatingAllItemOrders, getPlatingItemOrders, deletePlatingItemOrderLink,
 } from '@/api/plating'
 import { confirmPlatingLoss } from '@/api/productionLoss'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
@@ -1114,16 +1114,17 @@ const loadOrderOptions = async () => {
 }
 
 const loadItemOrderLinks = async () => {
-  const map = {}
-  await Promise.all(items.value.map(async (item) => {
-    try {
-      const { data } = await getPlatingItemOrders(route.params.id, item.id)
-      map[item.id] = data
-    } catch (_) {
-      map[item.id] = []
+  try {
+    const { data } = await getPlatingAllItemOrders(route.params.id)
+    // data is {item_id: [...]} with integer keys serialized as strings
+    const map = {}
+    for (const [key, val] of Object.entries(data)) {
+      map[Number(key)] = val
     }
-  }))
-  itemOrderLinks.value = map
+    itemOrderLinks.value = map
+  } catch (_) {
+    itemOrderLinks.value = {}
+  }
 }
 
 const openLinkModal = (row) => {
@@ -1419,6 +1420,7 @@ const itemColumns = [
 
 onMounted(async () => {
   try {
+    // Load parts/colors and data in parallel; order links also in parallel with loadData
     const [{ data: parts }, colorsRes] = await Promise.all([listParts(), getColorVariants()])
     allParts.value = parts
     parts.forEach((p) => { partMap.value[p.id] = p })
@@ -1431,8 +1433,7 @@ onMounted(async () => {
       unit: p.unit,
     }))
     colorVariantList.value = colorsRes.data
-    await loadData()
-    await loadItemOrderLinks()
+    await Promise.all([loadData(), loadItemOrderLinks()])
   } finally {
     loading.value = false
   }

@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import models  # registers all ORM classes with Base
 from database import Base, get_db
+from db_safety import assert_safe_test_database_url
 from main import app
 from api.deps import get_current_user
 from models.user import User
@@ -23,10 +24,7 @@ _fake_admin = User(id=0, username="test-admin", password_hash="", owner="test", 
 
 @pytest.fixture(scope="session")
 def engine():
-    if not TEST_DATABASE_URL.startswith("postgresql://") and not TEST_DATABASE_URL.startswith(
-        "postgresql+psycopg2://"
-    ):
-        raise RuntimeError("TEST_DATABASE_URL must use PostgreSQL.")
+    assert_safe_test_database_url(TEST_DATABASE_URL, context="pytest test database")
 
     engine = create_engine(TEST_DATABASE_URL)
     Base.metadata.create_all(engine)

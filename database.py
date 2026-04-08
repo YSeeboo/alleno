@@ -15,6 +15,22 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+def _ensure_indexes(conn, inspector):
+    """Create missing indexes defined in model metadata."""
+    import models  # noqa: F401 — ensure all models are loaded
+    for table in Base.metadata.tables.values():
+        if not inspector.has_table(table.name):
+            continue
+        existing = {idx["name"] for idx in inspector.get_indexes(table.name)}
+        for idx in table.indexes:
+            if idx.name not in existing:
+                cols = ", ".join(c.name for c in idx.columns)
+                conn.execute(text(
+                    f'CREATE INDEX IF NOT EXISTS "{idx.name}" ON "{table.name}" ({cols})'
+                ))
+                logger.warning("Created missing index %s on %s", idx.name, table.name)
+
+
 def ensure_schema_compat(target_engine=None):
     target_engine = target_engine or engine
     with target_engine.begin() as conn:
@@ -176,6 +192,15 @@ def ensure_schema_compat(target_engine=None):
                     ))
                     logger.warning("Added missing order.%s column", col_name)
 
+        # --- order_item.customer_code ---
+        if inspector.has_table("order_item"):
+            cols = [c["name"] for c in inspector.get_columns("order_item")]
+            if "customer_code" not in cols:
+                conn.execute(text(
+                    "ALTER TABLE order_item ADD COLUMN customer_code VARCHAR"
+                ))
+                logger.warning("Added missing order_item.customer_code column")
+
         if inspector.has_table("order_item_link"):
             columns = {col["name"] for col in inspector.get_columns("order_item_link")}
             if "purchase_order_item_id" not in columns:
@@ -249,6 +274,9 @@ def ensure_schema_compat(target_engine=None):
                 ))
                 if result.rowcount:
                     logger.warning("Trimmed %d rows in %s.%s", result.rowcount, table, col)
+
+        _ensure_indexes(conn, inspector)
+
 
 def get_db():
     db = SessionLocal()

@@ -4,11 +4,11 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy.orm import Session
 
+from models.bom import Bom
 from models.jewelry import Jewelry
 from models.order import Order, OrderItem
 from models.order_cost_snapshot import OrderCostSnapshot, OrderCostSnapshotItem
 from models.part import Part
-from services.bom import get_bom
 
 _Q7 = Decimal("0.0000001")
 
@@ -23,11 +23,28 @@ def generate_cost_snapshot(db: Session, order_id: str) -> OrderCostSnapshot:
     if not items:
         raise ValueError(f"订单 {order_id} 没有饰品明细")
 
+    # Batch load all jewelry, BOM rows, and parts
+    jewelry_ids = list({item.jewelry_id for item in items})
+    jewelries = db.query(Jewelry).filter(Jewelry.id.in_(jewelry_ids)).all()
+    jewelry_map = {j.id: j for j in jewelries}
+
+    all_bom = db.query(Bom).filter(Bom.jewelry_id.in_(jewelry_ids)).all()
+    bom_by_jewelry: dict[str, list] = {}
+    all_part_ids = set()
+    for b in all_bom:
+        bom_by_jewelry.setdefault(b.jewelry_id, []).append(b)
+        all_part_ids.add(b.part_id)
+
+    part_map = {}
+    if all_part_ids:
+        for p in db.query(Part).filter(Part.id.in_(list(all_part_ids))).all():
+            part_map[p.id] = p
+
     # 前置校验：所有饰品必须有 BOM
     for item in items:
-        bom_rows = get_bom(db, item.jewelry_id)
+        bom_rows = bom_by_jewelry.get(item.jewelry_id, [])
         if not bom_rows:
-            jewelry = db.get(Jewelry, item.jewelry_id)
+            jewelry = jewelry_map.get(item.jewelry_id)
             name = jewelry.name if jewelry else item.jewelry_id
             raise ValueError(f"饰品「{name}」({item.jewelry_id}) 没有 BOM，无法生成成本快照")
 
@@ -36,14 +53,14 @@ def generate_cost_snapshot(db: Session, order_id: str) -> OrderCostSnapshot:
     snapshot_items = []
 
     for item in items:
-        jewelry = db.get(Jewelry, item.jewelry_id)
-        bom_rows = get_bom(db, item.jewelry_id)
+        jewelry = jewelry_map.get(item.jewelry_id)
+        bom_rows = bom_by_jewelry.get(item.jewelry_id, [])
 
         # 计算 BOM 配件成本
         bom_cost = Decimal(0)
         bom_details = []
         for row in bom_rows:
-            part = db.get(Part, row.part_id)
+            part = part_map.get(row.part_id)
             part_unit_cost = Decimal(str(part.unit_cost or 0)) if part else Decimal(0)
             if part and part.unit_cost is None:
                 has_incomplete = True

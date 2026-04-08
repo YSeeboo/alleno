@@ -44,6 +44,45 @@ def test_create_handcraft_order_with_note(client, db):
     assert data["note"] == "urgent order"
 
 
+def test_create_handcraft_order_merge_returns_200(client, db):
+    """Second create for same supplier on same day merges and returns 200."""
+    part, jewelry = _setup(db)
+    resp1 = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier Merge",
+        "parts": [{"part_id": part.id, "qty": 5.0}],
+    })
+    assert resp1.status_code == 201
+    order_id = resp1.json()["id"]
+
+    resp2 = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier Merge",
+        "parts": [{"part_id": part.id, "qty": 3.0}],
+    })
+    assert resp2.status_code == 200
+    assert resp2.json()["id"] == order_id
+
+    # Verify items accumulated
+    parts_resp = client.get(f"/api/handcraft/{order_id}/parts")
+    assert len(parts_resp.json()) == 2
+
+
+def test_create_handcraft_order_different_supplier_no_merge(client, db):
+    """Different suppliers always get separate orders with 201."""
+    part, jewelry = _setup(db)
+    resp1 = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier X",
+        "parts": [{"part_id": part.id, "qty": 5.0}],
+    })
+    assert resp1.status_code == 201
+
+    resp2 = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier Y",
+        "parts": [{"part_id": part.id, "qty": 3.0}],
+    })
+    assert resp2.status_code == 201
+    assert resp2.json()["id"] != resp1.json()["id"]
+
+
 def test_list_handcraft_orders(client, db):
     part, jewelry = _setup(db)
     client.post("/api/handcraft/", json={
