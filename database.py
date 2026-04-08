@@ -258,6 +258,19 @@ def ensure_schema_compat(target_engine=None):
                 if result.rowcount:
                     logger.warning("Backfilled %d order_todo_batch_jewelry.handcraft_jewelry_item_id rows", result.rowcount)
 
+        # --- handcraft_jewelry_item.part_id ---
+        if inspector.has_table("handcraft_jewelry_item"):
+            cols = [c["name"] for c in inspector.get_columns("handcraft_jewelry_item")]
+            if "part_id" not in cols:
+                conn.execute(text(
+                    "ALTER TABLE handcraft_jewelry_item ADD COLUMN part_id VARCHAR REFERENCES part(id)"
+                ))
+                logger.warning("Added missing handcraft_jewelry_item.part_id column")
+            # Make jewelry_id nullable (for part output items)
+            conn.execute(text(
+                "ALTER TABLE handcraft_jewelry_item ALTER COLUMN jewelry_id DROP NOT NULL"
+            ))
+
         # Trim whitespace from supplier/vendor name columns
         _name_columns = [
             ("plating_order", "supplier_name"),

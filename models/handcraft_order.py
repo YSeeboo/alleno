@@ -52,7 +52,8 @@ class HandcraftJewelryItem(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     handcraft_order_id = Column(String, ForeignKey("handcraft_order.id"), nullable=False, index=True)
-    jewelry_id = Column(String, ForeignKey("jewelry.id"), nullable=False)
+    jewelry_id = Column(String, ForeignKey("jewelry.id"), nullable=True)
+    part_id = Column(String, ForeignKey("part.id"), nullable=True)
     qty = Column(Integer, nullable=False)
     received_qty = Column(Integer, nullable=True, default=0)
     status = Column(String, nullable=False, default="未送出")
