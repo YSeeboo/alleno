@@ -83,18 +83,25 @@ def api_add_handcraft_receipt_items(receipt_id: str, body: HandcraftReceiptAddIt
     receipt = get_handcraft_receipt(db, receipt_id)
     if receipt is None:
         raise HTTPException(status_code=404, detail=f"HandcraftReceipt {receipt_id} not found")
+    # Track existing item IDs before adding new ones
+    from models.handcraft_receipt import HandcraftReceiptItem
+    existing_item_ids = {
+        ri.id for ri in db.query(HandcraftReceiptItem.id)
+        .filter(HandcraftReceiptItem.handcraft_receipt_id == receipt_id).all()
+    }
     with service_errors():
         receipt = add_handcraft_receipt_items(
             db,
             receipt_id=receipt_id,
             items=[item.model_dump() for item in body.items],
         )
-    # Detect diffs BEFORE auto-setting
+    # Only process newly added items for cost sync
+    new_items = [item for item in receipt.items if item.id not in existing_item_ids]
     cost_diffs = detect_handcraft_bead_cost_diffs(db, receipt)
     cost_diffs += detect_handcraft_jewelry_cost_diffs(db, receipt)
     cost_diffs += detect_handcraft_assembly_cost_diffs(db, receipt)
-    # Then sync
-    for item in receipt.items:
+    # Then sync — only new items
+    for item in new_items:
         if item.item_type == "jewelry" and item.price is not None:
             oi = db.get(HandcraftJewelryItem, item.handcraft_jewelry_item_id) if item.handcraft_jewelry_item_id else None
             if oi and oi.part_id and not oi.jewelry_id:

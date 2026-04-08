@@ -76,14 +76,21 @@ def recalc_part_unit_cost(db: Session, part_id: str) -> None:
     """Recalculate unit_cost for a composite part based on its part_bom.
 
     unit_cost = Σ(child.unit_cost × qty_per_unit) + assembly_cost
-    Only applies if the part has part_bom rows.
+    If part has no BOM rows, revert to manual cost logic (purchase + bead + plating).
+    After recalculating, propagate to any ancestor parts that reference this one.
     """
     rows = db.query(PartBom).filter_by(parent_part_id=part_id).all()
-    if not rows:
-        return  # Not a composite part, don't touch unit_cost
-
     part = db.query(Part).filter_by(id=part_id).first()
     if not part:
+        return
+
+    if not rows:
+        # No BOM — revert to manual cost formula
+        from services.part import _recalc_unit_cost
+        _recalc_unit_cost(part)
+        db.flush()
+        # Still propagate upward in case this part is used as a child somewhere
+        recalc_parents_of_child(db, part_id)
         return
 
     total = Decimal("0")
@@ -95,6 +102,9 @@ def recalc_part_unit_cost(db: Session, part_id: str) -> None:
     assembly = Decimal(str(part.assembly_cost or 0))
     part.unit_cost = total + assembly
     db.flush()
+
+    # Propagate to ancestors
+    recalc_parents_of_child(db, part_id)
 
 
 def recalc_parents_of_child(db: Session, child_part_id: str) -> None:
