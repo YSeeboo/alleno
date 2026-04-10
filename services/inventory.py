@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from models.inventory_log import InventoryLog
 from models.jewelry import Jewelry
 from models.part import Part
+from services._helpers import keyword_filter
 
 
 def get_stock(db: Session, item_type: str, item_id: str) -> float:
@@ -105,8 +106,9 @@ def get_inventory_overview(
             stock_sq,
             (stock_sq.c.item_type == "part") & (stock_sq.c.item_id == Part.id),
         )
-        if name:
-            q = q.filter(Part.name.ilike(f"%{name}%") | Part.id.ilike(f"%{name}%"))
+        clause = keyword_filter(name, Part.name, Part.id)
+        if clause is not None:
+            q = q.filter(clause)
         for part, current, updated_at in q.all():
             current = float(current) if current is not None else 0.0
             if in_stock_only and current <= 0:
@@ -126,8 +128,9 @@ def get_inventory_overview(
             stock_sq,
             (stock_sq.c.item_type == "jewelry") & (stock_sq.c.item_id == Jewelry.id),
         )
-        if name:
-            q = q.filter(Jewelry.name.ilike(f"%{name}%") | Jewelry.id.ilike(f"%{name}%"))
+        clause = keyword_filter(name, Jewelry.name, Jewelry.id)
+        if clause is not None:
+            q = q.filter(clause)
         for jewelry, current, updated_at in q.all():
             current = float(current) if current is not None else 0.0
             if in_stock_only and current <= 0:
