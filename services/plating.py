@@ -1,13 +1,13 @@
 from datetime import datetime, timezone, date as date_type
 from typing import Optional
 
-from sqlalchemy import func, or_, Date
+from sqlalchemy import func, Date
 from sqlalchemy.orm import Session, aliased
 
 from models.part import Part
 from models.plating_order import PlatingOrder, PlatingOrderItem
 from models.vendor_receipt import VendorReceipt
-from services._helpers import _next_id
+from services._helpers import _next_id, keyword_filter
 from services.inventory import add_stock, deduct_stock
 
 
@@ -370,16 +370,15 @@ def list_pending_receive_items(db: Session, part_keyword: str = None, supplier_n
         q = q.filter(func.cast(PlatingOrder.created_at, Date) == date_on)
     if exclude_item_ids:
         q = q.filter(PlatingOrderItem.id.notin_(exclude_item_ids))
-    if part_keyword:
-        like_pattern = f"%{part_keyword}%"
-        q = q.filter(
-            or_(
-                SendPart.id.ilike(like_pattern),
-                SendPart.name.ilike(like_pattern),
-                ReceivePart.id.ilike(like_pattern),
-                ReceivePart.name.ilike(like_pattern),
-            )
-        )
+    clause = keyword_filter(
+        part_keyword,
+        SendPart.id,
+        SendPart.name,
+        ReceivePart.id,
+        ReceivePart.name,
+    )
+    if clause is not None:
+        q = q.filter(clause)
     q = q.order_by(PlatingOrder.created_at.desc(), PlatingOrder.id.desc(), PlatingOrderItem.id.desc())
     rows = q.all()
     return [
