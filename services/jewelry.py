@@ -1,10 +1,9 @@
 from typing import Optional
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from models.jewelry import Jewelry
-from services._helpers import _next_id_by_category
+from services._helpers import _next_id_by_category, keyword_filter
 
 _VALID_STATUSES = {"active", "inactive"}
 
@@ -42,8 +41,9 @@ def list_jewelries(db: Session, category: str = None, status: str = None, name: 
         q = q.filter(Jewelry.category == category)
     if status is not None:
         q = q.filter(Jewelry.status == status)
-    if name is not None:
-        q = q.filter(or_(Jewelry.name.ilike(f"%{name}%"), Jewelry.id.ilike(f"%{name}%")))
+    clause = keyword_filter(name, Jewelry.name, Jewelry.id)
+    if clause is not None:
+        q = q.filter(clause)
     return q.order_by(Jewelry.id.desc()).all()
 
 
