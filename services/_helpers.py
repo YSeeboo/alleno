@@ -1,4 +1,6 @@
-from sqlalchemy import text
+from typing import Optional
+
+from sqlalchemy import and_, or_, text
 from sqlalchemy.orm import Session
 
 # Fast path: counter already exists, atomic increment
@@ -47,3 +49,30 @@ def _max_number(rows) -> int:
         except (ValueError, IndexError):
             pass
     return max_n
+
+
+def keyword_filter(keyword: Optional[str], *columns):
+    """Build a multi-keyword search filter.
+
+    Splits ``keyword`` on any Unicode whitespace (including U+3000 全角空格).
+    Each token must match at least one of ``columns`` (OR); all tokens must
+    match (AND). Uses ILIKE for case-insensitive substring matching.
+
+    Returns a SQLAlchemy clause, or ``None`` if ``keyword`` is empty or
+    whitespace-only. Callers should check for ``None`` and skip adding the
+    filter in that case.
+
+    Example:
+        clause = keyword_filter("背镂空 桃心", Part.name, Part.id)
+        if clause is not None:
+            q = q.filter(clause)
+    """
+    if not keyword:
+        return None
+    tokens = keyword.split()  # no-arg split handles any Unicode whitespace
+    if not tokens:
+        return None
+    return and_(*[
+        or_(*[col.ilike(f"%{tok}%") for col in columns])
+        for tok in tokens
+    ])
