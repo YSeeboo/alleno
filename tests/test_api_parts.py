@@ -53,6 +53,24 @@ def test_list_parts_filter_name_no_match(client):
     assert resp.status_code == 200
     assert resp.json() == []
 
+
+def test_list_parts_multi_keyword_and(client):
+    """Regression: '背镂空 桃心' must find '背镂空满钻桃心'.
+
+    Before the keyword_filter migration, this failed because the whole
+    string (including the space) was passed to a single ILIKE '%...%'.
+    """
+    client.post("/api/parts/", json={"name": "背镂空满钻桃心", "category": "吊坠"})
+    client.post("/api/parts/", json={"name": "背镂空圆环", "category": "吊坠"})
+    client.post("/api/parts/", json={"name": "满钻桃心", "category": "吊坠"})
+
+    resp = client.get("/api/parts/", params={"name": "背镂空 桃心"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "背镂空满钻桃心"
+
+
 def test_get_part(client):
     created = client.post("/api/parts/", json={"name": "X", "category": "吊坠"}).json()
     resp = client.get(f"/api/parts/{created['id']}")
