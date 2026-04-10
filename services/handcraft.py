@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
 from models.jewelry import Jewelry
 from models.part import Part
-from services._helpers import _next_id
+from services._helpers import _next_id, keyword_filter
 from services.inventory import add_stock, deduct_stock
 from time_utils import now_beijing
 
@@ -542,9 +542,9 @@ def list_handcraft_pending_receive_items(
         pq = pq.filter(func.cast(HandcraftOrder.created_at, Date) == date_on)
     if exclude_part_item_ids:
         pq = pq.filter(HandcraftPartItem.id.notin_(exclude_part_item_ids))
-    if keyword:
-        like = f"%{keyword}%"
-        pq = pq.filter(or_(Part.id.ilike(like), Part.name.ilike(like)))
+    clause = keyword_filter(keyword, Part.id, Part.name)
+    if clause is not None:
+        pq = pq.filter(clause)
     pq = pq.order_by(HandcraftOrder.created_at.desc(), HandcraftOrder.id.desc(), HandcraftPartItem.id.desc())
 
     for row in pq.all():
@@ -595,12 +595,11 @@ def list_handcraft_pending_receive_items(
         jq = jq.filter(func.cast(HandcraftOrder.created_at, Date) == date_on)
     if exclude_jewelry_item_ids:
         jq = jq.filter(HandcraftJewelryItem.id.notin_(exclude_jewelry_item_ids))
-    if keyword:
-        like = f"%{keyword}%"
-        jq = jq.filter(or_(
-            Jewelry.id.ilike(like), Jewelry.name.ilike(like),
-            Part.id.ilike(like), Part.name.ilike(like),
-        ))
+    clause = keyword_filter(
+        keyword, Jewelry.id, Jewelry.name, Part.id, Part.name,
+    )
+    if clause is not None:
+        jq = jq.filter(clause)
     jq = jq.order_by(HandcraftOrder.created_at.desc(), HandcraftOrder.id.desc(), HandcraftJewelryItem.id.desc())
 
     for row in jq.all():
