@@ -4,6 +4,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 from sqlalchemy import func
+from services._helpers import keyword_filter
 from sqlalchemy.orm import Session
 
 from models.plating_order import PlatingOrder, PlatingOrderItem
@@ -1250,15 +1251,17 @@ def list_vendors(db: Session, order_type: str | None = None, q: str | None = Non
 
     if order_type is None or order_type == "plating":
         qb = db.query(PlatingOrder.supplier_name).distinct()
-        if q:
-            qb = qb.filter(PlatingOrder.supplier_name.ilike(f"%{q}%"))
+        clause = keyword_filter(q, PlatingOrder.supplier_name)
+        if clause is not None:
+            qb = qb.filter(clause)
         for (name,) in qb.all():
             names.add(name)
 
     if order_type is None or order_type == "handcraft":
         qb = db.query(HandcraftOrder.supplier_name).distinct()
-        if q:
-            qb = qb.filter(HandcraftOrder.supplier_name.ilike(f"%{q}%"))
+        clause = keyword_filter(q, HandcraftOrder.supplier_name)
+        if clause is not None:
+            qb = qb.filter(clause)
         for (name,) in qb.all():
             names.add(name)
 
