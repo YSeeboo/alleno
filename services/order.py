@@ -168,16 +168,95 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
     parts = db.query(Part).filter(Part.id.in_(part_ids)).all() if part_ids else []
     part_info = {p.id: p for p in parts}
 
+    # Get current part stock and reserved qty (pending handcraft orders hold stock)
+    part_stocks = batch_get_stock(db, "part", part_ids) if part_ids else {}
+
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+    from models.order import OrderItemLink, OrderTodoItem
+    from sqlalchemy import func as sqla_func
+
+    # Find this order's own HandcraftPartItem IDs (batch path only).
+    # The batch flow creates precise row-level links: each OrderItemLink points
+    # to the exact HandcraftPartItem created for this order, safe even when
+    # multiple orders merge into one HandcraftOrder.
+    #
+    # Legacy direct-link path (order_id + handcraft_jewelry_item_id) is NOT
+    # included here because it only tracks jewelry items, not part items.
+    # For merged HC orders, we can't distinguish which part rows belong to
+    # which order. Omitting legacy means those parts are conservatively counted
+    # as "others' reserved" — remaining_qty may be slightly pessimistic, but
+    # never dangerously optimistic.
+    from sqlalchemy import text as sa_text
+    batch_hcpi_rows = db.execute(sa_text(
+        "SELECT oil.handcraft_part_item_id "
+        "FROM order_item_link oil "
+        "JOIN order_todo_item oti ON oil.order_todo_item_id = oti.id "
+        "WHERE oti.order_id = :oid AND oil.handcraft_part_item_id IS NOT NULL"
+    ), {"oid": order_id}).fetchall()
+    own_hcpi_ids = {row[0] for row in batch_hcpi_rows}
+
+    # Sum own part items by handcraft status
+    def _sum_own_parts(statuses: list[str]) -> dict[str, float]:
+        if not own_hcpi_ids or not part_ids:
+            return {}
+        rows = (
+            db.query(HandcraftPartItem.part_id, sqla_func.sum(HandcraftPartItem.qty))
+            .join(HandcraftOrder, HandcraftPartItem.handcraft_order_id == HandcraftOrder.id)
+            .filter(
+                HandcraftPartItem.id.in_(own_hcpi_ids),
+                HandcraftOrder.status.in_(statuses),
+                HandcraftPartItem.part_id.in_(part_ids),
+            )
+            .group_by(HandcraftPartItem.part_id)
+            .all()
+        )
+        return {pid: float(total) for pid, total in rows}
+
+    # Own processing parts: sent out, no longer in stock, working toward this order
+    own_processing_map = _sum_own_parts(["processing"])
+    # Own pending parts: still in stock AND in global reserved, but earmarked for us
+    own_pending_map = _sum_own_parts(["pending"])
+
+    # Total reserved by ALL pending handcraft orders
+    reserved_map: dict[str, float] = {}
+    if part_ids:
+        reserved_rows = (
+            db.query(HandcraftPartItem.part_id, sqla_func.sum(HandcraftPartItem.qty))
+            .join(HandcraftOrder, HandcraftPartItem.handcraft_order_id == HandcraftOrder.id)
+            .filter(
+                HandcraftOrder.status == "pending",
+                HandcraftPartItem.part_id.in_(part_ids),
+            )
+            .group_by(HandcraftPartItem.part_id)
+            .all()
+        )
+        for pid, total in reserved_rows:
+            reserved_map[pid] = float(total)
+
+    # Calculate global demand: total BOM needs across all active orders
+    global_demand_map = _calc_global_part_demand(db, part_ids)
+
     result = []
     for pid, total_qty in total_map.items():
         p = part_info.get(pid)
-        remaining = total_qty - deduct_map.get(pid, 0)
+        needed = total_qty - deduct_map.get(pid, 0)
+        stock = part_stocks.get(pid, 0)
+        total_reserved = reserved_map.get(pid, 0)
+        own_pending = own_pending_map.get(pid, 0)
+        own_processing = own_processing_map.get(pid, 0)
+        # Exclude own pending from "reserved by others" since those parts are for us
+        reserved_by_others = max(0.0, total_reserved - own_pending)
+        # Available stock for this order (own pending parts are still in stock, available to us)
+        available = max(0.0, stock - reserved_by_others)
         result.append({
             "part_id": pid,
             "part_name": p.name if p else "",
             "part_image": p.image if p else None,
             "total_qty": total_qty,
-            "remaining_qty": max(0.0, remaining),
+            "current_stock": stock,
+            "reserved_qty": reserved_by_others,
+            "global_demand": global_demand_map.get(pid, 0),
+            "remaining_qty": max(0.0, needed - own_processing - available),
         })
 
     return result

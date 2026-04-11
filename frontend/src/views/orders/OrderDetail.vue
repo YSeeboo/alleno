@@ -821,15 +821,18 @@ const reloadOrder = async () => {
   }))
 
   // parts-summary now returns list[dict] with part_id, part_name, part_image, total_qty, remaining_qty
-  partsSummaryRows.value = Array.isArray(sRes.data)
+  partsSummaryRows.value = sortPartsSummary(Array.isArray(sRes.data)
     ? sRes.data
     : Object.entries(sRes.data).map(([part_id, total_qty]) => ({
         part_id,
         part_name: part_id,
         part_image: null,
         total_qty,
+        current_stock: 0,
+        reserved_qty: 0,
+        global_demand: 0,
         remaining_qty: total_qty,
-      }))
+      })))
 
   await loadTodo()
   await loadBatches()
@@ -1230,13 +1233,23 @@ const partsColumns = [
     },
   },
   { title: '总需求量', key: 'total_qty', align: 'center' },
+  { title: '全局总需求', key: 'global_demand', align: 'center' },
+  { title: '当前库存', key: 'current_stock', align: 'center' },
+  { title: '他人预留', key: 'reserved_qty', align: 'center' },
   {
     title: '剩余需求量',
     key: 'remaining_qty',
     align: 'center',
     render(row) {
       if (row.remaining_qty == null) return '-'
-      const color = row.remaining_qty > 0 ? '#ff4d4f' : '#52c41a'
+      const available = Math.max(0, (row.current_stock || 0) - (row.reserved_qty || 0))
+      // red: this order insufficient, orange: this order ok but global insufficient, green: all ok
+      let color = '#52c41a' // green
+      if (row.remaining_qty > 0) {
+        color = '#ff4d4f' // red
+      } else if ((row.global_demand || 0) > available) {
+        color = '#fa8c16' // orange
+      }
       return h('span', { style: { color, fontWeight: '500' } }, row.remaining_qty)
     },
   },
@@ -1275,15 +1288,18 @@ onMounted(async () => {
     }))
 
     // parts-summary: support both new list format and legacy dict format
-    partsSummaryRows.value = Array.isArray(sRes.data)
+    partsSummaryRows.value = sortPartsSummary(Array.isArray(sRes.data)
       ? sRes.data
       : Object.entries(sRes.data).map(([part_id, total_qty]) => ({
           part_id,
           part_name: part_id,
           part_image: null,
           total_qty,
+          current_stock: 0,
+          reserved_qty: 0,
+          global_demand: 0,
           remaining_qty: total_qty,
-        }))
+        })))
 
     await Promise.all([
       loadTodo(),

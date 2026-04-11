@@ -1331,80 +1331,282 @@ def test_create_batch_rejects_duplicate_jewelry_ids(client, db):
 
 # --- Bug fix: remaining_qty must use per-jewelry allocated qty ---
 
-def test_parts_summary_remaining_with_sufficient_parts_partial_batch(client, db):
-    """Even when all parts have sufficient stock (等待发往手工),
-    remaining_qty should deduct only allocated qty, not full order qty.
-    Scenario: 100 units ordered, 30 sent to handcraft, all parts in stock.
-    remaining_qty should be (100-30)*bom = 70*bom, not 0.
+def test_parts_summary_remaining_with_partial_stock(client, db):
+    """remaining_qty = total BOM - jewelry deduct - available part stock.
+    Available = stock - reserved by pending handcraft.
     """
     order_id, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
-    order_item = db.query(OrderItem).filter_by(order_id=order_id).first()
-    total_qty = order_item.quantity  # 100
+    # BOM: part_a x10, part_b x1 per jewelry. Order qty=100.
 
-    # Add enough part stock so all BOM parts are sufficient
-    from models.bom import Bom
-    bom_rows = db.query(Bom).filter_by(jewelry_id=jewelry.id).all()
-    for bom in bom_rows:
-        needed = float(bom.qty_per_unit) * total_qty
-        add_stock(db, "part", bom.part_id, needed + 100, "test stock")
+    add_stock(db, "part", part_a.id, 300, "test stock")
+    add_stock(db, "part", part_b.id, 30, "test stock")
     db.flush()
-
-    # Now create a partial handcraft allocation of 30 units
-    from models.handcraft_order import HandcraftOrder, HandcraftJewelryItem
-    hc = HandcraftOrder(id="HC-PARTIAL2", supplier_name="TestHC", status="pending")
-    db.add(hc)
-    db.flush()
-    hc_j = HandcraftJewelryItem(
-        handcraft_order_id=hc.id,
-        jewelry_id=jewelry.id,
-        qty=30,
-    )
-    db.add(hc_j)
-    db.flush()
-    link = OrderItemLink(order_id=order_id, handcraft_jewelry_item_id=hc_j.id)
-    db.add(link)
-    db.flush()
-
-    # Status should be 等待手工返回 (has handcraft link)
-    status_resp = client.get(f"/api/orders/{order_id}/jewelry-status")
-    assert status_resp.json()[0]["status"] == "等待手工返回"
 
     resp = client.get(f"/api/orders/{order_id}/parts-summary")
     data = resp.json()
-    # Only 30 allocated → deduct 30 units worth of BOM
-    # part_a: total=1000, deduct=30*10=300, remaining=700
-    a_summary = next(d for d in data if d["part_id"] == part_a.id)
-    assert a_summary["remaining_qty"] == 700.0
 
-    # part_b: total=100, deduct=30*1=30, remaining=70
+    a_summary = next(d for d in data if d["part_id"] == part_a.id)
+    assert a_summary["total_qty"] == 1000.0
+    assert a_summary["current_stock"] == 300.0
+    assert a_summary["reserved_qty"] == 0.0
+    assert a_summary["remaining_qty"] == 700.0  # 1000 - (300-0)
+
     b_summary = next(d for d in data if d["part_id"] == part_b.id)
+    assert b_summary["total_qty"] == 100.0
+    assert b_summary["current_stock"] == 30.0
     assert b_summary["remaining_qty"] == 70.0
 
 
-def test_parts_summary_remaining_no_allocation(client, db):
-    """When parts are sufficient but nothing allocated, remaining = total.
-    (等待发往手工 with 0 allocated should NOT deduct anything)
-    """
+def test_parts_summary_remaining_sufficient_stock(client, db):
+    """When available part stock fully covers BOM demand, remaining = 0."""
     order_id, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
-    order_item = db.query(OrderItem).filter_by(order_id=order_id).first()
 
-    # Add enough part stock
-    from models.bom import Bom
-    bom_rows = db.query(Bom).filter_by(jewelry_id=jewelry.id).all()
-    for bom in bom_rows:
-        needed = float(bom.qty_per_unit) * order_item.quantity
-        add_stock(db, "part", bom.part_id, needed + 100, "test stock")
+    add_stock(db, "part", part_a.id, 1500, "test stock")
+    add_stock(db, "part", part_b.id, 200, "test stock")
     db.flush()
-
-    # Status = 等待发往手工, allocated = 0
-    status_resp = client.get(f"/api/orders/{order_id}/jewelry-status")
-    assert status_resp.json()[0]["status"] == "等待发往手工"
 
     resp = client.get(f"/api/orders/{order_id}/parts-summary")
     data = resp.json()
-    # Nothing allocated → remaining = total
+
+    a_summary = next(d for d in data if d["part_id"] == part_a.id)
+    assert a_summary["remaining_qty"] == 0.0
+    assert a_summary["current_stock"] == 1500.0
+
+    b_summary = next(d for d in data if d["part_id"] == part_b.id)
+    assert b_summary["remaining_qty"] == 0.0
+
+
+def test_parts_summary_remaining_no_stock(client, db):
+    """When no part stock and no jewelry stock, remaining = total."""
+    order_id, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
+
+    resp = client.get(f"/api/orders/{order_id}/parts-summary")
+    data = resp.json()
+
     a_summary = next(d for d in data if d["part_id"] == part_a.id)
     assert a_summary["remaining_qty"] == a_summary["total_qty"]
+    assert a_summary["current_stock"] == 0.0
+    assert a_summary["reserved_qty"] == 0.0
+
+
+def test_parts_summary_remaining_with_jewelry_stock(client, db):
+    """Finished jewelry in stock reduces part demand (parts already consumed)."""
+    order_id, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
+
+    add_stock(db, "jewelry", jewelry.id, 40, "已完成")
+    db.flush()
+
+    resp = client.get(f"/api/orders/{order_id}/parts-summary")
+    data = resp.json()
+
+    a_summary = next(d for d in data if d["part_id"] == part_a.id)
+    assert a_summary["remaining_qty"] == 600.0  # 1000 - 400 jewelry deduct
+
+    b_summary = next(d for d in data if d["part_id"] == part_b.id)
+    assert b_summary["remaining_qty"] == 60.0
+
+
+def test_parts_summary_reserved_by_pending_handcraft(client, db):
+    """Pending handcraft orders reserve part stock, reducing available for this order."""
+    order_id, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
+    # BOM: part_a x10, part_b x1. Order qty=100 → need 1000 part_a, 100 part_b.
+
+    # Stock: 500 part_a, 100 part_b
+    add_stock(db, "part", part_a.id, 500, "入库")
+    add_stock(db, "part", part_b.id, 100, "入库")
+    db.flush()
+
+    # Another pending handcraft reserves 200 part_a and 20 part_b
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+    hc = HandcraftOrder(id="HC-OTHER", supplier_name="OtherSupplier", status="pending")
+    db.add(hc)
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id=hc.id, part_id=part_a.id, qty=200))
+    db.add(HandcraftPartItem(handcraft_order_id=hc.id, part_id=part_b.id, qty=20))
+    db.flush()
+
+    resp = client.get(f"/api/orders/{order_id}/parts-summary")
+    data = resp.json()
+
+    # part_a: need=1000, stock=500, reserved=200, available=300, remaining=700
+    a = next(d for d in data if d["part_id"] == part_a.id)
+    assert a["current_stock"] == 500.0
+    assert a["reserved_qty"] == 200.0
+    assert a["remaining_qty"] == 700.0  # 1000 - max(0, 500-200)
+
+    # part_b: need=100, stock=100, reserved=20, available=80, remaining=20
+    b = next(d for d in data if d["part_id"] == part_b.id)
+    assert b["current_stock"] == 100.0
+    assert b["reserved_qty"] == 20.0
+    assert b["remaining_qty"] == 20.0  # 100 - max(0, 100-20)
+
+
+def test_parts_summary_global_demand_cross_order(client, db):
+    """global_demand reflects total demand across all active orders.
+    Two orders both need part_a: Order A needs 1000, Order B needs 500.
+    Stock = 1000. Each order's remaining=0, but global_demand=1500 > available.
+    """
+    order_id_a, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
+    # Order A: 100 jewelry × 10 part_a = 1000 part_a needed
+
+    # Create Order B for same jewelry, qty=50 → 500 part_a needed
+    from models.jewelry import Jewelry
+    resp_b = client.post("/api/orders", json={
+        "customer_name": "CustomerB",
+        "items": [{"jewelry_id": jewelry.id, "quantity": 50, "unit_price": 10}],
+    })
+    order_id_b = resp_b.json()["id"]
+
+    # Stock covers Order A alone but not both
+    add_stock(db, "part", part_a.id, 1000, "入库")
+    add_stock(db, "part", part_b.id, 200, "入库")
+    db.flush()
+
+    # Check Order A
+    resp_a = client.get(f"/api/orders/{order_id_a}/parts-summary")
+    a_data = resp_a.json()
+    a_part = next(d for d in a_data if d["part_id"] == part_a.id)
+    assert a_part["total_qty"] == 1000.0
+    assert a_part["remaining_qty"] == 0.0  # per-order: 1000 stock covers 1000 need
+    assert a_part["global_demand"] == 1500.0  # 1000 + 500 across both orders
+
+    # Check Order B
+    resp_b = client.get(f"/api/orders/{order_id_b}/parts-summary")
+    b_data = resp_b.json()
+    b_part = next(d for d in b_data if d["part_id"] == part_a.id)
+    assert b_part["total_qty"] == 500.0
+    assert b_part["remaining_qty"] == 0.0  # per-order: 1000 stock covers 500 need
+    assert b_part["global_demand"] == 1500.0  # same global view
+
+
+def test_parts_summary_own_pending_handcraft_not_counted_as_gap(client, db):
+    """After linking supplier (pending handcraft), own reserved parts should NOT
+    increase remaining_qty. The parts are earmarked for this order.
+    """
+    order_id, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
+    # BOM: part_a x10, part_b x1. Order qty=100 → need 1000 part_a, 100 part_b.
+
+    # Add exact stock needed
+    add_stock(db, "part", part_a.id, 1000, "入库")
+    add_stock(db, "part", part_b.id, 100, "入库")
+    db.flush()
+
+    # Before batch: remaining should be 0
+    resp = client.get(f"/api/orders/{order_id}/parts-summary")
+    before = resp.json()
+    a_before = next(d for d in before if d["part_id"] == part_a.id)
+    assert a_before["remaining_qty"] == 0.0
+
+    # Create batch and link supplier → creates pending handcraft with part items
+    batch_resp = client.post(
+        f"/api/orders/{order_id}/todo-batch",
+        json={"items": [{"jewelry_id": jewelry.id, "quantity": 100}]},
+    )
+    batch_id = batch_resp.json()["id"]
+    link_resp = client.post(
+        f"/api/orders/{order_id}/todo-batch/{batch_id}/link-supplier",
+        json={"supplier_name": "TestSupplier"},
+    )
+    assert link_resp.status_code == 200
+
+    # After link: own pending handcraft should NOT make remaining go up
+    resp = client.get(f"/api/orders/{order_id}/parts-summary")
+    after = resp.json()
+    a_after = next(d for d in after if d["part_id"] == part_a.id)
+    assert a_after["remaining_qty"] == 0.0  # still 0, parts are for this order
+    assert a_after["reserved_qty"] == 0.0   # reserved_by_others = 0
+
+
+def test_parts_summary_own_processing_handcraft_not_counted_as_gap(client, db):
+    """After sending handcraft (processing), parts are out of stock but in pipeline.
+    remaining_qty should still be 0 — not show as shortage.
+    """
+    order_id, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
+
+    add_stock(db, "part", part_a.id, 1000, "入库")
+    add_stock(db, "part", part_b.id, 100, "入库")
+    db.flush()
+
+    # Create batch → link supplier → send handcraft
+    batch_resp = client.post(
+        f"/api/orders/{order_id}/todo-batch",
+        json={"items": [{"jewelry_id": jewelry.id, "quantity": 100}]},
+    )
+    batch_id = batch_resp.json()["id"]
+    link_resp = client.post(
+        f"/api/orders/{order_id}/todo-batch/{batch_id}/link-supplier",
+        json={"supplier_name": "TestSupplier"},
+    )
+    hc_id = link_resp.json()["handcraft_order_id"]
+
+    # Send the handcraft order → status becomes processing, stock deducted
+    send_resp = client.post(f"/api/handcraft/{hc_id}/send")
+    assert send_resp.status_code == 200
+
+    # After send: stock is 0, but parts are in processing for this order
+    resp = client.get(f"/api/orders/{order_id}/parts-summary")
+    data = resp.json()
+    a = next(d for d in data if d["part_id"] == part_a.id)
+    assert a["current_stock"] == 0.0    # stock deducted
+    assert a["remaining_qty"] == 0.0    # still covered by own processing handcraft
+
+
+def test_parts_summary_merged_handcraft_isolates_own_parts(client, db):
+    """When two orders merge into the same handcraft (same supplier, same day),
+    each order should only count its own HandcraftPartItem rows as 'own',
+    not the entire merged handcraft order.
+    """
+    order_id_a, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
+    # Order A: 100 jewelry × (10 part_a + 1 part_b) = 1000 part_a, 100 part_b
+
+    # Create Order B for same jewelry, qty=50
+    resp_b = client.post("/api/orders", json={
+        "customer_name": "CustomerB",
+        "items": [{"jewelry_id": jewelry.id, "quantity": 50, "unit_price": 10}],
+    })
+    order_id_b = resp_b.json()["id"]
+
+    # Stock covers both orders
+    add_stock(db, "part", part_a.id, 1500, "入库")
+    add_stock(db, "part", part_b.id, 150, "入库")
+    db.flush()
+
+    # Link both orders to same supplier → auto-merge into one handcraft order
+    batch_a = client.post(
+        f"/api/orders/{order_id_a}/todo-batch",
+        json={"items": [{"jewelry_id": jewelry.id, "quantity": 100}]},
+    ).json()
+    link_a = client.post(
+        f"/api/orders/{order_id_a}/todo-batch/{batch_a['id']}/link-supplier",
+        json={"supplier_name": "SharedSupplier"},
+    )
+    assert link_a.status_code == 200, link_a.json()
+
+    batch_b = client.post(
+        f"/api/orders/{order_id_b}/todo-batch",
+        json={"items": [{"jewelry_id": jewelry.id, "quantity": 50}]},
+    ).json()
+    link_b = client.post(
+        f"/api/orders/{order_id_b}/todo-batch/{batch_b['id']}/link-supplier",
+        json={"supplier_name": "SharedSupplier"},
+    )
+    assert link_b.status_code == 200, link_b.json()
+    # Verify both merged into same handcraft order
+    assert link_a.json()["handcraft_order_id"] == link_b.json()["handcraft_order_id"]
+
+    # Order A: own_pending = 1000 part_a, reserved_by_others = 500 (Order B's)
+    resp_a = client.get(f"/api/orders/{order_id_a}/parts-summary")
+    a_data = resp_a.json()
+    a_part = next(d for d in a_data if d["part_id"] == part_a.id)
+    assert a_part["reserved_qty"] == 500.0  # Order B's pending, not own
+    assert a_part["remaining_qty"] == 0.0   # 1500 stock - 500 others = 1000 available >= 1000 needed
+
+    # Order B: own_pending = 500 part_a, reserved_by_others = 1000 (Order A's)
+    resp_b = client.get(f"/api/orders/{order_id_b}/parts-summary")
+    b_data = resp_b.json()
+    b_part = next(d for d in b_data if d["part_id"] == part_a.id)
+    assert b_part["reserved_qty"] == 1000.0  # Order A's pending, not own
+    assert b_part["remaining_qty"] == 0.0    # 1500 - 1000 = 500 available >= 500 needed
 
 
 # --- 饰品回收自动消耗配件 ---

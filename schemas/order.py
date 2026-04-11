@@ -200,4 +200,7 @@ class PartsSummaryItemResponse(BaseModel):
     part_name: str
     part_image: str | None = None
     total_qty: float
+    current_stock: float
+    reserved_qty: float
+    global_demand: float
     remaining_qty: float

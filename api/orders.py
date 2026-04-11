@@ -12,7 +12,7 @@ from schemas.order import (
     OrderCreate, OrderResponse, OrderItemResponse, StatusUpdate,
     OrderTodoItemResponse, LinkCreateRequest, LinkResponse,
     BatchLinkRequest, BatchLinkResponse, OrderProgressResponse,
-    OrderItemUpdate, BatchCustomerCodeRequest,
+    OrderItemUpdate, BatchCustomerCodeRequest, PartsSummaryItemResponse,
 )
 from schemas.order import OrderItemCreate
 from schemas.order_cost_snapshot import OrderCostSnapshotResponse
@@ -133,7 +133,7 @@ def api_delete_order_item(order_id: str, item_id: int, db: Session = Depends(get
         delete_order_item(db, order_id, item_id)
 
 
-@router.get("/{order_id}/parts-summary")
+@router.get("/{order_id}/parts-summary", response_model=list[PartsSummaryItemResponse])
 def api_get_parts_summary(order_id: str, db: Session = Depends(get_db)):
     order = get_order(db, order_id)
     if order is None:
