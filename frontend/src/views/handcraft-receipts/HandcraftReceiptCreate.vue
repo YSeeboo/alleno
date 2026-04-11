@@ -49,7 +49,7 @@
       <n-spin :show="loadingItems">
         <n-empty
           v-if="!loadingItems && currentPendingItems.length === 0"
-          :description="fetchError ? '加载失败，请重试' : supplierName ? `该商家暂无待回收${activeTab === 'part' ? '配件' : '饰品'}` : '请先选择商家'"
+          :description="fetchError ? '加载失败，请重试' : supplierName ? `该商家暂无待回收${activeTab === 'part' ? '配件' : '产出项'}` : '请先选择商家'"
           style="margin-top: 16px;"
         />
         <n-data-table
@@ -353,7 +353,7 @@ const jewelryPendingColumns = [
   { type: 'selection' },
   { title: '手工单号', key: 'handcraft_order_id', width: 110 },
   {
-    title: '饰品',
+    title: '产出项',
     key: 'item_name',
     minWidth: 160,
     render: (row) => renderNamedImage(row.item_name, row.item_image, row.item_name),

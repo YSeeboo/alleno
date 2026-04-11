@@ -1083,7 +1083,7 @@ const addItemsJewelryColumns = [
   { type: 'selection' },
   { title: '手工单号', key: 'handcraft_order_id', width: 100 },
   {
-    title: '饰品',
+    title: '产出项',
     key: 'item_name',
     minWidth: 140,
     render: (row) => renderNamedImage(row.item_name, row.item_image, row.item_name),

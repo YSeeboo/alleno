@@ -51,10 +51,17 @@
         </n-card>
       </n-gi>
       <n-gi>
-        <n-card title="预期收回饰品">
+        <n-card title="预期产出">
           <div v-for="(item, idx) in jewelries" :key="idx" style="margin-bottom: 10px;">
             <n-space align="center">
               <n-select
+                v-model:value="item.output_type"
+                :options="outputTypeOptions"
+                style="width: 80px;"
+                @update:value="() => { item.jewelry_id = null; item.part_id = null }"
+              />
+              <n-select
+                v-if="item.output_type === 'jewelry'"
                 v-model:value="item.jewelry_id"
                 :options="jewelryOptions"
                 :render-label="renderOptionWithImage"
@@ -63,17 +70,27 @@
                 style="width: 190px;"
                 @update:value="(val) => onJewelrySelect(item, val)"
               />
+              <n-select
+                v-else
+                v-model:value="item.part_id"
+                :options="partOptions"
+                :render-label="renderOptionWithImage"
+                filterable
+                placeholder="选择配件"
+                style="width: 190px;"
+                @update:value="(val) => onOutputPartSelect(item, val)"
+              />
               <n-input-number v-model:value="item.qty" :min="1" :precision="0" :step="1" placeholder="预期数量" style="width: 100px;" />
               <n-select
                 v-model:value="item.unit"
-                :options="jewelryUnitOptions"
+                :options="item.output_type === 'jewelry' ? jewelryUnitOptions : partUnitOptions"
                 style="width: 80px;"
               />
               <n-button type="error" size="small" @click="jewelries.splice(idx, 1)">删</n-button>
             </n-space>
           </div>
-          <n-button dashed style="width: 100%;" @click="jewelries.push({ jewelry_id: null, qty: 1, unit: '个', note: '' })">
-            + 添加饰品行
+          <n-button dashed style="width: 100%;" @click="jewelries.push({ output_type: 'jewelry', jewelry_id: null, part_id: null, qty: 1, unit: '个', note: '' })">
+            + 添加产出行
           </n-button>
         </n-card>
       </n-gi>
@@ -139,8 +156,24 @@ const onJewelrySelect = (item, val) => {
   }
 }
 
+const onOutputPartSelect = (item, val) => {
+  const found = partOptions.value.find((p) => p.value === val)
+  if (found && found.unit) {
+    item.unit = found.unit
+  } else {
+    item.unit = '个'
+  }
+}
+
 const normalizedParts = () => parts.filter((item) => item.part_id)
-const normalizedJewelries = () => jewelries.filter((item) => item.jewelry_id)
+const normalizedJewelries = () => jewelries
+  .filter((item) => item.jewelry_id || item.part_id)
+  .map((item) => {
+    if (item.output_type === 'part') {
+      return { part_id: item.part_id, qty: item.qty, unit: item.unit, note: item.note }
+    }
+    return { jewelry_id: item.jewelry_id, qty: item.qty, unit: item.unit, note: item.note }
+  })
 
 const submit = async () => {
   const validParts = normalizedParts()

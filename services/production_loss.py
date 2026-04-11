@@ -98,12 +98,19 @@ def confirm_handcraft_loss(
     elif item_type == "jewelry":
         item = db.query(HandcraftJewelryItem).filter_by(id=item_id, handcraft_order_id=order_id).first()
         if not item:
-            raise ValueError(f"手工单饰品项 {item_id} 不存在")
+            raise ValueError(f"手工单产出项 {item_id} 不存在")
         loss_item_type = "handcraft_jewelry"
-        part_id = None
-        jewelry_id = item.jewelry_id
-        inv_item_type = "jewelry"
-        inv_item_id = item.jewelry_id
+        if item.part_id and not item.jewelry_id:
+            # Part output item
+            part_id = item.part_id
+            jewelry_id = None
+            inv_item_type = "part"
+            inv_item_id = item.part_id
+        else:
+            part_id = None
+            jewelry_id = item.jewelry_id
+            inv_item_type = "jewelry"
+            inv_item_id = item.jewelry_id
     else:
         raise ValueError(f"无效的 item_type: {item_type}")
 
@@ -111,7 +118,7 @@ def confirm_handcraft_loss(
     if loss_qty <= 0:
         raise ValueError("损耗数量必须大于 0")
     if item_type == "jewelry" and loss_qty != int(loss_qty):
-        raise ValueError("饰品损耗数量必须为整数")
+        raise ValueError("产出项损耗数量必须为整数")
     if loss_qty > gap:
         raise ValueError(f"损耗数量 {loss_qty} 超过差额 {gap}")
 
