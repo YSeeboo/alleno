@@ -18,6 +18,7 @@ from schemas.purchase_order import (
     PurchaseOrderItemResponse,
     PurchaseOrderResponse,
     PurchaseOrderStatusUpdate,
+    PurchaseOrderUpdate,
 )
 from services.cost_sync import auto_set_initial_bead_cost, auto_set_initial_purchase_cost, auto_set_initial_purchase_costs, detect_purchase_cost_diffs, detect_addon_cost_diffs
 from services.order_todo import get_links_for_production_item, delete_link
@@ -33,6 +34,7 @@ from services.purchase_order import (
     list_purchase_orders,
     update_purchase_item,
     update_purchase_item_addon,
+    update_purchase_order,
     update_purchase_order_images,
     update_purchase_order_status,
 )
@@ -84,6 +86,15 @@ def api_delete_purchase_order(order_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"PurchaseOrder {order_id} not found")
     with service_errors():
         delete_purchase_order(db, order_id)
+
+
+@router.patch("/{order_id}", response_model=PurchaseOrderResponse)
+def api_update_purchase_order(order_id: str, body: PurchaseOrderUpdate, db: Session = Depends(get_db)):
+    order = get_purchase_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"PurchaseOrder {order_id} not found")
+    with service_errors():
+        return update_purchase_order(db, order_id, body.model_dump(exclude_unset=True))
 
 
 @router.patch("/{order_id}/status", response_model=PurchaseOrderResponse)

@@ -21,6 +21,7 @@ from schemas.handcraft_receipt import (
     HandcraftReceiptItemResponse,
     HandcraftReceiptResponse,
     HandcraftReceiptStatusUpdate,
+    HandcraftReceiptUpdate,
 )
 from models.handcraft_order import HandcraftPartItem, HandcraftJewelryItem
 from schemas.production_loss import BatchConfirmLossHandcraftRequest, BatchConfirmLossResponse
@@ -33,6 +34,7 @@ from services.handcraft_receipt import (
     get_handcraft_receipt,
     get_handcraft_receipt_supplier_names,
     list_handcraft_receipts,
+    update_handcraft_receipt,
     update_handcraft_receipt_images,
     update_handcraft_receipt_item,
     update_handcraft_receipt_status,
@@ -135,6 +137,15 @@ def api_delete_handcraft_receipt(receipt_id: str, db: Session = Depends(get_db))
         raise HTTPException(status_code=404, detail=f"HandcraftReceipt {receipt_id} not found")
     with service_errors():
         delete_handcraft_receipt(db, receipt_id)
+
+
+@router.patch("/{receipt_id}", response_model=HandcraftReceiptResponse)
+def api_update_handcraft_receipt(receipt_id: str, body: HandcraftReceiptUpdate, db: Session = Depends(get_db)):
+    receipt = get_handcraft_receipt(db, receipt_id)
+    if receipt is None:
+        raise HTTPException(status_code=404, detail=f"HandcraftReceipt {receipt_id} not found")
+    with service_errors():
+        return update_handcraft_receipt(db, receipt_id, body.model_dump(exclude_unset=True))
 
 
 @router.patch("/{receipt_id}/status", response_model=HandcraftReceiptResponse)

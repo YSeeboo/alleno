@@ -9,6 +9,15 @@
       <n-form-item label="客户名">
         <n-input v-model:value="customerName" placeholder="请输入客户名称" style="width: 300px;" />
       </n-form-item>
+      <n-form-item label="创建时间">
+        <n-date-picker
+          v-model:value="createdAtTs"
+          type="date"
+          clearable
+          placeholder="不填则使用当前时间"
+          style="width: 300px;"
+        />
+      </n-form-item>
     </n-form>
 
     <n-card title="订单明细" style="margin-bottom: 16px;">
@@ -53,15 +62,17 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
-import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NText, NH2 } from 'naive-ui'
+import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NText, NH2, NDatePicker } from 'naive-ui'
 import { listJewelries } from '@/api/jewelries'
 import { createOrder } from '@/api/orders'
 import { renderOptionWithImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
+import { tsToDateStr } from '@/utils/date'
 
 const router = useRouter()
 const message = useMessage()
 
 const customerName = ref('')
+const createdAtTs = ref(null)
 const items = reactive([])
 const submitting = ref(false)
 const jewelryMap = ref({})  // id -> jewelry

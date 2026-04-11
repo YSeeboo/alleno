@@ -19,6 +19,15 @@
       <n-form-item label="备注">
         <n-input v-model:value="note" type="textarea" :rows="2" style="width: 300px;" />
       </n-form-item>
+      <n-form-item label="创建时间">
+        <n-date-picker
+          v-model:value="createdAtTs"
+          type="date"
+          clearable
+          placeholder="不填则使用当前时间"
+          style="width: 300px;"
+        />
+      </n-form-item>
     </n-form>
 
     <n-card title="电镀明细" style="margin-bottom: 16px;">
@@ -97,11 +106,12 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
-import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2 } from 'naive-ui'
+import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NDatePicker } from 'naive-ui'
 import { listParts, findOrCreateVariant, createPartVariant, getColorVariants } from '@/api/parts'
 import { createPlating } from '@/api/plating'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { renderOptionWithImage } from '@/utils/ui'
+import { tsToDateStr } from '@/utils/date'
 
 const router = useRouter()
 const message = useMessage()
@@ -109,6 +119,7 @@ const dialog = useDialog()
 const supplierName = ref(null)
 const supplierOptions = ref([])
 const note = ref('')
+const createdAtTs = ref(null)
 const items = reactive([createEmptyItem()])
 const submitting = ref(false)
 const partOptions = ref([])

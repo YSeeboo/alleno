@@ -366,16 +366,18 @@ import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
   NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon, NImage,
-  NRadioGroup, NRadio,
+  NRadioGroup, NRadio, NDatePicker,
 } from 'naive-ui'
 import { CreateOutline } from '@vicons/ionicons5'
 import {
   getHandcraft, getHandcraftParts, getHandcraftJewelries, sendHandcraft,
   addHandcraftPart, updateHandcraftPart, deleteHandcraftPart,
+  updateHandcraftJewelry, updateHandcraft,
   updateHandcraftDeliveryImages, downloadHandcraftExcel, downloadHandcraftPdf,
   getHandcraftPartOrders, deleteHandcraftPartOrderLink,
   getHandcraftJewelryOrders, deleteHandcraftJewelryOrderLink,
 } from '@/api/handcraft'
+import { tsToDateStr, isoToTs } from '@/utils/date'
 import { confirmHandcraftLoss } from '@/api/productionLoss'
 import { changeOrderStatus } from '@/api/kanban'
 import { listParts, updatePart } from '@/api/parts'

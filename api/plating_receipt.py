@@ -16,6 +16,7 @@ from schemas.plating_receipt import (
     PlatingReceiptItemResponse,
     PlatingReceiptResponse,
     PlatingReceiptStatusUpdate,
+    PlatingReceiptUpdate,
 )
 from models.plating_order import PlatingOrderItem
 from schemas.production_loss import BatchConfirmLossPlatingRequest, BatchConfirmLossResponse
@@ -28,6 +29,7 @@ from services.plating_receipt import (
     get_plating_receipt,
     get_receipt_vendor_names,
     list_plating_receipts,
+    update_plating_receipt,
     update_plating_receipt_images,
     update_plating_receipt_item,
     update_plating_receipt_status,
@@ -95,6 +97,15 @@ def api_delete_plating_receipt(receipt_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"PlatingReceipt {receipt_id} not found")
     with service_errors():
         delete_plating_receipt(db, receipt_id)
+
+
+@router.patch("/{receipt_id}", response_model=PlatingReceiptResponse)
+def api_update_plating_receipt(receipt_id: str, body: PlatingReceiptUpdate, db: Session = Depends(get_db)):
+    receipt = get_plating_receipt(db, receipt_id)
+    if receipt is None:
+        raise HTTPException(status_code=404, detail=f"PlatingReceipt {receipt_id} not found")
+    with service_errors():
+        return update_plating_receipt(db, receipt_id, body.model_dump(exclude_unset=True))
 
 
 @router.patch("/{receipt_id}/status", response_model=PlatingReceiptResponse)

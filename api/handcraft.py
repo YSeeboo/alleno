@@ -17,6 +17,7 @@ from schemas.handcraft import (
     HandcraftPartIn,
     HandcraftPartItemResponse,
     HandcraftResponse,
+    HandcraftUpdate,
 )
 from schemas.production_loss import ConfirmLossHandcraftRequest, ProductionLossResponse
 from services.production_loss import confirm_handcraft_loss
@@ -263,6 +264,15 @@ def api_confirm_handcraft_loss(order_id: str, item_id: int, body: ConfirmLossHan
             reason=body.reason,
             note=body.note,
         )
+
+
+@router.patch("/{order_id}", response_model=HandcraftResponse)
+def api_update_handcraft_order(order_id: str, body: HandcraftUpdate, db: Session = Depends(get_db)):
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
+    with service_errors():
+        return update_handcraft_order(db, order_id, body.model_dump(exclude_unset=True))
 
 
 @router.patch("/{order_id}/status", response_model=HandcraftResponse)

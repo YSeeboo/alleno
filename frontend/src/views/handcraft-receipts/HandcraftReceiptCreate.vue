@@ -20,13 +20,22 @@
       <n-form-item label="备注">
         <n-input v-model:value="note" type="textarea" :rows="2" style="width: 300px;" />
       </n-form-item>
+      <n-form-item label="创建时间">
+        <n-date-picker
+          v-model:value="createdAtTs"
+          type="date"
+          clearable
+          placeholder="不填则使用当前时间"
+          style="width: 300px;"
+        />
+      </n-form-item>
     </n-form>
 
     <n-card title="待回收项目" style="margin-bottom: 16px;">
       <template #header-extra>
         <n-radio-group v-model:value="activeTab" size="small">
           <n-radio-button value="part">配件</n-radio-button>
-          <n-radio-button value="jewelry">饰品</n-radio-button>
+          <n-radio-button value="jewelry">产出</n-radio-button>
         </n-radio-group>
       </template>
       <div v-if="supplierName" style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
@@ -120,12 +129,14 @@ import { listHandcraftPendingReceiveItems, createHandcraftReceipt } from '@/api/
 import { getHandcraftSuppliers } from '@/api/handcraft'
 import { batchUpdatePartCosts } from '@/api/parts'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
+import { tsToDateStr } from '@/utils/date'
 
 const router = useRouter()
 const message = useMessage()
 const supplierName = ref(null)
 const note = ref('')
 const status = ref('未付款')
+const createdAtTs = ref(null)
 const submitting = ref(false)
 const loadingItems = ref(false)
 const supplierOptions = ref([])

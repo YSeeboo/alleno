@@ -19,6 +19,15 @@
       <n-form-item label="备注">
         <n-input v-model:value="note" type="textarea" :rows="2" style="width: 300px;" />
       </n-form-item>
+      <n-form-item label="创建时间">
+        <n-date-picker
+          v-model:value="createdAtTs"
+          type="date"
+          clearable
+          placeholder="不填则使用当前时间，填写后不触发同日合并"
+          style="width: 360px;"
+        />
+      </n-form-item>
     </n-form>
 
     <n-grid :cols="2" :x-gap="16" style="margin-bottom: 16px;">
@@ -106,20 +115,27 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
-import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NGrid, NGi } from 'naive-ui'
+import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NGrid, NGi, NDatePicker } from 'naive-ui'
 import { listParts } from '@/api/parts'
 import { listJewelries } from '@/api/jewelries'
 import { createHandcraft } from '@/api/handcraft'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { renderOptionWithImage } from '@/utils/ui'
+import { tsToDateStr } from '@/utils/date'
 
 const router = useRouter()
 const message = useMessage()
 const supplierName = ref(null)
 const supplierOptions = ref([])
 const note = ref('')
+const createdAtTs = ref(null)
 const parts = reactive([{ part_id: null, qty: 1, unit: '个', bom_qty: null, note: '' }])
-const jewelries = reactive([{ jewelry_id: null, qty: 1, unit: '个', note: '' }])
+const jewelries = reactive([{ output_type: 'jewelry', jewelry_id: null, part_id: null, qty: 1, unit: '个', note: '' }])
+
+const outputTypeOptions = [
+  { label: '饰品', value: 'jewelry' },
+  { label: '配件', value: 'part' },
+]
 const submitting = ref(false)
 const partOptions = ref([])
 const jewelryOptions = ref([])

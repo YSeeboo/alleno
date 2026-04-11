@@ -19,6 +19,15 @@
       <n-form-item label="备注">
         <n-input v-model:value="note" type="textarea" :rows="2" style="width: 300px;" />
       </n-form-item>
+      <n-form-item label="创建时间">
+        <n-date-picker
+          v-model:value="createdAtTs"
+          type="date"
+          clearable
+          placeholder="不填则使用当前时间"
+          style="width: 300px;"
+        />
+      </n-form-item>
     </n-form>
 
     <n-card title="购入明细" style="margin-bottom: 16px;">
@@ -96,17 +105,19 @@
 import { ref, reactive, computed, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
-import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NRadioGroup, NRadio, NModal, NDataTable } from 'naive-ui'
+import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NRadioGroup, NRadio, NModal, NDataTable, NDatePicker } from 'naive-ui'
 import { listParts, batchUpdatePartCosts } from '@/api/parts'
 import { createPurchaseOrder } from '@/api/purchaseOrders'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { renderOptionWithImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
+import { tsToDateStr } from '@/utils/date'
 
 const router = useRouter()
 const message = useMessage()
 const vendorName = ref(null)
 const note = ref('')
 const status = ref('未付款')
+const createdAtTs = ref(null)
 const items = reactive([{ part_id: null, qty: 1, unit: '个', price: 0, note: '' }])
 const submitting = ref(false)
 const partOptions = ref([])

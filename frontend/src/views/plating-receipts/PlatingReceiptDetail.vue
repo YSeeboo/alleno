@@ -305,11 +305,12 @@ import {
 } from 'naive-ui'
 import { CreateOutline } from '@vicons/ionicons5'
 import {
-  getPlatingReceipt, updatePlatingReceiptStatus,
+  getPlatingReceipt, updatePlatingReceipt, updatePlatingReceiptStatus,
   updatePlatingReceiptDeliveryImages,
   updatePlatingReceiptItem, deletePlatingReceiptItem,
   deletePlatingReceipt, addPlatingReceiptItems,
 } from '@/api/platingReceipts'
+import { tsToDateStr, isoToTs } from '@/utils/date'
 import { listPendingReceiveItems } from '@/api/plating'
 import { batchUpdatePartCosts } from '@/api/parts'
 import { confirmPlatingLoss } from '@/api/productionLoss'

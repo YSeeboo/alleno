@@ -20,6 +20,15 @@
       <n-form-item label="备注">
         <n-input v-model:value="note" type="textarea" :rows="2" style="width: 300px;" />
       </n-form-item>
+      <n-form-item label="创建时间">
+        <n-date-picker
+          v-model:value="createdAtTs"
+          type="date"
+          clearable
+          placeholder="不填则使用当前时间"
+          style="width: 300px;"
+        />
+      </n-form-item>
     </n-form>
 
     <n-card title="待回收配件" style="margin-bottom: 16px;">
@@ -109,12 +118,14 @@ import { listPendingReceiveItems } from '@/api/plating'
 import { createPlatingReceipt } from '@/api/platingReceipts'
 import { batchUpdatePartCosts } from '@/api/parts'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
+import { tsToDateStr } from '@/utils/date'
 
 const router = useRouter()
 const message = useMessage()
 const vendorName = ref(null)
 const note = ref('')
 const status = ref('未付款')
+const createdAtTs = ref(null)
 const submitting = ref(false)
 const loadingItems = ref(false)
 const vendorOptions = ref([])
