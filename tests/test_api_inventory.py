@@ -48,7 +48,7 @@ def test_list_logs_default(client, db):
 def test_list_logs_filter_item_type(client, db):
     from services.jewelry import create_jewelry
     part = create_part(db, {"name": "A", "category": "小配件"})
-    jew = create_jewelry(db, {"name": "J1", "category": "项链"})
+    jew = create_jewelry(db, {"name": "J1", "category": "单件"})
     client.post(f"/api/inventory/part/{part.id}/add", json={"qty": 5, "reason": "入库"})
     client.post(f"/api/inventory/jewelry/{jew.id}/add", json={"qty": 2, "reason": "入库"})
     resp = client.get("/api/inventory/logs", params={"item_type": "jewelry"})
