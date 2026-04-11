@@ -148,7 +148,7 @@ const getRemaining = (item) => item.qty - (item.received_qty || 0)
 
 const getInput = (id) => {
   if (!itemInputs[id]) {
-    itemInputs[id] = { qty: null, price: null, unit: '个' }
+    itemInputs[id] = { qty: null, price: null, unit: '个', weight: null, weight_unit: 'g' }
   }
   return itemInputs[id]
 }
@@ -265,6 +265,31 @@ const pendingColumns = [
     },
   },
   {
+    title: '重量',
+    key: 'input_weight',
+    width: 140,
+    render: (row) => {
+      const input = getInput(row.id)
+      return h('div', { style: 'display:flex;gap:4px;align-items:center' }, [
+        h(NInputNumber, {
+          value: input.weight,
+          size: 'small',
+          style: 'width:80px',
+          min: 0,
+          placeholder: '重量',
+          'onUpdate:value': (v) => { input.weight = v },
+        }),
+        h(NSelect, {
+          value: input.weight_unit || 'g',
+          size: 'small',
+          style: 'width:55px',
+          options: [{ label: 'g', value: 'g' }, { label: 'kg', value: 'kg' }],
+          'onUpdate:value': (v) => { input.weight_unit = v },
+        }),
+      ])
+    },
+  },
+  {
     title: '单价',
     key: 'input_price',
     width: 120,
@@ -335,6 +360,8 @@ const submit = async () => {
       plating_order_item_id: pending.id,
       part_id: pending.receive_part_id || pending.part_id,
       qty: input.qty,
+      weight: input.weight != null ? input.weight : null,
+      weight_unit: input.weight != null ? (input.weight_unit || 'g') : null,
       price: input.price != null ? input.price : null,
       unit: input.unit || '个',
     })

@@ -45,6 +45,8 @@ class PlatingReceiptItem(Base):
     plating_order_item_id = Column(Integer, ForeignKey("plating_order_item.id"), nullable=False)
     part_id = Column(String, ForeignKey("part.id"), nullable=False)
     qty = Column(Numeric(10, 4), nullable=False)
+    weight = Column(Numeric(10, 4), nullable=True)
+    weight_unit = Column(String, nullable=True, default="g")
     unit = Column(String, nullable=True, default="个")
     price = Column(Numeric(18, 7), nullable=True)
     amount = Column(Numeric(18, 7), nullable=True)

@@ -1,11 +1,13 @@
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, date
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PlatingItemCreate(BaseModel):
     part_id: str
     qty: float = Field(gt=0)
+    weight: Optional[float] = Field(None, ge=0)
+    weight_unit: Optional[str] = None
     plating_method: Optional[str] = None
     unit: Optional[str] = "个"
     note: Optional[str] = None
@@ -54,6 +56,8 @@ class PlatingItemResponse(BaseModel):
     plating_order_id: str
     part_id: str
     qty: float
+    weight: Optional[float] = Field(None, ge=0)
+    weight_unit: Optional[str] = None
     received_qty: Optional[float] = None
     status: str
     plating_method: Optional[str] = None

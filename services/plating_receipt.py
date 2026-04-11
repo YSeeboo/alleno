@@ -139,6 +139,8 @@ def create_plating_receipt(
             plating_order_item_id=poi.id,
             part_id=expected_part_id,
             qty=qty,
+            weight=item_data.get("weight"),
+            weight_unit=item_data.get("weight_unit"),
             unit=item_data.get("unit", "个"),
             price=price,
             amount=amount,
@@ -208,6 +210,8 @@ def add_plating_receipt_items(
             plating_order_item_id=poi.id,
             part_id=expected_part_id,
             qty=qty,
+            weight=item_data.get("weight"),
+            weight_unit=item_data.get("weight_unit"),
             unit=item_data.get("unit", "个"),
             price=price,
             amount=amount,
@@ -333,6 +337,9 @@ def update_plating_receipt_item(db: Session, receipt_id: str, item_id: int, data
     for field in ("unit", "note"):
         if field in data:
             setattr(item, field, data[field])
+    for wf in ("weight", "weight_unit"):
+        if wf in data:
+            setattr(item, wf, data[wf])
     if "price" in data:
         item.price = Decimal(str(data["price"])).quantize(_Q7, rounding=ROUND_HALF_UP) if data["price"] is not None else None
     if "qty" in data and data["qty"] is not None:

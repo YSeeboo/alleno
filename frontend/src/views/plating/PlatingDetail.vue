@@ -1355,6 +1355,37 @@ const itemColumns = [
     },
   },
   {
+    title: '重量',
+    key: 'weight',
+    width: 140,
+    render: (row) => {
+      if (!isPending()) {
+        return row.weight != null ? `${row.weight} ${row.weight_unit || 'g'}` : '—'
+      }
+      const weightKey = inlineKey(row.id, 'weight')
+      const unitKey = inlineKey(row.id, 'weight_unit')
+      return h('div', { style: 'display:flex;gap:4px;align-items:center' }, [
+        h(NInputNumber, {
+          value: weightKey in inlineEditing.value ? inlineEditing.value[weightKey] : (row.weight ?? null),
+          size: 'small',
+          style: 'width:80px',
+          min: 0,
+          placeholder: '重量',
+          onFocus: () => { if (!(weightKey in inlineEditing.value)) inlineEditing.value[weightKey] = row.weight ?? null },
+          'onUpdate:value': (v) => { inlineEditing.value[weightKey] = v },
+          onBlur: () => { saveInline(row, 'weight', inlineEditing.value[weightKey]) },
+        }),
+        h(NSelect, {
+          value: row.weight_unit || 'g',
+          size: 'small',
+          style: 'width:55px',
+          options: [{ label: 'g', value: 'g' }, { label: 'kg', value: 'kg' }],
+          'onUpdate:value': (v) => { saveInline(row, 'weight_unit', v) },
+        }),
+      ])
+    },
+  },
+  {
     title: '状态',
     key: 'item_status',
     render: (r) => h('span', r.status),

@@ -1137,6 +1137,34 @@ const itemColumns = [
   },
   { title: '单位', key: 'unit', render: (r) => r.unit || '-' },
   {
+    title: '重量',
+    key: 'weight',
+    width: 140,
+    render: (row) => {
+      if (!isPending()) {
+        return row.weight != null ? `${row.weight} ${row.weight_unit || 'g'}` : '—'
+      }
+      return h('div', { style: 'display:flex;gap:4px;align-items:center' }, [
+        h(NInputNumber, {
+          value: row.weight ?? null,
+          size: 'small',
+          style: 'width:80px',
+          min: 0,
+          placeholder: '重量',
+          'onUpdate:value': (v) => { row.weight = v },
+          onBlur: () => { updateHandcraftPart(route.params.id, row.id, { weight: row.weight }) },
+        }),
+        h(NSelect, {
+          value: row.weight_unit || 'g',
+          size: 'small',
+          style: 'width:55px',
+          options: [{ label: 'g', value: 'g' }, { label: 'kg', value: 'kg' }],
+          'onUpdate:value': (v) => { row.weight_unit = v; updateHandcraftPart(route.params.id, row.id, { weight_unit: v }) },
+        }),
+      ])
+    },
+  },
+  {
     title: '备注',
     key: 'note',
     minWidth: 240,
@@ -1226,6 +1254,34 @@ const jewelryColumns = [
     key: 'status',
     width: 80,
     render: (r) => h('span', { class: `badge ${partStatusBadge[r.status] || 'badge-gray'}` }, `• ${partStatusLabel[r.status] || r.status || '未送出'}`),
+  },
+  {
+    title: '重量',
+    key: 'weight',
+    width: 140,
+    render: (row) => {
+      if (!isPending()) {
+        return row.weight != null ? `${row.weight} ${row.weight_unit || 'g'}` : '—'
+      }
+      return h('div', { style: 'display:flex;gap:4px;align-items:center' }, [
+        h(NInputNumber, {
+          value: row.weight ?? null,
+          size: 'small',
+          style: 'width:80px',
+          min: 0,
+          placeholder: '重量',
+          'onUpdate:value': (v) => { row.weight = v },
+          onBlur: () => { updateHandcraftJewelry(route.params.id, row.id, { weight: row.weight }) },
+        }),
+        h(NSelect, {
+          value: row.weight_unit || 'g',
+          size: 'small',
+          style: 'width:55px',
+          options: [{ label: 'g', value: 'g' }, { label: 'kg', value: 'kg' }],
+          'onUpdate:value': (v) => { row.weight_unit = v; updateHandcraftJewelry(route.params.id, row.id, { weight_unit: v }) },
+        }),
+      ])
+    },
   },
   {
     title: '关联订单',

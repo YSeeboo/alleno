@@ -170,7 +170,7 @@ const currentColumns = computed(() => activeTab.value === 'part' ? partPendingCo
 
 const getInput = (key) => {
   if (!itemInputs[key]) {
-    itemInputs[key] = { qty: null, price: null, unit: '个' }
+    itemInputs[key] = { qty: null, price: null, unit: '个', weight: null, weight_unit: 'g' }
   }
   return itemInputs[key]
 }
@@ -209,14 +209,14 @@ const fetchPendingItems = async () => {
     const parts = []
     const jewelries = []
     for (const item of data) {
-      const key = `${item.item_type}_${item.id}`
+      const key = `${item.is_output ? 'output' : item.item_type}_${item.id}`
       if (!itemInputs[key]) {
-        itemInputs[key] = { qty: getRemaining(item), price: null, unit: item.unit || '个' }
+        itemInputs[key] = { qty: getRemaining(item), price: null, unit: item.unit || '个', weight: null, weight_unit: 'g' }
       }
-      if (item.item_type === 'part') {
-        parts.push(item)
-      } else {
+      if (item.is_output) {
         jewelries.push(item)
+      } else {
+        parts.push(item)
       }
     }
     pendingPartItems.value = parts
@@ -304,6 +304,31 @@ const partPendingColumns = [
     },
   },
   {
+    title: '重量',
+    key: 'input_weight',
+    width: 140,
+    render: (row) => {
+      const input = getInput(rowKey(row))
+      return h('div', { style: 'display:flex;gap:4px;align-items:center' }, [
+        h(NInputNumber, {
+          value: input.weight,
+          size: 'small',
+          style: 'width:80px',
+          min: 0,
+          placeholder: '重量',
+          'onUpdate:value': (v) => { input.weight = v },
+        }),
+        h(NSelect, {
+          value: input.weight_unit || 'g',
+          size: 'small',
+          style: 'width:55px',
+          options: [{ label: 'g', value: 'g' }, { label: 'kg', value: 'kg' }],
+          'onUpdate:value': (v) => { input.weight_unit = v },
+        }),
+      ])
+    },
+  },
+  {
     title: '手工费单价',
     key: 'input_price',
     width: 120,
@@ -358,6 +383,31 @@ const jewelryPendingColumns = [
         style: 'width: 110px;',
         'onUpdate:value': (v) => { input.qty = v },
       })
+    },
+  },
+  {
+    title: '重量',
+    key: 'input_weight',
+    width: 140,
+    render: (row) => {
+      const input = getInput(rowKey(row))
+      return h('div', { style: 'display:flex;gap:4px;align-items:center' }, [
+        h(NInputNumber, {
+          value: input.weight,
+          size: 'small',
+          style: 'width:80px',
+          min: 0,
+          placeholder: '重量',
+          'onUpdate:value': (v) => { input.weight = v },
+        }),
+        h(NSelect, {
+          value: input.weight_unit || 'g',
+          size: 'small',
+          style: 'width:55px',
+          options: [{ label: 'g', value: 'g' }, { label: 'kg', value: 'kg' }],
+          'onUpdate:value': (v) => { input.weight_unit = v },
+        }),
+      ])
     },
   },
   {
@@ -437,25 +487,32 @@ const submit = async () => {
 
     const item = {
       qty: input.qty,
+      weight: input.weight != null ? input.weight : null,
+      weight_unit: input.weight != null ? (input.weight_unit || 'g') : null,
       price: input.price != null ? input.price : null,
       unit: input.unit || '个',
     }
-    if (type === 'part') {
-      item.handcraft_part_item_id = pending.id
-    } else {
+    if (type === 'output') {
+      // Output items (jewelry or part output) use handcraft_jewelry_item_id
       item.handcraft_jewelry_item_id = pending.id
+    } else {
+      // Regular part items
+      item.handcraft_part_item_id = pending.id
     }
     items.push(item)
   }
 
   submitting.value = true
   try {
-    const { data } = await createHandcraftReceipt({
+    const payload = {
       supplier_name: supplierName.value.trim(),
       items,
       status: status.value,
       note: note.value,
-    })
+    }
+    const createdAt = tsToDateStr(createdAtTs.value)
+    if (createdAt) payload.created_at = createdAt
+    const { data } = await createHandcraftReceipt(payload)
     message.success('创建成功')
     handleCostDiffs(data)
   } finally {

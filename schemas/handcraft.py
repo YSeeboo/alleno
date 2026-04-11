@@ -1,11 +1,13 @@
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, date
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class HandcraftPartIn(BaseModel):
     part_id: str
     qty: float = Field(gt=0)
+    weight: Optional[float] = Field(None, ge=0)
+    weight_unit: Optional[str] = None
     bom_qty: Optional[float] = None
     unit: Optional[str] = "个"
     note: Optional[str] = None
@@ -15,6 +17,8 @@ class HandcraftJewelryIn(BaseModel):
     jewelry_id: Optional[str] = None
     part_id: Optional[str] = None
     qty: int = Field(gt=0)
+    weight: Optional[float] = Field(None, ge=0)
+    weight_unit: Optional[str] = None
     unit: Optional[str] = None
     note: Optional[str] = None
 
@@ -51,6 +55,8 @@ class HandcraftJewelryItemResponse(BaseModel):
     jewelry_id: Optional[str] = None
     part_id: Optional[str] = None
     qty: int
+    weight: Optional[float] = Field(None, ge=0)
+    weight_unit: Optional[str] = None
     received_qty: Optional[int] = None
     status: str
     unit: Optional[str] = None
@@ -65,6 +71,8 @@ class HandcraftPartItemResponse(BaseModel):
     handcraft_order_id: str
     part_id: str
     qty: float
+    weight: Optional[float] = Field(None, ge=0)
+    weight_unit: Optional[str] = None
     received_qty: Optional[float] = 0
     status: str = "未送出"
     bom_qty: Optional[float] = None

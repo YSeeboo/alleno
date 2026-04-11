@@ -53,6 +53,8 @@ class HandcraftReceiptItem(Base):
     item_type = Column(String, nullable=False)       # "part" or "jewelry"
 
     qty = Column(Numeric(10, 4), nullable=False)
+    weight = Column(Numeric(10, 4), nullable=True)
+    weight_unit = Column(String, nullable=True, default="g")
     unit = Column(String, nullable=True, default="个")
     price = Column(Numeric(18, 7), nullable=True)
     amount = Column(Numeric(18, 7), nullable=True)

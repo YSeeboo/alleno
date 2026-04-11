@@ -9,6 +9,8 @@ class PlatingReceiptItemCreate(BaseModel):
     plating_order_item_id: int
     part_id: str
     qty: float = Field(gt=0)
+    weight: Optional[float] = Field(None, ge=0)
+    weight_unit: Optional[str] = None
     unit: Optional[str] = "个"
     price: Optional[float] = Field(None, ge=0)
     note: Optional[str] = None
@@ -29,12 +31,18 @@ class PlatingReceiptCreate(BaseModel):
         return v
 
 
+class PlatingReceiptUpdate(BaseModel):
+    created_at: Optional[date] = None
+
+
 class PlatingReceiptAddItemsRequest(BaseModel):
     items: List[PlatingReceiptItemCreate] = Field(min_length=1)
 
 
 class PlatingReceiptItemUpdate(BaseModel):
     qty: float = Field(None, gt=0)
+    weight: Optional[float] = Field(None, ge=0)
+    weight_unit: Optional[str] = None
     unit: Optional[str] = None
     price: Optional[float] = Field(None, ge=0)
     note: Optional[str] = None
@@ -56,6 +64,8 @@ class PlatingReceiptItemResponse(BaseModel):
     plating_order_item_id: int
     part_id: str
     qty: float
+    weight: Optional[float] = Field(None, ge=0)
+    weight_unit: Optional[str] = None
     unit: Optional[str] = None
     price: Optional[float] = None
     amount: Optional[float] = None

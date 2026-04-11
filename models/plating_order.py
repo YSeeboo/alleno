@@ -40,6 +40,8 @@ class PlatingOrderItem(Base):
     plating_order_id = Column(String, ForeignKey("plating_order.id"), nullable=False, index=True)
     part_id = Column(String, ForeignKey("part.id"), nullable=False)
     qty = Column(Numeric(10, 4), nullable=False)
+    weight = Column(Numeric(10, 4), nullable=True)
+    weight_unit = Column(String, nullable=True, default="g")
     received_qty = Column(Numeric(10, 4), nullable=True, default=0)
     status = Column(String, nullable=False, default="未送出")
     plating_method = Column(String, nullable=True)

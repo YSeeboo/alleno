@@ -271,6 +271,27 @@ def ensure_schema_compat(target_engine=None):
                 "ALTER TABLE handcraft_jewelry_item ALTER COLUMN jewelry_id DROP NOT NULL"
             ))
 
+        # --- weight fields ---
+        for table_name in [
+            "plating_order_item",
+            "handcraft_part_item",
+            "handcraft_jewelry_item",
+            "plating_receipt_item",
+            "handcraft_receipt_item",
+        ]:
+            if inspector.has_table(table_name):
+                cols = [c["name"] for c in inspector.get_columns(table_name)]
+                if "weight" not in cols:
+                    conn.execute(text(
+                        f"ALTER TABLE {table_name} ADD COLUMN weight NUMERIC(10,4)"
+                    ))
+                    logger.warning("Added missing %s.weight column", table_name)
+                if "weight_unit" not in cols:
+                    conn.execute(text(
+                        f"ALTER TABLE {table_name} ADD COLUMN weight_unit VARCHAR DEFAULT 'g'"
+                    ))
+                    logger.warning("Added missing %s.weight_unit column", table_name)
+
         # Trim whitespace from supplier/vendor name columns
         _name_columns = [
             ("plating_order", "supplier_name"),

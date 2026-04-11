@@ -46,6 +46,8 @@ from services.handcraft import (
 
 class HandcraftPartUpdate(BaseModel):
     qty: Optional[float] = Field(None, gt=0)
+    weight: Optional[float] = Field(None, ge=0)
+    weight_unit: Optional[str] = None
     unit: Optional[str] = None
     note: Optional[str] = None
     bom_qty: Optional[float] = None
@@ -53,6 +55,8 @@ class HandcraftPartUpdate(BaseModel):
 
 class HandcraftJewelryUpdate(BaseModel):
     qty: Optional[int] = Field(None, gt=0)
+    weight: Optional[float] = Field(None, ge=0)
+    weight_unit: Optional[str] = None
     unit: Optional[str] = None
     note: Optional[str] = None
 

@@ -51,6 +51,8 @@ def create_plating_order(db: Session, supplier_name: str, items: list, note: str
             plating_order_id=order_id,
             part_id=item["part_id"],
             qty=item["qty"],
+            weight=item.get("weight"),
+            weight_unit=item.get("weight_unit"),
             received_qty=0,
             status="未送出",
             plating_method=item.get("plating_method"),
@@ -138,6 +140,8 @@ def add_plating_item(db: Session, order_id: str, item: dict) -> PlatingOrderItem
         plating_order_id=order_id,
         part_id=item["part_id"],
         qty=item["qty"],
+        weight=item.get("weight"),
+        weight_unit=item.get("weight_unit"),
         received_qty=0,
         status="未送出",
         plating_method=item.get("plating_method"),
@@ -188,6 +192,9 @@ def update_plating_item(db: Session, order_id: str, item_id: int, data: dict) ->
             setattr(item, field, data[field])
     if "plating_method" in data:
         item.plating_method = data["plating_method"]
+    for wf in ("weight", "weight_unit"):
+        if wf in data:
+            setattr(item, wf, data[wf])
     db.flush()
     return item
 

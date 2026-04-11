@@ -44,6 +44,8 @@ from services.plating import (
 class PlatingItemUpdate(BaseModel):
     part_id: Optional[str] = None
     qty: Optional[float] = Field(None, gt=0)
+    weight: Optional[float] = Field(None, ge=0)
+    weight_unit: Optional[str] = None
     unit: Optional[str] = None
     plating_method: Optional[str] = None
     note: Optional[str] = None

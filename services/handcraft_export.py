@@ -35,6 +35,9 @@ def get_handcraft_export_payload(db: Session, order_id: str) -> dict:
     for item in items:
         part = parts.get(item.part_id)
         qty = float(item.qty) if item.qty is not None else None
+        weight = float(item.weight) if item.weight is not None else None
+        weight_unit = item.weight_unit or "g"
+        weight_text = f"{format_qty_text(weight)} {weight_unit}" if weight is not None else ""
         detail_rows.append(
             {
                 "part_id": item.part_id,

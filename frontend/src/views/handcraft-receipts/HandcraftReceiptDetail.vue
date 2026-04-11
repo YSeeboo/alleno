@@ -159,6 +159,12 @@
         <n-form-item label="单价">
           <n-input-number v-model:value="editForm.price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" :step="0.1" style="width: 100%;" />
         </n-form-item>
+        <n-form-item label="重量">
+          <div style="display:flex;gap:8px;align-items:center;width:100%">
+            <n-input-number v-model:value="editForm.weight" :min="0" placeholder="重量" style="flex:1" />
+            <n-select v-model:value="editForm.weight_unit" :options="[{label:'g',value:'g'},{label:'kg',value:'kg'}]" style="width:80px" />
+          </div>
+        </n-form-item>
         <n-form-item label="备注">
           <n-input v-model:value="editForm.note" placeholder="备注（可选）" />
         </n-form-item>
@@ -376,7 +382,7 @@ const unitOptions = [
 // Edit Item Modal
 const editModalVisible = ref(false)
 const editSubmitting = ref(false)
-const editForm = ref({ id: null, qty: 1, unit: '个', price: 0, note: '' })
+const editForm = ref({ id: null, qty: 1, unit: '个', price: 0, note: '', weight: null, weight_unit: 'g' })
 
 // Inline note editing
 const editingNoteItemId = ref(null)
@@ -448,8 +454,10 @@ const openEditModal = (row) => {
     item_type: row.item_type,
     qty: row.qty,
     unit: row.unit || '个',
-    price: row.price || 0,
+    price: row.price ?? null,
     note: row.note || '',
+    weight: row.weight ?? null,
+    weight_unit: row.weight_unit || 'g',
   }
   editModalVisible.value = true
 }
@@ -710,6 +718,7 @@ const itemColumns = [
   },
   { title: '回收数量', key: 'qty' },
   { title: '单位', key: 'unit', render: (r) => r.unit || '-' },
+  { title: '重量', key: 'weight', width: 100, render: (r) => r.weight != null ? `${r.weight} ${r.weight_unit || 'g'}` : '—' },
   { title: '单价', key: 'price', render: (r) => r.price != null ? `¥ ${fmtMoney(r.price)}` : '-' },
   { title: '金额', key: 'amount', render: (r) => r.amount != null ? `¥ ${fmtMoney(r.amount)}` : '-' },
   {
@@ -780,7 +789,7 @@ const getAddRemaining = (item) => item.qty - (item.received_qty || 0)
 
 const getAddInput = (key) => {
   if (!addItemsInputs[key]) {
-    addItemsInputs[key] = { qty: null, price: null, unit: '个' }
+    addItemsInputs[key] = { qty: null, price: null, unit: '个', weight: null, weight_unit: 'g' }
   }
   return addItemsInputs[key]
 }
@@ -814,14 +823,14 @@ const fetchAddItemsPending = async () => {
     const parts = []
     const jewelries = []
     for (const item of data) {
-      const key = `${item.item_type}_${item.id}`
+      const key = `${item.is_output ? 'output' : item.item_type}_${item.id}`
       if (!addItemsInputs[key]) {
-        addItemsInputs[key] = { qty: getAddRemaining(item), price: null, unit: item.unit || '个' }
+        addItemsInputs[key] = { qty: getAddRemaining(item), price: null, unit: item.unit || '个', weight: null, weight_unit: 'g' }
       }
-      if (item.item_type === 'part') {
-        parts.push(item)
-      } else {
+      if (item.is_output) {
         jewelries.push(item)
+      } else {
+        parts.push(item)
       }
     }
     addItemsPendingParts.value = parts
@@ -893,13 +902,15 @@ const submitAddItems = async () => {
     }
     const item = {
       qty: input.qty,
+      weight: input.weight != null ? input.weight : null,
+      weight_unit: input.weight != null ? (input.weight_unit || 'g') : null,
       price: input.price != null ? input.price : null,
       unit: input.unit || '个',
     }
-    if (type === 'part') {
-      item.handcraft_part_item_id = pending.id
-    } else {
+    if (type === 'output') {
       item.handcraft_jewelry_item_id = pending.id
+    } else {
+      item.handcraft_part_item_id = pending.id
     }
     items.push(item)
   }
@@ -979,6 +990,31 @@ const addItemsPartColumns = [
     },
   },
   {
+    title: '重量',
+    key: 'input_weight',
+    width: 140,
+    render: (row) => {
+      const input = getAddInput(addRowKey(row))
+      return h('div', { style: 'display:flex;gap:4px;align-items:center' }, [
+        h(NInputNumber, {
+          value: input.weight,
+          size: 'small',
+          style: 'width:80px',
+          min: 0,
+          placeholder: '重量',
+          'onUpdate:value': (v) => { input.weight = v },
+        }),
+        h(NSelect, {
+          value: input.weight_unit || 'g',
+          size: 'small',
+          style: 'width:55px',
+          options: [{ label: 'g', value: 'g' }, { label: 'kg', value: 'kg' }],
+          'onUpdate:value': (v) => { input.weight_unit = v },
+        }),
+      ])
+    },
+  },
+  {
     title: '手工费单价',
     key: 'input_price',
     width: 110,
@@ -1031,6 +1067,31 @@ const addItemsJewelryColumns = [
         style: 'width: 100px;',
         'onUpdate:value': (v) => { input.qty = v },
       })
+    },
+  },
+  {
+    title: '重量',
+    key: 'input_weight',
+    width: 140,
+    render: (row) => {
+      const input = getAddInput(addRowKey(row))
+      return h('div', { style: 'display:flex;gap:4px;align-items:center' }, [
+        h(NInputNumber, {
+          value: input.weight,
+          size: 'small',
+          style: 'width:80px',
+          min: 0,
+          placeholder: '重量',
+          'onUpdate:value': (v) => { input.weight = v },
+        }),
+        h(NSelect, {
+          value: input.weight_unit || 'g',
+          size: 'small',
+          style: 'width:55px',
+          options: [{ label: 'g', value: 'g' }, { label: 'kg', value: 'kg' }],
+          'onUpdate:value': (v) => { input.weight_unit = v },
+        }),
+      ])
     },
   },
   {

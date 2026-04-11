@@ -9,6 +9,8 @@ class HandcraftReceiptItemCreate(BaseModel):
     handcraft_part_item_id: Optional[int] = None
     handcraft_jewelry_item_id: Optional[int] = None
     qty: float = Field(gt=0)
+    weight: Optional[float] = Field(None, ge=0)
+    weight_unit: Optional[str] = None
     unit: Optional[str] = "个"
     price: Optional[float] = Field(None, ge=0)
     note: Optional[str] = None
@@ -40,12 +42,18 @@ class HandcraftReceiptCreate(BaseModel):
         return v
 
 
+class HandcraftReceiptUpdate(BaseModel):
+    created_at: Optional[date] = None
+
+
 class HandcraftReceiptAddItemsRequest(BaseModel):
     items: List[HandcraftReceiptItemCreate] = Field(min_length=1)
 
 
 class HandcraftReceiptItemUpdate(BaseModel):
     qty: float = Field(None, gt=0)
+    weight: Optional[float] = Field(None, ge=0)
+    weight_unit: Optional[str] = None
     unit: Optional[str] = None
     price: Optional[float] = Field(None, ge=0)
     note: Optional[str] = None
@@ -69,6 +77,8 @@ class HandcraftReceiptItemResponse(BaseModel):
     item_id: str
     item_type: str
     qty: float
+    weight: Optional[float] = Field(None, ge=0)
+    weight_unit: Optional[str] = None
     unit: Optional[str] = None
     price: Optional[float] = None
     amount: Optional[float] = None

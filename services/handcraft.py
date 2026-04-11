@@ -96,6 +96,8 @@ def create_handcraft_order(
             handcraft_order_id=order.id,
             part_id=p["part_id"],
             qty=p["qty"],
+            weight=p.get("weight"),
+            weight_unit=p.get("weight_unit"),
             bom_qty=p.get("bom_qty"),
             unit=p.get("unit", "个"),
             note=p.get("note"),
@@ -109,6 +111,8 @@ def create_handcraft_order(
             jewelry_id=jewelry_id,
             part_id=part_id,
             qty=j["qty"],
+            weight=j.get("weight"),
+            weight_unit=j.get("weight_unit"),
             received_qty=0,
             status="未送出",
             unit=j.get("unit") or default_unit,
@@ -230,6 +234,8 @@ def add_handcraft_part(db: Session, order_id: str, item: dict) -> HandcraftPartI
         handcraft_order_id=order_id,
         part_id=item["part_id"],
         qty=item["qty"],
+        weight=item.get("weight"),
+        weight_unit=item.get("weight_unit"),
         bom_qty=item.get("bom_qty"),
         unit=item.get("unit", "个"),
         note=item.get("note"),
@@ -256,6 +262,9 @@ def update_handcraft_part(db: Session, order_id: str, item_id: int, data: dict) 
             setattr(item, field, data[field])
     if "bom_qty" in data:
         item.bom_qty = data["bom_qty"]  # allow setting to None to clear
+    for wf in ("weight", "weight_unit"):
+        if wf in data:
+            setattr(item, wf, data[wf])
     db.flush()
     return _attach_part_colors(db, [item])[0]
 
@@ -305,6 +314,8 @@ def add_handcraft_jewelry(db: Session, order_id: str, item: dict) -> HandcraftJe
         jewelry_id=jewelry_id,
         part_id=part_id,
         qty=item["qty"],
+        weight=item.get("weight"),
+        weight_unit=item.get("weight_unit"),
         received_qty=0,
         status=item_status,
         unit=item.get("unit") or default_unit,
@@ -330,6 +341,9 @@ def update_handcraft_jewelry(db: Session, order_id: str, item_id: int, data: dic
     for field in ("qty", "unit", "note"):
         if field in data and data[field] is not None:
             setattr(item, field, data[field])
+    for wf in ("weight", "weight_unit"):
+        if wf in data:
+            setattr(item, wf, data[wf])
     db.flush()
     return item
 
