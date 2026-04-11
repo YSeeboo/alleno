@@ -321,7 +321,8 @@ def _draw_detail_row(pdf, detail: dict, top_y: float, column_widths: list[float]
     _draw_centered_text(pdf, detail["plating_method"], *cells[3], font_size=10)
     _draw_centered_text(pdf, detail["qty_text"], *cells[4], font_size=10)
     _draw_centered_text(pdf, detail["unit"], *cells[5], font_size=10)
-    _draw_centered_paragraph(pdf, detail["note"], *cells[6], font_size=10, max_lines=2)
+    _draw_centered_text(pdf, detail.get("weight_text", ""), *cells[6], font_size=10)
+    _draw_centered_paragraph(pdf, detail["note"], *cells[7], font_size=10, max_lines=2)
 
 
 def _draw_image_in_box(pdf, source: str, x: float, y: float, width: float, height: float) -> None:
@@ -400,7 +401,8 @@ def _cell_positions(column_widths: list[float], top_y: float, row_height: float)
 
 
 def _column_widths() -> list[float]:
-    raw_widths = [6.0, 36.375, 18.6923, 18.6923, 13.0, 13.0, 62.4904]
+    # 序号, 名称, 图片, 颜色, 数量, 单位, 重量, 备注
+    raw_widths = [6.0, 32.0, 18.6923, 18.6923, 13.0, 10.0, 16.0, 50.0]
     total = sum(raw_widths)
     scaled = [(_CONTENT_WIDTH * value / total) for value in raw_widths]
     scaled[-1] = _CONTENT_WIDTH - sum(scaled[:-1])
@@ -412,7 +414,9 @@ def _load_template_text() -> dict:
     workbook = load_workbook(_TEMPLATE_PATH, data_only=True)
     sheet = workbook.active
     header_lines = [sheet["A2"].value or "", sheet["A3"].value or "", sheet["A4"].value or ""]
-    detail_headers = ["序号"] + [sheet.cell(row=7, column=column).value or "" for column in range(1, 7)]
+    raw_headers = ["序号"] + [sheet.cell(row=7, column=column).value or "" for column in range(1, 7)]
+    # Insert "重量" column after 单位 (index 5), before 备注 (index 6)
+    detail_headers = raw_headers[:6] + ["重量"] + raw_headers[6:]
     customer_prefix = sheet["A6"].value or "顾客: "
     delivery_title = sheet["A13"].value or "发货图片："
     logo_bytes = None

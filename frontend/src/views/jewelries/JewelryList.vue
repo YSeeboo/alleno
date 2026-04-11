@@ -103,7 +103,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { useMessage } from 'naive-ui'
+import { useMessage, useDialog } from 'naive-ui'
 import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
   NModal, NDataTable, NSpin, NEmpty, NImage, NDropdown,
@@ -117,6 +117,7 @@ import ImageUploadModal from '../../components/ImageUploadModal.vue'
 
 const router = useRouter()
 const message = useMessage()
+const dialog = useDialog()
 const authStore = useAuthStore()
 const canUseTemplates = computed(() => authStore.hasPermission('parts'))
 const loading = ref(true)
@@ -344,7 +345,7 @@ const doDelete = async (id) => {
 }
 
 const confirmDelete = (row) => {
-  window.$dialog.warning({
+  dialog.warning({
     title: '确认删除',
     content: `确认删除 ${row.name}？`,
     positiveText: '删除',

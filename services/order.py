@@ -1,9 +1,12 @@
+from datetime import datetime, date as date_type
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from models.order import Order, OrderItem
+from sqlalchemy import func as sa_func
+from models.order import Order, OrderItem, OrderTodoBatch, OrderTodoBatchJewelry, OrderItemLink
+from models.handcraft_order import HandcraftJewelryItem
 from services._helpers import _next_id
 from services.bom import get_bom
 
@@ -137,27 +140,22 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
             total_map[pid] = total_map.get(pid, 0) + float(bom.qty_per_unit) * oi.quantity
 
     from services.inventory import batch_get_stock
-    from services.order_todo import get_jewelry_for_batch
 
     # Aggregate order quantities by jewelry_id
     agg_qty: dict[str, int] = {}
     for oi in items:
         agg_qty[oi.jewelry_id] = agg_qty.get(oi.jewelry_id, 0) + oi.quantity
 
-    # Get allocated quantities from handcraft orders
-    for_batch = get_jewelry_for_batch(db, order_id)
-    allocated_map = {fb["jewelry_id"]: fb["allocated_quantity"] for fb in for_batch}
-
-    # Get jewelry stock to check 完成备货
+    # Get jewelry stock — finished jewelry already in inventory means parts are consumed
     jewelry_stocks = batch_get_stock(db, "jewelry", jewelry_ids)
 
+    # Only deduct for finished jewelry in stock (parts already consumed).
+    # Do NOT deduct for handcraft allocation — those parts are either:
+    #   - already sent (stock reduced), or
+    #   - not yet sent (still in part stock, will be subtracted below)
     deduct_map: dict[str, float] = {}
     for jid, total in agg_qty.items():
-        if jewelry_stocks.get(jid, 0) >= total:
-            deduct_qty = total
-        else:
-            deduct_qty = min(total, allocated_map.get(jid, 0))
-
+        deduct_qty = min(total, jewelry_stocks.get(jid, 0))
         if deduct_qty > 0:
             for bom in bom_cache.get(jid, []):
                 pid = bom.part_id

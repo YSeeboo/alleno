@@ -142,11 +142,9 @@
       </n-card>
 
       <!-- Order items — full width -->
-      <n-card title="饰品清单" style="margin-bottom: 16px;">
-        <template #header-extra>
-          <n-space>
-          </n-space>
-        </template>
+      <n-card style="margin-bottom: 16px;">
+        <n-collapse :default-expanded-names="['jewelry-list']">
+          <n-collapse-item title="饰品清单" name="jewelry-list">
         <n-button
           v-if="canEditCustomerCode && checkedItemIds.length > 0"
           size="small"
@@ -186,6 +184,8 @@
           <n-button type="primary" size="small" :loading="addingItem" @click="doAddItem">添加</n-button>
         </n-space>
         </template>
+          </n-collapse-item>
+        </n-collapse>
       </n-card>
 
       <!-- Cost Snapshot -->

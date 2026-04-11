@@ -47,6 +47,7 @@ def get_handcraft_export_payload(db: Session, order_id: str) -> dict:
                 "qty": qty,
                 "qty_text": format_qty_text(qty),
                 "unit": item.unit or "",
+                "weight_text": weight_text,
                 "note": item.note or "",
             }
         )

@@ -1268,9 +1268,12 @@ def test_create_batch_exceeding_quantity_rejected(client, db):
 # --- Bug fix: remaining_qty should use allocated qty, not status ---
 
 def test_parts_summary_remaining_partial_handcraft(client, db):
-    """remaining_qty should deduct only allocated qty, not full order qty."""
+    """Handcraft allocation without sending parts does not affect remaining_qty.
+    Parts haven't been sent yet, so they're still in (zero) stock.
+    remaining_qty = total BOM - jewelry_stock_deduct - part_stock.
+    """
     order_id, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
-    # Order has 100 units. Allocate only 30 to handcraft.
+    # Order has 100 units. Allocate only 30 to handcraft (parts not sent).
     from models.handcraft_order import HandcraftOrder, HandcraftJewelryItem
     hc = HandcraftOrder(id="HC-PART", supplier_name="TestSupplier", status="pending")
     db.add(hc)
@@ -1292,16 +1295,14 @@ def test_parts_summary_remaining_partial_handcraft(client, db):
 
     resp = client.get(f"/api/orders/{order_id}/parts-summary")
     data = resp.json()
-    # BOM: part_a needs 10 per unit, part_b needs 1 per unit
-    # Total: part_a = 1000, part_b = 100
-    # Allocated 30 units → deduct: part_a = 300, part_b = 30
-    # Remaining: part_a = 700, part_b = 70 (NOT 0!)
+    # No part stock, no jewelry stock → remaining = total
+    # Handcraft allocation alone doesn't reduce remaining (parts not yet consumed)
     a_summary = next(d for d in data if d["part_id"] == part_a.id)
     b_summary = next(d for d in data if d["part_id"] == part_b.id)
     assert a_summary["total_qty"] == 1000.0
-    assert a_summary["remaining_qty"] == 700.0  # not 0
+    assert a_summary["remaining_qty"] == 1000.0  # no stock to subtract
     assert b_summary["total_qty"] == 100.0
-    assert b_summary["remaining_qty"] == 70.0  # not 0
+    assert b_summary["remaining_qty"] == 100.0  # no stock to subtract
 
 
 # --- Bug fix: duplicate jewelry_ids in create_batch request ---

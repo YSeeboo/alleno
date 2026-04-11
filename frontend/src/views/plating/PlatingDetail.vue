@@ -174,7 +174,7 @@
                 +
               </button>
               <div class="delivery-images-meta">
-                {{ totalDeliveryImageCount }}/4 张
+                {{ totalDeliveryImageCount }}/10 张
                 <span v-if="pendingDeliveryImages.length > 0">（待保存 {{ pendingDeliveryImages.length }} 张）</span>
               </div>
             </div>
