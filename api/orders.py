@@ -27,7 +27,7 @@ from services.order import (
     update_extra_info,
     update_order_status,
     update_packaging_cost,
-    update_order_item_customer_code,
+    update_order_item,
     batch_fill_customer_code,
     list_orders,
 )
@@ -114,14 +114,11 @@ def api_batch_customer_code(order_id: str, body: BatchCustomerCodeRequest, db: S
 
 @router.patch("/{order_id}/items/{item_id}", response_model=OrderItemResponse)
 def api_update_order_item(order_id: str, item_id: int, body: OrderItemUpdate, db: Session = Depends(get_db)):
-    order = get_order(db, order_id)
-    if order is None:
-        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
     fields = body.model_dump(exclude_unset=True)
-    if "customer_code" not in fields:
-        raise HTTPException(status_code=400, detail="请提供 customer_code 字段")
+    if not fields:
+        raise HTTPException(status_code=400, detail="请提供至少一个要修改的字段")
     with service_errors():
-        return update_order_item_customer_code(db, order_id, item_id, fields["customer_code"])
+        return update_order_item(db, order_id, item_id, fields)
 
 
 @router.delete("/{order_id}/items/{item_id}", status_code=204)

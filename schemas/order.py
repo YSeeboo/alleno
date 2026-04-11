@@ -50,6 +50,8 @@ class OrderResponse(BaseModel):
 
 class OrderItemUpdate(BaseModel):
     customer_code: str | None = None
+    quantity: Optional[int] = Field(None, gt=0)
+    unit_price: Optional[float] = Field(None, ge=0)
 
 
 class BatchCustomerCodeRequest(BaseModel):

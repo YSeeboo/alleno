@@ -1948,6 +1948,155 @@ def test_update_item_customer_code_clear(client, db):
     assert resp.json()["customer_code"] is None
 
 
+# --- Inline edit quantity / unit_price ---
+
+def test_update_item_quantity_ok(client, db):
+    """PATCH updates quantity and recalculates total_amount."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+    item = db.query(OrderItem).filter_by(order_id=order_id).first()
+    resp = client.patch(
+        f"/api/orders/{order_id}/items/{item.id}",
+        json={"quantity": 50},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["quantity"] == 50
+    # total_amount should be recalculated
+    order_resp = client.get(f"/api/orders/{order_id}")
+    assert order_resp.json()["total_amount"] == 50 * 50.0
+
+
+def test_update_item_unit_price_ok(client, db):
+    """PATCH updates unit_price and recalculates total_amount."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+    item = db.query(OrderItem).filter_by(order_id=order_id).first()
+    resp = client.patch(
+        f"/api/orders/{order_id}/items/{item.id}",
+        json={"unit_price": 80.0},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["unit_price"] == 80.0
+    order_resp = client.get(f"/api/orders/{order_id}")
+    assert order_resp.json()["total_amount"] == 100 * 80.0
+
+
+def test_update_item_quantity_allowed_in_processing(client, db):
+    """PATCH quantity is allowed when order is 生产中."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+    client.patch(f"/api/orders/{order_id}/status", json={"status": "生产中"})
+    item = db.query(OrderItem).filter_by(order_id=order_id).first()
+    resp = client.patch(
+        f"/api/orders/{order_id}/items/{item.id}",
+        json={"quantity": 80},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["quantity"] == 80
+
+
+def test_update_item_quantity_rejected_when_completed(client, db):
+    """PATCH quantity is rejected when order is 已完成."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+    client.patch(f"/api/orders/{order_id}/status", json={"status": "生产中"})
+    client.patch(f"/api/orders/{order_id}/status", json={"status": "已完成"})
+    item = db.query(OrderItem).filter_by(order_id=order_id).first()
+    resp = client.patch(
+        f"/api/orders/{order_id}/items/{item.id}",
+        json={"quantity": 50},
+    )
+    assert resp.status_code == 400
+
+
+def test_update_item_quantity_below_batch_allocated_rejected(client, db):
+    """PATCH rejects quantity that would go below batch-allocated amount."""
+    order_id, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
+    # Allocate 60 via batch
+    client.post(
+        f"/api/orders/{order_id}/todo-batch",
+        json={"items": [{"jewelry_id": jewelry.id, "quantity": 60}]},
+    )
+    item = db.query(OrderItem).filter_by(order_id=order_id).first()
+    # Try to reduce to 50 — below allocated 60
+    resp = client.patch(
+        f"/api/orders/{order_id}/items/{item.id}",
+        json={"quantity": 50},
+    )
+    assert resp.status_code == 400
+    assert "已分配" in resp.json()["detail"]
+    # Reducing to 60 (== allocated) should be fine
+    resp = client.patch(
+        f"/api/orders/{order_id}/items/{item.id}",
+        json={"quantity": 60},
+    )
+    assert resp.status_code == 200
+
+
+def test_update_item_quantity_below_legacy_allocated_rejected(client, db):
+    """PATCH rejects quantity below legacy HC jewelry link allocated amount."""
+    order_id, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
+    order_item = db.query(OrderItem).filter_by(order_id=order_id).first()
+    # Create legacy HC jewelry link (not via batch)
+    from models.handcraft_order import HandcraftOrder, HandcraftJewelryItem
+    hc = HandcraftOrder(id="HC-TEST", supplier_name="手工厂", status="pending")
+    db.add(hc)
+    db.flush()
+    hc_j = HandcraftJewelryItem(
+        handcraft_order_id=hc.id,
+        jewelry_id=jewelry.id,
+        qty=40,
+    )
+    db.add(hc_j)
+    db.flush()
+    link = OrderItemLink(order_id=order_id, handcraft_jewelry_item_id=hc_j.id)
+    db.add(link)
+    db.flush()
+    # Try to reduce to 30 — below legacy allocated 40
+    resp = client.patch(
+        f"/api/orders/{order_id}/items/{order_item.id}",
+        json={"quantity": 30},
+    )
+    assert resp.status_code == 400
+    assert "已分配" in resp.json()["detail"]
+
+
+def test_update_item_quantity_multi_row_same_jewelry(client, db):
+    """When same jewelry has multiple rows, check is against whole-order total."""
+    from services.part import create_part
+    from services.jewelry import create_jewelry
+    from services.bom import set_bom
+    # Create jewelry with BOM
+    part = create_part(db, {"name": "X珠", "category": "小配件"})
+    j = create_jewelry(db, {"name": "手链X", "retail_price": 50.0, "category": "单件"})
+    set_bom(db, j.id, part.id, 1)
+    # Create order with 2 rows of same jewelry
+    resp = client.post("/api/orders/", json={
+        "customer_name": "客户B",
+        "items": [
+            {"jewelry_id": j.id, "quantity": 60, "unit_price": 10.0},
+            {"jewelry_id": j.id, "quantity": 40, "unit_price": 10.0},
+        ],
+    })
+    assert resp.status_code == 201
+    order_id = resp.json()["id"]
+    items = db.query(OrderItem).filter_by(order_id=order_id).order_by(OrderItem.id).all()
+    # Allocate 80 via batch (total is 100)
+    client.post(
+        f"/api/orders/{order_id}/todo-batch",
+        json={"items": [{"jewelry_id": j.id, "quantity": 80}]},
+    )
+    # Reduce first row from 60 to 50 — total becomes 90 >= 80, should pass
+    resp = client.patch(
+        f"/api/orders/{order_id}/items/{items[0].id}",
+        json={"quantity": 50},
+    )
+    assert resp.status_code == 200
+    # Reduce first row from 50 to 30 — total becomes 70 < 80, should fail
+    resp = client.patch(
+        f"/api/orders/{order_id}/items/{items[0].id}",
+        json={"quantity": 30},
+    )
+    assert resp.status_code == 400
+    assert "已分配" in resp.json()["detail"]
+
+
 def test_batch_fill_customer_code(client, db):
     """POST batch fills sequential customer codes."""
     from models.part import Part

@@ -576,7 +576,40 @@ const statusFlowLabel = { '待生产': '开始生产', '生产中': '标记完�
 const nextStatus = computed(() => order.value ? statusFlow[order.value.status] : null)
 const nextStatusLabel = computed(() => order.value ? statusFlowLabel[order.value.status] : null)
 const canEditItems = computed(() => order.value?.status === '待生产')
+const canInlineEdit = computed(() => ['待生产', '生产中'].includes(order.value?.status))
 const canEditCustomerCode = computed(() => order.value?.status !== '已取消')
+
+// Inline editing for quantity / unit_price
+const inlineEditing = ref({})
+const inlineSaving = ref({})
+const inlineKey = (rowId, field) => `${rowId}_${field}`
+
+const startInline = (row, field) => {
+  if (!canInlineEdit.value) return
+  inlineEditing.value[inlineKey(row.id, field)] = row[field] ?? null
+}
+
+const cancelInline = (rowId, field) => {
+  delete inlineEditing.value[inlineKey(rowId, field)]
+}
+
+const saveInline = async (row, field, value) => {
+  const key = inlineKey(row.id, field)
+  if (inlineSaving.value[key]) return
+  const oldValue = row[field] ?? null
+  if (value === oldValue) { cancelInline(row.id, field); return }
+  inlineSaving.value[key] = true
+  try {
+    await updateOrderItem(order.value.id, row.id, { [field]: value })
+    message.success('已保存')
+    await reloadOrder()
+  } catch (e) {
+    message.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    delete inlineSaving.value[key]
+    cancelInline(row.id, field)
+  }
+}
 
 // --- Jewelry status ---
 const jewelryStatusMap = ref({})
@@ -966,8 +999,56 @@ const itemColumns = computed(() => {
       minWidth: 180,
       render: (row) => renderNamedImage(row.jewelry_name, row.jewelry_image, row.jewelry_name),
     },
-    { title: '数量', key: 'quantity' },
-    { title: '单价', key: 'unit_price', render: (r) => r.unit_price != null ? fmtMoney(r.unit_price) : '-' },
+    {
+      title: '数量', key: 'quantity',
+      render(row) {
+        const key = inlineKey(row.id, 'quantity')
+        if (key in inlineEditing.value) {
+          return h(NInputNumber, {
+            value: inlineEditing.value[key],
+            min: 1,
+            size: 'small',
+            style: 'width: 90px;',
+            autofocus: true,
+            'onUpdate:value': (v) => { inlineEditing.value[key] = v },
+            onBlur: () => { if (key in inlineEditing.value) saveInline(row, 'quantity', inlineEditing.value[key]) },
+            onKeydown: (e) => {
+              if (e.key === 'Enter') saveInline(row, 'quantity', inlineEditing.value[key])
+              if (e.key === 'Escape') { e.preventDefault(); cancelInline(row.id, 'quantity') }
+            },
+          })
+        }
+        if (!canInlineEdit.value) return row.quantity
+        return h('span', { class: 'editable-cell', onClick: () => startInline(row, 'quantity') }, row.quantity)
+      },
+    },
+    {
+      title: '单价', key: 'unit_price',
+      render(row) {
+        const key = inlineKey(row.id, 'unit_price')
+        if (key in inlineEditing.value) {
+          return h(NInputNumber, {
+            value: inlineEditing.value[key],
+            min: 0,
+            precision: 7,
+            format: fmtPrice,
+            parse: parseNum,
+            size: 'small',
+            style: 'width: 120px;',
+            autofocus: true,
+            'onUpdate:value': (v) => { inlineEditing.value[key] = v },
+            onBlur: () => { if (key in inlineEditing.value) saveInline(row, 'unit_price', inlineEditing.value[key]) },
+            onKeydown: (e) => {
+              if (e.key === 'Enter') saveInline(row, 'unit_price', inlineEditing.value[key])
+              if (e.key === 'Escape') { e.preventDefault(); cancelInline(row.id, 'unit_price') }
+            },
+          })
+        }
+        const display = row.unit_price != null ? fmtMoney(row.unit_price) : '-'
+        if (!canInlineEdit.value) return display
+        return h('span', { class: 'editable-cell', onClick: () => startInline(row, 'unit_price') }, display)
+      },
+    },
     { title: '小计', key: 'subtotal', render: (r) => fmtMoney((r.quantity || 0) * (r.unit_price || 0)) },
     {
       title: '状态',

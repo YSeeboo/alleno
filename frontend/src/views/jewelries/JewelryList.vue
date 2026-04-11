@@ -141,6 +141,64 @@ const unitOptions = [
 
 const VALID_CATEGORIES = categoryOptions.map((o) => o.value)
 
+// Inline editing for price cells
+const inlineEditing = ref({}) // key: `${row.id}_${field}`
+const inlineSaving = ref({})
+const inlineKey = (rowId, field) => `${rowId}_${field}`
+
+const startInline = (row, field) => {
+  inlineEditing.value[inlineKey(row.id, field)] = row[field] ?? null
+}
+
+const cancelInline = (rowId, field) => {
+  delete inlineEditing.value[inlineKey(rowId, field)]
+}
+
+const saveInline = async (row, field, value) => {
+  const key = inlineKey(row.id, field)
+  if (inlineSaving.value[key]) return
+  const oldValue = row[field] ?? null
+  if (value === oldValue) { cancelInline(row.id, field); return }
+  inlineSaving.value[key] = true
+  try {
+    await updateJewelry(row.id, { [field]: value })
+    row[field] = value
+    message.success('已保存')
+  } catch (e) {
+    message.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    delete inlineSaving.value[key]
+    cancelInline(row.id, field)
+  }
+}
+
+const renderInlinePrice = (row, field) => {
+  const key = inlineKey(row.id, field)
+  const isEditing = key in inlineEditing.value
+  if (isEditing) {
+    return h(NInputNumber, {
+      value: inlineEditing.value[key],
+      min: 0,
+      precision: 7,
+      format: fmtPrice,
+      parse: parseNum,
+      size: 'small',
+      style: 'width: 120px;',
+      autofocus: true,
+      'onUpdate:value': (v) => { inlineEditing.value[key] = v },
+      onBlur: () => { if (key in inlineEditing.value) saveInline(row, field, inlineEditing.value[key]) },
+      onKeydown: (e) => {
+        if (e.key === 'Enter') saveInline(row, field, inlineEditing.value[key])
+        if (e.key === 'Escape') { e.preventDefault(); cancelInline(row.id, field) }
+      },
+    })
+  }
+  return h('span', {
+    class: 'editable-cell',
+    onClick: () => startInline(row, field),
+  }, row[field] != null ? fmtMoney(row[field]) : '-')
+}
+
 const showModal = ref(false)
 const editingId = ref(null)
 const saving = ref(false)
@@ -306,8 +364,8 @@ const columns = [
   { title: '类目', key: 'category' },
   { title: '颜色', key: 'color' },
   { title: '单位', key: 'unit', width: 60 },
-  { title: '零售价', key: 'retail_price', render: (r) => r.retail_price != null ? fmtMoney(r.retail_price) : '-' },
-  { title: '批发价', key: 'wholesale_price', render: (r) => r.wholesale_price != null ? fmtMoney(r.wholesale_price) : '-' },
+  { title: '零售价', key: 'retail_price', render: (r) => renderInlinePrice(r, 'retail_price') },
+  { title: '批发价', key: 'wholesale_price', render: (r) => renderInlinePrice(r, 'wholesale_price') },
   { title: '当前库存', key: 'stock' },
   {
     title: '状态',

@@ -83,3 +83,34 @@
   color: #991B1B;
   border-color: #FECACA;
 }
+
+/* ─── Editable Cell ─────────────────────────────────── */
+.editable-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+  min-height: 28px;
+  border: 1px solid transparent;
+}
+
+.editable-cell:hover {
+  background: #F1F5F9;
+  border-color: #CBD5E1;
+}
+
+.editable-cell::after {
+  content: '✎';
+  font-size: 11px;
+  color: #94A3B8;
+  opacity: 0;
+  transition: opacity 0.15s;
+  margin-left: 2px;
+}
+
+.editable-cell:hover::after {
+  opacity: 1;
+}

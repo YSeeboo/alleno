@@ -346,14 +346,71 @@ def _check_order_not_cancelled(db: Session, order_id: str) -> None:
         raise ValueError("已取消的订单不允许修改客户货号")
 
 
-def update_order_item_customer_code(db: Session, order_id: str, item_id: int, customer_code: str | None) -> OrderItem:
-    _check_order_not_cancelled(db, order_id)
+def update_order_item(db: Session, order_id: str, item_id: int, fields: dict) -> OrderItem:
+    """Update order item fields (quantity, unit_price, customer_code)."""
+    order = get_order(db, order_id)
+    if order is None:
+        raise ValueError(f"订单 {order_id} 不存在")
+    if order.status == "已取消":
+        raise ValueError("已取消的订单不允许修改")
     item = db.query(OrderItem).filter_by(id=item_id, order_id=order_id).first()
     if not item:
         raise ValueError(f"订单项 {item_id} 不存在")
-    item.customer_code = customer_code
+    price_fields = {"quantity", "unit_price"}
+    if price_fields & fields.keys() and order.status not in ("待生产", "生产中"):
+        raise ValueError("仅待生产或生产中状态可修改数量和单价")
+    if "quantity" in fields:
+        new_qty = fields["quantity"]
+        jewelry_id = item.jewelry_id
+        # Sum allocated from batch flow
+        batch_allocated = (
+            db.query(sa_func.coalesce(sa_func.sum(OrderTodoBatchJewelry.quantity), 0))
+            .join(OrderTodoBatch, OrderTodoBatchJewelry.batch_id == OrderTodoBatch.id)
+            .filter(OrderTodoBatch.order_id == order_id, OrderTodoBatchJewelry.jewelry_id == jewelry_id)
+            .scalar()
+        )
+        # Sum allocated from legacy direct HC jewelry links (not already in batch)
+        legacy_allocated = 0
+        batch_hc_ids = {
+            b.handcraft_order_id
+            for b in db.query(OrderTodoBatch).filter_by(order_id=order_id).all()
+            if b.handcraft_order_id
+        }
+        links = (
+            db.query(OrderItemLink)
+            .filter(OrderItemLink.order_id == order_id, OrderItemLink.handcraft_jewelry_item_id.isnot(None))
+            .all()
+        )
+        if links:
+            hc_item_ids = [l.handcraft_jewelry_item_id for l in links]
+            hc_items = db.query(HandcraftJewelryItem).filter(
+                HandcraftJewelryItem.id.in_(hc_item_ids),
+                HandcraftJewelryItem.jewelry_id == jewelry_id,
+            ).all()
+            for hci in hc_items:
+                if hci.handcraft_order_id not in batch_hc_ids:
+                    legacy_allocated += hci.qty
+        total_allocated = batch_allocated + legacy_allocated
+        # Compare against whole-order total for this jewelry after the edit
+        other_qty = (
+            db.query(sa_func.coalesce(sa_func.sum(OrderItem.quantity), 0))
+            .filter(OrderItem.order_id == order_id, OrderItem.jewelry_id == jewelry_id, OrderItem.id != item_id)
+            .scalar()
+        )
+        new_total = other_qty + new_qty
+        if new_total < total_allocated:
+            raise ValueError(f"该饰品整单已分配 {total_allocated}，修改后总数量 {new_total} 不足")
+    for key, value in fields.items():
+        if hasattr(item, key):
+            setattr(item, key, value)
     db.flush()
+    if price_fields & fields.keys():
+        _recalc_total(db, order)
     return item
+
+
+def update_order_item_customer_code(db: Session, order_id: str, item_id: int, customer_code: str | None) -> OrderItem:
+    return update_order_item(db, order_id, item_id, {"customer_code": customer_code})
 
 
 def batch_fill_customer_code(
