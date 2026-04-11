@@ -189,6 +189,12 @@ def get_handcraft_order(db: Session, handcraft_order_id: str) -> Optional[Handcr
 
 
 def list_handcraft_orders(db: Session, status: str = None, supplier_name: str = None) -> list:
+    # An explicitly empty / whitespace-only supplier_name means "caller
+    # asked for this supplier but the value is empty" — return no rows
+    # instead of falling through to an unfiltered query. supplier_name=None
+    # (parameter not provided) still returns all rows.
+    if supplier_name is not None and not supplier_name.strip():
+        return []
     q = db.query(HandcraftOrder)
     if status is not None:
         q = q.filter(HandcraftOrder.status == status)

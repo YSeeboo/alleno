@@ -578,6 +578,34 @@ def test_list_plating_orders_filter_supplier_multi_keyword(client, db):
     assert data[0]["supplier_name"] == "老王北京电镀厂"
 
 
+def test_list_plating_orders_empty_supplier_name_returns_empty(client, db):
+    """Regression: explicit empty/whitespace supplier_name must return no
+    rows, not fall through to an unfiltered query.
+
+    Pre-fix, the keyword_filter migration broke this edge case: empty
+    strings returned None from the helper, which caused the call site to
+    skip the filter entirely and return every order. supplier_name=None
+    (parameter absent) should still return all rows.
+    """
+    from services.plating import create_plating_order, list_plating_orders
+
+    p = create_part(db, {"name": "S5", "category": "小配件"})
+    create_plating_order(db, "供应商A", [{"part_id": p.id, "qty": 5}])
+    create_plating_order(db, "供应商B", [{"part_id": p.id, "qty": 5}])
+    db.flush()
+
+    # Service-level: None returns all, empty/whitespace returns none.
+    assert len(list_plating_orders(db, supplier_name=None)) == 2
+    assert list_plating_orders(db, supplier_name="") == []
+    assert list_plating_orders(db, supplier_name="   ") == []
+    assert list_plating_orders(db, supplier_name="\t\n") == []
+
+    # API-level: ?supplier_name= (empty string in URL) must not return all.
+    resp = client.get("/api/plating/", params={"supplier_name": ""})
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
 def test_plating_supplier_name_stripped(client, db):
     """Supplier name with whitespace is stripped at schema level."""
     p = create_part(db, {"name": "S3", "category": "小配件"})

@@ -499,6 +499,36 @@ def test_list_handcraft_filter_supplier_multi_keyword(client, db):
     assert data[0]["supplier_name"] == "小王北京手工坊"
 
 
+def test_list_handcraft_orders_empty_supplier_name_returns_empty(client, db):
+    """Regression: explicit empty/whitespace supplier_name must return no
+    rows, not fall through to an unfiltered query. supplier_name=None
+    (parameter absent) should still return all rows.
+    """
+    from services.handcraft import list_handcraft_orders
+
+    part, jewelry = _setup(db)
+    db.commit()
+    client.post("/api/handcraft/", json={
+        "supplier_name": "供应商A",
+        "parts": [{"part_id": part.id, "qty": 5}],
+    })
+    client.post("/api/handcraft/", json={
+        "supplier_name": "供应商B",
+        "parts": [{"part_id": part.id, "qty": 5}],
+    })
+
+    # Service-level: None returns all, empty/whitespace returns none.
+    assert len(list_handcraft_orders(db, supplier_name=None)) == 2
+    assert list_handcraft_orders(db, supplier_name="") == []
+    assert list_handcraft_orders(db, supplier_name="   ") == []
+    assert list_handcraft_orders(db, supplier_name="\t\n") == []
+
+    # API-level: ?supplier_name= (empty string in URL) must not return all.
+    resp = client.get("/api/handcraft/", params={"supplier_name": ""})
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
 def test_handcraft_supplier_name_stripped(client, db):
     """Supplier name with whitespace is stripped at schema level."""
     part, jewelry = _setup(db)
