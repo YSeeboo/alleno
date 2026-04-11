@@ -641,3 +641,40 @@ def test_pending_receive_filter_by_date_on(client, db):
     resp2 = client.get("/api/handcraft/items/pending-receive", params={"date_on": "2000-01-01"})
     assert resp2.status_code == 200
     assert len(resp2.json()) == 0
+
+
+def test_pending_receive_global_sort_interleaves_part_and_jewelry(client, db):
+    """Regression: pending-receive results must be globally sorted by
+    (created_at desc, handcraft_order_id desc), not concatenated as
+    [all parts, all jewelries]. A newer order's jewelry item must come
+    before an older order's part item.
+    """
+    from datetime import datetime
+    from models.handcraft_order import HandcraftOrder
+
+    new_id, _, _ = _create_and_send(client, db, supplier_name="NewSup")
+    old_id, _, _ = _create_and_send(client, db, supplier_name="OldSup")
+
+    # Force distinct created_at values: older = 2026-04-01, newer = 2026-04-10
+    db.query(HandcraftOrder).filter(HandcraftOrder.id == new_id).update(
+        {"created_at": datetime(2026, 4, 10, 12, 0, 0)}
+    )
+    db.query(HandcraftOrder).filter(HandcraftOrder.id == old_id).update(
+        {"created_at": datetime(2026, 4, 1, 12, 0, 0)}
+    )
+    db.commit()
+
+    resp = client.get("/api/handcraft/items/pending-receive")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # Each _create_and_send creates 1 part item + 1 jewelry item, so 4 total.
+    assert len(data) == 4
+
+    # All rows from the newer order must come strictly before all rows
+    # from the older order (regardless of item_type).
+    order_ids_in_result = [row["handcraft_order_id"] for row in data]
+    assert order_ids_in_result[0] == new_id
+    assert order_ids_in_result[1] == new_id
+    assert order_ids_in_result[2] == old_id
+    assert order_ids_in_result[3] == old_id

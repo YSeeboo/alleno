@@ -629,4 +629,14 @@ def list_handcraft_pending_receive_items(
             "created_at": row.created_at,
         })
 
+    # Merge the two sub-query results into a globally sorted list. Each
+    # sub-query's order_by only sorts its own rows; without this, rows from
+    # an older order's part branch can appear before rows from a newer
+    # order's jewelry branch. Python sort is stable, so within a single
+    # (created_at, handcraft_order_id) group the part-then-jewelry append
+    # order (and each sub-query's internal id-desc order) is preserved.
+    results.sort(
+        key=lambda r: (r["created_at"], r["handcraft_order_id"]),
+        reverse=True,
+    )
     return results
