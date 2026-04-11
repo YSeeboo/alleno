@@ -32,6 +32,7 @@ class HandcraftReceiptCreate(BaseModel):
     items: List[HandcraftReceiptItemCreate] = Field(min_length=1)
     status: str = "未付款"
     note: Optional[str] = None
+    created_at: Optional[date] = None
 
     @field_validator("supplier_name")
     @classmethod

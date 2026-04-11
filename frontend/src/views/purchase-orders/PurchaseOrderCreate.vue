@@ -194,12 +194,15 @@ const submit = async () => {
     if (isNew) {
       try { await createSupplier({ name: vendorName.value.trim(), type: 'parts' }) } catch (e) { if (e.response?.status !== 400) throw e }
     }
-    const { data } = await createPurchaseOrder({
+    const payload = {
       vendor_name: vendorName.value.trim(),
       items,
       status: status.value,
       note: note.value,
-    })
+    }
+    const createdAt = tsToDateStr(createdAtTs.value)
+    if (createdAt) payload.created_at = createdAt
+    const { data } = await createPurchaseOrder(payload)
     message.success('创建成功')
     handleCostDiffs(data)
   } finally {

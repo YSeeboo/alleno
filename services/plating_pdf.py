@@ -141,13 +141,18 @@ def build_plating_order_pdf(db, order_id: str) -> tuple[bytes, str]:
             )
             last_page_images = page_images
 
-            if remaining_details or (delivery_images and not page_images and is_last_data_page):
+            if remaining_details or ((inline_images or dedicated_images) and not page_images and is_last_data_page):
                 pdf.showPage()
             page_index += 1
 
-        # If last data page couldn't fit images, dedicate a page
-        if delivery_images and not last_page_images:
-            _draw_images_page(pdf, payload, template_text, delivery_images)
+        # If last data page couldn't fit inline images, dedicate a page
+        if inline_images and not last_page_images:
+            _draw_images_page(pdf, payload, template_text, inline_images)
+        # 5+ images always get dedicated pages
+        if dedicated_images:
+            if last_page_images:
+                pdf.showPage()
+            _draw_images_page(pdf, payload, template_text, dedicated_images)
 
     pdf.save()
     return buffer.getvalue(), build_export_filename(payload["order"].supplier_name, payload["order"].created_at, "pdf")

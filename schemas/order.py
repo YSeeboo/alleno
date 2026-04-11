@@ -13,6 +13,7 @@ class OrderItemCreate(BaseModel):
 class OrderCreate(BaseModel):
     customer_name: str
     items: List[OrderItemCreate]
+    created_at: Optional[date] = None
 
 
 class StatusUpdate(BaseModel):
@@ -68,6 +69,7 @@ class ExtraInfoUpdate(BaseModel):
     mark_text: Optional[str] = None
     mark_image: Optional[str] = None
     note: Optional[str] = None
+    created_at: Optional[date] = None
 
 
 # --- TodoList ---

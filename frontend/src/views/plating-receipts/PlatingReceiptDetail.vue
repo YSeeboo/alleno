@@ -27,7 +27,26 @@
             </n-popselect>
           </n-descriptions-item>
           <n-descriptions-item label="总金额">{{ receipt.total_amount != null ? `¥ ${fmtMoney(receipt.total_amount)}` : '-' }}</n-descriptions-item>
-          <n-descriptions-item label="创建时间">{{ fmt(receipt.created_at) }}</n-descriptions-item>
+          <n-descriptions-item label="创建时间">
+            <template v-if="editingCreatedAt">
+              <n-space align="center" size="small">
+                <n-date-picker
+                  v-model:value="editingCreatedAtTs"
+                  type="date"
+                  size="small"
+                  style="width: 160px;"
+                />
+                <n-button size="small" type="primary" :loading="savingCreatedAt" @click="saveCreatedAt">确认</n-button>
+                <n-button size="small" :disabled="savingCreatedAt" @click="editingCreatedAt = false">取消</n-button>
+              </n-space>
+            </template>
+            <template v-else>
+              {{ fmt(receipt.created_at) }}
+              <n-button text type="primary" size="small" style="margin-left: 6px;" @click="startEditCreatedAt">
+                <template #icon><n-icon :component="CreateOutline" /></template>
+              </n-button>
+            </template>
+          </n-descriptions-item>
           <n-descriptions-item label="付款时间">{{ receipt.paid_at ? fmt(receipt.paid_at) : '-' }}</n-descriptions-item>
           <n-descriptions-item label="备注">{{ receipt.note || '-' }}</n-descriptions-item>
           <n-descriptions-item label="单据&配件图片" :span="2">
@@ -304,6 +323,31 @@ const dialog = useDialog()
 
 const loading = ref(true)
 const receipt = ref(null)
+
+const editingCreatedAt = ref(false)
+const editingCreatedAtTs = ref(null)
+const savingCreatedAt = ref(false)
+
+const startEditCreatedAt = () => {
+  editingCreatedAtTs.value = isoToTs(receipt.value?.created_at)
+  editingCreatedAt.value = true
+}
+
+const saveCreatedAt = async () => {
+  const dateStr = tsToDateStr(editingCreatedAtTs.value)
+  if (!dateStr) { message.warning('请选择日期'); return }
+  savingCreatedAt.value = true
+  try {
+    await updatePlatingReceipt(route.params.id, { created_at: dateStr })
+    await loadData()
+    message.success('创建时间已更新')
+    editingCreatedAt.value = false
+  } catch (e) {
+    message.error(e.response?.data?.detail || '更新失败')
+  } finally {
+    savingCreatedAt.value = false
+  }
+}
 
 // Confirm loss modal
 const showLossModal = ref(false)

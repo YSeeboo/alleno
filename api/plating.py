@@ -66,6 +66,7 @@ def api_create_plating_order(body: PlatingCreate, db: Session = Depends(get_db))
             supplier_name=body.supplier_name,
             items=[item.model_dump() for item in body.items],
             note=body.note,
+            created_at=body.created_at,
         )
     return order
 

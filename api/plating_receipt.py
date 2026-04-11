@@ -55,6 +55,7 @@ def api_create_plating_receipt(body: PlatingReceiptCreate, db: Session = Depends
             items=[item.model_dump() for item in body.items],
             status=body.status,
             note=body.note,
+            created_at=body.created_at,
         )
     cost_diffs = detect_plating_cost_diffs(db, receipt)
     resp = PlatingReceiptResponse.model_validate(receipt)

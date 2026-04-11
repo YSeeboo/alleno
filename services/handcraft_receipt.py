@@ -16,6 +16,20 @@ _VALID_STATUSES = {"未付款", "已付款"}
 _Q7 = Decimal("0.0000001")
 
 
+def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
+    """Store a user-supplied date as midnight. Same-day ordering is handled by
+    an `id DESC` tie-breaker in list queries, not by fabricating a time-of-day."""
+    if d is None:
+        return None
+    return datetime.combine(d, datetime.min.time())
+
+
+def _replace_date(existing: Optional[datetime], new_date: date_type) -> datetime:
+    """Combine new_date with the time-of-day from existing; fall back to midnight."""
+    time_of_day = existing.time() if existing else datetime.min.time()
+    return datetime.combine(new_date, time_of_day)
+
+
 def _normalize_delivery_images(delivery_images: Optional[list]) -> list[str]:
     cleaned = [str(item).strip() for item in (delivery_images or []) if str(item).strip()]
     if len(cleaned) > 9:
@@ -320,6 +334,7 @@ def create_handcraft_receipt(
     items: list,
     status: str = "未付款",
     note: str = None,
+    created_at: Optional[date_type] = None,
 ) -> HandcraftReceipt:
     if status not in _VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Valid: {', '.join(sorted(_VALID_STATUSES))}")
@@ -331,8 +346,11 @@ def create_handcraft_receipt(
         status=status,
         note=note,
     )
+    if created_at is not None:
+        receipt.created_at = _user_date_to_datetime(created_at)
     if status == "已付款":
-        receipt.paid_at = now_beijing()
+        # For backfills, anchor paid_at to created_at so the timeline is consistent.
+        receipt.paid_at = receipt.created_at if created_at is not None else now_beijing()
     db.add(receipt)
     db.flush()
 
@@ -459,7 +477,7 @@ def list_handcraft_receipts(db: Session, supplier_name: str = None) -> list:
     q = db.query(HandcraftReceipt)
     if supplier_name is not None:
         q = q.filter(HandcraftReceipt.supplier_name == supplier_name)
-    return q.order_by(HandcraftReceipt.created_at.desc()).all()
+    return q.order_by(HandcraftReceipt.created_at.desc(), HandcraftReceipt.id.desc()).all()
 
 
 def get_handcraft_receipt(db: Session, receipt_id: str) -> Optional[HandcraftReceipt]:
@@ -509,6 +527,20 @@ def delete_handcraft_receipt(db: Session, receipt_id: str) -> None:
     db.flush()
 
 
+def update_handcraft_receipt(db: Session, receipt_id: str, data: dict) -> HandcraftReceipt:
+    receipt = db.query(HandcraftReceipt).filter(HandcraftReceipt.id == receipt_id).first()
+    if receipt is None:
+        raise ValueError(f"HandcraftReceipt not found: {receipt_id}")
+    if "created_at" in data and data["created_at"] is not None:
+        new_created_at = _replace_date(receipt.created_at, data["created_at"])
+        if receipt.paid_at is not None and new_created_at > receipt.paid_at:
+            raise ValueError("创建时间不能晚于付款时间")
+        receipt.created_at = new_created_at
+    db.flush()
+    _enrich_receipt(db, receipt)
+    return receipt
+
+
 def update_handcraft_receipt_status(db: Session, receipt_id: str, status: str) -> HandcraftReceipt:
     if status not in _VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Valid: {', '.join(sorted(_VALID_STATUSES))}")
@@ -518,7 +550,9 @@ def update_handcraft_receipt_status(db: Session, receipt_id: str, status: str) -
     if receipt.status == status:
         raise ValueError(f"回收单已经是「{status}」状态")
     if status == "已付款":
-        receipt.paid_at = now_beijing()
+        # Clamp paid_at >= created_at to keep the timeline consistent.
+        now = now_beijing()
+        receipt.paid_at = max(now, receipt.created_at) if receipt.created_at else now
     else:
         receipt.paid_at = None
     receipt.status = status

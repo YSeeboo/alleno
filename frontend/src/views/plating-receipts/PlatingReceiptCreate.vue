@@ -369,12 +369,15 @@ const submit = async () => {
 
   submitting.value = true
   try {
-    const { data } = await createPlatingReceipt({
+    const payload = {
       vendor_name: vendorName.value.trim(),
       items,
       status: status.value,
       note: note.value,
-    })
+    }
+    const createdAt = tsToDateStr(createdAtTs.value)
+    if (createdAt) payload.created_at = createdAt
+    const { data } = await createPlatingReceipt(payload)
     message.success('创建成功')
     handleCostDiffs(data)
   } finally {

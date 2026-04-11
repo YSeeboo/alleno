@@ -66,7 +66,26 @@
               </n-tag>
             </n-popselect>
           </n-descriptions-item>
-          <n-descriptions-item label="创建时间">{{ fmt(order.created_at) }}</n-descriptions-item>
+          <n-descriptions-item label="创建时间">
+            <template v-if="editingCreatedAt">
+              <n-space align="center" size="small">
+                <n-date-picker
+                  v-model:value="editingCreatedAtTs"
+                  type="date"
+                  size="small"
+                  style="width: 160px;"
+                />
+                <n-button size="small" type="primary" :loading="savingCreatedAt" @click="saveCreatedAt">确认</n-button>
+                <n-button size="small" :disabled="savingCreatedAt" @click="editingCreatedAt = false">取消</n-button>
+              </n-space>
+            </template>
+            <template v-else>
+              {{ fmt(order.created_at) }}
+              <n-button text type="primary" size="small" style="margin-left: 6px;" @click="startEditCreatedAt">
+                <template #icon><n-icon :component="CreateOutline" /></template>
+              </n-button>
+            </template>
+          </n-descriptions-item>
           <n-descriptions-item label="完成时间">{{ order.completed_at ? fmt(order.completed_at) : '-' }}</n-descriptions-item>
           <n-descriptions-item label="备注">{{ order.note || '-' }}</n-descriptions-item>
           <n-descriptions-item label="发货图片" :span="2">
@@ -433,6 +452,31 @@ const editingSupplier = ref(false)
 const editingSupplierValue = ref('')
 const savingSupplier = ref(false)
 const supplierSelectOptions = ref([])
+
+const editingCreatedAt = ref(false)
+const editingCreatedAtTs = ref(null)
+const savingCreatedAt = ref(false)
+
+const startEditCreatedAt = () => {
+  editingCreatedAtTs.value = isoToTs(order.value?.created_at)
+  editingCreatedAt.value = true
+}
+
+const saveCreatedAt = async () => {
+  const dateStr = tsToDateStr(editingCreatedAtTs.value)
+  if (!dateStr) { message.warning('请选择日期'); return }
+  savingCreatedAt.value = true
+  try {
+    await updatePlatingOrder(route.params.id, { created_at: dateStr })
+    await loadData()
+    message.success('创建时间已更新')
+    editingCreatedAt.value = false
+  } catch (e) {
+    message.error(e.response?.data?.detail || '更新失败')
+  } finally {
+    savingCreatedAt.value = false
+  }
+}
 
 const loadSupplierOptions = async () => {
   try {

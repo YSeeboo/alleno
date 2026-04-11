@@ -18,6 +18,7 @@ class PurchaseOrderCreate(BaseModel):
     items: List[PurchaseOrderItemCreate] = Field(min_length=1)
     status: str = "未付款"
     note: Optional[str] = None
+    created_at: Optional[date] = None
 
     @field_validator("vendor_name")
     @classmethod
@@ -26,6 +27,10 @@ class PurchaseOrderCreate(BaseModel):
         if not v:
             raise ValueError("商家名称不能为空")
         return v
+
+
+class PurchaseOrderUpdate(BaseModel):
+    created_at: Optional[date] = None
 
 
 class PurchaseOrderItemUpdate(BaseModel):

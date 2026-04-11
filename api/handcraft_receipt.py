@@ -60,6 +60,7 @@ def api_create_handcraft_receipt(body: HandcraftReceiptCreate, db: Session = Dep
             items=[item.model_dump() for item in body.items],
             status=body.status,
             note=body.note,
+            created_at=body.created_at,
         )
     # Detect diffs BEFORE auto-setting (so old values are still visible)
     cost_diffs = detect_handcraft_bead_cost_diffs(db, receipt)

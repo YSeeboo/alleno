@@ -16,7 +16,24 @@
           </n-descriptions-item>
           <n-descriptions-item label="总金额">{{ order?.total_amount != null ? fmtMoney(order.total_amount) : '-' }}</n-descriptions-item>
           <n-descriptions-item label="创建时间" :span="2">
-            {{ order?.created_at ? new Date(order.created_at).toLocaleString('zh-CN') : '-' }}
+            <template v-if="editingCreatedAt">
+              <n-space align="center" size="small">
+                <n-date-picker
+                  v-model:value="editingCreatedAtTs"
+                  type="date"
+                  size="small"
+                  style="width: 160px;"
+                />
+                <n-button size="small" type="primary" :loading="savingCreatedAt" @click="saveCreatedAt">确认</n-button>
+                <n-button size="small" :disabled="savingCreatedAt" @click="editingCreatedAt = false">取消</n-button>
+              </n-space>
+            </template>
+            <template v-else>
+              {{ order?.created_at ? new Date(order.created_at).toLocaleString('zh-CN') : '-' }}
+              <n-button text type="primary" size="small" style="margin-left: 6px;" @click="startEditCreatedAt">
+                <template #icon><n-icon :component="CreateOutline" /></template>
+              </n-button>
+            </template>
           </n-descriptions-item>
         </n-descriptions>
         <n-space style="margin-top: 12px;">
@@ -394,8 +411,45 @@ const updating = ref(false)
 const addingItem = ref(false)
 const savingPkg = ref(false)
 const order = ref(null)
+const editingCreatedAt = ref(false)
+const editingCreatedAtTs = ref(null)
+const savingCreatedAt = ref(false)
+
+const startEditCreatedAt = () => {
+  editingCreatedAtTs.value = isoToTs(order.value?.created_at)
+  editingCreatedAt.value = true
+}
+
+const saveCreatedAt = async () => {
+  const dateStr = tsToDateStr(editingCreatedAtTs.value)
+  if (!dateStr) { message.warning('请选择日期'); return }
+  savingCreatedAt.value = true
+  try {
+    await updateExtraInfo(order.value.id, { created_at: dateStr })
+    await reloadOrder()
+    message.success('创建时间已更新')
+    editingCreatedAt.value = false
+  } catch (e) {
+    message.error(e.response?.data?.detail || '更新失败')
+  } finally {
+    savingCreatedAt.value = false
+  }
+}
+
 const orderItems = ref([])
 const partsSummaryRows = ref([])
+// Sort priority: red (insufficient) → orange (global contention) → green (all ok)
+function sortPartsSummary(rows) {
+  return rows.slice().sort((a, b) => {
+    const priority = (r) => {
+      if (r.remaining_qty > 0) return 0 // red
+      const available = Math.max(0, (r.current_stock || 0) - (r.reserved_qty || 0))
+      if ((r.global_demand || 0) > available) return 1 // orange
+      return 2 // green
+    }
+    return priority(a) - priority(b)
+  })
+}
 const todoItems = ref([])
 const snapshot = ref(null)
 const expandedKeys = ref([])

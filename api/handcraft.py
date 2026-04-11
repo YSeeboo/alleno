@@ -76,6 +76,7 @@ def api_create_handcraft_order(body: HandcraftCreate, db: Session = Depends(get_
             parts=[p.model_dump() for p in body.parts],
             jewelries=[j.model_dump() for j in body.jewelries],
             note=body.note,
+            created_at=body.created_at,
         )
     from fastapi.responses import JSONResponse
     status_code = 200 if getattr(order, "merged", False) else 201

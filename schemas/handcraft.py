@@ -36,6 +36,7 @@ class HandcraftCreate(BaseModel):
     parts: List[HandcraftPartIn] = Field(min_length=1)
     jewelries: List[HandcraftJewelryIn] = Field(default_factory=list)
     note: Optional[str] = None
+    created_at: Optional[date] = None
 
     @field_validator("supplier_name")
     @classmethod
@@ -44,6 +45,10 @@ class HandcraftCreate(BaseModel):
         if not v:
             raise ValueError("手工商家名称不能为空")
         return v
+
+
+class HandcraftUpdate(BaseModel):
+    created_at: Optional[date] = None
 
 
 

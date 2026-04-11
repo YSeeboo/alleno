@@ -59,6 +59,7 @@ def api_create_purchase_order(body: PurchaseOrderCreate, db: Session = Depends(g
             items=[item.model_dump() for item in body.items],
             status=body.status,
             note=body.note,
+            created_at=body.created_at,
         )
     with service_errors():
         auto_set_initial_purchase_costs(db, order)

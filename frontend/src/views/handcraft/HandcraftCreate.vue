@@ -154,12 +154,15 @@ const submit = async () => {
     if (isNew) {
       try { await createSupplier({ name: supplierName.value, type: 'handcraft' }) } catch (e) { if (e.response?.status !== 400) throw e }
     }
-    const { data } = await createHandcraft({
+    const payload = {
       supplier_name: supplierName.value,
       parts: validParts,
       jewelries: validJewelries,
       note: note.value,
-    })
+    }
+    const createdAt = tsToDateStr(createdAtTs.value)
+    if (createdAt) payload.created_at = createdAt
+    const { data } = await createHandcraft(payload)
     message.success('创建成功')
     router.push(`/handcraft/${data.id}`)
   } finally {

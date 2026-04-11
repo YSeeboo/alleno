@@ -18,6 +18,7 @@ class PlatingCreate(BaseModel):
     supplier_name: str
     items: List[PlatingItemCreate] = Field(min_length=1)
     note: Optional[str] = None
+    created_at: Optional[date] = None
 
     @field_validator("supplier_name")
     @classmethod
@@ -38,11 +39,14 @@ class ReceiptRequest(BaseModel):
 
 
 class PlatingUpdate(BaseModel):
-    supplier_name: str
+    supplier_name: Optional[str] = None
+    created_at: Optional[date] = None
 
     @field_validator("supplier_name")
     @classmethod
-    def supplier_name_not_blank(cls, v: str) -> str:
+    def supplier_name_not_blank(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
         v = v.strip()
         if not v:
             raise ValueError("supplier_name must not be blank")

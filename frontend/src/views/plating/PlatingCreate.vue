@@ -241,7 +241,10 @@ const submit = async () => {
     }
     // Strip internal fields before submit
     const cleanItems = items.map(({ _selectedColor, _variantInfo, _variantLoading, _creatingVariant, ...rest }) => rest)
-    const { data } = await createPlating({ supplier_name: supplierName.value, items: cleanItems, note: note.value })
+    const payload = { supplier_name: supplierName.value, items: cleanItems, note: note.value }
+    const createdAt = tsToDateStr(createdAtTs.value)
+    if (createdAt) payload.created_at = createdAt
+    const { data } = await createPlating(payload)
     message.success('创建成功')
     router.push(`/plating/${data.id}`)
   } finally {

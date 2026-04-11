@@ -14,6 +14,20 @@ _VALID_STATUSES = {"未付款", "已付款"}
 _Q7 = Decimal("0.0000001")
 
 
+def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
+    """Store a user-supplied date as midnight. Same-day ordering is handled by
+    an `id DESC` tie-breaker in list queries, not by fabricating a time-of-day."""
+    if d is None:
+        return None
+    return datetime.combine(d, datetime.min.time())
+
+
+def _replace_date(existing: Optional[datetime], new_date: date_type) -> datetime:
+    """Combine new_date with the time-of-day from existing; fall back to midnight."""
+    time_of_day = existing.time() if existing else datetime.min.time()
+    return datetime.combine(new_date, time_of_day)
+
+
 def _require_part(db: Session, part_id: str) -> None:
     if db.get(Part, part_id) is None:
         raise ValueError(f"Part not found: {part_id}")
@@ -41,6 +55,7 @@ def create_purchase_order(
     items: list,
     status: str = "未付款",
     note: str = None,
+    created_at: Optional[date_type] = None,
 ) -> PurchaseOrder:
     if status not in _VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Valid values: {', '.join(sorted(_VALID_STATUSES))}")
@@ -55,8 +70,12 @@ def create_purchase_order(
         status=status,
         note=note,
     )
+    if created_at is not None:
+        order.created_at = _user_date_to_datetime(created_at)
     if status == "已付款":
-        order.paid_at = now_beijing()
+        # For backfills, anchor paid_at to created_at so the timeline is consistent
+        # (payment can't precede creation). For normal flow, record the real wall clock.
+        order.paid_at = order.created_at if created_at is not None else now_beijing()
     db.add(order)
     db.flush()
 
@@ -88,7 +107,20 @@ def list_purchase_orders(db: Session, vendor_name: str = None) -> list:
     q = db.query(PurchaseOrder)
     if vendor_name is not None:
         q = q.filter(PurchaseOrder.vendor_name == vendor_name)
-    return q.order_by(PurchaseOrder.created_at.desc()).all()
+    return q.order_by(PurchaseOrder.created_at.desc(), PurchaseOrder.id.desc()).all()
+
+
+def update_purchase_order(db: Session, order_id: str, data: dict) -> PurchaseOrder:
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
+    if order is None:
+        raise ValueError(f"PurchaseOrder not found: {order_id}")
+    if "created_at" in data and data["created_at"] is not None:
+        new_created_at = _replace_date(order.created_at, data["created_at"])
+        if order.paid_at is not None and new_created_at > order.paid_at:
+            raise ValueError("创建时间不能晚于付款时间")
+        order.created_at = new_created_at
+    db.flush()
+    return order
 
 
 def get_purchase_order(db: Session, order_id: str) -> Optional[PurchaseOrder]:
@@ -140,7 +172,10 @@ def update_purchase_order_status(db: Session, order_id: str, status: str) -> Pur
     if order.status == status:
         raise ValueError(f"采购单已经是「{status}」状态")
     if status == "已付款":
-        order.paid_at = now_beijing()
+        # Clamp paid_at >= created_at to keep the timeline consistent even if
+        # created_at is set to a future date.
+        now = now_beijing()
+        order.paid_at = max(now, order.created_at) if order.created_at else now
     else:
         order.paid_at = None
     order.status = status

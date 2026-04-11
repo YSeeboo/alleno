@@ -11,10 +11,28 @@ _VALID_STATUSES = {"待生产", "生产中", "已完成", "已取消"}
 _Q7 = Decimal("0.0000001")
 
 
-def create_order(db: Session, customer_name: str, items: list) -> Order:
+def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
+    """Store a user-supplied date as midnight. Do not inject a fake time-of-day —
+    the user only told us the date, so we must not fabricate audit data.
+    Same-day ordering is handled by an `id DESC` tie-breaker in list queries.
+    """
+    if d is None:
+        return None
+    return datetime.combine(d, datetime.min.time())
+
+
+def _replace_date(existing: Optional[datetime], new_date: date_type) -> datetime:
+    """Combine new_date with the time-of-day from existing; fall back to midnight."""
+    time_of_day = existing.time() if existing else datetime.min.time()
+    return datetime.combine(new_date, time_of_day)
+
+
+def create_order(db: Session, customer_name: str, items: list, created_at: Optional[date_type] = None) -> Order:
     order_id = _next_id(db, Order, "OR")
     total = Decimal(0)
     order = Order(id=order_id, customer_name=customer_name)
+    if created_at is not None:
+        order.created_at = _user_date_to_datetime(created_at)
     db.add(order)
     db.flush()
     for item in items:
@@ -43,11 +61,56 @@ def list_orders(db: Session, status: Optional[str] = None, customer_name: Option
         q = q.filter(Order.status == status)
     if customer_name is not None:
         q = q.filter(Order.customer_name.contains(customer_name))
-    return q.order_by(Order.created_at.desc()).all()
+    return q.order_by(Order.created_at.desc(), Order.id.desc()).all()
 
 
 def get_order_items(db: Session, order_id: str) -> list:
     return db.query(OrderItem).filter(OrderItem.order_id == order_id).all()
+
+
+def _calc_global_part_demand(db: Session, part_ids: list[str]) -> dict[str, float]:
+    """Sum BOM-driven part demand across all active orders, minus finished jewelry stock."""
+    if not part_ids:
+        return {}
+    from models.bom import Bom
+    from services.inventory import batch_get_stock
+
+    # All order items from active orders
+    active_items = (
+        db.query(OrderItem)
+        .join(Order, OrderItem.order_id == Order.id)
+        .filter(Order.status.notin_(["已完成", "已取消"]))
+        .all()
+    )
+    if not active_items:
+        return {}
+
+    jewelry_ids = list({oi.jewelry_id for oi in active_items})
+    all_bom = db.query(Bom).filter(
+        Bom.jewelry_id.in_(jewelry_ids),
+        Bom.part_id.in_(part_ids),
+    ).all()
+    bom_cache: dict[str, list] = {}
+    for b in all_bom:
+        bom_cache.setdefault(b.jewelry_id, []).append(b)
+
+    # Aggregate order qty per jewelry across all active orders
+    agg_qty: dict[str, int] = {}
+    for oi in active_items:
+        agg_qty[oi.jewelry_id] = agg_qty.get(oi.jewelry_id, 0) + oi.quantity
+
+    # Deduct finished jewelry stock (parts already consumed)
+    jewelry_stocks = batch_get_stock(db, "jewelry", jewelry_ids)
+
+    global_map: dict[str, float] = {}
+    for jid, total in agg_qty.items():
+        unfulfilled = max(0, total - jewelry_stocks.get(jid, 0))
+        if unfulfilled > 0:
+            for bom in bom_cache.get(jid, []):
+                pid = bom.part_id
+                global_map[pid] = global_map.get(pid, 0) + float(bom.qty_per_unit) * unfulfilled
+
+    return global_map
 
 
 def get_parts_summary(db: Session, order_id: str) -> list[dict]:
@@ -188,6 +251,8 @@ def update_extra_info(db: Session, order_id: str, data: dict) -> Order:
     if not order:
         raise ValueError(f"订单 {order_id} 不存在")
     for key, value in data.items():
+        if key == "created_at" and isinstance(value, date_type) and not isinstance(value, datetime):
+            value = _replace_date(order.created_at, value)
         if hasattr(order, key):
             setattr(order, key, value)
     db.flush()

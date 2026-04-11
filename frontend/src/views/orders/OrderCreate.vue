@@ -82,7 +82,10 @@ const submit = async () => {
   if (items.some((i) => !i.jewelry_id)) { message.warning('请选择饰品'); return }
   submitting.value = true
   try {
-    const { data } = await createOrder({ customer_name: customerName.value, items })
+    const payload = { customer_name: customerName.value, items }
+    const createdAt = tsToDateStr(createdAtTs.value)
+    if (createdAt) payload.created_at = createdAt
+    const { data } = await createOrder(payload)
     message.success('订单创建成功')
     router.push(`/orders/${data.id}`)
   } finally {

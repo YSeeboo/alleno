@@ -11,6 +11,20 @@ from services._helpers import _next_id
 from services.inventory import add_stock, deduct_stock
 
 
+def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
+    """Store a user-supplied date as midnight. Same-day ordering is handled by
+    an `id DESC` tie-breaker in list queries, not by fabricating a time-of-day."""
+    if d is None:
+        return None
+    return datetime.combine(d, datetime.min.time())
+
+
+def _replace_date(existing: Optional[datetime], new_date: date_type) -> datetime:
+    """Combine new_date with the time-of-day from existing; fall back to midnight."""
+    time_of_day = existing.time() if existing else datetime.min.time()
+    return datetime.combine(new_date, time_of_day)
+
+
 def _require_part(db: Session, part_id: str) -> None:
     if db.get(Part, part_id) is None:
         raise ValueError(f"Part not found: {part_id}")
@@ -37,13 +51,15 @@ def _vendor_receipt_totals_for_plating(db: Session, order_id: str) -> dict[str, 
     return {row.item_id: float(row.qty) for row in rows}
 
 
-def create_plating_order(db: Session, supplier_name: str, items: list, note: str = None) -> PlatingOrder:
+def create_plating_order(db: Session, supplier_name: str, items: list, note: str = None, created_at: Optional[date_type] = None) -> PlatingOrder:
     for item in items:
         _require_part(db, item["part_id"])
         if item.get("receive_part_id"):
             _require_part(db, item["receive_part_id"])
     order_id = _next_id(db, PlatingOrder, "EP")
     order = PlatingOrder(id=order_id, supplier_name=supplier_name, status="pending", note=note)
+    if created_at is not None:
+        order.created_at = _user_date_to_datetime(created_at)
     db.add(order)
     db.flush()
     for item in items:
@@ -104,7 +120,7 @@ def list_plating_orders(db: Session, status: str = None, supplier_name: str = No
         q = q.filter(PlatingOrder.status == status)
     if supplier_name is not None:
         q = q.filter(PlatingOrder.supplier_name == supplier_name)
-    return q.all()
+    return q.order_by(PlatingOrder.created_at.desc(), PlatingOrder.id.desc()).all()
 
 
 def get_plating_items(db: Session, order_id: str) -> list:
@@ -364,7 +380,7 @@ def list_pending_receive_items(db: Session, part_keyword: str = None, supplier_n
                 ReceivePart.name.ilike(like_pattern),
             )
         )
-    q = q.order_by(PlatingOrder.created_at.desc())
+    q = q.order_by(PlatingOrder.created_at.desc(), PlatingOrder.id.desc(), PlatingOrderItem.id.desc())
     rows = q.all()
     return [
         {
@@ -395,10 +411,12 @@ def update_plating_order(db: Session, order_id: str, data: dict) -> PlatingOrder
     order = get_plating_order(db, order_id)
     if order is None:
         raise ValueError(f"PlatingOrder not found: {order_id}")
-    if order.status != "pending":
-        raise ValueError("只有待处理状态的订单可以修改供应商")
-    if "supplier_name" in data:
+    if "supplier_name" in data and data["supplier_name"] is not None:
+        if order.status != "pending":
+            raise ValueError("只有待处理状态的订单可以修改供应商")
         order.supplier_name = data["supplier_name"]
+    if "created_at" in data and data["created_at"] is not None:
+        order.created_at = _replace_date(order.created_at, data["created_at"])
     db.flush()
     return order
 

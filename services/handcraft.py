@@ -9,6 +9,21 @@ from models.jewelry import Jewelry
 from models.part import Part
 from services._helpers import _next_id
 from services.inventory import add_stock, deduct_stock
+from time_utils import now_beijing
+
+
+def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
+    """Store a user-supplied date as midnight. Same-day ordering is handled by
+    an `id DESC` tie-breaker in list queries, not by fabricating a time-of-day."""
+    if d is None:
+        return None
+    return datetime.combine(d, datetime.min.time())
+
+
+def _replace_date(existing: Optional[datetime], new_date: date_type) -> datetime:
+    """Combine new_date with the time-of-day from existing; fall back to midnight."""
+    time_of_day = existing.time() if existing else datetime.min.time()
+    return datetime.combine(new_date, time_of_day)
 
 
 def _require_part(db: Session, part_id: str) -> None:
@@ -49,6 +64,7 @@ def create_handcraft_order(
     parts: list,
     jewelries: Optional[list] = None,
     note: str = None,
+    created_at: Optional[date_type] = None,
 ) -> HandcraftOrder:
     for p in parts:
         _require_part(db, p["part_id"])
@@ -64,21 +80,23 @@ def create_handcraft_order(
         else:
             raise ValueError("产出项必须指定 jewelry_id 或 part_id")
 
-    # Auto-merge: reuse existing pending order for same supplier on same day
-    from time_utils import now_beijing
-    today_beijing = now_beijing().date()
-    existing = (
-        db.query(HandcraftOrder)
-        .filter(
-            HandcraftOrder.supplier_name == supplier_name,
-            HandcraftOrder.status == "pending",
-            func.cast(HandcraftOrder.created_at, Date) == today_beijing,
-        )
-        .order_by(HandcraftOrder.created_at.asc())
-        .first()
-    )
-
+    # Auto-merge: reuse existing pending order for same supplier on same day.
+    # Skip merge when user explicitly provides created_at (补录历史单据的场景).
     merged = False
+    existing = None
+    if created_at is None:
+        today_beijing = now_beijing().date()
+        existing = (
+            db.query(HandcraftOrder)
+            .filter(
+                HandcraftOrder.supplier_name == supplier_name,
+                HandcraftOrder.status == "pending",
+                func.cast(HandcraftOrder.created_at, Date) == today_beijing,
+            )
+            .order_by(HandcraftOrder.created_at.asc(), HandcraftOrder.id.asc())
+            .first()
+        )
+
     if existing:
         order = existing
         merged = True
@@ -88,6 +106,8 @@ def create_handcraft_order(
     else:
         order_id = _next_id(db, HandcraftOrder, "HC")
         order = HandcraftOrder(id=order_id, supplier_name=supplier_name, status="pending", note=note)
+        if created_at is not None:
+            order.created_at = _user_date_to_datetime(created_at)
         db.add(order)
         db.flush()
 
@@ -174,7 +194,7 @@ def list_handcraft_orders(db: Session, status: str = None, supplier_name: str = 
         q = q.filter(HandcraftOrder.status == status)
     if supplier_name is not None:
         q = q.filter(HandcraftOrder.supplier_name == supplier_name)
-    return q.all()
+    return q.order_by(HandcraftOrder.created_at.desc(), HandcraftOrder.id.desc()).all()
 
 
 def get_handcraft_supplier_names(db: Session) -> list[str]:
@@ -212,6 +232,16 @@ def get_handcraft_jewelries(db: Session, order_id: str) -> list:
         HandcraftJewelryItem.handcraft_order_id == order_id
     ).all()
     return _attach_loss_qty(db, items, order_id, "handcraft_jewelry")
+
+
+def update_handcraft_order(db: Session, order_id: str, data: dict) -> HandcraftOrder:
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise ValueError(f"HandcraftOrder not found: {order_id}")
+    if "created_at" in data and data["created_at"] is not None:
+        order.created_at = _replace_date(order.created_at, data["created_at"])
+    db.flush()
+    return order
 
 
 def update_handcraft_delivery_images(db: Session, order_id: str, delivery_images: Optional[list]) -> HandcraftOrder:
@@ -515,7 +545,7 @@ def list_handcraft_pending_receive_items(
     if keyword:
         like = f"%{keyword}%"
         pq = pq.filter(or_(Part.id.ilike(like), Part.name.ilike(like)))
-    pq = pq.order_by(HandcraftOrder.created_at.desc())
+    pq = pq.order_by(HandcraftOrder.created_at.desc(), HandcraftOrder.id.desc(), HandcraftPartItem.id.desc())
 
     for row in pq.all():
         results.append({
@@ -571,7 +601,7 @@ def list_handcraft_pending_receive_items(
             Jewelry.id.ilike(like), Jewelry.name.ilike(like),
             Part.id.ilike(like), Part.name.ilike(like),
         ))
-    jq = jq.order_by(HandcraftOrder.created_at.desc())
+    jq = jq.order_by(HandcraftOrder.created_at.desc(), HandcraftOrder.id.desc(), HandcraftJewelryItem.id.desc())
 
     for row in jq.all():
         if row.jewelry_id:
