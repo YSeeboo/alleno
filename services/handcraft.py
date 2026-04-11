@@ -192,8 +192,9 @@ def list_handcraft_orders(db: Session, status: str = None, supplier_name: str = 
     q = db.query(HandcraftOrder)
     if status is not None:
         q = q.filter(HandcraftOrder.status == status)
-    if supplier_name is not None:
-        q = q.filter(HandcraftOrder.supplier_name == supplier_name)
+    clause = keyword_filter(supplier_name, HandcraftOrder.supplier_name)
+    if clause is not None:
+        q = q.filter(clause)
     return q.order_by(HandcraftOrder.created_at.desc(), HandcraftOrder.id.desc()).all()
 
 

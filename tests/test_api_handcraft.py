@@ -478,6 +478,27 @@ def test_list_handcraft_filter_supplier(client, db):
     assert data[0]["supplier_name"] == "商家C"
 
 
+def test_list_handcraft_filter_supplier_multi_keyword(client, db):
+    """Regression: supplier_name supports multi-keyword AND search.
+
+    '小王 北京' should find '小王北京手工坊' but not '小王上海手工坊'
+    or '小李北京手工坊'.
+    """
+    part, jewelry = _setup(db)
+    db.commit()
+    for name in ("小王北京手工坊", "小王上海手工坊", "小李北京手工坊"):
+        client.post("/api/handcraft/", json={
+            "supplier_name": name,
+            "parts": [{"part_id": part.id, "qty": 5}],
+        })
+
+    resp = client.get("/api/handcraft/", params={"supplier_name": "小王 北京"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["supplier_name"] == "小王北京手工坊"
+
+
 def test_handcraft_supplier_name_stripped(client, db):
     """Supplier name with whitespace is stripped at schema level."""
     part, jewelry = _setup(db)
