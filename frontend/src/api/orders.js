@@ -30,6 +30,12 @@ export const linkBatchSupplier = (orderId, batchId, supplierName) =>
   api.post(`/orders/${orderId}/todo-batch/${batchId}/link-supplier`, { supplier_name: supplierName })
 export const downloadBatchPdf = (orderId, batchId) =>
   api.get(`/orders/${orderId}/todo-pdf`, { params: { batch_id: batchId }, responseType: 'blob' })
+export const downloadPartsSummaryPdf = (orderId, partIds) =>
+  api.post(
+    `/orders/${orderId}/parts-summary/pdf`,
+    { part_ids: partIds },
+    { responseType: 'blob' },
+  )
 
 // --- Customer Code ---
 export const updateOrderItem = (orderId, itemId, data) =>

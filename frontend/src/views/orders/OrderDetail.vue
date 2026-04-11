@@ -290,8 +290,46 @@
 
       <!-- Parts summary -->
       <n-card title="配件汇总（BOM）">
-        <n-data-table v-if="partsSummaryRows.length > 0" :columns="partsColumns" :data="partsSummaryRows" :bordered="false" size="small" />
-        <n-empty v-else description="暂无配件汇总" style="margin-top: 16px;" />
+        <template #header-extra>
+          <div v-if="partsSummaryRows.length > 0" class="parts-header-extra">
+            <n-button
+              size="small"
+              class="export-pdf-btn"
+              :loading="exportingPartsPdf"
+              @click="doPartsSummaryPdfExport"
+            >
+              导出 PDF
+            </n-button>
+            <div class="parts-filter">
+              <button
+                v-for="opt in partsFilterOptions"
+                :key="opt.value"
+                type="button"
+                class="parts-filter-item"
+                :class="{ 'parts-filter-item--active': partsFilter === opt.value }"
+                @click="partsFilter = opt.value"
+              >
+                <n-icon
+                  :component="partsFilter === opt.value ? opt.iconFilled : opt.iconOutline"
+                  :size="16"
+                />
+                <span>{{ opt.label }}</span>
+                <span class="parts-filter-item-count">{{ partsFilterCounts[opt.value] }}</span>
+              </button>
+            </div>
+          </div>
+        </template>
+        <n-data-table v-if="filteredPartsRows.length > 0" :columns="partsColumns" :data="filteredPartsRows" :bordered="false" size="small" />
+        <n-empty
+          v-else-if="partsSummaryRows.length === 0"
+          description="暂无配件汇总"
+          style="margin-top: 16px;"
+        />
+        <n-empty
+          v-else
+          :description="partsFilter === 'attention' ? '所有配件均已充足' : '当前筛选下暂无配件'"
+          style="margin-top: 16px;"
+        />
       </n-card>
     </n-spin>
 
@@ -386,7 +424,12 @@ import {
   NSpace, NButton, NH2, NTag, NEmpty, NSelect, NInputNumber, NInput, NDivider, NPopconfirm, NAlert,
   NModal, NImage, NAutoComplete, NIcon, NCollapse, NCollapseItem, NForm, NFormItem, NDatePicker,
 } from 'naive-ui'
-import { Close as CloseIcon, CreateOutline } from '@vicons/ionicons5'
+import {
+  Close as CloseIcon, CreateOutline,
+  Apps, AppsOutline,
+  Warning, WarningOutline,
+  CheckmarkCircle, CheckmarkCircleOutline,
+} from '@vicons/ionicons5'
 import { tsToDateStr, isoToTs } from '@/utils/date'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 import {
@@ -394,13 +437,14 @@ import {
   getTodo, deleteLink, addOrderItem, deleteOrderItem,
   getCostSnapshot, updatePackagingCost, updateExtraInfo,
   getJewelryStatus, getJewelryForBatch, createTodoBatch, getTodoBatches,
-  linkBatchSupplier, downloadBatchPdf, deleteTodoBatch,
+  linkBatchSupplier, downloadBatchPdf, downloadPartsSummaryPdf, deleteTodoBatch,
   updateOrderItem, batchFillCustomerCode,
 } from '@/api/orders'
 import { listParts } from '@/api/parts'
 import { listJewelries } from '@/api/jewelries'
 import { listSuppliers } from '@/api/suppliers'
 import { renderNamedImage, renderOptionWithImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
+import { sortPartsSummary, classifyPartRow } from '@/utils/partsSummarySort'
 
 const route = useRoute()
 const router = useRouter()
@@ -439,18 +483,33 @@ const saveCreatedAt = async () => {
 
 const orderItems = ref([])
 const partsSummaryRows = ref([])
+// Parts summary filter: 'all' | 'attention' | 'sufficient' (B 口径: 全局视角)
+// 需关注 = 本单不够 (red) 或 本单够但全局紧张 (orange)
+// 充足 = 全局都够 (green)
+// classifyPartRow is imported from @/utils/partsSummarySort.
+const partsFilter = ref('all')
+const partsFilterOptions = [
+  { value: 'all', label: '全部', iconFilled: Apps, iconOutline: AppsOutline },
+  { value: 'attention', label: '需关注', iconFilled: Warning, iconOutline: WarningOutline },
+  { value: 'sufficient', label: '充足', iconFilled: CheckmarkCircle, iconOutline: CheckmarkCircleOutline },
+]
+const partsFilterCounts = computed(() => {
+  let attention = 0
+  let sufficient = 0
+  for (const row of partsSummaryRows.value) {
+    const c = classifyPartRow(row)
+    if (c === 'attention') attention++
+    else if (c === 'sufficient') sufficient++
+  }
+  return { all: partsSummaryRows.value.length, attention, sufficient }
+})
+const filteredPartsRows = computed(() => {
+  if (partsFilter.value === 'all') return partsSummaryRows.value
+  return partsSummaryRows.value.filter((row) => classifyPartRow(row) === partsFilter.value)
+})
 // Sort priority: red (insufficient) → orange (global contention) → green (all ok)
-function sortPartsSummary(rows) {
-  return rows.slice().sort((a, b) => {
-    const priority = (r) => {
-      if (r.remaining_qty > 0) return 0 // red
-      const available = Math.max(0, (r.current_stock || 0) - (r.reserved_qty || 0))
-      if ((r.global_demand || 0) > available) return 1 // orange
-      return 2 // green
-    }
-    return priority(a) - priority(b)
-  })
-}
+// sortPartsSummary / classifyPartRow live in @/utils/partsSummarySort
+// (pure functions, unit-tested). Imported at the top of this file.
 const todoItems = ref([])
 const snapshot = ref(null)
 const expandedKeys = ref([])
@@ -727,6 +786,29 @@ async function doBatchPdfExport(batch, index) {
     window.URL.revokeObjectURL(url)
   } catch (_) {
     message.error('PDF 下载失败')
+  }
+}
+
+const exportingPartsPdf = ref(false)
+async function doPartsSummaryPdfExport() {
+  const partIds = filteredPartsRows.value.map((r) => r.part_id)
+  if (partIds.length === 0) {
+    message.warning('当前筛选下无配件可导出')
+    return
+  }
+  exportingPartsPdf.value = true
+  try {
+    const { data } = await downloadPartsSummaryPdf(route.params.id, partIds)
+    const url = window.URL.createObjectURL(data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `配件汇总_${route.params.id}.pdf`
+    a.click()
+    window.URL.revokeObjectURL(url)
+  } catch (_) {
+    message.error('PDF 下载失败')
+  } finally {
+    exportingPartsPdf.value = false
   }
 }
 
@@ -1308,7 +1390,13 @@ const partsColumns = [
     render(row) {
       return h('div', { style: 'display:flex;align-items:center;gap:6px' }, [
         row.part_image
-          ? h(NImage, { src: row.part_image, width: 28, height: 28, objectFit: 'cover', previewDisabled: true })
+          ? h(NImage, {
+              src: row.part_image,
+              width: 28,
+              height: 28,
+              objectFit: 'cover',
+              style: 'cursor: zoom-in; border-radius: 2px;',
+            })
           : null,
         row.part_name,
       ])
@@ -1324,12 +1412,13 @@ const partsColumns = [
     align: 'center',
     render(row) {
       if (row.remaining_qty == null) return '-'
-      const available = Math.max(0, (row.current_stock || 0) - (row.reserved_qty || 0))
-      // red: this order insufficient, orange: this order ok but global insufficient, green: all ok
+      // Color uses the backend's raw-math globally_sufficient flag so we
+      // don't reconstruct (stock - reserved) from ceiled components, which
+      // can misclassify around fractional meter boundaries.
       let color = '#52c41a' // green
       if (row.remaining_qty > 0) {
         color = '#ff4d4f' // red
-      } else if ((row.global_demand || 0) > available) {
+      } else if (row.globally_sufficient === false) {
         color = '#fa8c16' // orange
       }
       return h('span', { style: { color, fontWeight: '500' } }, row.remaining_qty)
@@ -1396,6 +1485,53 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* Parts summary header-extra: [导出 PDF]  (10px gap)  [filter group] */
+.parts-header-extra {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Parts summary filter — icon + text, gray pill when active */
+.parts-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.parts-filter-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.6);
+  font-family: inherit;
+  line-height: 1;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.parts-filter-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.85);
+}
+.parts-filter-item--active {
+  background: rgba(0, 0, 0, 0.07);
+  color: rgba(0, 0, 0, 0.9);
+  font-weight: 600;
+}
+.parts-filter-item-count {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.38);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.parts-filter-item--active .parts-filter-item-count {
+  color: rgba(0, 0, 0, 0.5);
+}
+
 .export-pdf-btn {
   background: #d84243;
   color: #fff;

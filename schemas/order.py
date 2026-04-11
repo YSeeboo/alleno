@@ -206,3 +206,9 @@ class PartsSummaryItemResponse(BaseModel):
     reserved_qty: float
     global_demand: float
     remaining_qty: float
+    # Pre-computed from RAW floats (before ceiling). True iff the global
+    # BOM demand across all active orders fits in the available part stock
+    # for this order. Callers must NOT reconstruct this from current_stock /
+    # reserved_qty / global_demand — those are ceiled independently and can
+    # disagree with the raw comparison around fractional meter quantities.
+    globally_sufficient: bool

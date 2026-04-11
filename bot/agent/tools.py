@@ -275,7 +275,22 @@ def execute_tool(name: str, inputs: dict, db) -> str:
             summary = get_parts_summary(db, inputs["order_id"])
             if not summary:
                 return "该订单无配件需求（BOM 为空或订单无明细）"
-            lines = [f"{part_id}: {qty}" for part_id, qty in summary.items()]
+            # get_parts_summary returns list[dict] with the keys defined in
+            # PartsSummaryItemResponse. The previous version assumed dict and
+            # crashed at .items().
+            lines = []
+            for row in summary:
+                pid = row.get("part_id", "?")
+                pname = row.get("part_name") or ""
+                total = row.get("total_qty", 0)
+                remaining = row.get("remaining_qty", 0)
+                if remaining and remaining > 0:
+                    tag = "缺料"
+                elif row.get("globally_sufficient") is False:
+                    tag = "全局紧张"
+                else:
+                    tag = "充足"
+                lines.append(f"{pid} {pname}: 总需求={total}, 剩余={remaining} [{tag}]")
             return "配件汇总:\n" + "\n".join(lines)
 
         elif name == "update_order_status":

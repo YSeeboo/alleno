@@ -1104,6 +1104,117 @@ def test_parts_summary_with_remaining(client, db):
         assert "part_id" in item
 
 
+def test_parts_summary_ceils_fractional_meter_quantities(client, db):
+    """Meter-based parts (e.g. chain) with fractional qty_per_unit accumulate
+    float noise (982.1 meters → shown as 983). All display quantities must be
+    rounded up to eliminate noise like 982.8000000000002 and to err on the
+    safe side for purchasing."""
+    # qty_per_unit = 0.1 meters per jewelry, order qty = 9821 →
+    # total = 982.1 meters (with float noise on some platforms).
+    chain = create_part(db, {"name": "金色米链", "category": "链条"})
+    jewelry = create_jewelry(db, {"name": "米链项链", "retail_price": 50.0, "category": "单件"})
+    set_bom(db, jewelry.id, chain.id, 0.1)  # 0.1 米/件
+    resp = client.post("/api/orders/", json={
+        "customer_name": "客户",
+        "items": [{"jewelry_id": jewelry.id, "quantity": 9821, "unit_price": 10.0}],
+    })
+    assert resp.status_code == 201
+    order_id = resp.json()["id"]
+
+    resp = client.get(f"/api/orders/{order_id}/parts-summary")
+    data = resp.json()
+    row = next(d for d in data if d["part_id"] == chain.id)
+    # 0.1 * 9821 = 982.1 (or 982.1000000000001 due to float) → ceil → 983
+    assert row["total_qty"] == 983, f"expected 983 after ceil, got {row['total_qty']}"
+    assert row["remaining_qty"] == 983
+    # And crucially, no trailing decimals in the serialized value
+    assert row["total_qty"] == int(row["total_qty"])
+    assert row["remaining_qty"] == int(row["remaining_qty"])
+
+
+def test_parts_summary_globally_sufficient_flips_at_ceiling_boundary(client, db):
+    """Construct a scenario where RAW math says 'globally insufficient' (orange)
+    but reconstructing from the ceiled fields says 'sufficient' (green) — the
+    exact regression that motivated exposing globally_sufficient as an explicit
+    backend signal.
+
+    Setup:
+      - chain BOM: 0.1 m per jewelry
+      - order1 has 1 jewelry  → contributes 0.1 m to global demand
+      - order2 has 1008 jewelries → contributes 100.8 m
+      - global_demand_raw = 100.9 m
+      - stock_raw = 100.5 m, reserved_raw = 0
+      - available_raw = 100.5
+
+    Raw comparison: 100.9 > 100.5 → insufficient (orange) ✓
+    Ceiled fields exposed to clients:
+      current_stock=101, reserved_qty=0, global_demand=101
+    Naive reconstruction: (101 - 0) >= 101 → sufficient (green) ✗ WRONG
+
+    The test asserts:
+      1. globally_sufficient is False (the authoritative answer)
+      2. The ceiled fields, if reconstructed, would say sufficient — proving
+         the flag actually changes the outcome and isn't redundant.
+    """
+    from services.inventory import add_stock
+
+    chain = create_part(db, {"name": "米链", "category": "链条"})
+    jewelry = create_jewelry(db, {"name": "项链", "retail_price": 20.0, "category": "单件"})
+    set_bom(db, jewelry.id, chain.id, 0.1)  # 0.1 m / jewelry
+
+    # order1: 1 jewelry → 0.1 m demand
+    resp1 = client.post("/api/orders/", json={
+        "customer_name": "客户1",
+        "items": [{"jewelry_id": jewelry.id, "quantity": 1, "unit_price": 5.0}],
+    })
+    assert resp1.status_code == 201
+    order1_id = resp1.json()["id"]
+
+    # order2: 1008 jewelries → 100.8 m demand → global = 100.9 m
+    resp2 = client.post("/api/orders/", json={
+        "customer_name": "客户2",
+        "items": [{"jewelry_id": jewelry.id, "quantity": 1008, "unit_price": 5.0}],
+    })
+    assert resp2.status_code == 201
+
+    # Add 100.5 m raw stock — short of 100.9 m global demand.
+    add_stock(db, "part", chain.id, 100.5, "test")
+    db.flush()
+
+    resp = client.get(f"/api/orders/{order1_id}/parts-summary")
+    assert resp.status_code == 200
+    row = next(d for d in resp.json() if d["part_id"] == chain.id)
+
+    # 1) Authoritative answer from raw math.
+    assert row["globally_sufficient"] is False, (
+        f"globally_sufficient should be False (raw 100.9 > 100.5), got row={row}"
+    )
+
+    # 2) The ceiled fields the row exposes. These are what an old client
+    #    might use to reconstruct, and we want to prove they would lie.
+    #    stock_raw=100.5 → ceil=101
+    #    reserved_raw=0  → ceil=0
+    #    demand_raw=100.9 → ceil=101
+    assert row["current_stock"] == 101
+    assert row["reserved_qty"] == 0
+    assert row["global_demand"] == 101
+
+    # 3) Reconstructed availability from the ceiled exposure.
+    reconstructed_avail = row["current_stock"] - row["reserved_qty"]
+    reconstructed_says_sufficient = row["global_demand"] <= reconstructed_avail
+    # If this assertion ever flips (e.g. someone "fixes" ceiling rounding),
+    # the test still locks the correctness of globally_sufficient — but the
+    # whole point of the test is the disagreement, so call it out:
+    assert reconstructed_says_sufficient is True, (
+        "test setup no longer triggers a ceiling boundary; pick different "
+        "raw quantities so that ceiled reconstruction would say sufficient "
+        "while raw says insufficient"
+    )
+
+    # 4) Therefore the flag and the reconstruction disagree, and the flag wins.
+    assert row["globally_sufficient"] != reconstructed_says_sufficient
+
+
 # --- Batch PDF Export ---
 
 def test_download_batch_pdf(client, db):
@@ -1117,6 +1228,113 @@ def test_download_batch_pdf(client, db):
     resp = client.get(f"/api/orders/{order_id}/todo-pdf?batch_id={batch_id}")
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "application/pdf"
+
+
+# --- Parts Summary PDF Export ---
+
+def test_download_parts_summary_pdf_happy(client, db):
+    """Happy path: valid order + valid part_ids returns a PDF."""
+    order_id, part_a, part_b, _ = _setup_order_with_bom(db, client)
+    resp = client.post(
+        f"/api/orders/{order_id}/parts-summary/pdf",
+        json={"part_ids": [part_a.id, part_b.id]},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content.startswith(b"%PDF")
+
+
+def test_download_parts_summary_pdf_subset(client, db):
+    """Only the requested part_ids are rendered; others are excluded."""
+    order_id, part_a, part_b, _ = _setup_order_with_bom(db, client)
+    resp = client.post(
+        f"/api/orders/{order_id}/parts-summary/pdf",
+        json={"part_ids": [part_b.id]},  # only one of two
+    )
+    assert resp.status_code == 200
+    assert resp.content.startswith(b"%PDF")
+
+
+def test_build_parts_summary_pdf_preserves_input_order():
+    """Rows must be rendered in the caller's part_ids order, not the order
+    returned by get_parts_summary. This is what lets the frontend's filter
+    sort (red → orange → green) actually show up in the PDF."""
+    from unittest.mock import patch
+    from services import parts_summary_pdf as mod
+
+    fake_summary = [
+        {"part_id": "PJ-A", "part_name": "A", "part_image": None,
+         "total_qty": 1, "remaining_qty": 0, "current_stock": 0,
+         "reserved_qty": 0, "global_demand": 0},
+        {"part_id": "PJ-B", "part_name": "B", "part_image": None,
+         "total_qty": 1, "remaining_qty": 0, "current_stock": 0,
+         "reserved_qty": 0, "global_demand": 0},
+        {"part_id": "PJ-C", "part_name": "C", "part_image": None,
+         "total_qty": 1, "remaining_qty": 0, "current_stock": 0,
+         "reserved_qty": 0, "global_demand": 0},
+    ]
+
+    drawn_order: list[str] = []
+    original_draw_row = mod._draw_row
+
+    def spy_draw_row(pdf, row, top_y, col_widths, image_cache):
+        drawn_order.append(row["part_id"])
+        return original_draw_row(pdf, row, top_y, col_widths, image_cache)
+
+    # Supply ids in a non-natural order (reverse of summary); expect that exact order.
+    requested = ["PJ-C", "PJ-A", "PJ-B"]
+    with patch.object(mod, "get_parts_summary", return_value=fake_summary), \
+         patch.object(mod, "_draw_row", side_effect=spy_draw_row):
+        mod.build_parts_summary_pdf(None, "OR-TEST", "客户", part_ids=requested)
+
+    assert drawn_order == requested, (
+        f"rows should render in caller order {requested}, got {drawn_order}"
+    )
+
+
+def test_download_parts_summary_pdf_empty_list_rejected(client, db):
+    """Empty part_ids list returns 400 rather than a blank PDF."""
+    order_id, _, _, _ = _setup_order_with_bom(db, client)
+    resp = client.post(
+        f"/api/orders/{order_id}/parts-summary/pdf",
+        json={"part_ids": []},
+    )
+    assert resp.status_code == 400
+
+
+def test_download_parts_summary_pdf_all_ids_unmatched_rejected(client, db):
+    """Non-empty list where no id matches any part returns 400 rather than
+    silently producing a blank PDF. Prevents stale-frontend-state bugs from
+    being swallowed."""
+    order_id, _, _, _ = _setup_order_with_bom(db, client)
+    resp = client.post(
+        f"/api/orders/{order_id}/parts-summary/pdf",
+        json={"part_ids": ["PJ-NOPE-99999", "PJ-ZZZ-00001"]},
+    )
+    assert resp.status_code == 400
+
+
+def test_download_parts_summary_pdf_partial_mismatch_rejected(client, db):
+    """A request mixing valid and invalid part_ids is rejected rather than
+    silently dropping the invalid ones. Rationale: partial mismatch usually
+    means stale frontend state — the user would get a PDF that looks correct
+    but is missing rows, which is worse than a visible error."""
+    order_id, part_a, _, _ = _setup_order_with_bom(db, client)
+    resp = client.post(
+        f"/api/orders/{order_id}/parts-summary/pdf",
+        json={"part_ids": [part_a.id, "PJ-NOPE-99999"]},
+    )
+    assert resp.status_code == 400
+    assert "PJ-NOPE-99999" in resp.json()["detail"]
+
+
+def test_download_parts_summary_pdf_order_not_found(client, db):
+    """Non-existent order returns 404."""
+    resp = client.post(
+        "/api/orders/OR-9999/parts-summary/pdf",
+        json={"part_ids": ["PJ-X-00001"]},
+    )
+    assert resp.status_code == 404
 
 
 # --- Bug fix: create_batch must reject non-selectable jewelry ---

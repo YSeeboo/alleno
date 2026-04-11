@@ -1,3 +1,4 @@
+import math
 from datetime import datetime, date as date_type
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
@@ -246,15 +247,29 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
         reserved_by_others = max(0.0, total_reserved - own_pending)
         # Available stock for this order (own pending parts are still in stock, available to us)
         available = max(0.0, stock - reserved_by_others)
+        global_demand_raw = global_demand_map.get(pid, 0)
+        # Global-sufficiency flag is computed on RAW floats before ceiling. This
+        # is the single source of truth for the "orange" bucket in the UI sort /
+        # filter / row color. If callers reconstruct it from the ceiled
+        # current_stock / reserved_qty / global_demand, rounding error can flip
+        # the classification (e.g. stock=100.1, reserved=50.6, demand=49.8:
+        # raw says orange, ceiled independently says green).
+        globally_sufficient = global_demand_raw <= available
+        # Round UP all display quantities. Meter-based parts (chains) accumulate
+        # float noise like 982.8000000000002 from repeated BOM multiplication;
+        # piece-based parts are already whole numbers so ceil is a no-op.
+        # Rounding up (not round-to-nearest) is the safer direction for ordering:
+        # if a BOM needs 982.1 meters, the user should purchase 983 to be safe.
         result.append({
             "part_id": pid,
             "part_name": p.name if p else "",
             "part_image": p.image if p else None,
-            "total_qty": total_qty,
-            "current_stock": stock,
-            "reserved_qty": reserved_by_others,
-            "global_demand": global_demand_map.get(pid, 0),
-            "remaining_qty": max(0.0, needed - own_processing - available),
+            "total_qty": math.ceil(total_qty),
+            "current_stock": math.ceil(stock),
+            "reserved_qty": math.ceil(reserved_by_others),
+            "global_demand": math.ceil(global_demand_raw),
+            "remaining_qty": math.ceil(max(0.0, needed - own_processing - available)),
+            "globally_sufficient": globally_sufficient,
         })
 
     return result

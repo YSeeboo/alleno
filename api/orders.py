@@ -39,11 +39,16 @@ from services.order_todo import (
 )
 from schemas.order import TodoBatchCreateRequest, LinkSupplierRequest
 from services.order_todo_pdf import build_order_todo_pdf
+from services.parts_summary_pdf import build_parts_summary_pdf
 from api._errors import service_errors
 
 
 class PackagingCostUpdate(_BaseModel):
     packaging_cost: float = _Field(ge=0)
+
+
+class PartsSummaryPdfRequest(_BaseModel):
+    part_ids: list[str] = _Field(default_factory=list)
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
@@ -175,6 +180,34 @@ def api_download_todo_pdf(order_id: str, batch_id: int | None = None, db: Sessio
         headers={
             "Content-Disposition": (
                 f'attachment; filename="todo-{order_id}.pdf"; filename*=UTF-8\'\'{quote(filename)}'
+            )
+        },
+    )
+
+
+@router.post("/{order_id}/parts-summary/pdf")
+def api_download_parts_summary_pdf(
+    order_id: str,
+    body: PartsSummaryPdfRequest,
+    db: Session = Depends(get_db),
+):
+    """导出配件汇总 PDF。part_ids 由前端按当前筛选/排序传入，后端只负责渲染。"""
+    order = get_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    if not body.part_ids:
+        raise HTTPException(status_code=400, detail="part_ids 不能为空")
+    with service_errors():
+        file_bytes, filename = build_parts_summary_pdf(
+            db, order_id, order.customer_name, part_ids=body.part_ids,
+        )
+    return Response(
+        content=file_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="parts-summary-{order_id}.pdf"; '
+                f"filename*=UTF-8''{quote(filename)}"
             )
         },
     )
