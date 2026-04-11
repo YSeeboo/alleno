@@ -84,7 +84,7 @@ class PlatingResponse(BaseModel):
 
 
 class PlatingDeliveryImagesUpdate(BaseModel):
-    delivery_images: List[str] = Field(default_factory=list, max_length=4)
+    delivery_images: List[str] = Field(default_factory=list, max_length=10)
 
 
 class PendingReceiveItemResponse(BaseModel):

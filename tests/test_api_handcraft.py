@@ -167,7 +167,7 @@ def test_update_handcraft_delivery_images(client, db):
     ]
 
 
-def test_update_handcraft_delivery_images_rejects_more_than_four(client, db):
+def test_update_handcraft_delivery_images_rejects_more_than_ten(client, db):
     part, jewelry = _setup(db)
     created = client.post("/api/handcraft/", json={
         "supplier_name": "Supplier IMG",
@@ -178,7 +178,7 @@ def test_update_handcraft_delivery_images_rejects_more_than_four(client, db):
     resp = client.patch(
         f"/api/handcraft/{created['id']}/delivery-images",
         json={
-            "delivery_images": ["1.png", "2.png", "3.png", "4.png", "5.png"]
+            "delivery_images": [f"{i}.png" for i in range(11)]
         },
     )
     assert resp.status_code == 422

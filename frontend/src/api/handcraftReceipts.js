@@ -5,6 +5,7 @@ export const getHandcraftReceiptSuppliers = () => api.get('/handcraft-receipts/s
 export const createHandcraftReceipt = (data) => api.post('/handcraft-receipts/', data)
 export const getHandcraftReceipt = (id) => api.get(`/handcraft-receipts/${id}`)
 export const deleteHandcraftReceipt = (id) => api.delete(`/handcraft-receipts/${id}`)
+export const updateHandcraftReceipt = (id, data) => api.patch(`/handcraft-receipts/${id}`, data)
 export const updateHandcraftReceiptStatus = (id, status) => api.patch(`/handcraft-receipts/${id}/status`, { status })
 export const updateHandcraftReceiptDeliveryImages = (id, deliveryImages) => api.patch(`/handcraft-receipts/${id}/delivery-images`, { delivery_images: deliveryImages })
 export const updateHandcraftReceiptItem = (id, itemId, data) => api.put(`/handcraft-receipts/${id}/items/${itemId}`, data)

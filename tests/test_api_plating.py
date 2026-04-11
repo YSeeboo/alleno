@@ -235,7 +235,7 @@ def test_update_plating_delivery_images(client, db):
     ]
 
 
-def test_update_plating_delivery_images_rejects_more_than_four(client, db):
+def test_update_plating_delivery_images_rejects_more_than_ten(client, db):
     part = create_part(db, {"name": "P_img_limit", "category": "小配件"})
     db.commit()
 
@@ -246,7 +246,7 @@ def test_update_plating_delivery_images_rejects_more_than_four(client, db):
     order_id = create_resp.json()["id"]
 
     resp = client.patch(f"/api/plating/{order_id}/delivery-images", json={
-        "delivery_images": ["1.png", "2.png", "3.png", "4.png", "5.png"],
+        "delivery_images": [f"{i}.png" for i in range(11)],
     })
     assert resp.status_code == 422
 

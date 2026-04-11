@@ -24,6 +24,7 @@ export const deleteHandcraftPart = (id, itemId) => api.delete(`/handcraft/${id}/
 export const addHandcraftJewelry = (id, data) => api.post(`/handcraft/${id}/jewelries`, data)
 export const updateHandcraftJewelry = (id, itemId, data) => api.put(`/handcraft/${id}/jewelries/${itemId}`, data)
 export const deleteHandcraftJewelry = (id, itemId) => api.delete(`/handcraft/${id}/jewelries/${itemId}`)
+export const updateHandcraft = (id, data) => api.patch(`/handcraft/${id}`, data)
 export const updateHandcraftStatus = (id, status) => api.patch(`/handcraft/${id}/status`, { status })
 export const updateHandcraftDeliveryImages = (id, deliveryImages) =>
   api.patch(`/handcraft/${id}/delivery-images`, { delivery_images: deliveryImages })

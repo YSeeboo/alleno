@@ -100,4 +100,4 @@ class HandcraftResponse(BaseModel):
 
 
 class HandcraftDeliveryImagesUpdate(BaseModel):
-    delivery_images: List[str] = Field(default_factory=list, max_length=4)
+    delivery_images: List[str] = Field(default_factory=list, max_length=10)

@@ -517,7 +517,7 @@ const statusType = { pending: 'default', processing: 'info', completed: 'success
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
 const deliveryImages = computed(() => order.value?.delivery_images || [])
 const totalDeliveryImageCount = computed(() => deliveryImages.value.length + pendingDeliveryImages.value.length)
-const canAddDeliveryImage = computed(() => totalDeliveryImageCount.value < 4)
+const canAddDeliveryImage = computed(() => totalDeliveryImageCount.value < 10)
 const statusOptions = computed(() => {
   if (!order.value) return []
   const s = order.value.status
@@ -970,7 +970,7 @@ const persistDeliveryImages = async (nextImages, successText) => {
 
 const openDeliveryImageModal = () => {
   if (!canAddDeliveryImage.value) {
-    message.warning('发货图片最多上传 4 张')
+    message.warning('发货图片最多上传 10 张')
     return
   }
   showDeliveryImageModal.value = true
@@ -979,7 +979,7 @@ const openDeliveryImageModal = () => {
 const handleDeliveryImageUploaded = async (url) => {
   if (!url) return
   if (!canAddDeliveryImage.value) {
-    message.warning('发货图片最多上传 4 张')
+    message.warning('发货图片最多上传 10 张')
     return
   }
   try {

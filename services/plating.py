@@ -32,8 +32,8 @@ def _require_part(db: Session, part_id: str) -> None:
 
 def _normalize_delivery_images(delivery_images: Optional[list]) -> list[str]:
     cleaned = [str(item).strip() for item in (delivery_images or []) if str(item).strip()]
-    if len(cleaned) > 4:
-        raise ValueError("发货图片最多上传 4 张")
+    if len(cleaned) > 10:
+        raise ValueError("发货图片最多上传 10 张")
     return cleaned
 
 

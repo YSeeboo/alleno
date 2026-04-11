@@ -155,7 +155,7 @@ def test_update_plating_delivery_images_rejects_more_than_four(setup):
         {"part_id": p1.id, "qty": 20, "plating_method": "金色"},
     ])
 
-    with pytest.raises(ValueError, match="最多上传 4 张"):
+    with pytest.raises(ValueError, match="最多上传 10 张"):
         update_plating_delivery_images(db, order.id, [
-            "1.png", "2.png", "3.png", "4.png", "5.png",
+            f"{i}.png" for i in range(11)
         ])

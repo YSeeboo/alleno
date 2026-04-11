@@ -39,7 +39,12 @@ _LABEL_FONT_BOLD = "Helvetica-Bold"
 
 
 def _compute_image_layout(image_count: int, available_space: float):
-    """Return (cols, rows, image_height) or None if images don't fit."""
+    """Return (cols, rows, image_height) or None if images don't fit.
+
+    - 1 image: single column
+    - 2-4 images: 2 columns, ceil(n/2) rows
+    - 5+ images: single column, fit as many as possible (may need multi-page)
+    """
     if image_count == 0:
         return None
 
@@ -51,17 +56,25 @@ def _compute_image_layout(image_count: int, available_space: float):
         h = min(space, _MAX_IMAGE_HEIGHT)
         return (1, 1, h) if h >= _MIN_IMAGE_HEIGHT else None
 
-    if image_count == 2:
-        h_single = (space - _IMAGE_ROW_GAP) / 2
-        if h_single >= _MAX_IMAGE_HEIGHT:
-            return (1, 2, _MAX_IMAGE_HEIGHT)
-        h_double = min(space, _MAX_IMAGE_HEIGHT)
-        return (2, 1, h_double) if h_double >= _MIN_IMAGE_HEIGHT else None
+    if image_count <= 4:
+        # 2-4: try 2 columns
+        if image_count == 2:
+            h_single = (space - _IMAGE_ROW_GAP) / 2
+            if h_single >= _MAX_IMAGE_HEIGHT:
+                return (1, 2, _MAX_IMAGE_HEIGHT)
+            h_double = min(space, _MAX_IMAGE_HEIGHT)
+            return (2, 1, h_double) if h_double >= _MIN_IMAGE_HEIGHT else None
+        import math
+        rows = math.ceil(image_count / 2)
+        h = (space - _IMAGE_ROW_GAP * (rows - 1)) / rows
+        h = min(h, _MAX_IMAGE_HEIGHT)
+        return (2, rows, h) if h >= _MIN_IMAGE_HEIGHT else None
 
-    # 3-4 images: 2 columns, 2 rows
-    h = (space - _IMAGE_ROW_GAP) / 2
+    # 5+ images: single column, max 3 per page, overflow to next page
+    rows = min(image_count, 3)
+    h = (space - _IMAGE_ROW_GAP * (rows - 1)) / rows
     h = min(h, _MAX_IMAGE_HEIGHT)
-    return (2, 2, h) if h >= _MIN_IMAGE_HEIGHT else None
+    return (1, rows, h) if h >= _MIN_IMAGE_HEIGHT else None
 
 
 def _max_rows_with_images(image_count: int, total_available: float, row_height: float) -> int:
@@ -92,20 +105,26 @@ def build_handcraft_order_pdf(db, order_id: str) -> tuple[bytes, str]:
         d["seq"] = i
     delivery_images = payload["delivery_images"]
     image_count = len(delivery_images)
+    # 5+ images always go to dedicated pages, never inline with data
+    inline_images = delivery_images if image_count <= 4 else []
+    dedicated_images = delivery_images if image_count > 4 else []
 
     # Measure first-page available space dynamically
     first_page_available = _measure_first_page_available(pdf, payload, template_text)
     detail_page_available = _PAGE_HEIGHT - _MARGIN_TOP - _MARGIN_BOTTOM - _HEADER_ROW_HEIGHT
 
-    first_page_max = _max_rows_with_images(image_count, first_page_available, _FIRST_PAGE_ROW_HEIGHT)
+    first_page_max = _max_rows_with_images(len(inline_images), first_page_available, _FIRST_PAGE_ROW_HEIGHT)
 
     if len(details) <= first_page_max:
-        # All data + images fit on one page
+        # All data + inline images fit on one page
         _draw_detail_page(
             pdf, payload, template_text, details,
             include_static_header=True,
-            page_images=delivery_images,
+            page_images=inline_images,
         )
+        if dedicated_images:
+            pdf.showPage()
+            _draw_images_page(pdf, payload, template_text, dedicated_images)
     else:
         remaining_details = list(details)
         page_index = 0
@@ -127,12 +146,12 @@ def build_handcraft_order_pdf(db, order_id: str) -> tuple[bytes, str]:
             is_last_data_page = len(remaining_details) == 0
 
             page_images: list[str] = []
-            if is_last_data_page and delivery_images:
+            if is_last_data_page and inline_images:
                 rows_used = len(chunk)
                 space_left = page_available - rows_used * row_h
-                layout = _compute_image_layout(image_count, space_left)
+                layout = _compute_image_layout(len(inline_images), space_left)
                 if layout is not None:
-                    page_images = delivery_images
+                    page_images = inline_images
 
             _draw_detail_page(
                 pdf, payload, template_text, chunk,
@@ -208,13 +227,19 @@ def _draw_detail_page(pdf, payload: dict, template_text: dict, details: list[dic
 
 
 def _draw_images_page(pdf, payload: dict, template_text: dict, delivery_images: list[str]) -> None:
-    y = _PAGE_HEIGHT - _MARGIN_TOP
-    image_count = len(delivery_images)
-    available = y - _MARGIN_BOTTOM
-    layout = _compute_image_layout(image_count, available)
-    if layout is not None:
+    remaining = list(delivery_images)
+    while remaining:
+        y = _PAGE_HEIGHT - _MARGIN_TOP
+        available = y - _MARGIN_BOTTOM
+        layout = _compute_image_layout(len(remaining), available)
+        if layout is None:
+            break
         cols, rows, image_height = layout
-        _draw_images_block(pdf, delivery_images, y, cols, rows, image_height)
+        drawn = cols * rows
+        _draw_images_block(pdf, remaining[:drawn], y, cols, rows, image_height)
+        remaining = remaining[drawn:]
+        if remaining:
+            pdf.showPage()
 
 
 def _draw_images_block(pdf, images: list[str], y: float, cols: int, rows: int, image_height: float) -> None:

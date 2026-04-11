@@ -244,9 +244,9 @@ def test_update_handcraft_delivery_images_rejects_more_than_four(setup):
         jewelries=[{"jewelry_id": j1.id, "qty": 5}],
     )
 
-    with pytest.raises(ValueError, match="最多上传 4 张"):
+    with pytest.raises(ValueError, match="最多上传 10 张"):
         update_handcraft_delivery_images(db, order.id, [
-            "1.png", "2.png", "3.png", "4.png", "5.png",
+            f"{i}.png" for i in range(11)
         ])
 
 

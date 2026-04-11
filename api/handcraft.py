@@ -39,6 +39,7 @@ from services.handcraft import (
     send_handcraft_order,
     update_handcraft_delivery_images,
     update_handcraft_jewelry,
+    update_handcraft_order,
     update_handcraft_order_status,
     update_handcraft_part,
 )
