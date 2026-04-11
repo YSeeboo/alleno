@@ -115,6 +115,25 @@
         </n-descriptions>
       </n-card>
 
+      <n-card title="子配件" style="margin-bottom: 16px;">
+        <n-data-table v-if="partBomList.length > 0" :columns="bomColumns" :data="partBomList" :bordered="false" />
+        <n-empty v-else description="暂无子配件 BOM" style="margin: 16px 0;" />
+
+        <n-divider>添加子配件</n-divider>
+        <n-space align="center">
+          <n-select
+            v-model:value="newChildPartId"
+            :options="childPartOptions"
+            :render-label="renderOptionWithImage"
+            filterable
+            placeholder="选择配件"
+            style="width: 240px;"
+          />
+          <n-input-number v-model:value="newChildQty" :min="0.01" :precision="4" placeholder="每单位用量" style="width: 140px;" />
+          <n-button type="primary" :loading="addingBom" @click="addPartBom">确认添加</n-button>
+        </n-space>
+      </n-card>
+
       <n-card title="库存流水">
         <n-data-table v-if="logs.length > 0" :columns="logColumns" :data="logs" :bordered="false" />
         <n-empty v-else description="暂无流水" style="margin-top: 16px;" />
@@ -126,22 +145,33 @@
 <script setup>
 import { ref, h, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useMessage } from 'naive-ui'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NText, NEmpty, NImage, NPopover,
+  NDivider, NSelect, NInputNumber, NPopconfirm,
 } from 'naive-ui'
-import { getPart, getPartCostLogs } from '@/api/parts'
+import { getPart, getPartCostLogs, listParts, getPartBom, setPartBom, deletePartBom } from '@/api/parts'
 import { getStock, getStockLog } from '@/api/inventory'
-import { fmtMoney } from '@/utils/ui'
+import { fmtMoney, renderNamedImage, renderOptionWithImage } from '@/utils/ui'
 
 const route = useRoute()
 const router = useRouter()
+const message = useMessage()
 const loading = ref(true)
 const part = ref(null)
 const parentPartName = ref('')
 const stock = ref(0)
 const logs = ref([])
 const costLogs = ref([])
+
+// Sub-parts BOM
+const partBomList = ref([])
+const childPartOptions = ref([])
+const newChildPartId = ref(null)
+const newChildQty = ref(1)
+const addingBom = ref(false)
+const partId = computed(() => route.params.id)
 
 const COST_FIELD_LABELS = {
   purchase_cost: '采购费用更新',
@@ -182,18 +212,105 @@ const logColumns = [
   { title: '备注', key: 'note', render: (r) => r.note || '-' },
 ]
 
+const loadPartBom = async () => {
+  try {
+    const { data } = await getPartBom(partId.value)
+    partBomList.value = data.map((b) => ({ ...b, editQty: null }))
+  } catch (_) {
+    partBomList.value = []
+  }
+}
+
+const addPartBom = async () => {
+  if (!newChildPartId.value) return
+  addingBom.value = true
+  try {
+    await setPartBom(partId.value, {
+      child_part_id: newChildPartId.value,
+      qty_per_unit: newChildQty.value,
+    })
+    message.success('添加成功')
+    newChildPartId.value = null
+    newChildQty.value = 1
+    await loadPartBom()
+  } finally {
+    addingBom.value = false
+  }
+}
+
+const saveBomQty = async (row) => {
+  if (!row.editQty || row.editQty === row.qty_per_unit) { row.editQty = null; return }
+  await setPartBom(partId.value, {
+    child_part_id: row.child_part_id,
+    qty_per_unit: row.editQty,
+  })
+  message.success('已更新')
+  row.qty_per_unit = row.editQty
+  row.editQty = null
+}
+
+const doDeletePartBom = async (row) => {
+  await deletePartBom(row.id)
+  message.success('已删除')
+  await loadPartBom()
+}
+
+const bomColumns = [
+  { title: '子配件编号', key: 'child_part_id', width: 130 },
+  {
+    title: '子配件',
+    key: 'child_part_name',
+    minWidth: 180,
+    render: (row) => renderNamedImage(row.child_part_name, row.child_part_image, row.child_part_name),
+  },
+  {
+    title: '每单位用量',
+    key: 'qty_per_unit',
+    render: (row) =>
+      h('input', {
+        value: row.editQty ?? row.qty_per_unit,
+        type: 'number',
+        min: 0.001,
+        step: 0.001,
+        style: 'width: 80px; border: 1px solid #ccc; border-radius: 4px; padding: 2px 6px;',
+        onInput: (e) => { row.editQty = parseFloat(e.target.value) },
+        onBlur: () => saveBomQty(row),
+      }),
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    render: (row) =>
+      h(NPopconfirm, { onPositiveClick: () => doDeletePartBom(row) }, {
+        trigger: () => h(NButton, { size: 'small', type: 'error' }, () => '删除'),
+        default: () => `确认删除子配件 ${row.child_part_name} 的BOM配置？`,
+      }),
+  },
+]
+
 onMounted(async () => {
   const id = route.params.id
   try {
-    const [pRes, sRes, lRes] = await Promise.all([
+    const [pRes, sRes, lRes, partsRes] = await Promise.all([
       getPart(id),
       getStock('part', id),
       getStockLog('part', id),
+      listParts(),
     ])
     part.value = pRes.data
     stock.value = sRes.data.current
     logs.value = lRes.data
+    childPartOptions.value = partsRes.data
+      .filter((p) => p.id !== id)
+      .map((p) => ({
+        label: `${p.id} ${p.name}`,
+        value: p.id,
+        code: p.id,
+        name: p.name,
+        image: p.image,
+      }))
     getPartCostLogs(id).then(r => { costLogs.value = r.data }).catch(() => {})
+    loadPartBom()
   } finally {
     loading.value = false
   }
