@@ -557,6 +557,27 @@ def test_list_plating_orders_filter_supplier(client, db):
     assert data[0]["supplier_name"] == "厂A"
 
 
+def test_list_plating_orders_filter_supplier_multi_keyword(client, db):
+    """Regression: supplier_name supports multi-keyword AND search.
+
+    '老王 北京' should find '老王北京电镀厂' but not '老王上海电镀厂'
+    or '老李北京电镀厂'.
+    """
+    from services.plating import create_plating_order
+
+    p = create_part(db, {"name": "S4", "category": "小配件"})
+    create_plating_order(db, "老王北京电镀厂", [{"part_id": p.id, "qty": 5}])
+    create_plating_order(db, "老王上海电镀厂", [{"part_id": p.id, "qty": 5}])
+    create_plating_order(db, "老李北京电镀厂", [{"part_id": p.id, "qty": 5}])
+    db.flush()
+
+    resp = client.get("/api/plating/", params={"supplier_name": "老王 北京"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["supplier_name"] == "老王北京电镀厂"
+
+
 def test_plating_supplier_name_stripped(client, db):
     """Supplier name with whitespace is stripped at schema level."""
     p = create_part(db, {"name": "S3", "category": "小配件"})

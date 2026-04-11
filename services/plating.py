@@ -118,8 +118,9 @@ def list_plating_orders(db: Session, status: str = None, supplier_name: str = No
     q = db.query(PlatingOrder)
     if status is not None:
         q = q.filter(PlatingOrder.status == status)
-    if supplier_name is not None:
-        q = q.filter(PlatingOrder.supplier_name == supplier_name)
+    clause = keyword_filter(supplier_name, PlatingOrder.supplier_name)
+    if clause is not None:
+        q = q.filter(clause)
     return q.order_by(PlatingOrder.created_at.desc(), PlatingOrder.id.desc()).all()
 
 
