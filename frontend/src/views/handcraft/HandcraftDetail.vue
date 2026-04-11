@@ -187,7 +187,7 @@
         </div>
       </n-card>
 
-      <n-card v-if="jewelryItems.length > 0" title="饰品明细">
+      <n-card v-if="jewelryItems.length > 0" title="产出明细">
         <n-data-table :columns="jewelryColumns" :data="jewelryItems" :bordered="false" />
       </n-card>
     </n-spin>
@@ -286,7 +286,7 @@
     </n-modal>
 
     <!-- Jewelry Link Modal: just select order -->
-    <n-modal v-model:show="jewelryLinkModalVisible" preset="card" title="关联订单（饰品）" style="width: 500px;">
+    <n-modal v-model:show="jewelryLinkModalVisible" preset="card" title="关联订单（产出）" style="width: 500px;">
       <n-form label-placement="left" label-width="80">
         <n-form-item label="选择订单">
           <n-select
@@ -911,11 +911,24 @@ const jewelryMap = ref({})
 const loadJewelries = async () => {
   try {
     const { data } = await getHandcraftJewelries(route.params.id)
-    jewelryItems.value = data.map((j) => ({
-      ...j,
-      jewelry_name: jewelryMap.value[j.jewelry_id]?.name || j.jewelry_id,
-      jewelry_image: jewelryMap.value[j.jewelry_id]?.image || '',
-    }))
+    jewelryItems.value = data.map((j) => {
+      if (j.part_id) {
+        return {
+          ...j,
+          output_type: '配件',
+          display_id: j.part_id,
+          display_name: j.part_name || partMap.value[j.part_id]?.name || j.part_id,
+          display_image: j.part_image || partMap.value[j.part_id]?.image || '',
+        }
+      }
+      return {
+        ...j,
+        output_type: '饰品',
+        display_id: j.jewelry_id,
+        display_name: j.jewelry_name || jewelryMap.value[j.jewelry_id]?.name || j.jewelry_id,
+        display_image: j.jewelry_image || jewelryMap.value[j.jewelry_id]?.image || '',
+      }
+    })
   } catch (_) {
     jewelryItems.value = []
   }
@@ -1280,12 +1293,18 @@ const itemColumns = [
 ]
 
 const jewelryColumns = [
-  { title: '饰品编号', key: 'jewelry_id', width: 110 },
   {
-    title: '饰品',
-    key: 'jewelry_name',
+    title: '类型',
+    key: 'output_type',
+    width: 60,
+    render: (row) => h(NTag, { size: 'small', type: row.part_id ? 'warning' : 'info' }, () => row.output_type || '饰品'),
+  },
+  { title: '编号', key: 'display_id', width: 110, render: (row) => row.display_id || row.jewelry_id },
+  {
+    title: '名称',
+    key: 'display_name',
     minWidth: 180,
-    render: (row) => renderNamedImage(row.jewelry_name, row.jewelry_image, row.jewelry_name),
+    render: (row) => renderNamedImage(row.display_name, row.display_image, row.display_name),
   },
   { title: '数量', key: 'qty' },
   { title: '已回收', key: 'received_qty', width: 80, render: (r) => (r.received_qty ?? 0) - (r.loss_qty ?? 0) },

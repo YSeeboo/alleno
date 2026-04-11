@@ -172,7 +172,7 @@ const unitOptions = [
   { label: 'kg', value: 'kg' },
 ]
 
-const rowKey = (row) => `${row.item_type}_${row.id}`
+const rowKey = (row) => `${row.is_output ? 'output' : row.item_type}_${row.id}`
 const getRemaining = (item) => item.qty - (item.received_qty || 0)
 
 const currentPendingItems = computed(() => activeTab.value === 'part' ? pendingPartItems.value : pendingJewelryItems.value)

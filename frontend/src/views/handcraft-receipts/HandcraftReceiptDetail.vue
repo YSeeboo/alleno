@@ -209,7 +209,7 @@
     <n-modal v-model:show="addItemsModalVisible" preset="card" :title="`增加回收项目（${receipt?.supplier_name}）`" style="width: 800px;">
       <n-radio-group v-model:value="addItemsActiveTab" size="small" style="margin-bottom: 12px;">
         <n-radio-button value="part">配件</n-radio-button>
-        <n-radio-button value="jewelry">饰品</n-radio-button>
+        <n-radio-button value="jewelry">产出</n-radio-button>
       </n-radio-group>
       <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
         <n-input
@@ -456,7 +456,7 @@ const addItemsCostDiffVisible = ref(false)
 const addItemsCostDiffs = ref([])
 const addItemsCostDiffUpdating = ref(false)
 
-const addRowKey = (row) => `${row.item_type}_${row.id}`
+const addRowKey = (row) => `${row.is_output ? 'output' : row.item_type}_${row.id}`
 const addItemsCurrentPending = computed(() => addItemsActiveTab.value === 'part' ? addItemsPendingParts.value : addItemsPendingJewelries.value)
 const addItemsCurrentCheckedKeys = computed(() => addItemsActiveTab.value === 'part' ? addItemsPartCheckedKeys.value : addItemsJewelryCheckedKeys.value)
 const addItemsCurrentColumns = computed(() => addItemsActiveTab.value === 'part' ? addItemsPartColumns : addItemsJewelryColumns)
@@ -737,7 +737,7 @@ const renderNoteCell = (row) => {
   )
 }
 
-const itemTypeLabel = { part: '配件', jewelry: '饰品' }
+const itemTypeLabel = { part: '配件', jewelry: '产出' }
 
 const itemColumns = [
   { title: '类型', key: 'item_type', width: 60, render: (r) => itemTypeLabel[r.item_type] || r.item_type },
