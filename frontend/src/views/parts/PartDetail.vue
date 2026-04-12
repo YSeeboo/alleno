@@ -126,10 +126,11 @@
             :options="childPartOptions"
             :render-label="renderOptionWithImage"
             filterable
+            clearable
             placeholder="选择配件"
             style="width: 240px;"
           />
-          <n-input-number v-model:value="newChildQty" :min="0.01" :precision="4" placeholder="每单位用量" style="width: 140px;" />
+          <n-input-number v-model:value="newChildQty" :min="0.01" :precision="2" placeholder="每单位用量" style="width: 140px;" />
           <n-button type="primary" :loading="addingBom" @click="addPartBom">确认添加</n-button>
         </n-space>
       </n-card>

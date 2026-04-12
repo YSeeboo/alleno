@@ -38,6 +38,7 @@
             :options="partOptions"
             :render-label="renderOptionWithImage"
             filterable
+            clearable
             placeholder="发出配件"
             style="width: 220px;"
             @update:value="(val) => onPartSelect(item, val)"

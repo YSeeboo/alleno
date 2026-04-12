@@ -166,6 +166,7 @@
             :options="jewelryOptions"
             :render-label="renderOptionWithImage"
             filterable
+            clearable
             placeholder="选择饰品"
             style="width: 220px;"
             @update:value="onNewJewelrySelect"
@@ -895,8 +896,9 @@ const doDeleteBatch = async (batch) => {
 
 // --- Existing functions ---
 const onNewJewelrySelect = (v) => {
+  if (!v) { newItem.unit_price = 0; return }
   const j = jewelryMap.value[v]
-  if (j) newItem.unit_price = j.wholesale_price ?? 0
+  newItem.unit_price = j?.wholesale_price ?? 0
 }
 
 const savePackagingCost = async () => {

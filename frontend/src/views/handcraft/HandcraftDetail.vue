@@ -201,6 +201,7 @@
             :options="partOptions"
             :render-label="renderOptionWithImage"
             filterable
+            clearable
             placeholder="选择配件"
             @update:value="onAddPartSelect"
           />

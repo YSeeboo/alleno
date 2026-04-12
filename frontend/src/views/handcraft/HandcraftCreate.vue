@@ -40,6 +40,7 @@
                 :options="partOptions"
                 :render-label="renderOptionWithImage"
                 filterable
+                clearable
                 placeholder="选择配件"
                 style="width: 190px;"
                 @update:value="(val) => onPartSelect(item, val)"
@@ -75,6 +76,7 @@
                 :options="jewelryOptions"
                 :render-label="renderOptionWithImage"
                 filterable
+                clearable
                 placeholder="选择饰品"
                 style="width: 190px;"
                 @update:value="(val) => onJewelrySelect(item, val)"
@@ -85,6 +87,7 @@
                 :options="partOptions"
                 :render-label="renderOptionWithImage"
                 filterable
+                clearable
                 placeholder="选择配件"
                 style="width: 190px;"
                 @update:value="(val) => onOutputPartSelect(item, val)"

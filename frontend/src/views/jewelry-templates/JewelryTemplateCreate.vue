@@ -28,10 +28,11 @@
             :options="partOptions"
             :render-label="renderOptionWithImage"
             filterable
+            clearable
             placeholder="选择配件"
             style="width: 240px;"
           />
-          <n-input-number v-model:value="item.qty_per_unit" :min="0.001" :precision="4" placeholder="每件用量" style="width: 140px;" />
+          <n-input-number v-model:value="item.qty_per_unit" :min="0.001" :precision="2" placeholder="每件用量" style="width: 140px;" />
           <n-button type="error" size="small" @click="items.splice(idx, 1)">删</n-button>
         </n-space>
       </div>

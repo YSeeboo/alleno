@@ -28,6 +28,7 @@
             :options="jewelryOptions"
             :render-label="renderOptionWithImage"
             filterable
+            clearable
             placeholder="选择饰品"
             style="width: 220px;"
             @update:value="(v) => onJewelrySelect(idx, v)"
@@ -81,8 +82,9 @@ const jewelryOptions = ref([])
 const addLine = () => items.push({ jewelry_id: null, quantity: 1, unit_price: 0, remarks: '' })
 
 const onJewelrySelect = (idx, jewelryId) => {
+  if (!jewelryId) { items[idx].unit_price = 0; return }
   const jewelry = jewelryMap.value[jewelryId]
-  if (jewelry) items[idx].unit_price = jewelry.wholesale_price ?? 0
+  items[idx].unit_price = jewelry?.wholesale_price ?? 0
 }
 
 const total = computed(() => items.reduce((s, i) => s + (i.quantity || 0) * (i.unit_price || 0), 0))

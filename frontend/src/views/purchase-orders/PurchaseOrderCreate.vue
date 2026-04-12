@@ -38,6 +38,7 @@
             :options="partOptions"
             :render-label="renderOptionWithImage"
             filterable
+            clearable
             placeholder="选择配件"
             style="width: 220px;"
             @update:value="(val) => onPartSelect(item, val)"
@@ -151,11 +152,10 @@ const addRow = () => {
 }
 
 const onPartSelect = (item, val) => {
+  if (!val) { item.price = 0; item.unit = '个'; return }
   const found = partOptions.value.find((p) => p.value === val)
   item.unit = found?.unit || '个'
-  if (found?.purchase_cost != null) {
-    item.price = found.purchase_cost
-  }
+  item.price = found?.purchase_cost ?? 0
 }
 
 const handleCostDiffs = (data) => {

@@ -203,6 +203,7 @@
             :options="addItemPartOptions"
             :render-label="renderOptionWithImage"
             filterable
+            clearable
             placeholder="选择配件"
           />
         </n-form-item>
