@@ -9,6 +9,7 @@ class Jewelry(Base):
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
     image = Column(String, nullable=True)
+    structure_image = Column(String, nullable=True)
     category = Column(String, nullable=True)
     color = Column(String, nullable=True)
     unit = Column(String, nullable=True)

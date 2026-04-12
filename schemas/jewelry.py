@@ -6,6 +6,7 @@ class JewelryCreate(BaseModel):
     name: str
     category: str
     image: Optional[str] = None
+    structure_image: Optional[str] = None
     color: Optional[str] = None
     unit: Optional[str] = None
     retail_price: Optional[float] = None
@@ -17,6 +18,7 @@ class JewelryCreate(BaseModel):
 class JewelryUpdate(BaseModel):
     name: Optional[str] = None
     image: Optional[str] = None
+    structure_image: Optional[str] = None
     category: Optional[str] = None
     color: Optional[str] = None
     unit: Optional[str] = None
@@ -35,6 +37,7 @@ class JewelryResponse(BaseModel):
     id: str
     name: str
     image: Optional[str] = None
+    structure_image: Optional[str] = None
     category: Optional[str] = None
     color: Optional[str] = None
     unit: Optional[str] = None

@@ -169,6 +169,9 @@ def ensure_schema_compat(target_engine=None):
             if "handcraft_cost" not in columns:
                 conn.execute(text("ALTER TABLE jewelry ADD COLUMN handcraft_cost NUMERIC(18,7) NULL"))
                 logger.warning("Added missing jewelry.handcraft_cost column")
+            if "structure_image" not in columns:
+                conn.execute(text("ALTER TABLE jewelry ADD COLUMN structure_image VARCHAR NULL"))
+                logger.warning("Added missing jewelry.structure_image column")
 
         if inspector.has_table("order"):
             columns = {col["name"] for col in inspector.get_columns("order")}

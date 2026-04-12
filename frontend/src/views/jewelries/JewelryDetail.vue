@@ -25,6 +25,21 @@
               <n-button size="tiny" @click="showImageModal = true">更换</n-button>
             </n-space>
           </n-descriptions-item>
+          <n-descriptions-item label="结构图">
+            <n-space align="center">
+              <n-image
+                v-if="jewelry.structure_image"
+                :src="jewelry.structure_image"
+                :alt="jewelry.name + ' 结构图'"
+                :width="48"
+                :height="48"
+                object-fit="cover"
+                style="border-radius: 8px; border: 1px solid #ffd6d6; overflow: hidden; display: block; cursor: zoom-in;"
+              />
+              <span v-else>无图</span>
+              <n-button size="tiny" @click="showStructureImageModal = true">更换</n-button>
+            </n-space>
+          </n-descriptions-item>
           <n-descriptions-item label="类目">{{ jewelry.category || '-' }}</n-descriptions-item>
           <n-descriptions-item label="颜色">{{ jewelry.color || '-' }}</n-descriptions-item>
           <n-descriptions-item label="零售价">{{ jewelry.retail_price != null ? fmtMoney(jewelry.retail_price) : '-' }}</n-descriptions-item>
@@ -84,6 +99,13 @@
       suppress-success
       @uploaded="onImageUploaded"
     />
+    <ImageUploadModal
+      v-model:show="showStructureImageModal"
+      kind="jewelry"
+      :entity-id="jewelry?.id ? jewelry.id + '-structure' : null"
+      suppress-success
+      @uploaded="onStructureImageUploaded"
+    />
   </div>
 </template>
 
@@ -122,6 +144,7 @@ const adding = ref(false)
 
 // Image modal
 const showImageModal = ref(false)
+const showStructureImageModal = ref(false)
 
 // Template modal
 const showTemplateModal = ref(false)
@@ -198,6 +221,18 @@ const onImageUploaded = async (url) => {
       message.success('图片已更新')
     } catch {
       message.error('图片保存失败，请刷新页面重试')
+    }
+  }
+}
+
+const onStructureImageUploaded = async (url) => {
+  if (jewelry.value) {
+    jewelry.value.structure_image = url
+    try {
+      await updateJewelry(jewelry.value.id, { structure_image: url })
+      message.success('结构图已更新')
+    } catch {
+      message.error('结构图保存失败，请刷新页面重试')
     }
   }
 }
