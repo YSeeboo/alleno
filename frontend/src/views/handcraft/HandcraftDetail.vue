@@ -1173,7 +1173,7 @@ const itemColumns = [
     title: '配件',
     key: 'part_name',
     minWidth: 180,
-    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name),
+    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name, 40, partMap.value[row.part_id]?.is_composite ? '组合' : null),
   },
   {
     title: '颜色',
@@ -1305,7 +1305,7 @@ const jewelryColumns = [
     title: '名称',
     key: 'display_name',
     minWidth: 180,
-    render: (row) => renderNamedImage(row.display_name, row.display_image, row.display_name),
+    render: (row) => renderNamedImage(row.display_name, row.display_image, row.display_name, 40, row.output_type === '配件' && partMap.value[row.part_id]?.is_composite ? '组合' : null),
   },
   { title: '数量', key: 'qty' },
   { title: '已回收', key: 'received_qty', width: 80, render: (r) => (r.received_qty ?? 0) - (r.loss_qty ?? 0) },

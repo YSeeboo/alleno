@@ -262,7 +262,7 @@ const bomColumns = [
     title: '子配件',
     key: 'child_part_name',
     minWidth: 180,
-    render: (row) => renderNamedImage(row.child_part_name, row.child_part_image, row.child_part_name),
+    render: (row) => renderNamedImage(row.child_part_name, row.child_part_image, row.child_part_name, 40, row.child_is_composite ? '组合' : null),
   },
   {
     title: '每单位用量',

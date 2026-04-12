@@ -1088,7 +1088,7 @@ const itemColumns = [
       if (row._rowType === 'addon_new') {
         return h('span', { style: { ...addonRowStyle, color: '#1890ff', fontWeight: 500 } }, '穿珠子')
       }
-      return renderNamedImage(row.part_name, row.part_image, row.part_name)
+      return renderNamedImage(row.part_name, row.part_image, row.part_name, 40, partMap.value[row.part_id]?.is_composite ? '组合' : null)
     },
   },
   {

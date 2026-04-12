@@ -584,7 +584,7 @@ const columns = [
     title: '配件',
     key: 'name',
     minWidth: 180,
-    render: (row) => renderNamedImage(row.name, row.image, row.name),
+    render: (row) => renderNamedImage(row.name, row.image, row.name, 40, row.is_composite ? '组合' : null),
   },
   { title: '类目', key: 'category' },
   { title: '颜色', key: 'color' },

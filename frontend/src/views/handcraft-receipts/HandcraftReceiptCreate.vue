@@ -284,7 +284,7 @@ const partPendingColumns = [
     title: '配件',
     key: 'item_name',
     minWidth: 160,
-    render: (row) => renderNamedImage(row.item_name, row.item_image, row.item_name),
+    render: (row) => renderNamedImage(row.item_name, row.item_image, row.item_name, 40, row.is_composite ? '组合' : null),
   },
   { title: '颜色', key: 'color', width: 80, render: (r) => r.color || '-' },
   {
@@ -367,7 +367,7 @@ const jewelryPendingColumns = [
     title: '产出项',
     key: 'item_name',
     minWidth: 160,
-    render: (row) => renderNamedImage(row.item_name, row.item_image, row.item_name),
+    render: (row) => renderNamedImage(row.item_name, row.item_image, row.item_name, 40, row.is_composite ? '组合' : null),
   },
   {
     title: '发出日期',

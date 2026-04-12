@@ -156,7 +156,7 @@ const columns = [
     title: '名称',
     key: 'name',
     minWidth: 220,
-    render: (row) => renderNamedImage(row.name, row.image, row.name),
+    render: (row) => renderNamedImage(row.name, row.image, row.name, 40, row.is_composite ? '组合' : null),
   },
   { title: '类目', key: 'category', width: 100, render: (row) => row.category || '-' },
   {

@@ -68,7 +68,29 @@ export function renderImageThumb(src, alt = '图片', size = 40) {
   )
 }
 
-export function renderNamedImage(name, image, fallback, size = 40) {
+export function renderNamedImage(name, image, fallback, size = 40, tag = null) {
+  const children = [
+    renderImageThumb(image, name || fallback || '图片', size),
+    h('span', fallback || name || '-'),
+  ]
+  if (tag) {
+    children.push(
+      h('span', {
+        style: {
+          fontSize: '11px',
+          lineHeight: '1',
+          padding: '2px 6px',
+          borderRadius: '3px',
+          whiteSpace: 'nowrap',
+          fontWeight: '500',
+          background: '#e8f4ff',
+          color: '#2080f0',
+          border: '1px solid #b8deff',
+          flexShrink: '0',
+        },
+      }, tag)
+    )
+  }
   return h(
     'div',
     {
@@ -78,10 +100,7 @@ export function renderNamedImage(name, image, fallback, size = 40) {
         gap: '12px',
       },
     },
-    [
-      renderImageThumb(image, name || fallback || '图片', size),
-      h('span', fallback || name || '-'),
-    ]
+    children,
   )
 }
 

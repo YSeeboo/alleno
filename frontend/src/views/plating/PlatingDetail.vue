@@ -1305,7 +1305,7 @@ const itemColumns = [
       if (key in inlineEditing.value) {
         return renderInlineSelect(row, 'part_id', partOptions.value, { renderLabel: renderOptionWithImage, placeholder: '选择发出配件' })
       }
-      const content = renderNamedImage(row.part_name, row.part_image, row.part_name)
+      const content = renderNamedImage(row.part_name, row.part_image, row.part_name, 40, partMap.value[row.part_id]?.is_composite ? '组合' : null)
       if (!isPending()) return content
       return h('div', { style: 'cursor: pointer;', onClick: () => startInline(row, 'part_id') }, [content])
     },

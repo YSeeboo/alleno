@@ -245,7 +245,7 @@ const pendingColumns = [
     title: '配件',
     key: 'part_name',
     minWidth: 160,
-    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name),
+    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name, 40, row.part_is_composite ? '组合' : null),
   },
   { title: '电镀方式', key: 'plating_method', width: 90, render: (r) => r.plating_method || '-' },
   {
