@@ -69,7 +69,7 @@
             placeholder="选择配件"
             style="width: 240px;"
           />
-          <n-input-number v-model:value="newQty" :min="0.01" :precision="2" placeholder="每件用量" style="width: 140px;" />
+          <n-input-number v-model:value="newQty" :min="0.01" :precision="4" placeholder="每件用量" style="width: 140px;" />
           <n-button type="primary" :loading="adding" @click="addBom">确认添加</n-button>
         </n-space>
       </n-card>
@@ -162,6 +162,7 @@ const loadBom = async () => {
     part_name: partMap.value[b.part_id]?.name || b.part_id,
     part_image: partMap.value[b.part_id]?.image || '',
     part_unit: partMap.value[b.part_id]?.unit || '',
+    part_is_composite: partMap.value[b.part_id]?.is_composite || false,
     editQty: null,
   }))
 }
