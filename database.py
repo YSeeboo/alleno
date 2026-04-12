@@ -66,6 +66,13 @@ def ensure_schema_compat(target_engine=None):
                 if cost_col not in columns:
                     conn.execute(text(f"ALTER TABLE part ADD COLUMN {cost_col} NUMERIC(18,7) NULL"))
                     logger.warning("Added missing part.%s column", cost_col)
+            if "is_composite" not in columns:
+                conn.execute(text("ALTER TABLE part ADD COLUMN is_composite BOOLEAN NOT NULL DEFAULT false"))
+                conn.execute(text(
+                    "UPDATE part SET is_composite = true "
+                    "WHERE id IN (SELECT DISTINCT parent_part_id FROM part_bom)"
+                ))
+                logger.warning("Added missing part.is_composite column (backfilled from part_bom)")
 
         if inspector.has_table("plating_order_item"):
             columns = {col["name"] for col in inspector.get_columns("plating_order_item")}

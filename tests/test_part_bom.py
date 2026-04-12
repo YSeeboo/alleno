@@ -164,6 +164,50 @@ def test_recalc_on_assembly_cost_change(client, db):
     assert float(parent.unit_cost) == 25.0
 
 
+def test_is_composite_flag_set_on_bom_create(client, db):
+    """is_composite should be True after adding a BOM child."""
+    parent, children = _setup_parts(db)
+    assert parent.is_composite is False
+    client.post(
+        f"/api/parts/{parent.id}/bom",
+        json={"child_part_id": children[0].id, "qty_per_unit": 2.0},
+    )
+    db.refresh(parent)
+    assert parent.is_composite is True
+
+
+def test_is_composite_flag_cleared_on_last_bom_delete(client, db):
+    """is_composite should revert to False when all BOM children are removed."""
+    parent, children = _setup_parts(db)
+    resp = client.post(
+        f"/api/parts/{parent.id}/bom",
+        json={"child_part_id": children[0].id, "qty_per_unit": 2.0},
+    )
+    bom_id = resp.json()["id"]
+    db.refresh(parent)
+    assert parent.is_composite is True
+    client.delete(f"/api/parts/bom/{bom_id}")
+    db.refresh(parent)
+    assert parent.is_composite is False
+
+
+def test_is_composite_stays_true_when_one_bom_deleted(client, db):
+    """is_composite should stay True if other BOM children remain."""
+    parent, children = _setup_parts(db)
+    resp1 = client.post(
+        f"/api/parts/{parent.id}/bom",
+        json={"child_part_id": children[0].id, "qty_per_unit": 2.0},
+    )
+    client.post(
+        f"/api/parts/{parent.id}/bom",
+        json={"child_part_id": children[1].id, "qty_per_unit": 1.0},
+    )
+    bom_id = resp1.json()["id"]
+    client.delete(f"/api/parts/bom/{bom_id}")
+    db.refresh(parent)
+    assert parent.is_composite is True
+
+
 def test_assembly_cost_synced_from_handcraft_receipt(client, db):
     """Handcraft receipt price syncs to Part.assembly_cost and triggers recalc."""
     from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem

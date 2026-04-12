@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String
 
 from database import Base
 from time_utils import now_beijing
@@ -21,6 +21,7 @@ class Part(Base):
     assembly_cost = Column(Numeric(18, 7), nullable=True)
     spec = Column(String, nullable=True)
     parent_part_id = Column(String, ForeignKey("part.id"), nullable=True)
+    is_composite = Column(Boolean, nullable=False, server_default="false")
 
 
 class PartCostLog(Base):

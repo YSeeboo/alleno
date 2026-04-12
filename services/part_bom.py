@@ -44,6 +44,7 @@ def set_part_bom(db: Session, parent_part_id: str, child_part_id: str, qty_per_u
     if existing:
         existing.qty_per_unit = qty_per_unit
         db.flush()
+        parent.is_composite = True
         recalc_part_unit_cost(db, parent_part_id)
         return existing
 
@@ -55,6 +56,7 @@ def set_part_bom(db: Session, parent_part_id: str, child_part_id: str, qty_per_u
     )
     db.add(bom)
     db.flush()
+    parent.is_composite = True
     recalc_part_unit_cost(db, parent_part_id)
     return bom
 
@@ -82,6 +84,12 @@ def delete_part_bom_item(db: Session, bom_id: str) -> None:
     parent_id = row.parent_part_id
     db.delete(row)
     db.flush()
+    remaining = db.query(PartBom).filter_by(parent_part_id=parent_id).count()
+    if remaining == 0:
+        part = db.query(Part).filter_by(id=parent_id).first()
+        if part:
+            part.is_composite = False
+            db.flush()
     recalc_part_unit_cost(db, parent_id)
 
 
