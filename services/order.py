@@ -264,6 +264,7 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
             "part_id": pid,
             "part_name": p.name if p else "",
             "part_image": p.image if p else None,
+            "part_is_composite": p.is_composite if p else False,
             "total_qty": math.ceil(total_qty),
             "current_stock": math.ceil(stock),
             "reserved_qty": math.ceil(reserved_by_others),

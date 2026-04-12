@@ -24,6 +24,7 @@ def _enrich_items(db: Session, items: list[JewelryTemplateItem]) -> list[dict]:
             "qty_per_unit": float(item.qty_per_unit),
             "part_name": part.name if part else None,
             "part_image": part.image if part else None,
+            "part_is_composite": part.is_composite if part else None,
         })
     return results
 

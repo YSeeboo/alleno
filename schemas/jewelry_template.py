@@ -32,6 +32,7 @@ class JewelryTemplateItemResponse(BaseModel):
     # Enriched
     part_name: Optional[str] = None
     part_image: Optional[str] = None
+    part_is_composite: Optional[bool] = None
 
 
 class JewelryTemplateResponse(BaseModel):

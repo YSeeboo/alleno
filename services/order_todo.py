@@ -96,6 +96,7 @@ def get_todo(db: Session, order_id: str) -> list[dict]:
             "required_qty": required,
             "part_name": part.name if part else None,
             "part_image": part.image if part else None,
+            "part_is_composite": part.is_composite if part else None,
             "stock_qty": stock,
             "gap": max(0.0, required - stock),
             "is_complete": stock >= required,

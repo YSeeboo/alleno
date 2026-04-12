@@ -94,6 +94,7 @@ class PendingReceiveItemResponse(BaseModel):
     part_id: str
     part_name: str
     part_image: Optional[str] = None
+    part_is_composite: bool = False
     receive_part_id: Optional[str] = None
     receive_part_name: Optional[str] = None
     plating_method: Optional[str] = None

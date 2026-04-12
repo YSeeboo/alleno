@@ -461,4 +461,5 @@ def _enrich_receipt(db: Session, receipt: PlatingReceipt) -> PlatingReceipt:
         part = db.get(Part, item.part_id)
         if part:
             item.part_name = part.name
+            item.part_is_composite = part.is_composite
     return receipt

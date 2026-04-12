@@ -311,6 +311,7 @@ def _enrich_receipt(db: Session, receipt: HandcraftReceipt) -> HandcraftReceipt:
             if part:
                 item.item_name = part.name
                 item.color = part.color
+                item.is_composite = part.is_composite
         else:
             oi = db.query(HandcraftJewelryItem).filter(HandcraftJewelryItem.id == item.handcraft_jewelry_item_id).first()
             if oi:
@@ -322,10 +323,12 @@ def _enrich_receipt(db: Session, receipt: HandcraftReceipt) -> HandcraftReceipt:
                 part = db.get(Part, item.item_id)
                 if part:
                     item.item_name = part.name
+                    item.is_composite = part.is_composite
             else:
                 jewelry = db.get(Jewelry, item.item_id)
                 if jewelry:
                     item.item_name = jewelry.name
+                item.is_composite = False
     return receipt
 
 

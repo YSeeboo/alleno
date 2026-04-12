@@ -22,6 +22,7 @@ class InventoryOverviewItem(BaseModel):
     item_id: str
     name: str
     image: Optional[str] = None
+    is_composite: Optional[bool] = None
     category: Optional[str] = None
     current: float
     updated_at: Optional[datetime] = None

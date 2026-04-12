@@ -86,6 +86,7 @@ class OrderTodoItemResponse(BaseModel):
     # Enriched fields (populated by service)
     part_name: Optional[str] = None
     part_image: Optional[str] = None
+    part_is_composite: Optional[bool] = None
     stock_qty: Optional[float] = None
     gap: Optional[float] = None
     is_complete: Optional[bool] = None
@@ -201,6 +202,7 @@ class PartsSummaryItemResponse(BaseModel):
     part_id: str
     part_name: str
     part_image: str | None = None
+    part_is_composite: bool = False
     total_qty: float
     current_stock: float
     reserved_qty: float

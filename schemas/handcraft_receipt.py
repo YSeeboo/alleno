@@ -86,6 +86,7 @@ class HandcraftReceiptItemResponse(BaseModel):
     note: Optional[str] = None
     # Enriched fields (populated by service, not from ORM)
     item_name: Optional[str] = None
+    is_composite: Optional[bool] = None
     handcraft_order_id: Optional[str] = None
     color: Optional[str] = None
     source_qty: Optional[float] = None
