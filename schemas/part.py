@@ -43,6 +43,7 @@ class PartResponse(BaseModel):
     plating_process: Optional[str] = None
     assembly_cost: Optional[float] = None
     parent_part_id: Optional[str] = None
+    is_composite: bool = False
 
 
 class PartVariantCreate(BaseModel):

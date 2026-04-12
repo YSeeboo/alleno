@@ -245,3 +245,32 @@ def test_assembly_cost_synced_from_handcraft_receipt(client, db):
     # assembly_cost should be 3.0, unit_cost = 10*2 + 3 = 23
     assert float(parent.assembly_cost) == 3.0
     assert float(parent.unit_cost) == 23.0
+
+
+def test_part_response_includes_is_composite(client, db):
+    """GET /api/parts/{id} should include is_composite field."""
+    parent, children = _setup_parts(db)
+    resp = client.get(f"/api/parts/{parent.id}")
+    assert resp.status_code == 200
+    assert resp.json()["is_composite"] is False
+
+    client.post(
+        f"/api/parts/{parent.id}/bom",
+        json={"child_part_id": children[0].id, "qty_per_unit": 2.0},
+    )
+    resp = client.get(f"/api/parts/{parent.id}")
+    assert resp.json()["is_composite"] is True
+
+
+def test_list_parts_includes_is_composite(client, db):
+    """GET /api/parts/ should include is_composite for each part."""
+    parent, children = _setup_parts(db)
+    client.post(
+        f"/api/parts/{parent.id}/bom",
+        json={"child_part_id": children[0].id, "qty_per_unit": 2.0},
+    )
+    resp = client.get("/api/parts/")
+    assert resp.status_code == 200
+    parts_map = {p["id"]: p for p in resp.json()}
+    assert parts_map[parent.id]["is_composite"] is True
+    assert parts_map[children[0].id]["is_composite"] is False
