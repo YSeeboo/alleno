@@ -202,6 +202,9 @@ def create_part_variant(db: Session, part_id: str, color_code: Optional[str] = N
     variant_name = _build_variant_name(root.name, color, spec)
     existing = _find_existing_variant(db, root.id, variant_name, color, spec)
     if existing is not None:
+        if spec and existing.unit != "条":
+            existing.unit = "条"
+            db.flush()
         return existing
     # Same-color derivation (e.g. xx_金色 → xx_金色_45cm): inherit source's attributes
     # Cross-color (e.g. xx_金色 → xx_白K): inherit from root to avoid pollution
@@ -212,7 +215,7 @@ def create_part_variant(db: Session, part_id: str, color_code: Optional[str] = N
         id=_next_id_by_category(db, Part, prefix),
         name=variant_name,
         category=root.category,
-        unit=donor.unit,
+        unit="条" if spec else donor.unit,
         purchase_cost=donor.purchase_cost,
         bead_cost=donor.bead_cost,
         plating_cost=donor.plating_cost,

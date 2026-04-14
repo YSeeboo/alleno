@@ -40,6 +40,8 @@ from services.order_todo import (
 from schemas.order import TodoBatchCreateRequest, LinkSupplierRequest
 from services.order_todo_pdf import build_order_todo_pdf
 from services.parts_summary_pdf import build_parts_summary_pdf
+from services.cutting_stats import get_order_cutting_stats
+from services.cutting_stats_pdf import build_cutting_stats_pdf
 from api._errors import service_errors
 
 
@@ -212,6 +214,39 @@ def api_download_parts_summary_pdf(
         },
     )
 
+
+
+@router.get("/{order_id}/cutting-stats")
+def api_get_order_cutting_stats(order_id: str, db: Session = Depends(get_db)):
+    """获取订单裁剪统计"""
+    order = get_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    with service_errors():
+        items = get_order_cutting_stats(db, order_id)
+    return {"items": items}
+
+
+@router.post("/{order_id}/cutting-stats/pdf")
+def api_download_order_cutting_stats_pdf(order_id: str, db: Session = Depends(get_db)):
+    """导出订单裁剪统计 PDF"""
+    order = get_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    with service_errors():
+        all_items = get_order_cutting_stats(db, order_id)
+        items = [i for i in all_items if i["qty"] > 0]
+        file_bytes, filename = build_cutting_stats_pdf(items, order_id)
+    return Response(
+        content=file_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="cutting-stats-{order_id}.pdf"; '
+                f"filename*=UTF-8''{quote(filename)}"
+            )
+        },
+    )
 
 
 @router.patch("/{order_id}/extra-info", response_model=OrderResponse)

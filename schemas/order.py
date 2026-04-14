@@ -66,6 +66,7 @@ class BatchCustomerCodeResponse(BaseModel):
 
 
 class ExtraInfoUpdate(BaseModel):
+    customer_name: Optional[str] = None
     barcode_text: Optional[str] = None
     barcode_image: Optional[str] = None
     mark_text: Optional[str] = None
@@ -198,6 +199,14 @@ class JewelryForBatchResponse(BaseModel):
     disabled_reason: str | None = None
 
 
+class SourceJewelryItem(BaseModel):
+    jewelry_id: str
+    jewelry_name: str = ""
+    qty_per_unit: float
+    order_qty: int
+    subtotal: float
+
+
 class PartsSummaryItemResponse(BaseModel):
     part_id: str
     part_name: str
@@ -214,3 +223,4 @@ class PartsSummaryItemResponse(BaseModel):
     # reserved_qty / global_demand — those are ceiled independently and can
     # disagree with the raw comparison around fractional meter quantities.
     globally_sufficient: bool
+    source_jewelries: list[SourceJewelryItem] = []

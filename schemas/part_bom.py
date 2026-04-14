@@ -17,4 +17,5 @@ class PartBomResponse(BaseModel):
     qty_per_unit: float
     child_part_name: Optional[str] = None
     child_part_image: Optional[str] = None
+    child_part_unit: Optional[str] = None
     child_is_composite: Optional[bool] = None

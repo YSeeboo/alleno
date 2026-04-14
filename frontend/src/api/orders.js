@@ -50,3 +50,8 @@ export const updateExtraInfo = (orderId, data) =>
 // --- Cost Snapshot & Packaging Cost ---
 export const getCostSnapshot = (orderId) => api.get(`/orders/${orderId}/cost-snapshot`)
 export const updatePackagingCost = (orderId, data) => api.patch(`/orders/${orderId}/packaging-cost`, data)
+
+// --- Cutting Stats ---
+export const getCuttingStats = (orderId) => api.get(`/orders/${orderId}/cutting-stats`)
+export const downloadCuttingStatsPdf = (orderId) =>
+  api.post(`/orders/${orderId}/cutting-stats/pdf`, {}, { responseType: 'blob' })

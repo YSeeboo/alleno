@@ -73,6 +73,7 @@ def get_part_bom(db: Session, parent_part_id: str) -> list[dict]:
             "qty_per_unit": float(row.qty_per_unit),
             "child_part_name": child.name if child else "",
             "child_part_image": child.image if child else None,
+            "child_part_unit": child.unit if child else "个",
             "child_is_composite": child.is_composite if child else None,
         })
     return result

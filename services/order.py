@@ -162,6 +162,26 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
                 pid = bom.part_id
                 deduct_map[pid] = deduct_map.get(pid, 0) + float(bom.qty_per_unit) * deduct_qty
 
+    # Build source jewelries breakdown: part_id → [{jewelry_id, qty_per_unit, order_qty, subtotal}]
+    from models.jewelry import Jewelry
+    source_map: dict[str, list[dict]] = {}
+    for jid, order_qty in agg_qty.items():
+        for bom in bom_cache.get(jid, []):
+            pid = bom.part_id
+            source_map.setdefault(pid, []).append({
+                "jewelry_id": jid,
+                "qty_per_unit": float(bom.qty_per_unit),
+                "order_qty": order_qty,
+                "subtotal": float(bom.qty_per_unit) * order_qty,
+            })
+    # Enrich with jewelry names
+    jewelry_db = db.query(Jewelry).filter(Jewelry.id.in_(jewelry_ids)).all() if jewelry_ids else []
+    jewelry_info = {j.id: j for j in jewelry_db}
+    for entries in source_map.values():
+        for entry in entries:
+            j = jewelry_info.get(entry["jewelry_id"])
+            entry["jewelry_name"] = j.name if j else ""
+
     # Enrich with part info
     part_ids = list(total_map.keys())
     parts = db.query(Part).filter(Part.id.in_(part_ids)).all() if part_ids else []
@@ -260,6 +280,7 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
         # piece-based parts are already whole numbers so ceil is a no-op.
         # Rounding up (not round-to-nearest) is the safer direction for ordering:
         # if a BOM needs 982.1 meters, the user should purchase 983 to be safe.
+        raw_remaining = max(0.0, needed - own_processing - available)
         result.append({
             "part_id": pid,
             "part_name": p.name if p else "",
@@ -269,8 +290,10 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
             "current_stock": math.ceil(stock),
             "reserved_qty": math.ceil(reserved_by_others),
             "global_demand": math.ceil(global_demand_raw),
-            "remaining_qty": math.ceil(max(0.0, needed - own_processing - available)),
+            "remaining_qty": math.ceil(raw_remaining),
+            "_raw_remaining_qty": raw_remaining,
             "globally_sufficient": globally_sufficient,
+            "source_jewelries": source_map.get(pid, []),
         })
 
     return result

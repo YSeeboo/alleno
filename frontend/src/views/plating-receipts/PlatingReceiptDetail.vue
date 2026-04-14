@@ -164,7 +164,7 @@
       <form @submit.prevent="doEditItem">
       <n-form label-placement="left" label-width="90">
         <n-form-item label="数量">
-          <n-input-number v-model:value="editForm.qty" :min="0.0001" :precision="2" :step="1" style="width: 100%;" />
+          <n-input-number v-model:value="editForm.qty" :min="0.0001" :precision="4" :step="1" style="width: 100%;" />
         </n-form-item>
         <n-form-item label="单位">
           <n-select v-model:value="editForm.unit" :options="unitOptions" />

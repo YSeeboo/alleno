@@ -10,7 +10,21 @@
       <n-card title="基本信息" style="margin-bottom: 16px;">
         <n-descriptions :column="3" bordered>
           <n-descriptions-item label="订单号">{{ order?.id }}</n-descriptions-item>
-          <n-descriptions-item label="客户名">{{ order?.customer_name }}</n-descriptions-item>
+          <n-descriptions-item label="客户名">
+            <template v-if="editingCustomerName">
+              <n-space align="center" size="small">
+                <n-input v-model:value="editingCustomerNameVal" size="small" style="width: 160px;" />
+                <n-button size="small" type="primary" :loading="savingCustomerName" @click="saveCustomerName">确认</n-button>
+                <n-button size="small" :disabled="savingCustomerName" @click="editingCustomerName = false">取消</n-button>
+              </n-space>
+            </template>
+            <template v-else>
+              {{ order?.customer_name }}
+              <n-button text type="primary" size="small" style="margin-left: 6px;" @click="startEditCustomerName">
+                <template #icon><n-icon :component="CreateOutline" /></template>
+              </n-button>
+            </template>
+          </n-descriptions-item>
           <n-descriptions-item label="状态">
             <n-tag :type="statusColor[order?.status]">{{ order?.status }}</n-tag>
           </n-descriptions-item>
@@ -295,6 +309,13 @@
           <div v-if="partsSummaryRows.length > 0" class="parts-header-extra">
             <n-button
               size="small"
+              :loading="cuttingStatsLoading"
+              @click="openCuttingStatsModal"
+            >
+              裁剪统计
+            </n-button>
+            <n-button
+              size="small"
               class="export-pdf-btn"
               :loading="exportingPartsPdf"
               @click="doPartsSummaryPdfExport"
@@ -320,7 +341,14 @@
             </div>
           </div>
         </template>
-        <n-data-table v-if="filteredPartsRows.length > 0" :columns="partsColumns" :data="filteredPartsRows" :bordered="false" size="small" />
+        <n-data-table
+          v-if="filteredPartsRows.length > 0"
+          :columns="partsColumns"
+          :data="filteredPartsRows"
+          :bordered="false"
+          size="small"
+          :row-key="row => row.part_id"
+        />
         <n-empty
           v-else-if="partsSummaryRows.length === 0"
           description="暂无配件汇总"
@@ -413,6 +441,109 @@
         </n-space>
       </template>
     </n-modal>
+
+    <!-- Composite part BOM modal -->
+    <n-modal v-model:show="showPartBomModal" preset="card" :title="partBomTitle" style="width: 560px;">
+      <n-spin :show="partBomLoading">
+        <n-data-table
+          v-if="partBomData.length > 0"
+          :columns="partBomColumns"
+          :data="partBomData"
+          :bordered="false"
+          size="small"
+        />
+        <n-empty v-else-if="!partBomLoading" description="暂无子配件" />
+      </n-spin>
+    </n-modal>
+
+    <!-- Jewelry info modal -->
+    <n-modal v-model:show="showJewelryModal" preset="card" :title="`饰品详情`" style="width: 560px;">
+      <n-spin :show="jewelryModalLoading">
+        <template v-if="jewelryModalData">
+          <!-- Header: image + basic info -->
+          <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+            <n-image
+              v-if="jewelryModalData.image"
+              :src="jewelryModalData.image"
+              :alt="jewelryModalData.name"
+              :width="80"
+              :height="80"
+              object-fit="cover"
+              style="border-radius: 8px; border: 1px solid #eee; cursor: zoom-in;"
+            />
+            <div v-else style="width: 80px; height: 80px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 24px; font-weight: 600;">
+              {{ jewelryModalData.name?.charAt(0) || '?' }}
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; justify-content: center;">
+              <div style="font-size: 12px; color: #999;">{{ jewelryModalData.id }}</div>
+              <div style="font-size: 18px; font-weight: 600;">{{ jewelryModalData.name }}</div>
+              <n-space size="small" style="margin-top: 4px;">
+                <n-tag v-if="jewelryModalData.category" size="small" :bordered="false">{{ jewelryModalData.category }}</n-tag>
+                <n-tag v-if="jewelryModalData.color" size="small" :bordered="false">{{ jewelryModalData.color }}</n-tag>
+                <n-tag size="small" :bordered="false" :type="jewelryModalData.status === 'active' ? 'success' : 'default'">
+                  {{ jewelryModalData.status === 'active' ? '在售' : '停用' }}
+                </n-tag>
+              </n-space>
+            </div>
+          </div>
+
+          <!-- Structure image -->
+          <div v-if="jewelryModalData.structure_image" style="margin-bottom: 16px;">
+            <div style="font-size: 12px; color: #888; margin-bottom: 6px;">结构图</div>
+            <n-image
+              :src="jewelryModalData.structure_image"
+              :alt="jewelryModalData.name + ' 结构图'"
+              :width="120"
+              :height="80"
+              object-fit="cover"
+              style="border-radius: 6px; border: 1px solid #eee; cursor: zoom-in;"
+            />
+          </div>
+
+          <!-- Info grid -->
+          <n-descriptions :column="2" bordered size="small" style="margin-bottom: 16px;">
+            <n-descriptions-item label="零售价">{{ jewelryModalData.retail_price != null ? fmtMoney(jewelryModalData.retail_price) : '-' }}</n-descriptions-item>
+            <n-descriptions-item label="批发价">{{ jewelryModalData.wholesale_price != null ? fmtMoney(jewelryModalData.wholesale_price) : '-' }}</n-descriptions-item>
+            <n-descriptions-item label="手工费">{{ jewelryModalData.handcraft_cost != null ? fmtMoney(jewelryModalData.handcraft_cost) : '-' }}</n-descriptions-item>
+            <n-descriptions-item label="当前库存">{{ jewelryModalData.stock ?? '-' }}</n-descriptions-item>
+          </n-descriptions>
+
+          <!-- BOM table -->
+          <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 2px solid rgb(100,101,232); display: inline-block;">
+            BOM 配件清单
+          </div>
+          <n-data-table
+            v-if="jewelryModalBom.length > 0"
+            :columns="jewelryModalBomColumns"
+            :data="jewelryModalBom"
+            :bordered="false"
+            size="small"
+          />
+          <n-empty v-else description="暂无 BOM 配件" />
+        </template>
+      </n-spin>
+    </n-modal>
+
+    <!-- Cutting stats modal -->
+    <n-modal v-model:show="cuttingStatsVisible" preset="card" title="裁剪统计" style="width: 720px;">
+      <n-spin :show="cuttingStatsLoading">
+        <n-data-table
+          v-if="cuttingStatsData.length > 0"
+          :columns="cuttingStatsColumns"
+          :data="cuttingStatsData"
+          :bordered="false"
+          size="small"
+          :row-key="row => row.part_id"
+        />
+        <n-empty v-else-if="!cuttingStatsLoading" description="暂无裁剪统计数据" />
+      </n-spin>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="cuttingStatsVisible = false">关闭</n-button>
+          <n-button type="primary" :loading="cuttingStatsPdfLoading" :disabled="!cuttingStatsData.some(i => i.qty > 0)" @click="doCuttingStatsPdfExport">导出 PDF</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -424,6 +555,7 @@ import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NSelect, NInputNumber, NInput, NDivider, NPopconfirm, NAlert,
   NModal, NImage, NAutoComplete, NIcon, NCollapse, NCollapseItem, NForm, NFormItem, NDatePicker,
+  NTooltip,
 } from 'naive-ui'
 import {
   Close as CloseIcon, CreateOutline,
@@ -440,9 +572,12 @@ import {
   getJewelryStatus, getJewelryForBatch, createTodoBatch, getTodoBatches,
   linkBatchSupplier, downloadBatchPdf, downloadPartsSummaryPdf, deleteTodoBatch,
   updateOrderItem, batchFillCustomerCode,
+  getCuttingStats, downloadCuttingStatsPdf,
 } from '@/api/orders'
-import { listParts } from '@/api/parts'
-import { listJewelries } from '@/api/jewelries'
+import { listParts, getPartBom } from '@/api/parts'
+import { listJewelries, getJewelry } from '@/api/jewelries'
+import { getBom } from '@/api/bom'
+import { getStock } from '@/api/inventory'
 import { listSuppliers } from '@/api/suppliers'
 import { renderNamedImage, renderOptionWithImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import { sortPartsSummary, classifyPartRow } from '@/utils/partsSummarySort'
@@ -479,6 +614,32 @@ const saveCreatedAt = async () => {
     message.error(e.response?.data?.detail || '更新失败')
   } finally {
     savingCreatedAt.value = false
+  }
+}
+
+// --- Customer name inline edit ---
+const editingCustomerName = ref(false)
+const editingCustomerNameVal = ref('')
+const savingCustomerName = ref(false)
+
+const startEditCustomerName = () => {
+  editingCustomerNameVal.value = order.value?.customer_name || ''
+  editingCustomerName.value = true
+}
+
+const saveCustomerName = async () => {
+  const name = editingCustomerNameVal.value.trim()
+  if (!name) { message.warning('客户名不能为空'); return }
+  savingCustomerName.value = true
+  try {
+    await updateExtraInfo(order.value.id, { customer_name: name })
+    await reloadOrder()
+    message.success('客户名已更新')
+    editingCustomerName.value = false
+  } catch (e) {
+    message.error(e.response?.data?.detail || '更新失败')
+  } finally {
+    savingCustomerName.value = false
   }
 }
 
@@ -813,6 +974,94 @@ async function doPartsSummaryPdfExport() {
   }
 }
 
+// --- Cutting stats ---
+const cuttingStatsVisible = ref(false)
+const cuttingStatsLoading = ref(false)
+const cuttingStatsData = ref([])
+const cuttingStatsPdfLoading = ref(false)
+
+const cuttingStatsColumns = [
+  { title: '编号', key: 'part_id', width: 120 },
+  {
+    title: '配件',
+    key: 'part_name',
+    render(row) {
+      const children = []
+      if (row.part_image) {
+        children.push(h('img', {
+          src: row.part_image,
+          style: 'width: 32px; height: 32px; object-fit: cover; border-radius: 4px; margin-right: 8px; vertical-align: middle;',
+        }))
+      }
+      children.push(h('span', { style: 'vertical-align: middle;' }, row.part_name))
+      if (row.sources && row.sources.length > 1) {
+        children.push(
+          h(NTooltip, { trigger: 'hover' }, {
+            trigger: () => h('span', {
+              style: 'display: inline-block; width: 16px; height: 16px; border-radius: 50%; background: #f0a020; color: #fff; font-size: 11px; font-weight: 700; text-align: center; line-height: 16px; margin-left: 6px; vertical-align: middle; cursor: default;',
+            }, '!'),
+            default: () => [
+              h('div', { style: 'color: #aaa; font-size: 11px; margin-bottom: 4px;' }, '总需求来源：'),
+              ...row.sources.map((s) =>
+                h('div', { key: s.label }, `${s.label} × ${s.qty}`),
+              ),
+            ],
+          }),
+        )
+      }
+      return h('span', { style: 'display: inline-flex; align-items: center;' }, children)
+    },
+  },
+  {
+    title: '裁剪长度',
+    key: 'cut_length_cm',
+    width: 100,
+    render(row) { return `${row.cut_length_cm}cm` },
+  },
+  { title: '裁剪数量', key: 'qty', width: 90 },
+  {
+    title: '总长度',
+    key: 'total_length',
+    width: 100,
+    render(row) {
+      const meters = row.cut_length_cm * row.qty / 100
+      const rounded = Math.ceil(parseFloat((meters * 10).toFixed(6))) / 10
+      return h('span', { style: 'color: #7b2ff2; font-weight: 600;' }, `${rounded}m`)
+    },
+  },
+]
+
+async function openCuttingStatsModal() {
+  cuttingStatsVisible.value = true
+  cuttingStatsLoading.value = true
+  try {
+    const { data } = await getCuttingStats(route.params.id)
+    cuttingStatsData.value = data.items || []
+  } catch (_) {
+    message.error('获取裁剪统计失败')
+    cuttingStatsData.value = []
+  } finally {
+    cuttingStatsLoading.value = false
+  }
+}
+
+async function doCuttingStatsPdfExport() {
+  cuttingStatsPdfLoading.value = true
+  try {
+    const { data } = await downloadCuttingStatsPdf(route.params.id)
+    const url = window.URL.createObjectURL(data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `裁剪统计_${route.params.id}.pdf`
+    a.click()
+    window.URL.revokeObjectURL(url)
+  } catch (_) {
+    message.error('PDF 下载失败')
+  } finally {
+    cuttingStatsPdfLoading.value = false
+  }
+}
+
 // --- Hover tooltip for jewelry cards ---
 const hoverTimer = ref(null)
 const hoverJewelry = ref(null)
@@ -883,6 +1132,95 @@ async function confirmLinkSupplier() {
     linkingSupplier.value = false
   }
 }
+
+// --- Composite part BOM modal ---
+const showPartBomModal = ref(false)
+const partBomTitle = ref('')
+const partBomData = ref([])
+const partBomLoading = ref(false)
+
+let _partBomRequestId = 0
+
+async function openPartBomModal(row) {
+  const requestId = ++_partBomRequestId
+  partBomTitle.value = `${row.part_id} ${row.part_name} - 子配件`
+  partBomData.value = []
+  showPartBomModal.value = true
+  partBomLoading.value = true
+  try {
+    const { data } = await getPartBom(row.part_id)
+    if (requestId !== _partBomRequestId) return
+    partBomData.value = data
+  } catch (_) {
+    if (requestId !== _partBomRequestId) return
+    partBomData.value = []
+  } finally {
+    if (requestId === _partBomRequestId) partBomLoading.value = false
+  }
+}
+
+const partBomColumns = [
+  { title: '子配件编号', key: 'child_part_id', width: 130 },
+  {
+    title: '子配件',
+    key: 'child_part_name',
+    minWidth: 160,
+    render: (row) => renderNamedImage(row.child_part_name, row.child_part_image, row.child_part_name, 40, row.child_is_composite ? '组合' : null),
+  },
+  { title: '用量', key: 'qty_per_unit', width: 80 },
+  { title: '单位', key: 'child_part_unit', width: 60 },
+]
+
+// --- Jewelry info modal ---
+const showJewelryModal = ref(false)
+const jewelryModalData = ref(null)
+const jewelryModalBom = ref([])
+const jewelryModalLoading = ref(false)
+
+let _jewelryModalRequestId = 0
+
+async function openJewelryModal(jewelryId) {
+  const requestId = ++_jewelryModalRequestId
+  jewelryModalData.value = null
+  jewelryModalBom.value = []
+  showJewelryModal.value = true
+  jewelryModalLoading.value = true
+  try {
+    const [jRes, bRes, sRes] = await Promise.all([
+      getJewelry(jewelryId),
+      getBom(jewelryId),
+      getStock('jewelry', jewelryId),
+    ])
+    if (requestId !== _jewelryModalRequestId) return
+    jewelryModalData.value = { ...jRes.data, stock: sRes.data?.current ?? 0 }
+    // Enrich BOM rows with part name/image from parts summary
+    const pMap = {}
+    for (const r of partsSummaryRows.value) {
+      pMap[r.part_id] = r
+    }
+    jewelryModalBom.value = (bRes.data || []).map((b) => ({
+      ...b,
+      part_name: pMap[b.part_id]?.part_name || b.part_id,
+      part_image: pMap[b.part_id]?.part_image || null,
+    }))
+  } catch (_) {
+    if (requestId !== _jewelryModalRequestId) return
+    message.error('加载饰品信息失败')
+  } finally {
+    if (requestId === _jewelryModalRequestId) jewelryModalLoading.value = false
+  }
+}
+
+const jewelryModalBomColumns = [
+  {
+    title: '配件',
+    key: 'part_name',
+    minWidth: 160,
+    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name, 32),
+  },
+  { title: '编号', key: 'part_id', width: 120 },
+  { title: '每件用量', key: 'qty_per_unit', width: 90, align: 'center' },
+]
 
 const doDeleteBatch = async (batch) => {
   try {
@@ -1201,13 +1539,26 @@ const bomDetailColumns = [
   { title: '小计', key: 'subtotal', width: 100, render: (r) => r.subtotal != null ? fmtMoney(r.subtotal) : '-' },
 ]
 
+function renderPartWithBomLink(row) {
+  const node = renderNamedImage(row.part_name, row.part_image, row.part_name, 40, row.part_is_composite ? '组合' : null)
+  if (!row.part_is_composite) return node
+  return h('div', {
+    style: 'cursor: pointer;',
+    onClick: (e) => {
+      // Don't open modal if user clicked on the image (let NImage handle preview)
+      if (e.target.closest('.n-image') || e.target.tagName === 'IMG') return
+      openPartBomModal(row)
+    },
+  }, [node])
+}
+
 const todoColumns = [
   { title: '配件编号', key: 'part_id', width: 110 },
   {
     title: '配件',
     key: 'part_name',
     minWidth: 160,
-    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name, 40, row.part_is_composite ? '组合' : null),
+    render: (row) => renderPartWithBomLink(row),
   },
   { title: '需要数量', key: 'required_qty', width: 100 },
   {
@@ -1269,7 +1620,7 @@ const batchItemColumns = [
     title: '配件',
     key: 'part_name',
     minWidth: 160,
-    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name, 40, row.part_is_composite ? '组合' : null),
+    render: (row) => renderPartWithBomLink(row),
   },
   { title: '需要数量', key: 'required_qty', width: 100 },
   {
@@ -1384,24 +1735,17 @@ const batchSelectColumns = [
 
 // --- Parts summary columns (updated with remaining_qty) ---
 const partsColumns = [
+  {
+    type: 'expand',
+    renderExpand: (row) => renderPartsExpand(row),
+  },
   { title: '配件编号', key: 'part_id' },
   {
     title: '配件',
     key: 'part_name',
     minWidth: 180,
     render(row) {
-      return h('div', { style: 'display:flex;align-items:center;gap:6px' }, [
-        row.part_image
-          ? h(NImage, {
-              src: row.part_image,
-              width: 28,
-              height: 28,
-              objectFit: 'cover',
-              style: 'cursor: zoom-in; border-radius: 2px;',
-            })
-          : null,
-        row.part_name,
-      ])
+      return renderPartWithBomLink(row)
     },
   },
   { title: '总需求量', key: 'total_qty', align: 'center' },
@@ -1427,6 +1771,30 @@ const partsColumns = [
     },
   },
 ]
+
+function renderPartsExpand(row) {
+  const sources = row.source_jewelries || []
+  if (sources.length === 0) return h('div', { style: 'padding: 8px 12px 12px 48px; color: #999; font-size: 12px;' }, '无来源明细')
+  return h('div', { style: 'padding: 8px 12px 12px 48px; background: #fafbfc;' },
+    sources.map((s, i) => {
+      const isLast = i === sources.length - 1
+      return h('div', {
+        style: `display: flex; align-items: center; gap: 16px; padding: 5px 0; font-size: 12px; color: #555;${isLast ? '' : ' border-bottom: 1px dashed #e8e8e8;'}`,
+      }, [
+        h('span', { style: 'color: #ccc; font-family: monospace; margin-right: 4px;' }, isLast ? '└─' : '├─'),
+        h('span', { style: 'font-weight: 600; color: #333; min-width: 80px;' }, s.jewelry_id),
+        h('span', {
+          style: 'color: rgb(100,101,232); min-width: 80px; cursor: pointer;',
+          onClick: () => openJewelryModal(s.jewelry_id),
+          onMouseenter: (e) => { e.target.style.textDecoration = 'underline' },
+          onMouseleave: (e) => { e.target.style.textDecoration = 'none' },
+        }, s.jewelry_name),
+        h('span', { style: 'color: #888; font-family: "SF Mono", Menlo, monospace; font-size: 11px;' }, `${s.qty_per_unit}/件 × ${s.order_qty}件`),
+        h('span', { style: 'font-weight: 600; color: #333;' }, `= ${Math.ceil(s.subtotal)}`),
+      ])
+    }),
+  )
+}
 
 onMounted(async () => {
   const id = route.params.id

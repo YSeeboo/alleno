@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>新建手工单 - 方案 A 最终版</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f5f5; padding: 24px; color: #333; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .subtitle { color: #888; font-size: 13px; margin-bottom: 24px; }
+
+  /* shared */
+  .card { border: 1px solid #e0e0e0; border-radius: 6px; padding: 14px; margin-bottom: 12px; }
+  .card-title { font-weight: 600; font-size: 14px; margin-bottom: 10px; }
+  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  select, input { height: 32px; border: 1px solid #d9d9d9; border-radius: 4px; padding: 0 8px; font-size: 13px; }
+  select { min-width: 100px; background: #fff; }
+  input[type=number] { width: 80px; }
+  .btn { height: 32px; padding: 0 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .btn-primary { background: #18a058; color: #fff; }
+  .btn-dashed { background: #fff; border: 1px dashed #d9d9d9; color: #666; width: 100%; }
+  .btn-danger { background: #fff; border: 1px solid #e88080; color: #d03050; font-size: 12px; padding: 0 8px; }
+  .btn-small { height: 26px; font-size: 12px; }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+  .tag-green { background: #e8f5e9; color: #2e7d32; }
+  .tag-blue { background: #e3f2fd; color: #1565c0; }
+
+  /* layout */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .form-label { font-size: 13px; color: #666; min-width: 90px; text-align: right; }
+
+  /* group cards */
+  .group-card { border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 12px; overflow: hidden; }
+  .group-header { background: #fafafa; padding: 10px 14px; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 8px; }
+  .group-body { padding: 14px; }
+
+  /* thumbnail */
+  .thumb { width: 28px; height: 28px; border-radius: 4px; object-fit: cover; cursor: pointer; border: 1px solid #e0e0e0; transition: box-shadow .15s; flex-shrink: 0; }
+  .thumb:hover { box-shadow: 0 0 0 2px #18a058; }
+
+  /* image preview overlay */
+  .overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.6); z-index: 1000; justify-content: center; align-items: center; cursor: pointer; }
+  .overlay.active { display: flex; }
+  .overlay img { max-width: 80vw; max-height: 80vh; border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,.3); }
+
+  /* header thumb (larger) */
+  .header-thumb { width: 32px; height: 32px; border-radius: 4px; object-fit: cover; cursor: pointer; border: 1px solid #e0e0e0; flex-shrink: 0; }
+  .header-thumb:hover { box-shadow: 0 0 0 2px #18a058; }
+
+  /* output row item with image */
+  .output-item { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .part-item { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<!-- Image preview overlay -->
+<div class="overlay" id="overlay" onclick="this.classList.remove('active')">
+  <img id="overlayImg" src="">
+</div>
+
+<h1>新建手工单</h1>
+<p class="subtitle">方案 A 最终版 — 分组卡片 + 缩略图预览</p>
+
+<!-- 顶部表单 -->
+<div style="max-width: 900px; margin-bottom: 16px;">
+  <div class="form-row">
+    <span class="form-label">手工商家名称</span>
+    <select style="width:300px;"><option>张师傅工坊</option></select>
+  </div>
+  <div class="form-row">
+    <span class="form-label">备注</span>
+    <input type="text" style="width:300px; height:32px;" placeholder="可选">
+  </div>
+</div>
+
+<div class="two-col" style="max-width: 900px;">
+  <!-- ========== 左: 预期产出 ========== -->
+  <div>
+    <div class="card">
+      <div class="card-title">预期产出</div>
+
+      <!-- 产出行 1: 饰品 -->
+      <div class="output-item">
+        <img class="thumb" src="https://picsum.photos/seed/necklace/100/100" onclick="preview(this.src)" title="点击查看大图">
+        <select style="width:75px;"><option>饰品</option></select>
+        <select style="width:160px;"><option>SP-0001 金色蝴蝶项链</option></select>
+        <input type="number" value="10" style="width:65px;">
+        <select style="width:55px;"><option>个</option></select>
+        <button class="btn btn-danger btn-small">删</button>
+      </div>
+
+      <!-- 产出行 2: 组合配件 -->
+      <div class="output-item">
+        <img class="thumb" src="https://picsum.photos/seed/pendant/100/100" onclick="preview(this.src)" title="点击查看大图">
+        <select style="width:75px;"><option>配件</option></select>
+        <select style="width:160px;"><option>PJ-DZ-00003 组合吊坠A</option></select>
+        <input type="number" value="20" style="width:65px;">
+        <select style="width:55px;"><option>个</option></select>
+        <button class="btn btn-danger btn-small">删</button>
+      </div>
+
+      <button class="btn btn-dashed" style="margin-top:8px;">+ 添加产出行</button>
+    </div>
+  </div>
+
+  <!-- ========== 右: 发出配件 (分组) ========== -->
+  <div>
+    <div class="card-title" style="margin-bottom:10px;">发出配件 <span style="font-size:12px;color:#999;">(根据BOM自动生成，可手动修改)</span></div>
+
+    <!-- 组 1: 对应饰品 SP-0001 -->
+    <div class="group-card">
+      <div class="group-header">
+        <img class="header-thumb" src="https://picsum.photos/seed/necklace/100/100" onclick="preview(this.src)" title="点击查看大图">
+        <span class="tag tag-blue">饰品</span>
+        <strong>SP-0001 金色蝴蝶项链</strong>
+        <span style="color:#999;">× 10</span>
+      </div>
+      <div class="group-body">
+        <div class="part-item">
+          <img class="thumb" src="https://picsum.photos/seed/charm1/100/100" onclick="preview(this.src)" title="点击查看大图">
+          <select style="width:150px;"><option>PJ-DZ-00001 蝴蝶吊坠</option></select>
+          <input type="number" value="10" style="width:65px;">
+          <select style="width:55px;"><option>个</option></select>
+          <input type="number" value="10" placeholder="BOM" style="width:65px;">
+          <button class="btn btn-danger btn-small">删</button>
+        </div>
+        <div class="part-item">
+          <img class="thumb" src="https://picsum.photos/seed/chain1/100/100" onclick="preview(this.src)" title="点击查看大图">
+          <select style="width:150px;"><option>PJ-LT-00001 金色链条</option></select>
+          <input type="number" value="10" style="width:65px;">
+          <select style="width:55px;"><option>条</option></select>
+          <input type="number" value="10" placeholder="BOM" style="width:65px;">
+          <button class="btn btn-danger btn-small">删</button>
+        </div>
+        <button class="btn btn-dashed" style="margin-top:6px;">+ 添加配件行</button>
+      </div>
+    </div>
+
+    <!-- 组 2: 对应组合配件 PJ-DZ-00003 -->
+    <div class="group-card">
+      <div class="group-header">
+        <img class="header-thumb" src="https://picsum.photos/seed/pendant/100/100" onclick="preview(this.src)" title="点击查看大图">
+        <span class="tag tag-green">组合配件</span>
+        <strong>PJ-DZ-00003 组合吊坠A</strong>
+        <span style="color:#999;">× 20</span>
+      </div>
+      <div class="group-body">
+        <div class="part-item">
+          <img class="thumb" src="https://picsum.photos/seed/gem1/100/100" onclick="preview(this.src)" title="点击查看大图">
+          <select style="width:150px;"><option>PJ-X-00001 宝石扣</option></select>
+          <input type="number" value="20" style="width:65px;">
+          <select style="width:55px;"><option>个</option></select>
+          <input type="number" value="20" placeholder="BOM" style="width:65px;">
+          <button class="btn btn-danger btn-small">删</button>
+        </div>
+        <div class="part-item">
+          <img class="thumb" src="https://picsum.photos/seed/base1/100/100" onclick="preview(this.src)" title="点击查看大图">
+          <select style="width:150px;"><option>PJ-X-00002 金属底托</option></select>
+          <input type="number" value="40" style="width:65px;">
+          <select style="width:55px;"><option>个</option></select>
+          <input type="number" value="40" placeholder="BOM" style="width:65px;">
+          <button class="btn btn-danger btn-small">删</button>
+        </div>
+        <button class="btn btn-dashed" style="margin-top:6px;">+ 添加配件行</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 提交 -->
+<div style="max-width: 900px; text-align: right; margin-top: 16px;">
+  <button class="btn btn-primary" style="padding: 0 24px;">提交</button>
+</div>
+
+<script>
+function preview(src) {
+  const overlay = document.getElementById('overlay')
+  const img = document.getElementById('overlayImg')
+  // Use larger version for preview
+  img.src = src.replace('/100/100', '/600/600')
+  overlay.classList.add('active')
+}
+</script>
+
+</body>
+</html>

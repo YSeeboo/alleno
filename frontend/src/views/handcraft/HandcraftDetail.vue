@@ -32,7 +32,29 @@
         </template>
         <n-descriptions :column="3" bordered>
           <n-descriptions-item label="手工单号">{{ order.id }}</n-descriptions-item>
-          <n-descriptions-item label="手工商家">{{ order.supplier_name }}</n-descriptions-item>
+          <n-descriptions-item label="手工商家">
+            <template v-if="editingSupplier && order.status === 'pending'">
+              <n-space align="center" size="small">
+                <n-select
+                  v-model:value="editingSupplierName"
+                  :options="supplierOptions"
+                  filterable
+                  tag
+                  placeholder="选择或输入手工商家名称"
+                  size="small"
+                  style="width: 200px;"
+                />
+                <n-button size="small" type="primary" :loading="savingSupplier" @click="saveSupplier">确认</n-button>
+                <n-button size="small" :disabled="savingSupplier" @click="editingSupplier = false">取消</n-button>
+              </n-space>
+            </template>
+            <template v-else>
+              {{ order.supplier_name }}
+              <n-button v-if="order.status === 'pending'" text type="primary" size="small" style="margin-left: 6px;" @click="startEditSupplier">
+                <template #icon><n-icon :component="CreateOutline" /></template>
+              </n-button>
+            </template>
+          </n-descriptions-item>
           <n-descriptions-item label="状态">
             <n-popselect
               :value="order?.status"
@@ -172,13 +194,23 @@
 
       <n-card title="配件明细" style="margin-bottom: 16px;">
         <template #header-extra>
-          <n-button
-            v-if="items.length > 0"
-            size="small"
-            @click="openBatchLinkModal"
-          >
-            批量关联订单
-          </n-button>
+          <n-space size="small">
+            <n-button
+              v-if="items.length > 0"
+              size="small"
+              :loading="cuttingStatsLoading"
+              @click="openCuttingStatsModal"
+            >
+              裁剪统计
+            </n-button>
+            <n-button
+              v-if="items.length > 0"
+              size="small"
+              @click="openBatchLinkModal"
+            >
+              批量关联订单
+            </n-button>
+          </n-space>
         </template>
         <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" />
         <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
@@ -329,6 +361,27 @@
       </template>
     </n-modal>
 
+    <!-- Cutting stats modal -->
+    <n-modal v-model:show="cuttingStatsVisible" preset="card" title="裁剪统计" style="width: 720px;">
+      <n-spin :show="cuttingStatsLoading">
+        <n-data-table
+          v-if="cuttingStatsData.length > 0"
+          :columns="cuttingStatsColumns"
+          :data="cuttingStatsData"
+          :bordered="false"
+          size="small"
+          :row-key="row => row.part_id"
+        />
+        <n-empty v-else-if="!cuttingStatsLoading" description="暂无裁剪统计数据" />
+      </n-spin>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="cuttingStatsVisible = false">关闭</n-button>
+          <n-button type="primary" :loading="cuttingStatsPdfLoading" :disabled="!cuttingStatsData.some(i => i.qty > 0)" @click="doCuttingStatsPdfExport">导出 PDF</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
     <!-- Confirm Loss Modal -->
     <n-modal v-model:show="showLossModal" preset="card" title="确认损耗" style="width: 420px;">
       <n-form label-placement="left" label-width="80">
@@ -377,11 +430,13 @@ import {
   updateHandcraftDeliveryImages, downloadHandcraftExcel, downloadHandcraftPdf,
   getHandcraftPartOrders, deleteHandcraftPartOrderLink,
   getHandcraftJewelryOrders, deleteHandcraftJewelryOrderLink,
+  getHandcraftCuttingStats, downloadHandcraftCuttingStatsPdf,
 } from '@/api/handcraft'
 import { tsToDateStr, isoToTs } from '@/utils/date'
 import { confirmHandcraftLoss } from '@/api/productionLoss'
 import { changeOrderStatus } from '@/api/kanban'
 import { listParts, updatePart } from '@/api/parts'
+import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { listJewelries } from '@/api/jewelries'
 import { listOrders, getTodo, createLink, batchLink } from '@/api/orders'
 import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
@@ -400,6 +455,37 @@ const order = ref(null)
 const editingCreatedAt = ref(false)
 const editingCreatedAtTs = ref(null)
 const savingCreatedAt = ref(false)
+
+const editingSupplier = ref(false)
+const editingSupplierName = ref(null)
+const savingSupplier = ref(false)
+const supplierOptions = ref([])
+
+const startEditSupplier = () => {
+  editingSupplierName.value = order.value?.supplier_name
+  editingSupplier.value = true
+}
+
+const saveSupplier = async () => {
+  const name = editingSupplierName.value?.trim()
+  if (!name) { message.warning('请输入手工商家名称'); return }
+  if (name === order.value?.supplier_name) { editingSupplier.value = false; return }
+  savingSupplier.value = true
+  try {
+    const isNew = !supplierOptions.value.some((o) => o.value === name)
+    if (isNew) {
+      try { await createSupplier({ name, type: 'handcraft' }) } catch (e) { if (e.response?.status !== 400) throw e }
+    }
+    await updateHandcraft(route.params.id, { supplier_name: name })
+    await loadData()
+    message.success('手工商家已更新')
+    editingSupplier.value = false
+  } catch (e) {
+    message.error(e.response?.data?.detail || '更新失败')
+  } finally {
+    savingSupplier.value = false
+  }
+}
 
 const startEditCreatedAt = () => {
   editingCreatedAtTs.value = isoToTs(order.value?.created_at)
@@ -614,6 +700,91 @@ const formatShortDate = (value) => {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}${month}${day}`
+}
+
+// --- Cutting stats ---
+const cuttingStatsVisible = ref(false)
+const cuttingStatsLoading = ref(false)
+const cuttingStatsData = ref([])
+const cuttingStatsPdfLoading = ref(false)
+
+const cuttingStatsColumns = [
+  { title: '编号', key: 'part_id', width: 120 },
+  {
+    title: '配件',
+    key: 'part_name',
+    render(row) {
+      const children = []
+      if (row.part_image) {
+        children.push(h('img', {
+          src: row.part_image,
+          style: 'width: 32px; height: 32px; object-fit: cover; border-radius: 4px; margin-right: 8px; vertical-align: middle;',
+        }))
+      }
+      children.push(h('span', { style: 'vertical-align: middle;' }, row.part_name))
+      if (row.sources && row.sources.length > 1) {
+        children.push(
+          h(NTooltip, { trigger: 'hover' }, {
+            trigger: () => h('span', {
+              style: 'display: inline-block; width: 16px; height: 16px; border-radius: 50%; background: #f0a020; color: #fff; font-size: 11px; font-weight: 700; text-align: center; line-height: 16px; margin-left: 6px; vertical-align: middle; cursor: default;',
+            }, '!'),
+            default: () => row.sources.map((s) =>
+              h('div', { key: s.label }, `${s.label} × ${s.qty}`),
+            ),
+          }),
+        )
+      }
+      return h('span', { style: 'display: inline-flex; align-items: center;' }, children)
+    },
+  },
+  {
+    title: '裁剪长度',
+    key: 'cut_length_cm',
+    width: 100,
+    render(row) { return `${row.cut_length_cm}cm` },
+  },
+  { title: '裁剪数量', key: 'qty', width: 90 },
+  {
+    title: '总长度',
+    key: 'total_length',
+    width: 100,
+    render(row) {
+      const meters = row.cut_length_cm * row.qty / 100
+      const rounded = Math.ceil(parseFloat((meters * 10).toFixed(6))) / 10
+      return h('span', { style: 'color: #7b2ff2; font-weight: 600;' }, `${rounded}m`)
+    },
+  },
+]
+
+async function openCuttingStatsModal() {
+  cuttingStatsVisible.value = true
+  cuttingStatsLoading.value = true
+  try {
+    const { data } = await getHandcraftCuttingStats(order.value.id)
+    cuttingStatsData.value = data.items || []
+  } catch (_) {
+    message.error('获取裁剪统计失败')
+    cuttingStatsData.value = []
+  } finally {
+    cuttingStatsLoading.value = false
+  }
+}
+
+async function doCuttingStatsPdfExport() {
+  cuttingStatsPdfLoading.value = true
+  try {
+    const { data } = await downloadHandcraftCuttingStatsPdf(order.value.id)
+    const url = window.URL.createObjectURL(data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `裁剪统计_${order.value.id}.pdf`
+    a.click()
+    window.URL.revokeObjectURL(url)
+  } catch (_) {
+    message.error('PDF 下载失败')
+  } finally {
+    cuttingStatsPdfLoading.value = false
+  }
 }
 
 const doChangeStatus = (newStatus) => {
@@ -1380,6 +1551,9 @@ onMounted(async () => {
     const { data: jewels } = await listJewelries()
     jewels.forEach((j) => { jewelryMap.value[j.id] = j })
     await loadData()
+    listSuppliers({ type: 'handcraft' }).then(({ data }) => {
+      supplierOptions.value = data.map((s) => ({ label: s.name, value: s.name }))
+    })
     await Promise.all([loadJewelries(), loadPartItemOrderLinks()])
     await loadJewelryItemOrderLinks()
   } finally {

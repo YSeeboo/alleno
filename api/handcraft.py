@@ -24,6 +24,8 @@ from services.production_loss import confirm_handcraft_loss
 from services.order_todo import get_links_for_production_item, delete_link
 from services.handcraft_excel import build_handcraft_order_excel
 from services.handcraft_pdf import build_handcraft_order_pdf
+from services.cutting_stats import get_handcraft_cutting_stats
+from services.cutting_stats_pdf import build_cutting_stats_pdf
 from services.handcraft import (
     add_handcraft_jewelry,
     add_handcraft_part,
@@ -176,6 +178,39 @@ def api_download_handcraft_pdf(order_id: str, db: Session = Depends(get_db)):
         headers={
             "Content-Disposition": (
                 f'attachment; filename="handcraft-export.pdf"; filename*=UTF-8\'\'{quote(filename)}'
+            )
+        },
+    )
+
+
+@router.get("/{order_id}/cutting-stats")
+def api_get_handcraft_cutting_stats(order_id: str, db: Session = Depends(get_db)):
+    """获取手工单裁剪统计"""
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
+    with service_errors():
+        items = get_handcraft_cutting_stats(db, order_id)
+    return {"items": items}
+
+
+@router.post("/{order_id}/cutting-stats/pdf")
+def api_download_handcraft_cutting_stats_pdf(order_id: str, db: Session = Depends(get_db)):
+    """导出手工单裁剪统计 PDF"""
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
+    with service_errors():
+        all_items = get_handcraft_cutting_stats(db, order_id)
+        items = [i for i in all_items if i["qty"] > 0]
+        file_bytes, filename = build_cutting_stats_pdf(items, order_id)
+    return Response(
+        content=file_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="cutting-stats-{order_id}.pdf"; '
+                f"filename*=UTF-8''{quote(filename)}"
             )
         },
     )

@@ -48,6 +48,7 @@ class HandcraftCreate(BaseModel):
 
 
 class HandcraftUpdate(BaseModel):
+    supplier_name: Optional[str] = None
     created_at: Optional[date] = None
 
 

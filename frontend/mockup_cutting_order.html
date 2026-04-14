@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>裁剪统计 - 订单详情 配件汇总</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f5f5; padding: 24px; color: #333; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .subtitle { color: #888; font-size: 13px; margin-bottom: 24px; }
+
+  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 18px; margin-bottom: 16px; }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .card-title { font-weight: 600; font-size: 15px; }
+  .header-actions { display: flex; align-items: center; gap: 8px; }
+
+  .btn { height: 30px; padding: 0 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
+  .btn-default { background: #fff; border: 1px solid #d9d9d9; color: #333; }
+  .btn-default:hover { border-color: #18a058; color: #18a058; }
+  .btn-primary { background: #18a058; color: #fff; }
+  .btn-primary:hover { background: #16934e; }
+
+  /* filter pills */
+  .filter-pills { display: flex; gap: 4px; margin-left: 12px; }
+  .pill { height: 28px; padding: 0 10px; border-radius: 14px; border: 1px solid #e0e0e0; background: #fff; cursor: pointer; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; color: #666; }
+  .pill.active { border-color: #18a058; color: #18a058; background: #f0faf4; }
+  .pill .count { font-size: 11px; background: #eee; border-radius: 8px; padding: 0 5px; }
+  .pill.active .count { background: #d4edda; }
+
+  /* table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 10px; border-bottom: 2px solid #e0e0e0; color: #666; font-weight: 500; font-size: 12px; }
+  td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+  tr:hover td { background: #fafafa; }
+
+  .part-cell { display: flex; align-items: center; gap: 8px; }
+  .thumb { width: 32px; height: 32px; border-radius: 4px; object-fit: cover; border: 1px solid #e0e0e0; }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; margin-left: 4px; }
+  .tag-orange { background: #fff3e0; color: #e65100; }
+  .tag-green { background: #e8f5e9; color: #2e7d32; }
+  .tag-blue { background: #e3f2fd; color: #1565c0; }
+
+  .stock-ok { color: #18a058; }
+  .stock-warn { color: #d03050; }
+
+  /* source indicator */
+  .source-mark { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: #ff9800; color: #fff; font-size: 10px; font-weight: 700; cursor: default; margin-left: 4px; position: relative; }
+  .source-mark .source-tooltip { display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 6px 10px; border-radius: 4px; font-size: 12px; white-space: nowrap; margin-bottom: 6px; font-weight: 400; z-index: 100; }
+  .source-mark .source-tooltip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: #333; }
+  .source-mark:hover .source-tooltip { display: block; }
+
+  /* modal */
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.45); z-index: 1000; justify-content: center; align-items: center; }
+  .modal-overlay.active { display: flex; }
+  .modal { background: #fff; border-radius: 8px; width: 720px; max-height: 80vh; overflow: auto; box-shadow: 0 8px 32px rgba(0,0,0,.15); }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #e0e0e0; }
+  .modal-header h3 { font-size: 16px; }
+  .modal-close { width: 28px; height: 28px; border: none; background: none; cursor: pointer; font-size: 18px; color: #999; border-radius: 4px; }
+  .modal-close:hover { background: #f0f0f0; color: #333; }
+  .modal-body { padding: 16px 20px; }
+  .modal-footer { padding: 12px 20px; border-top: 1px solid #e0e0e0; display: flex; justify-content: flex-end; gap: 8px; }
+
+  .length-cell { font-family: "SF Mono", "Fira Code", monospace; color: #1565c0; font-weight: 500; }
+  .total-length-cell { font-family: "SF Mono", "Fira Code", monospace; color: #6a1b9a; font-weight: 500; }
+
+  /* info row at top */
+  .info-bar { display: flex; gap: 24px; margin-bottom: 16px; padding: 10px 14px; background: #f9f9f9; border-radius: 6px; font-size: 13px; color: #666; }
+  .info-bar strong { color: #333; }
+</style>
+</head>
+<body>
+
+<h1>订单详情 - 裁剪统计 Mockup</h1>
+<p class="subtitle">模拟订单详情页中的配件汇总区域和裁剪统计弹窗</p>
+
+<!-- 订单信息 -->
+<div class="info-bar">
+  <span>订单编号: <strong>OR-0012</strong></span>
+  <span>客户: <strong>王小姐</strong></span>
+  <span>状态: <span class="tag tag-blue">处理中</span></span>
+</div>
+
+<!-- 配件汇总 Card -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">配件汇总（BOM）</span>
+    <div class="header-actions">
+      <!-- 裁剪统计按钮 在 导出PDF 左侧 -->
+      <button class="btn btn-default" onclick="openModal()">
+        ✂ 裁剪统计
+      </button>
+      <button class="btn btn-default">导出 PDF</button>
+      <div class="filter-pills">
+        <button class="pill active"><span>全部</span><span class="count">8</span></button>
+        <button class="pill"><span>需关注</span><span class="count">3</span></button>
+        <button class="pill"><span>充足</span><span class="count">5</span></button>
+      </div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:40px;"></th>
+        <th>配件编号</th>
+        <th>配件</th>
+        <th>总需求量</th>
+        <th>全局总需求</th>
+        <th>当前库存</th>
+        <th>他人预留</th>
+        <th>剩余需求量</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>▸</td>
+        <td>PJ-LT-00003</td>
+        <td><div class="part-cell"><img class="thumb" src="https://picsum.photos/seed/chain18/100/100"> 金色O字链-18cm</div></td>
+        <td>50</td>
+        <td>80</td>
+        <td>120</td>
+        <td>20</td>
+        <td class="stock-ok">0</td>
+      </tr>
+      <tr>
+        <td>▸</td>
+        <td>PJ-LT-00005</td>
+        <td><div class="part-cell"><img class="thumb" src="https://picsum.photos/seed/chain45/100/100"> 银色蛇骨链-45cm</div></td>
+        <td>30</td>
+        <td>30</td>
+        <td>25</td>
+        <td>0</td>
+        <td class="stock-warn">5</td>
+      </tr>
+      <tr>
+        <td>▸</td>
+        <td>PJ-DZ-00001</td>
+        <td><div class="part-cell"><img class="thumb" src="https://picsum.photos/seed/charm1/100/100"> 蝴蝶吊坠</div></td>
+        <td>50</td>
+        <td>60</td>
+        <td>80</td>
+        <td>10</td>
+        <td class="stock-ok">0</td>
+      </tr>
+      <tr>
+        <td>▸</td>
+        <td>PJ-X-00008</td>
+        <td><div class="part-cell"><img class="thumb" src="https://picsum.photos/seed/comp1/100/100"> 组合吊坠A <span class="tag tag-orange">组合</span></div></td>
+        <td>20</td>
+        <td>20</td>
+        <td>15</td>
+        <td>0</td>
+        <td class="stock-warn">5</td>
+      </tr>
+      <tr>
+        <td>▸</td>
+        <td>PJ-LT-00007</td>
+        <td><div class="part-cell"><img class="thumb" src="https://picsum.photos/seed/chain22/100/100"> 玫瑰金十字链-22cm</div></td>
+        <td>20</td>
+        <td>20</td>
+        <td>50</td>
+        <td>0</td>
+        <td class="stock-ok">0</td>
+      </tr>
+      <tr>
+        <td>▸</td>
+        <td>PJ-X-00002</td>
+        <td><div class="part-cell"><img class="thumb" src="https://picsum.photos/seed/clasp1/100/100"> 龙虾扣-金色</div></td>
+        <td>80</td>
+        <td>80</td>
+        <td>200</td>
+        <td>0</td>
+        <td class="stock-ok">0</td>
+      </tr>
+      <tr>
+        <td>▸</td>
+        <td>PJ-X-00010</td>
+        <td><div class="part-cell"><img class="thumb" src="https://picsum.photos/seed/ring1/100/100"> 开口圈-6mm</div></td>
+        <td>100</td>
+        <td>100</td>
+        <td>500</td>
+        <td>0</td>
+        <td class="stock-ok">0</td>
+      </tr>
+      <tr>
+        <td>▸</td>
+        <td>PJ-LT-00009</td>
+        <td><div class="part-cell"><img class="thumb" src="https://picsum.photos/seed/chain60/100/100"> 金色O字链-60cm</div></td>
+        <td>10</td>
+        <td>10</td>
+        <td>20</td>
+        <td>0</td>
+        <td class="stock-ok">0</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 裁剪统计弹窗 -->
+<div class="modal-overlay" id="cuttingModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>裁剪统计</h3>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <table>
+        <thead>
+          <tr>
+            <th>编号</th>
+            <th>配件</th>
+            <th>裁剪长度</th>
+            <th>裁剪数量</th>
+            <th>总长度</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- 行1: 来自多个饰品，合并后有 ! 标记 -->
+          <tr>
+            <td>PJ-LT-00003</td>
+            <td>
+              <div class="part-cell">
+                <img class="thumb" src="https://picsum.photos/seed/chain18/100/100">
+                金色O字链-18cm
+                <span class="source-mark">!
+                  <span class="source-tooltip">SP-0001 金色蝴蝶项链 × 30<br>SP-0005 珍珠蝴蝶项链 × 20</span>
+                </span>
+              </div>
+            </td>
+            <td class="length-cell">18cm</td>
+            <td>50</td>
+            <td class="total-length-cell">9.0m</td>
+          </tr>
+          <!-- 行2: 单一来源，无 ! -->
+          <tr>
+            <td>PJ-LT-00005</td>
+            <td>
+              <div class="part-cell">
+                <img class="thumb" src="https://picsum.photos/seed/chain45/100/100">
+                银色蛇骨链-45cm
+              </div>
+            </td>
+            <td class="length-cell">45cm</td>
+            <td>30</td>
+            <td class="total-length-cell">13.5m</td>
+          </tr>
+          <!-- 行3: 普通行 -->
+          <tr>
+            <td>PJ-LT-00007</td>
+            <td>
+              <div class="part-cell">
+                <img class="thumb" src="https://picsum.photos/seed/chain22/100/100">
+                玫瑰金十字链-22cm
+              </div>
+            </td>
+            <td class="length-cell">22cm</td>
+            <td>20</td>
+            <td class="total-length-cell">4.4m</td>
+          </tr>
+          <!-- 行4: 来自组合配件展开 + 直接引用，合并 -->
+          <tr>
+            <td>PJ-LT-00009</td>
+            <td>
+              <div class="part-cell">
+                <img class="thumb" src="https://picsum.photos/seed/chain60/100/100">
+                金色O字链-60cm
+                <span class="source-mark">!
+                  <span class="source-tooltip">SP-0003 长款毛衣链 × 10<br>组合吊坠A(PJ-X-00008) × 20 [BOM展开]</span>
+                </span>
+              </div>
+            </td>
+            <td class="length-cell">60cm</td>
+            <td>30</td>
+            <td class="total-length-cell">18.0m</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeModal()">关闭</button>
+      <button class="btn btn-primary" onclick="alert('导出 PDF: 表头为 OR-0012，不含编号列和总长度列')">导出 PDF</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openModal() {
+  document.getElementById('cuttingModal').classList.add('active')
+}
+function closeModal() {
+  document.getElementById('cuttingModal').classList.remove('active')
+}
+</script>
+
+</body>
+</html>

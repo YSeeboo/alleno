@@ -38,3 +38,8 @@ export const getHandcraftJewelryOrders = (orderId, itemId) =>
   api.get(`/handcraft/${orderId}/jewelries/${itemId}/orders`)
 export const deleteHandcraftJewelryOrderLink = (orderId, itemId, linkId) =>
   api.delete(`/handcraft/${orderId}/jewelries/${itemId}/orders/${linkId}`)
+
+// --- Cutting Stats ---
+export const getHandcraftCuttingStats = (id) => api.get(`/handcraft/${id}/cutting-stats`)
+export const downloadHandcraftCuttingStatsPdf = (id) =>
+  api.post(`/handcraft/${id}/cutting-stats/pdf`, {}, { responseType: 'blob' })

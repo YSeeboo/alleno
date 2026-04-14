@@ -245,6 +245,13 @@ def update_handcraft_order(db: Session, order_id: str, data: dict) -> HandcraftO
     order = get_handcraft_order(db, order_id)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
+    if "supplier_name" in data and data["supplier_name"] is not None:
+        if order.status != "pending":
+            raise ValueError("只有待处理状态的订单可以修改手工商家")
+        name = data["supplier_name"].strip()
+        if not name:
+            raise ValueError("手工商家名称不能为空")
+        order.supplier_name = name
     if "created_at" in data and data["created_at"] is not None:
         order.created_at = _replace_date(order.created_at, data["created_at"])
     db.flush()

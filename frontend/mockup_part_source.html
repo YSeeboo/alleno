@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>配件汇总（BOM）— 点击饰品弹窗效果</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #f5f5f5;
+    color: #333;
+    line-height: 1.5;
+    padding: 32px;
+  }
+
+  .page-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; color: #1a1a2e; }
+  .page-subtitle { font-size: 13px; color: #888; margin-bottom: 32px; line-height: 1.7; }
+
+  /* ─── Card ─── */
+  .card {
+    background: #fff;
+    border-radius: 8px;
+    border: 1px solid #e8e8e8;
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 14px 20px;
+    font-size: 15px;
+    font-weight: 600;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-header-left { display: flex; align-items: center; gap: 10px; }
+  .card-header-right { display: flex; align-items: center; gap: 10px; }
+  .card-body { padding: 0; }
+
+  /* ─── Filter bar ─── */
+  .parts-filter { display: inline-flex; border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; }
+  .parts-filter-item {
+    display: flex; align-items: center; gap: 5px; padding: 4px 12px;
+    border: none; background: #fff; font-size: 12px; cursor: pointer;
+    font-family: inherit; color: #666; border-right: 1px solid #e0e0e0; transition: all 0.15s;
+  }
+  .parts-filter-item:last-child { border-right: none; }
+  .parts-filter-item--active { background: #f0f4ff; color: #4361ee; font-weight: 500; }
+  .filter-count {
+    font-size: 11px; background: #eee; padding: 0 5px; border-radius: 8px;
+    color: #888; min-width: 18px; text-align: center;
+  }
+  .parts-filter-item--active .filter-count { background: #dde4ff; color: #4361ee; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px;
+    border-radius: 4px; border: 1px solid #ddd; background: #fff;
+    font-size: 12px; cursor: pointer; font-family: inherit;
+  }
+
+  /* ─── Table ─── */
+  .parts-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .parts-table th {
+    text-align: left; padding: 10px 12px; font-weight: 500; color: #666;
+    border-bottom: 1px solid #eee; font-size: 12px; background: #fafbfc; white-space: nowrap;
+  }
+  .parts-table th.center { text-align: center; }
+  .parts-table td { padding: 10px 12px; border-bottom: 1px solid #f3f3f3; vertical-align: middle; }
+  .parts-table td.center { text-align: center; }
+  .parts-table tbody tr:last-child td { border-bottom: none; }
+  .parts-table tbody tr:hover { background: #f8f9fa; }
+
+  .part-cell { display: flex; align-items: center; gap: 8px; }
+  .part-thumb {
+    width: 36px; height: 36px; border-radius: 4px; display: flex;
+    align-items: center; justify-content: center; font-size: 13px;
+    font-weight: 600; color: #fff; flex-shrink: 0;
+  }
+  .part-name { font-weight: 500; }
+
+  .tag-composite {
+    display: inline-flex; font-size: 10px; padding: 1px 6px; border-radius: 3px;
+    background: #fff7e6; color: #d48806; border: 1px solid #ffe58f;
+    font-weight: 500; margin-left: 4px;
+  }
+
+  .qty-red { color: #ff4d4f; font-weight: 500; }
+  .qty-green { color: #52c41a; font-weight: 500; }
+
+  /* ─── Expand ─── */
+  .expand-toggle {
+    width: 20px; height: 20px; border: none; background: none; cursor: pointer;
+    font-size: 12px; color: #999; display: inline-flex; align-items: center;
+    justify-content: center; border-radius: 4px; transition: all 0.15s; flex-shrink: 0;
+  }
+  .expand-toggle:hover { background: #f0f0f0; color: #333; }
+  .expand-toggle.expanded { color: #1565c0; transform: rotate(90deg); }
+
+  .expand-row td { padding: 0 !important; border-bottom: 1px solid #f3f3f3; }
+  .expand-content { overflow: hidden; transition: max-height 0.25s ease; }
+  .expand-content.collapsed { max-height: 0; }
+  .expand-content.expanded { max-height: 300px; }
+
+  .expand-inner { padding: 8px 12px 12px 48px; background: #fafbfc; }
+  .source-detail-row {
+    display: flex; align-items: center; gap: 16px; padding: 5px 0;
+    font-size: 12px; color: #555; border-bottom: 1px dashed #e8e8e8;
+  }
+  .source-detail-row:last-child { border-bottom: none; }
+  .tree-connector { color: #ccc; margin-right: 4px; font-family: monospace; }
+  .src-jewelry { font-weight: 600; color: #333; min-width: 80px; }
+  .src-jewelry-name {
+    color: #4361ee; min-width: 80px; cursor: pointer;
+    transition: color 0.15s; text-decoration: none;
+  }
+  .src-jewelry-name:hover { color: #2a3db0; text-decoration: underline; }
+  .src-calc { color: #888; font-family: 'SF Mono', Menlo, monospace; font-size: 11px; }
+  .src-subtotal { font-weight: 600; color: #333; }
+
+  /* ─── Modal overlay ─── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .modal-overlay.visible { opacity: 1; pointer-events: auto; }
+
+  .modal-card {
+    background: #fff; border-radius: 10px; width: 560px; max-height: 80vh;
+    overflow-y: auto; box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+    transform: translateY(20px) scale(0.97);
+    transition: transform 0.25s ease;
+  }
+  .modal-overlay.visible .modal-card {
+    transform: translateY(0) scale(1);
+  }
+
+  .modal-header {
+    padding: 16px 20px; border-bottom: 1px solid #eee;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .modal-header h3 { font-size: 15px; font-weight: 600; margin: 0; }
+  .modal-close {
+    width: 28px; height: 28px; border: none; background: #f0f0f0;
+    border-radius: 6px; cursor: pointer; font-size: 16px; color: #666;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .modal-close:hover { background: #e0e0e0; color: #333; }
+
+  .modal-body { padding: 20px; }
+
+  /* ─── Jewelry info inside modal ─── */
+  .jewelry-info-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0;
+    font-size: 13px;
+  }
+  .jewelry-info-grid .info-label {
+    padding: 8px 16px 8px 0;
+    color: #888;
+    font-weight: 500;
+    white-space: nowrap;
+    border-bottom: 1px solid #f5f5f5;
+  }
+  .jewelry-info-grid .info-value {
+    padding: 8px 0;
+    border-bottom: 1px solid #f5f5f5;
+  }
+  .jewelry-info-grid .info-value:last-child,
+  .jewelry-info-grid .info-label:nth-last-child(2) {
+    border-bottom: none;
+  }
+
+  .jewelry-image-row {
+    display: flex; gap: 16px; margin-bottom: 20px;
+  }
+  .jewelry-img {
+    width: 80px; height: 80px; border-radius: 8px; object-fit: cover;
+    border: 1px solid #eee; background: #f5f5f5;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; font-weight: 600; color: #fff;
+  }
+  .jewelry-meta { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  .jewelry-meta .j-id { font-size: 12px; color: #999; margin-bottom: 2px; }
+  .jewelry-meta .j-name { font-size: 18px; font-weight: 600; }
+  .jewelry-meta .j-category {
+    font-size: 11px; color: #666; margin-top: 4px;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .jewelry-meta .j-cat-tag {
+    background: #f0f0f0; padding: 1px 8px; border-radius: 3px; font-size: 11px;
+  }
+
+  .modal-section-title {
+    font-size: 13px; font-weight: 600; color: #333;
+    margin: 20px 0 10px 0; padding-bottom: 6px;
+    border-bottom: 2px solid #4361ee;
+    display: inline-block;
+  }
+
+  .bom-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .bom-table th {
+    text-align: left; padding: 7px 10px; font-weight: 500; color: #888;
+    border-bottom: 1px solid #eee; background: #fafbfc; font-size: 11px;
+  }
+  .bom-table td {
+    padding: 7px 10px; border-bottom: 1px solid #f3f3f3;
+  }
+  .bom-table tbody tr:last-child td { border-bottom: none; }
+  .bom-table tbody tr:hover { background: #f8f9fa; }
+
+  .bom-part-cell { display: flex; align-items: center; gap: 6px; }
+  .bom-part-thumb {
+    width: 24px; height: 24px; border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 600; color: #fff; flex-shrink: 0;
+  }
+
+  .stock-tag {
+    display: inline-flex; padding: 1px 8px; border-radius: 3px;
+    font-size: 11px; font-weight: 500;
+  }
+  .stock-tag.ok { background: #e8f5e9; color: #2e7d32; }
+  .stock-tag.low { background: #fff3e0; color: #e65100; }
+</style>
+</head>
+<body>
+
+<div class="page-title">配件汇总（BOM）— 点击饰品名称弹出信息弹窗</div>
+<div class="page-subtitle">
+  展开配件行后，饰品名称显示为可点击的蓝色链接，点击后弹出该饰品的基本信息 + BOM 配件列表。
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">配件汇总（BOM）</div>
+    <div class="card-header-right">
+      <button class="btn">导出 PDF</button>
+      <div class="parts-filter">
+        <button class="parts-filter-item parts-filter-item--active">全部 <span class="filter-count">5</span></button>
+        <button class="parts-filter-item">需关注 <span class="filter-count">2</span></button>
+        <button class="parts-filter-item">已充足 <span class="filter-count">3</span></button>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <table class="parts-table">
+      <thead>
+        <tr>
+          <th style="width:32px"></th>
+          <th style="width:100px">配件编号</th>
+          <th style="min-width:140px">配件</th>
+          <th class="center" style="width:80px">总需求量</th>
+          <th class="center" style="width:90px">全局总需求</th>
+          <th class="center" style="width:80px">当前库存</th>
+          <th class="center" style="width:80px">他人预留</th>
+          <th class="center" style="width:90px">剩余需求量</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Row 1: expanded -->
+        <tr>
+          <td><button class="expand-toggle expanded" onclick="toggleExpand(this)">▶</button></td>
+          <td>PJ-LT-00012</td>
+          <td><div class="part-cell"><div class="part-thumb" style="background:#6c8ebf;">链</div><span class="part-name">18K金链条</span></div></td>
+          <td class="center">180</td>
+          <td class="center">320</td>
+          <td class="center">120</td>
+          <td class="center">40</td>
+          <td class="center"><span class="qty-red">60</span></td>
+        </tr>
+        <tr class="expand-row">
+          <td colspan="8">
+            <div class="expand-content expanded">
+              <div class="expand-inner">
+                <div class="source-detail-row">
+                  <span class="tree-connector">├─</span>
+                  <span class="src-jewelry">SP-0012</span>
+                  <a class="src-jewelry-name" onclick="openModal('sp0012')">花型吊坠</a>
+                  <span class="src-calc">1/件 × 50件</span>
+                  <span class="src-subtotal">= 50</span>
+                </div>
+                <div class="source-detail-row">
+                  <span class="tree-connector">├─</span>
+                  <span class="src-jewelry">SP-0015</span>
+                  <a class="src-jewelry-name" onclick="openModal('sp0015')">星星吊坠</a>
+                  <span class="src-calc">1/件 × 100件</span>
+                  <span class="src-subtotal">= 100</span>
+                </div>
+                <div class="source-detail-row">
+                  <span class="tree-connector">└─</span>
+                  <span class="src-jewelry">SP-0023</span>
+                  <a class="src-jewelry-name" onclick="openModal('sp0023')">月亮项链</a>
+                  <span class="src-calc">1/件 × 30件</span>
+                  <span class="src-subtotal">= 30</span>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+
+        <!-- Row 2: collapsed -->
+        <tr>
+          <td><button class="expand-toggle" onclick="toggleExpand(this)">▶</button></td>
+          <td>PJ-X-00034</td>
+          <td><div class="part-cell"><div class="part-thumb" style="background:#e9c46a;">扣</div><span class="part-name">龙虾扣</span></div></td>
+          <td class="center">80</td>
+          <td class="center">150</td>
+          <td class="center">100</td>
+          <td class="center">0</td>
+          <td class="center"><span class="qty-green">0</span></td>
+        </tr>
+        <tr class="expand-row">
+          <td colspan="8">
+            <div class="expand-content collapsed">
+              <div class="expand-inner">
+                <div class="source-detail-row">
+                  <span class="tree-connector">├─</span>
+                  <span class="src-jewelry">SP-0012</span>
+                  <a class="src-jewelry-name" onclick="openModal('sp0012')">花型吊坠</a>
+                  <span class="src-calc">1/件 × 50件</span>
+                  <span class="src-subtotal">= 50</span>
+                </div>
+                <div class="source-detail-row">
+                  <span class="tree-connector">└─</span>
+                  <span class="src-jewelry">SP-0023</span>
+                  <a class="src-jewelry-name" onclick="openModal('sp0023')">月亮项链</a>
+                  <span class="src-calc">1/件 × 30件</span>
+                  <span class="src-subtotal">= 30</span>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+
+        <!-- Row 3: expanded -->
+        <tr>
+          <td><button class="expand-toggle expanded" onclick="toggleExpand(this)">▶</button></td>
+          <td>PJ-DZ-00008</td>
+          <td><div class="part-cell"><div class="part-thumb" style="background:#e76f51;">花</div><span class="part-name">花型吊坠头</span><span class="tag-composite">组合</span></div></td>
+          <td class="center">50</td>
+          <td class="center">50</td>
+          <td class="center">30</td>
+          <td class="center">0</td>
+          <td class="center"><span class="qty-red">20</span></td>
+        </tr>
+        <tr class="expand-row">
+          <td colspan="8">
+            <div class="expand-content expanded">
+              <div class="expand-inner">
+                <div class="source-detail-row">
+                  <span class="tree-connector">└─</span>
+                  <span class="src-jewelry">SP-0012</span>
+                  <a class="src-jewelry-name" onclick="openModal('sp0012')">花型吊坠</a>
+                  <span class="src-calc">1/件 × 50件</span>
+                  <span class="src-subtotal">= 50</span>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+
+        <!-- Row 4 -->
+        <tr>
+          <td><button class="expand-toggle" onclick="toggleExpand(this)">▶</button></td>
+          <td>PJ-DZ-00015</td>
+          <td><div class="part-cell"><div class="part-thumb" style="background:#2a9d8f;">星</div><span class="part-name">五角星坠饰</span></div></td>
+          <td class="center">100</td>
+          <td class="center">100</td>
+          <td class="center">100</td>
+          <td class="center">0</td>
+          <td class="center"><span class="qty-green">0</span></td>
+        </tr>
+        <tr class="expand-row">
+          <td colspan="8">
+            <div class="expand-content collapsed">
+              <div class="expand-inner">
+                <div class="source-detail-row">
+                  <span class="tree-connector">└─</span>
+                  <span class="src-jewelry">SP-0015</span>
+                  <a class="src-jewelry-name" onclick="openModal('sp0015')">星星吊坠</a>
+                  <span class="src-calc">1/件 × 100件</span>
+                  <span class="src-subtotal">= 100</span>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+
+        <!-- Row 5 -->
+        <tr>
+          <td><button class="expand-toggle" onclick="toggleExpand(this)">▶</button></td>
+          <td>PJ-X-00051</td>
+          <td><div class="part-cell"><div class="part-thumb" style="background:#8d99ae;">环</div><span class="part-name">开口圆环</span></div></td>
+          <td class="center">460</td>
+          <td class="center">800</td>
+          <td class="center">500</td>
+          <td class="center">20</td>
+          <td class="center"><span class="qty-green">0</span></td>
+        </tr>
+        <tr class="expand-row">
+          <td colspan="8">
+            <div class="expand-content collapsed">
+              <div class="expand-inner">
+                <div class="source-detail-row">
+                  <span class="tree-connector">├─</span>
+                  <span class="src-jewelry">SP-0012</span>
+                  <a class="src-jewelry-name" onclick="openModal('sp0012')">花型吊坠</a>
+                  <span class="src-calc">2/件 × 50件</span>
+                  <span class="src-subtotal">= 100</span>
+                </div>
+                <div class="source-detail-row">
+                  <span class="tree-connector">├─</span>
+                  <span class="src-jewelry">SP-0015</span>
+                  <a class="src-jewelry-name" onclick="openModal('sp0015')">星星吊坠</a>
+                  <span class="src-calc">3/件 × 100件</span>
+                  <span class="src-subtotal">= 300</span>
+                </div>
+                <div class="source-detail-row">
+                  <span class="tree-connector">└─</span>
+                  <span class="src-jewelry">SP-0023</span>
+                  <a class="src-jewelry-name" onclick="openModal('sp0023')">月亮项链</a>
+                  <span class="src-calc">2/件 × 30件</span>
+                  <span class="src-subtotal">= 60</span>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     Jewelry Info Modal
+     ═══════════════════════════════════════════ -->
+<div class="modal-overlay" id="jewelryModal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3>饰品详情</h3>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <!-- Dynamically filled -->
+    </div>
+  </div>
+</div>
+
+<script>
+// Mock jewelry data
+const jewelryData = {
+  sp0012: {
+    id: 'SP-0012',
+    name: '花型吊坠',
+    category: '吊坠',
+    color: '金色',
+    retail_price: '¥128.00',
+    wholesale_price: '¥68.00',
+    handcraft_cost: '¥5.00',
+    stock: 12,
+    status: 'active',
+    thumb_bg: '#e76f51',
+    thumb_text: '花',
+    bom: [
+      { part_id: 'PJ-LT-00012', name: '18K金链条', qty: 1, bg: '#6c8ebf', t: '链', stock: 120 },
+      { part_id: 'PJ-DZ-00008', name: '花型吊坠头', qty: 1, bg: '#e76f51', t: '花', stock: 30 },
+      { part_id: 'PJ-X-00034', name: '龙虾扣', qty: 1, bg: '#e9c46a', t: '扣', stock: 100 },
+      { part_id: 'PJ-X-00051', name: '开口圆环', qty: 2, bg: '#8d99ae', t: '环', stock: 500 },
+    ],
+  },
+  sp0015: {
+    id: 'SP-0015',
+    name: '星星吊坠',
+    category: '吊坠',
+    color: '银色',
+    retail_price: '¥98.00',
+    wholesale_price: '¥52.00',
+    handcraft_cost: '¥4.50',
+    stock: 8,
+    status: 'active',
+    thumb_bg: '#2a9d8f',
+    thumb_text: '星',
+    bom: [
+      { part_id: 'PJ-LT-00012', name: '18K金链条', qty: 1, bg: '#6c8ebf', t: '链', stock: 120 },
+      { part_id: 'PJ-DZ-00015', name: '五角星坠饰', qty: 1, bg: '#2a9d8f', t: '星', stock: 100 },
+      { part_id: 'PJ-X-00051', name: '开口圆环', qty: 3, bg: '#8d99ae', t: '环', stock: 500 },
+    ],
+  },
+  sp0023: {
+    id: 'SP-0023',
+    name: '月亮项链',
+    category: '项链',
+    color: '玫瑰金',
+    retail_price: '¥158.00',
+    wholesale_price: '¥82.00',
+    handcraft_cost: '¥6.00',
+    stock: 0,
+    status: 'active',
+    thumb_bg: '#264653',
+    thumb_text: '月',
+    bom: [
+      { part_id: 'PJ-LT-00012', name: '18K金链条', qty: 1, bg: '#6c8ebf', t: '链', stock: 120 },
+      { part_id: 'PJ-X-00034', name: '龙虾扣', qty: 1, bg: '#e9c46a', t: '扣', stock: 100 },
+      { part_id: 'PJ-X-00051', name: '开口圆环', qty: 2, bg: '#8d99ae', t: '环', stock: 500 },
+    ],
+  },
+}
+
+function openModal(key) {
+  const j = jewelryData[key]
+  if (!j) return
+
+  const bomRows = j.bom.map(b => `
+    <tr>
+      <td>
+        <div class="bom-part-cell">
+          <div class="bom-part-thumb" style="background:${b.bg};">${b.t}</div>
+          ${b.name}
+        </div>
+      </td>
+      <td>${b.part_id}</td>
+      <td style="text-align:center;">${b.qty}</td>
+      <td style="text-align:center;">
+        <span class="stock-tag ${b.stock > 50 ? 'ok' : 'low'}">${b.stock}</span>
+      </td>
+    </tr>
+  `).join('')
+
+  document.getElementById('modalBody').innerHTML = `
+    <div class="jewelry-image-row">
+      <div class="jewelry-img" style="background:${j.thumb_bg};">${j.thumb_text}</div>
+      <div class="jewelry-meta">
+        <div class="j-id">${j.id}</div>
+        <div class="j-name">${j.name}</div>
+        <div class="j-category">
+          <span class="j-cat-tag">${j.category}</span>
+          <span class="j-cat-tag">${j.color}</span>
+          <span class="j-cat-tag">${j.status === 'active' ? '在售' : '停用'}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="jewelry-info-grid">
+      <span class="info-label">零售价</span>
+      <span class="info-value">${j.retail_price}</span>
+      <span class="info-label">批发价</span>
+      <span class="info-value">${j.wholesale_price}</span>
+      <span class="info-label">手工费</span>
+      <span class="info-value">${j.handcraft_cost}</span>
+      <span class="info-label">当前库存</span>
+      <span class="info-value">${j.stock}</span>
+    </div>
+
+    <div class="modal-section-title">BOM 配件清单</div>
+    <table class="bom-table">
+      <thead>
+        <tr>
+          <th>配件名称</th>
+          <th>编号</th>
+          <th style="text-align:center;">每件用量</th>
+          <th style="text-align:center;">当前库存</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${bomRows}
+      </tbody>
+    </table>
+  `
+
+  document.getElementById('jewelryModal').classList.add('visible')
+}
+
+function closeModal() {
+  document.getElementById('jewelryModal').classList.remove('visible')
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModal()
+})
+
+function toggleExpand(btn) {
+  const row = btn.closest('tr')
+  const expandRow = row.nextElementSibling
+  const content = expandRow.querySelector('.expand-content')
+  if (btn.classList.contains('expanded')) {
+    btn.classList.remove('expanded')
+    content.classList.remove('expanded')
+    content.classList.add('collapsed')
+  } else {
+    btn.classList.add('expanded')
+    content.classList.remove('collapsed')
+    content.classList.add('expanded')
+  }
+}
+</script>
+
+</body>
+</html>
