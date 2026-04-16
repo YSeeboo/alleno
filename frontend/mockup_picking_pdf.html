@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>配货模拟 PDF — 图片尺寸对比 (90pt vs 110pt)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Noto Sans SC', -apple-system, sans-serif;
+    background: #e8eaed;
+    padding: 32px;
+    color: #222;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; color: #1a1a2e; }
+  .desc { font-size: 13px; color: #666; margin-bottom: 20px; line-height: 1.7; }
+
+  .note {
+    background: #fffbea;
+    border-left: 4px solid #f59e0b;
+    padding: 10px 16px;
+    margin-bottom: 24px;
+    font-size: 13px;
+    color: #555;
+    border-radius: 4px;
+  }
+
+  .pages-wrap {
+    display: flex;
+    gap: 40px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .page-col { display: flex; flex-direction: column; align-items: center; }
+  .page-label {
+    background: #4361ee;
+    color: #fff;
+    padding: 8px 20px;
+    border-radius: 6px 6px 0 0;
+    font-size: 14px;
+    font-weight: 600;
+    min-width: 200px;
+    text-align: center;
+  }
+  .page-label .sub { font-weight: 400; font-size: 12px; opacity: 0.9; display: block; margin-top: 2px; }
+
+  /* ─── Paper sheet — real A4 1pt:1px ─── */
+  .sheet {
+    width: 595px;
+    min-height: 842px;
+    background: #fff;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+    padding: 40px 40px 40px 40px;   /* 40pt margins */
+    font-size: 10px;                 /* default PDF body 10pt */
+    color: #111;
+    position: relative;
+  }
+
+  .title {
+    font-size: 14pt;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .meta {
+    font-size: 9pt;
+    color: #555;
+    margin-bottom: 16px;
+    display: flex;
+    gap: 24px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+  }
+  thead th {
+    background: #f5f5f5;
+    border: 1px solid #bbb;
+    padding: 6px 4px;
+    text-align: center;
+    font-size: 9pt;
+    font-weight: 600;
+  }
+  tbody td {
+    border: 1px solid #ccc;
+    padding: 6px 4px;
+    vertical-align: middle;
+    font-size: 9pt;
+  }
+  .col-id { text-align: center; width: 60px; font-family: ui-monospace, Menlo, monospace; font-size: 8pt; }
+  .col-part { }
+  .col-num { text-align: center; width: 44px; }
+  .col-total { text-align: center; width: 56px; font-weight: 600; }
+  .col-stock { text-align: center; width: 48px; color: #444; }
+  .col-done {
+    text-align: center;
+    width: 40px;
+  }
+  .checkbox {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid #333;
+    border-radius: 2px;
+  }
+
+  .part-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .part-img-a {
+    width: 90px; height: 90px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    color: #4361ee;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .part-img-b {
+    width: 110px; height: 110px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #fde68a 0%, #fcd34d 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 38px;
+    color: #b45309;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .part-img-c {
+    width: 45px; height: 45px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #d1fae5 0%, #6ee7b7 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: #047857;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .sheet-c .col-part-width { width: 180px; }
+  .part-name {
+    font-size: 10pt;
+    font-weight: 500;
+    line-height: 1.3;
+  }
+  .part-name small { display: block; color: #666; font-size: 8pt; font-weight: 400; margin-top: 2px; }
+
+  .merged-cell {
+    background: #fafbfc;
+  }
+  tr.variant-inner td:not(.merged-cell) {
+    border-top: 1px dashed #ddd;
+  }
+
+  .footer-info {
+    position: absolute;
+    bottom: 20px;
+    left: 40px;
+    right: 40px;
+    font-size: 8pt;
+    color: #888;
+    display: flex;
+    justify-content: space-between;
+    border-top: 1px solid #eee;
+    padding-top: 6px;
+  }
+
+  .page-stats {
+    margin-top: 10px;
+    background: #fff;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: #555;
+    line-height: 1.8;
+    max-width: 595px;
+  }
+  .page-stats b { color: #1a1a2e; }
+  .page-stats .pro { color: #22c55e; }
+  .page-stats .con { color: #ef4444; }
+
+  /* Column widths differ between A and B because image changes column width */
+  .sheet-a .col-part-width { width: 130px; }
+  .sheet-b .col-part-width { width: 150px; }
+</style>
+</head>
+<body>
+
+<h1>配货清单 PDF — 图片尺寸实物对比</h1>
+<p class="desc">两张"纸"按真实 A4 比例（1pt : 1px）渲染，包含同样的 5 个配件数据，只有图片尺寸不同。浏览器缩放 100% 时 ≈ 屏幕上就是打印纸大小。</p>
+
+<div class="note">
+  <b>场景 1（混合）</b>：5 个配件，其中 PJ-X-001 有 2 个单份变体、PJ-X-003 有 3 个单份变体。共 <b>9 行</b>数据。<br>
+  <b>场景 2（单层级）</b>：下方那组 —— 7 个配件、每个只有 1 个单份数量。共 <b>7 行</b>。这个更能看出"纯单层级"下的容量差。
+</div>
+
+<h2 style="font-size:16px;margin:20px 0 10px;color:#1a1a2e;">场景 1 · 混合（有多变体）</h2>
+
+<div class="pages-wrap">
+
+  <!-- ─────────────────── OPTION A ─────────────────── -->
+  <div class="page-col">
+    <div class="page-label">方案 A · 图片 90×90pt <span class="sub">约 3.2cm，紧凑型</span></div>
+    <div class="sheet sheet-a">
+      <div class="title">配货清单 · 订单 OR-0123</div>
+      <div class="meta">
+        <span>客户：张女士</span>
+        <span>日期：2026-04-16</span>
+        <span>共 5 配件 / 9 行</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th class="col-id">配件编号</th>
+            <th class="col-part-width">配件</th>
+            <th class="col-num">单份</th>
+            <th class="col-num">份数</th>
+            <th class="col-total">总数量</th>
+            <th class="col-stock">库存</th>
+            <th class="col-done">完成</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Part P: 2 variants -->
+          <tr>
+            <td rowspan="2" class="col-id merged-cell">PJ-X-001</td>
+            <td rowspan="2" class="merged-cell">
+              <div class="part-cell">
+                <div class="part-img-a">P</div>
+                <div class="part-name">小珠子<small>白色 4mm</small></div>
+              </div>
+            </td>
+            <td class="col-num">2</td>
+            <td class="col-num">18</td>
+            <td class="col-total">36</td>
+            <td rowspan="2" class="col-stock merged-cell">45</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr class="variant-inner">
+            <td class="col-num">3</td>
+            <td class="col-num">5</td>
+            <td class="col-total">15</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <!-- Part Q -->
+          <tr>
+            <td class="col-id">PJ-X-002</td>
+            <td>
+              <div class="part-cell">
+                <div class="part-img-a">Q</div>
+                <div class="part-name">金属扣<small>银色</small></div>
+              </div>
+            </td>
+            <td class="col-num">1</td>
+            <td class="col-num">10</td>
+            <td class="col-total">10</td>
+            <td class="col-stock">8</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <!-- Part R: 3 variants -->
+          <tr>
+            <td rowspan="3" class="col-id merged-cell">PJ-X-003</td>
+            <td rowspan="3" class="merged-cell">
+              <div class="part-cell">
+                <div class="part-img-a">R</div>
+                <div class="part-name">切片<small>心形</small></div>
+              </div>
+            </td>
+            <td class="col-num">1</td>
+            <td class="col-num">10</td>
+            <td class="col-total">10</td>
+            <td rowspan="3" class="col-stock merged-cell">30</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr class="variant-inner">
+            <td class="col-num">2</td>
+            <td class="col-num">5</td>
+            <td class="col-total">10</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr class="variant-inner">
+            <td class="col-num">3</td>
+            <td class="col-num">3</td>
+            <td class="col-total">9</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <!-- Part S -->
+          <tr>
+            <td class="col-id">PJ-LT-004</td>
+            <td>
+              <div class="part-cell">
+                <div class="part-img-a">S</div>
+                <div class="part-name">链条<small>45cm</small></div>
+              </div>
+            </td>
+            <td class="col-num">1</td>
+            <td class="col-num">23</td>
+            <td class="col-total">23</td>
+            <td class="col-stock">12</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <!-- Part T -->
+          <tr>
+            <td class="col-id">PJ-DZ-005</td>
+            <td>
+              <div class="part-cell">
+                <div class="part-img-a">T</div>
+                <div class="part-name">吊坠<small>十字架</small></div>
+              </div>
+            </td>
+            <td class="col-num">1</td>
+            <td class="col-num">15</td>
+            <td class="col-total">15</td>
+            <td class="col-stock">20</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="footer-info">
+        <span>第 1 / 1 页</span>
+        <span>Allen Shop · 饰品店管理系统</span>
+      </div>
+    </div>
+    <div class="page-stats">
+      <b>方案 A 观感总结</b><br>
+      <span class="pro">✓</span> 这一页 <b>5 个配件 / 9 行全部塞下</b>，还剩 ~30% 空白<br>
+      <span class="pro">✓</span> 图片辨识度够用（比当前 74pt 大 ~46%）<br>
+      <span class="con">✗</span> 文字版型相对紧凑，师傅视力不好的话要稍微凑近看
+    </div>
+  </div>
+
+  <!-- ─────────────────── OPTION B ─────────────────── -->
+  <div class="page-col">
+    <div class="page-label">方案 B · 图片 110×110pt <span class="sub">约 3.9cm，中等型</span></div>
+    <div class="sheet sheet-b">
+      <div class="title">配货清单 · 订单 OR-0123</div>
+      <div class="meta">
+        <span>客户：张女士</span>
+        <span>日期：2026-04-16</span>
+        <span>共 5 配件 / 9 行</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th class="col-id">配件编号</th>
+            <th class="col-part-width">配件</th>
+            <th class="col-num">单份</th>
+            <th class="col-num">份数</th>
+            <th class="col-total">总数量</th>
+            <th class="col-stock">库存</th>
+            <th class="col-done">完成</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td rowspan="2" class="col-id merged-cell">PJ-X-001</td>
+            <td rowspan="2" class="merged-cell">
+              <div class="part-cell">
+                <div class="part-img-b">P</div>
+                <div class="part-name">小珠子<small>白色 4mm</small></div>
+              </div>
+            </td>
+            <td class="col-num">2</td>
+            <td class="col-num">18</td>
+            <td class="col-total">36</td>
+            <td rowspan="2" class="col-stock merged-cell">45</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr class="variant-inner">
+            <td class="col-num">3</td>
+            <td class="col-num">5</td>
+            <td class="col-total">15</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr>
+            <td class="col-id">PJ-X-002</td>
+            <td>
+              <div class="part-cell">
+                <div class="part-img-b">Q</div>
+                <div class="part-name">金属扣<small>银色</small></div>
+              </div>
+            </td>
+            <td class="col-num">1</td>
+            <td class="col-num">10</td>
+            <td class="col-total">10</td>
+            <td class="col-stock">8</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr>
+            <td rowspan="3" class="col-id merged-cell">PJ-X-003</td>
+            <td rowspan="3" class="merged-cell">
+              <div class="part-cell">
+                <div class="part-img-b">R</div>
+                <div class="part-name">切片<small>心形</small></div>
+              </div>
+            </td>
+            <td class="col-num">1</td>
+            <td class="col-num">10</td>
+            <td class="col-total">10</td>
+            <td rowspan="3" class="col-stock merged-cell">30</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr class="variant-inner">
+            <td class="col-num">2</td>
+            <td class="col-num">5</td>
+            <td class="col-total">10</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr class="variant-inner">
+            <td class="col-num">3</td>
+            <td class="col-num">3</td>
+            <td class="col-total">9</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr>
+            <td class="col-id">PJ-LT-004</td>
+            <td>
+              <div class="part-cell">
+                <div class="part-img-b">S</div>
+                <div class="part-name">链条<small>45cm</small></div>
+              </div>
+            </td>
+            <td class="col-num">1</td>
+            <td class="col-num">23</td>
+            <td class="col-total">23</td>
+            <td class="col-stock">12</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr>
+            <td class="col-id">PJ-DZ-005</td>
+            <td>
+              <div class="part-cell">
+                <div class="part-img-b">T</div>
+                <div class="part-name">吊坠<small>十字架</small></div>
+              </div>
+            </td>
+            <td class="col-num">1</td>
+            <td class="col-num">15</td>
+            <td class="col-total">15</td>
+            <td class="col-stock">20</td>
+            <td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="footer-info">
+        <span>第 1 / 1 页</span>
+        <span>Allen Shop · 饰品店管理系统</span>
+      </div>
+    </div>
+    <div class="page-stats">
+      <b>方案 B 观感总结</b><br>
+      <span class="pro">✓</span> 这一页同样的 9 行<b>刚好占满</b>（底部留 ~5% 边距），图片更醒目<br>
+      <span class="pro">✓</span> 适合配件细节丰富（多色/多规格）的场景<br>
+      <span class="con">✗</span> 若配件更多（比如 12+ 行），第 9 行之后可能要翻页
+    </div>
+  </div>
+
+</div>
+
+<h2 style="font-size:16px;margin:40px 0 10px;color:#1a1a2e;">场景 2 · 单层级容量对比</h2>
+<p class="desc">三种尺寸放单层级数据，看"一页 12 行"能否达成。</p>
+
+<div class="pages-wrap">
+
+  <!-- ─────────────────── OPTION A · single-variant ─────────────────── -->
+  <div class="page-col">
+    <div class="page-label">方案 A · 图片 90×90pt <span class="sub">单层级</span></div>
+    <div class="sheet sheet-a">
+      <div class="title">配货清单 · 订单 OR-0124</div>
+      <div class="meta">
+        <span>客户：李女士</span>
+        <span>日期：2026-04-16</span>
+        <span>共 7 配件 / 7 行</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th class="col-id">配件编号</th>
+            <th class="col-part-width">配件</th>
+            <th class="col-num">单份</th>
+            <th class="col-num">份数</th>
+            <th class="col-total">总数量</th>
+            <th class="col-stock">库存</th>
+            <th class="col-done">完成</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-id">PJ-X-001</td>
+            <td><div class="part-cell"><div class="part-img-a">1</div><div class="part-name">小珠子<small>白色 4mm</small></div></div></td>
+            <td class="col-num">2</td><td class="col-num">10</td><td class="col-total">20</td><td class="col-stock">45</td><td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr>
+            <td class="col-id">PJ-X-002</td>
+            <td><div class="part-cell"><div class="part-img-a">2</div><div class="part-name">金属扣<small>银色</small></div></div></td>
+            <td class="col-num">1</td><td class="col-num">10</td><td class="col-total">10</td><td class="col-stock">8</td><td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr>
+            <td class="col-id">PJ-X-003</td>
+            <td><div class="part-cell"><div class="part-img-a">3</div><div class="part-name">切片<small>心形</small></div></div></td>
+            <td class="col-num">1</td><td class="col-num">10</td><td class="col-total">10</td><td class="col-stock">30</td><td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr>
+            <td class="col-id">PJ-LT-004</td>
+            <td><div class="part-cell"><div class="part-img-a">4</div><div class="part-name">链条<small>45cm</small></div></div></td>
+            <td class="col-num">1</td><td class="col-num">23</td><td class="col-total">23</td><td class="col-stock">12</td><td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr>
+            <td class="col-id">PJ-DZ-005</td>
+            <td><div class="part-cell"><div class="part-img-a">5</div><div class="part-name">吊坠<small>十字架</small></div></div></td>
+            <td class="col-num">1</td><td class="col-num">15</td><td class="col-total">15</td><td class="col-stock">20</td><td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr>
+            <td class="col-id">PJ-X-006</td>
+            <td><div class="part-cell"><div class="part-img-a">6</div><div class="part-name">弹簧扣<small>金色</small></div></div></td>
+            <td class="col-num">1</td><td class="col-num">10</td><td class="col-total">10</td><td class="col-stock">25</td><td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr>
+            <td class="col-id">PJ-X-007</td>
+            <td><div class="part-cell"><div class="part-img-a">7</div><div class="part-name">隔珠<small>2mm</small></div></div></td>
+            <td class="col-num">2</td><td class="col-num">10</td><td class="col-total">20</td><td class="col-stock">100</td><td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="footer-info">
+        <span>第 1 / 1 页</span>
+        <span>Allen Shop · 饰品店管理系统</span>
+      </div>
+    </div>
+    <div class="page-stats">
+      <b>方案 A · 单层级容量</b><br>
+      <span class="pro">✓</span> <b>一页可容纳 ~7 个配件</b>（行高 ≈ 102pt）<br>
+      <span class="pro">✓</span> 再多 1-2 行也能挤进去（底部还有空间）
+    </div>
+  </div>
+
+  <!-- ─────────────────── OPTION B · single-variant ─────────────────── -->
+  <div class="page-col">
+    <div class="page-label">方案 B · 图片 110×110pt <span class="sub">单层级</span></div>
+    <div class="sheet sheet-b">
+      <div class="title">配货清单 · 订单 OR-0124</div>
+      <div class="meta">
+        <span>客户：李女士</span>
+        <span>日期：2026-04-16</span>
+        <span>共 7 配件 / 7 行（<b style="color:#b45309">页 1 只放得下 5 行</b>）</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th class="col-id">配件编号</th>
+            <th class="col-part-width">配件</th>
+            <th class="col-num">单份</th>
+            <th class="col-num">份数</th>
+            <th class="col-total">总数量</th>
+            <th class="col-stock">库存</th>
+            <th class="col-done">完成</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-id">PJ-X-001</td>
+            <td><div class="part-cell"><div class="part-img-b">1</div><div class="part-name">小珠子<small>白色 4mm</small></div></div></td>
+            <td class="col-num">2</td><td class="col-num">10</td><td class="col-total">20</td><td class="col-stock">45</td><td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr>
+            <td class="col-id">PJ-X-002</td>
+            <td><div class="part-cell"><div class="part-img-b">2</div><div class="part-name">金属扣<small>银色</small></div></div></td>
+            <td class="col-num">1</td><td class="col-num">10</td><td class="col-total">10</td><td class="col-stock">8</td><td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr>
+            <td class="col-id">PJ-X-003</td>
+            <td><div class="part-cell"><div class="part-img-b">3</div><div class="part-name">切片<small>心形</small></div></div></td>
+            <td class="col-num">1</td><td class="col-num">10</td><td class="col-total">10</td><td class="col-stock">30</td><td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr>
+            <td class="col-id">PJ-LT-004</td>
+            <td><div class="part-cell"><div class="part-img-b">4</div><div class="part-name">链条<small>45cm</small></div></div></td>
+            <td class="col-num">1</td><td class="col-num">23</td><td class="col-total">23</td><td class="col-stock">12</td><td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+          <tr>
+            <td class="col-id">PJ-DZ-005</td>
+            <td><div class="part-cell"><div class="part-img-b">5</div><div class="part-name">吊坠<small>十字架</small></div></div></td>
+            <td class="col-num">1</td><td class="col-num">15</td><td class="col-total">15</td><td class="col-stock">20</td><td class="col-done"><span class="checkbox"></span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="position:absolute;bottom:70px;left:40px;right:40px;text-align:center;padding:8px;background:#fff7e6;border:1px dashed #f59e0b;border-radius:4px;font-size:9pt;color:#b45309;">
+        ↓ 第 6、7 个配件（弹簧扣、隔珠）放不下，自动翻到第 2 页
+      </div>
+      <div class="footer-info">
+        <span>第 1 / 2 页</span>
+        <span>Allen Shop · 饰品店管理系统</span>
+      </div>
+    </div>
+    <div class="page-stats">
+      <b>方案 B · 单层级容量</b><br>
+      <span class="con">✗</span> <b>一页只容纳 ~5 个配件</b>（行高 ≈ 122pt）<br>
+      <span class="con">✗</span> 7 个配件就要 2 页，配件多时翻页频繁<br>
+      <span class="pro">✓</span> 图片辨识度最好
+    </div>
+  </div>
+
+  <!-- ─────────────────── OPTION C · 45pt · 12 rows ─────────────────── -->
+  <div class="page-col">
+    <div class="page-label" style="background:#047857;">方案 C · 图片 45×45pt <span class="sub">≈1.6cm · 目标 12 行</span></div>
+    <div class="sheet sheet-c">
+      <div class="title">配货清单 · 订单 OR-0125</div>
+      <div class="meta">
+        <span>客户：王女士</span>
+        <span>日期：2026-04-16</span>
+        <span>共 12 配件 / 12 行</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th class="col-id">配件编号</th>
+            <th class="col-part-width">配件</th>
+            <th class="col-num">单份</th>
+            <th class="col-num">份数</th>
+            <th class="col-total">总数量</th>
+            <th class="col-stock">库存</th>
+            <th class="col-done">完成</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="col-id">PJ-X-001</td><td><div class="part-cell"><div class="part-img-c">1</div><div class="part-name">小珠子<small>白色 4mm</small></div></div></td><td class="col-num">2</td><td class="col-num">10</td><td class="col-total">20</td><td class="col-stock">45</td><td class="col-done"><span class="checkbox"></span></td></tr>
+          <tr><td class="col-id">PJ-X-002</td><td><div class="part-cell"><div class="part-img-c">2</div><div class="part-name">金属扣<small>银色</small></div></div></td><td class="col-num">1</td><td class="col-num">10</td><td class="col-total">10</td><td class="col-stock">8</td><td class="col-done"><span class="checkbox"></span></td></tr>
+          <tr><td class="col-id">PJ-X-003</td><td><div class="part-cell"><div class="part-img-c">3</div><div class="part-name">切片<small>心形</small></div></div></td><td class="col-num">1</td><td class="col-num">10</td><td class="col-total">10</td><td class="col-stock">30</td><td class="col-done"><span class="checkbox"></span></td></tr>
+          <tr><td class="col-id">PJ-LT-004</td><td><div class="part-cell"><div class="part-img-c">4</div><div class="part-name">链条<small>45cm</small></div></div></td><td class="col-num">1</td><td class="col-num">23</td><td class="col-total">23</td><td class="col-stock">12</td><td class="col-done"><span class="checkbox"></span></td></tr>
+          <tr><td class="col-id">PJ-DZ-005</td><td><div class="part-cell"><div class="part-img-c">5</div><div class="part-name">吊坠<small>十字架</small></div></div></td><td class="col-num">1</td><td class="col-num">15</td><td class="col-total">15</td><td class="col-stock">20</td><td class="col-done"><span class="checkbox"></span></td></tr>
+          <tr><td class="col-id">PJ-X-006</td><td><div class="part-cell"><div class="part-img-c">6</div><div class="part-name">弹簧扣<small>金色</small></div></div></td><td class="col-num">1</td><td class="col-num">10</td><td class="col-total">10</td><td class="col-stock">25</td><td class="col-done"><span class="checkbox"></span></td></tr>
+          <tr><td class="col-id">PJ-X-007</td><td><div class="part-cell"><div class="part-img-c">7</div><div class="part-name">隔珠<small>2mm</small></div></div></td><td class="col-num">2</td><td class="col-num">10</td><td class="col-total">20</td><td class="col-stock">100</td><td class="col-done"><span class="checkbox"></span></td></tr>
+          <tr><td class="col-id">PJ-X-008</td><td><div class="part-cell"><div class="part-img-c">8</div><div class="part-name">流苏<small>玫瑰金</small></div></div></td><td class="col-num">1</td><td class="col-num">5</td><td class="col-total">5</td><td class="col-stock">3</td><td class="col-done"><span class="checkbox"></span></td></tr>
+          <tr><td class="col-id">PJ-X-009</td><td><div class="part-cell"><div class="part-img-c">9</div><div class="part-name">钻<small>圆 3mm</small></div></div></td><td class="col-num">4</td><td class="col-num">10</td><td class="col-total">40</td><td class="col-stock">88</td><td class="col-done"><span class="checkbox"></span></td></tr>
+          <tr><td class="col-id">PJ-X-010</td><td><div class="part-cell"><div class="part-img-c">10</div><div class="part-name">耳钉托<small>925银</small></div></div></td><td class="col-num">2</td><td class="col-num">8</td><td class="col-total">16</td><td class="col-stock">40</td><td class="col-done"><span class="checkbox"></span></td></tr>
+          <tr><td class="col-id">PJ-LT-011</td><td><div class="part-cell"><div class="part-img-c">11</div><div class="part-name">手链绳<small>弹力</small></div></div></td><td class="col-num">1</td><td class="col-num">10</td><td class="col-total">10</td><td class="col-stock">50</td><td class="col-done"><span class="checkbox"></span></td></tr>
+          <tr><td class="col-id">PJ-DZ-012</td><td><div class="part-cell"><div class="part-img-c">12</div><div class="part-name">贝壳片<small>自然色</small></div></div></td><td class="col-num">1</td><td class="col-num">5</td><td class="col-total">5</td><td class="col-stock">15</td><td class="col-done"><span class="checkbox"></span></td></tr>
+        </tbody>
+      </table>
+      <div class="footer-info">
+        <span>第 1 / 1 页</span>
+        <span>Allen Shop · 饰品店管理系统</span>
+      </div>
+    </div>
+    <div class="page-stats">
+      <b>方案 C · 单层级容量</b><br>
+      <span class="pro">✓</span> <b>一页容纳 12 个配件</b>（行高 ≈ 55pt）✓ 达成目标<br>
+      <span class="pro">✓</span> 图片 + 文字规格还能清晰识别<br>
+      <span class="con">✗</span> 图片细节弱（如小配件颜色差异可能看不清）
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

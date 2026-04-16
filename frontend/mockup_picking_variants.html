@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>配货模拟 — 不同单份数量 UI 方案对比</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Noto Sans SC', -apple-system, sans-serif;
+    background: #f5f5f5;
+    color: #333;
+    line-height: 1.5;
+    padding: 32px;
+  }
+  .page-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; color: #1a1a2e; }
+  .page-subtitle { font-size: 13px; color: #888; margin-bottom: 20px; line-height: 1.7; }
+
+  .scenario-box {
+    background: #fff;
+    border-left: 4px solid #4361ee;
+    border-radius: 4px;
+    padding: 14px 18px;
+    margin-bottom: 28px;
+    font-size: 13px;
+    line-height: 1.8;
+  }
+  .scenario-box h4 { font-size: 13px; color: #4361ee; margin-bottom: 6px; }
+  .mini-tag {
+    display: inline-block;
+    background: #f7f9ff;
+    border: 1px solid #dde4ff;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin: 2px 4px 2px 0;
+    font-size: 12px;
+    color: #555;
+  }
+
+  .comparison-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  @media (min-width: 1400px) {
+    .comparison-grid { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 8px;
+    border: 1px solid #e8e8e8;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid #eee;
+  }
+  .card-header .option-label {
+    display: inline-block;
+    background: #4361ee;
+    color: #fff;
+    width: 28px;
+    height: 28px;
+    line-height: 28px;
+    text-align: center;
+    border-radius: 50%;
+    font-weight: 700;
+    margin-right: 10px;
+    vertical-align: middle;
+  }
+  .card-header .option-title {
+    font-size: 15px;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+  .card-header .option-desc {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    color: #888;
+    margin-left: 38px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead th {
+    background: #fafbfc;
+    padding: 12px 14px;
+    text-align: left;
+    font-weight: 600;
+    color: #555;
+    border-bottom: 1px solid #eee;
+    font-size: 12px;
+  }
+  tbody td {
+    padding: 12px 14px;
+    border-bottom: 1px solid #f2f2f2;
+    vertical-align: middle;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  .part-id {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    color: #666;
+  }
+  .part-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .part-img {
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    color: #4361ee;
+    flex-shrink: 0;
+  }
+  .part-name { font-weight: 500; color: #333; }
+
+  .num-col { font-variant-numeric: tabular-nums; }
+  .total-col { font-weight: 600; color: #1a1a2e; }
+
+  /* Option A / C styling — variant separator via rowspan border */
+  .merged-cell {
+    background: #fafbfc;
+    border-right: 1px solid #eef0f4;
+  }
+  /* Option B styling */
+  .subtotal-row td {
+    background: #f7f9ff;
+    border-top: 2px solid #dde4ff;
+    font-weight: 600;
+    color: #4361ee;
+  }
+  .subtotal-label { font-style: italic; color: #888; font-size: 12px; }
+
+  /* Row separator inside same part (Option B without merge) */
+  .same-part-row td {
+    border-bottom: 1px dashed #e5e5e5;
+  }
+
+  /* Variant inner border between rows that belong to same part (Option A/C) */
+  .variant-divider td:not(.merged-cell) {
+    border-top: 1px dashed #e5e5e5;
+  }
+  .variant-divider td:not(.merged-cell) {
+    border-bottom: 1px solid #f2f2f2;
+  }
+
+  .legend {
+    background: #fff;
+    border-radius: 8px;
+    border: 1px solid #e8e8e8;
+    padding: 16px 20px;
+    margin-top: 8px;
+    font-size: 12px;
+    color: #666;
+    line-height: 1.8;
+  }
+  .legend strong { color: #333; }
+  .legend .pro { color: #22c55e; }
+  .legend .con { color: #ef4444; }
+</style>
+</head>
+<body>
+
+<div class="page-title">配货模拟 · 多「单份数量」UI 方案对比</div>
+<div class="page-subtitle">同一配件在不同饰品里「单份数量」不同时，三种渲染方式。</div>
+
+<div class="scenario-box">
+  <h4>场景数据</h4>
+  订单包含 3 个饰品：
+  <span class="mini-tag">饰品 X · 份数 10 · 用到 P 每份 <b>2</b> 颗</span>
+  <span class="mini-tag">饰品 Y · 份数 5 · 用到 P 每份 <b>3</b> 颗</span>
+  <span class="mini-tag">饰品 Z · 份数 8 · 用到 P 每份 <b>2</b> 颗</span>
+  <br>
+  另外：<span class="mini-tag">配件 Q 只被饰品 X 用到，单份 1，份数 10</span>（作为"单变体"对照）
+  <br>
+  <br>
+  <b>聚合后配件 P 有 2 种单份数量：</b>
+  单份=2（来自 X+Z，份数合计 18，小计 36）、单份=3（来自 Y，份数 5，小计 15）→ <b>P 总需要 51 颗</b>。
+</div>
+
+<div class="comparison-grid">
+
+  <!-- ─────── Option A ─────── -->
+  <div class="card">
+    <div class="card-header">
+      <span class="option-label">A</span>
+      <span class="option-title">合并单元格（rowspan），无合计行</span>
+      <span class="option-desc">配件编号 / 配件 列跨多行合并；靠左侧背景色区分同一配件的不同"单份数量"变体。</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:14%">配件编号</th>
+          <th style="width:32%">配件</th>
+          <th style="width:14%">单份数量</th>
+          <th style="width:14%">份数</th>
+          <th style="width:14%">需要总数量</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Part P: 2 variants merged -->
+        <tr>
+          <td rowspan="2" class="merged-cell"><span class="part-id">PJ-X-001</span></td>
+          <td rowspan="2" class="merged-cell">
+            <div class="part-cell">
+              <div class="part-img">P</div>
+              <div class="part-name">小珠子</div>
+            </div>
+          </td>
+          <td class="num-col">2</td>
+          <td class="num-col">18</td>
+          <td class="num-col total-col">36</td>
+        </tr>
+        <tr class="variant-divider">
+          <td class="num-col">3</td>
+          <td class="num-col">5</td>
+          <td class="num-col total-col">15</td>
+        </tr>
+        <!-- Part Q: single variant -->
+        <tr>
+          <td><span class="part-id">PJ-X-002</span></td>
+          <td>
+            <div class="part-cell">
+              <div class="part-img">Q</div>
+              <div class="part-name">金属扣</div>
+            </div>
+          </td>
+          <td class="num-col">1</td>
+          <td class="num-col">10</td>
+          <td class="num-col total-col">10</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="legend">
+      <span class="pro">✓ 紧凑，行数 = 变体数</span>
+      <span class="pro">✓ 视觉归属清晰（合并单元格 + 背景色）</span>
+      <span class="con">✗ 总需要 = 36+15=51 需用户心算</span>
+    </div>
+  </div>
+
+  <!-- ─────── Option B ─────── -->
+  <div class="card">
+    <div class="card-header">
+      <span class="option-label">B</span>
+      <span class="option-title">不合并单元格，末尾加"合计"行</span>
+      <span class="option-desc">每个变体独占一行、重复显示配件编号和配件；最后一条带高亮的"合计"行给出配件总数。</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:14%">配件编号</th>
+          <th style="width:32%">配件</th>
+          <th style="width:14%">单份数量</th>
+          <th style="width:14%">份数</th>
+          <th style="width:14%">需要总数量</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="same-part-row">
+          <td><span class="part-id">PJ-X-001</span></td>
+          <td>
+            <div class="part-cell">
+              <div class="part-img">P</div>
+              <div class="part-name">小珠子</div>
+            </div>
+          </td>
+          <td class="num-col">2</td>
+          <td class="num-col">18</td>
+          <td class="num-col total-col">36</td>
+        </tr>
+        <tr>
+          <td><span class="part-id">PJ-X-001</span></td>
+          <td>
+            <div class="part-cell">
+              <div class="part-img">P</div>
+              <div class="part-name">小珠子</div>
+            </div>
+          </td>
+          <td class="num-col">3</td>
+          <td class="num-col">5</td>
+          <td class="num-col total-col">15</td>
+        </tr>
+        <tr class="subtotal-row">
+          <td></td>
+          <td class="subtotal-label">小珠子 · 合计</td>
+          <td></td>
+          <td></td>
+          <td class="num-col total-col">51</td>
+        </tr>
+        <tr>
+          <td><span class="part-id">PJ-X-002</span></td>
+          <td>
+            <div class="part-cell">
+              <div class="part-img">Q</div>
+              <div class="part-name">金属扣</div>
+            </div>
+          </td>
+          <td class="num-col">1</td>
+          <td class="num-col">10</td>
+          <td class="num-col total-col">10</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="legend">
+      <span class="pro">✓ 合计明确写出来，无需心算</span>
+      <span class="con">✗ 行数增加（每多变体 +1 合计行）</span>
+      <span class="con">✗ 重复配件信息，表更长</span>
+      <span class="con">✗ 单变体配件"没有合计行"，视觉不一致</span>
+    </div>
+  </div>
+
+  <!-- ─────── Option C ─────── -->
+  <div class="card">
+    <div class="card-header">
+      <span class="option-label">C</span>
+      <span class="option-title">合并单元格 + 合计行</span>
+      <span class="option-desc">A + B 结合：配件信息合并，同时最右列保留一条"合计"行显示总数。</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:14%">配件编号</th>
+          <th style="width:32%">配件</th>
+          <th style="width:14%">单份数量</th>
+          <th style="width:14%">份数</th>
+          <th style="width:14%">需要总数量</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td rowspan="3" class="merged-cell"><span class="part-id">PJ-X-001</span></td>
+          <td rowspan="3" class="merged-cell">
+            <div class="part-cell">
+              <div class="part-img">P</div>
+              <div class="part-name">小珠子</div>
+            </div>
+          </td>
+          <td class="num-col">2</td>
+          <td class="num-col">18</td>
+          <td class="num-col total-col">36</td>
+        </tr>
+        <tr class="variant-divider">
+          <td class="num-col">3</td>
+          <td class="num-col">5</td>
+          <td class="num-col total-col">15</td>
+        </tr>
+        <tr class="subtotal-row">
+          <td class="subtotal-label">合计</td>
+          <td></td>
+          <td class="num-col total-col">51</td>
+        </tr>
+        <tr>
+          <td><span class="part-id">PJ-X-002</span></td>
+          <td>
+            <div class="part-cell">
+              <div class="part-img">Q</div>
+              <div class="part-name">金属扣</div>
+            </div>
+          </td>
+          <td class="num-col">1</td>
+          <td class="num-col">10</td>
+          <td class="num-col total-col">10</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="legend">
+      <span class="pro">✓ 视觉归属清晰 + 合计明确</span>
+      <span class="con">✗ 行数最多（合并 + 合计双重开销）</span>
+      <span class="con">✗ 单变体配件若为"统一风格"也要重复一条合计，啰嗦</span>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
