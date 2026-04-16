@@ -443,7 +443,7 @@
     </n-modal>
 
     <!-- Composite part BOM modal -->
-    <n-modal v-model:show="showPartBomModal" preset="card" :title="partBomTitle" style="width: 560px;">
+    <n-modal v-model:show="showPartBomModal" preset="card" :title="partBomTitle" style="width: 720px;">
       <n-spin :show="partBomLoading">
         <n-data-table
           v-if="partBomData.length > 0"
@@ -1138,12 +1138,14 @@ const showPartBomModal = ref(false)
 const partBomTitle = ref('')
 const partBomData = ref([])
 const partBomLoading = ref(false)
+const partBomParentQty = ref(0)
 
 let _partBomRequestId = 0
 
 async function openPartBomModal(row) {
   const requestId = ++_partBomRequestId
   partBomTitle.value = `${row.part_id} ${row.part_name} - 子配件`
+  partBomParentQty.value = row.required_qty || row.raw_total_qty || row.total_qty || 0
   partBomData.value = []
   showPartBomModal.value = true
   partBomLoading.value = true
@@ -1169,6 +1171,11 @@ const partBomColumns = [
   },
   { title: '用量', key: 'qty_per_unit', width: 80 },
   { title: '单位', key: 'child_part_unit', width: 60 },
+  { title: '数量', key: '_parent_qty', width: 80, render: () => partBomParentQty.value },
+  { title: '总用量', key: '_total_usage', width: 80, render: (row) => {
+    const total = (row.qty_per_unit || 0) * partBomParentQty.value
+    return Math.round(total * 10000) / 10000
+  }},
 ]
 
 // --- Jewelry info modal ---

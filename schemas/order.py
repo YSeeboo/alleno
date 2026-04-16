@@ -213,6 +213,7 @@ class PartsSummaryItemResponse(BaseModel):
     part_image: str | None = None
     part_is_composite: bool = False
     total_qty: float
+    raw_total_qty: float
     current_stock: float
     reserved_qty: float
     global_demand: float

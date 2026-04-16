@@ -718,6 +718,7 @@ def _build_batch_response(db: Session, batch, batch_jewelries, todo_items) -> di
             "batch_id": t.batch_id,
             "part_name": p.name if p else "",
             "part_image": p.image if p else None,
+            "part_is_composite": p.is_composite if p else False,
             "stock_qty": stock_val,
             "gap": gap_val,
             "is_allocated": allocated,

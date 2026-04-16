@@ -1130,6 +1130,10 @@ def test_parts_summary_ceils_fractional_meter_quantities(client, db):
     # And crucially, no trailing decimals in the serialized value
     assert row["total_qty"] == int(row["total_qty"])
     assert row["remaining_qty"] == int(row["remaining_qty"])
+    # raw_total_qty preserves the un-ceiled value for sub-part total usage calc
+    assert "raw_total_qty" in row
+    assert row["raw_total_qty"] < row["total_qty"], "raw should be less than ceiled value"
+    assert 982.0 < row["raw_total_qty"] <= 982.2
 
 
 def test_parts_summary_globally_sufficient_flips_at_ceiling_boundary(client, db):
