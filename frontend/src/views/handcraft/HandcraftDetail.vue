@@ -426,7 +426,7 @@ import { CreateOutline } from '@vicons/ionicons5'
 import {
   getHandcraft, getHandcraftParts, getHandcraftJewelries, sendHandcraft,
   addHandcraftPart, updateHandcraftPart, deleteHandcraftPart,
-  updateHandcraftJewelry, updateHandcraft,
+  updateHandcraftJewelry, deleteHandcraftJewelry, updateHandcraft,
   updateHandcraftDeliveryImages, downloadHandcraftExcel, downloadHandcraftPdf,
   getHandcraftPartOrders, deleteHandcraftPartOrderLink,
   getHandcraftJewelryOrders, deleteHandcraftJewelryOrderLink,
@@ -872,6 +872,24 @@ const doDeleteItem = (row) => {
         message.success('已删除')
         await loadData()
       } catch (_) {
+      }
+    },
+  })
+}
+
+const doDeleteJewelryItem = (row) => {
+  dialog.warning({
+    title: '确认删除',
+    content: `确认删除产出 ${row.display_name || row.display_id} 的明细行？`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await deleteHandcraftJewelry(route.params.id, row.id)
+        message.success('已删除')
+        await loadData()
+      } catch (e) {
+        message.error(e.response?.data?.detail || '删除失败')
       }
     },
   })
@@ -1529,9 +1547,25 @@ const jewelryColumns = [
   {
     title: '操作',
     key: 'actions',
-    width: 100,
+    width: 140,
     render: (row) => {
+      const pending = order.value?.status === 'pending'
       const btns = []
+      if (pending) {
+        btns.push(h(
+          NTooltip,
+          { disabled: pending, trigger: 'hover' },
+          {
+            trigger: () =>
+              h(NButton, {
+                size: 'small',
+                type: 'error',
+                onClick: () => doDeleteJewelryItem(row),
+              }, { default: () => '删除' }),
+            default: () => '当前单子进行中/已完成，不允许删除',
+          },
+        ))
+      }
       const gap = row.qty - (row.received_qty || 0)
       if (gap > 0 && row.status === '制作中') {
         btns.push(h(NButton, {
