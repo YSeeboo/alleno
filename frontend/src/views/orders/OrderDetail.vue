@@ -168,7 +168,7 @@
         >
           批量填入客户货号 ({{ checkedItemIds.length }})
         </n-button>
-        <n-data-table v-if="orderItems.length > 0" :columns="itemColumns" :data="orderItems" :bordered="false" size="small" :row-key="row => row.id" v-model:checked-row-keys="checkedItemIds" />
+        <n-data-table v-if="orderItems.length > 0" :columns="itemColumns" :data="orderItems" :bordered="false" size="small" :row-key="row => row.id" v-model:checked-row-keys="checkedItemIds" :summary="itemSummary" />
         <n-empty v-else description="暂无饰品明细" style="margin-top: 16px;" />
 
         <!-- Add item row -->
@@ -1373,6 +1373,16 @@ const jewelryStatusColorMap = {
   '等待发往手工': { color: '#13c2c2', bg: '#e6fffb' },
   '等待手工返回': { color: '#1890ff', bg: '#e6f7ff' },
   '完成备货': { color: '#52c41a', bg: '#f6ffed' },
+}
+
+function itemSummary() {
+  const totalQty = orderItems.value.reduce((s, r) => s + (r.quantity || 0), 0)
+  const totalAmt = orderItems.value.reduce((s, r) => s + (r.quantity || 0) * (r.unit_price || 0), 0)
+  return {
+    jewelry_name: { value: h('b', '合计') },
+    quantity: { value: h('b', totalQty) },
+    subtotal: { value: h('b', fmtMoney(totalAmt)) },
+  }
 }
 
 const itemColumns = computed(() => {
