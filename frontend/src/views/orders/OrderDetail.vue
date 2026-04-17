@@ -316,11 +316,10 @@
             </n-button>
             <n-button
               size="small"
-              class="export-pdf-btn"
-              :loading="exportingPartsPdf"
-              @click="doPartsSummaryPdfExport"
+              type="primary"
+              @click="openPickingSimulation"
             >
-              导出 PDF
+              配货模拟
             </n-button>
             <div class="parts-filter">
               <button
@@ -544,6 +543,10 @@
         </n-space>
       </template>
     </n-modal>
+    <PickingSimulationModal
+      v-model:show="pickingModalShow"
+      :order-id="String(route.params.id)"
+    />
   </div>
 </template>
 
@@ -565,12 +568,13 @@ import {
 } from '@vicons/ionicons5'
 import { tsToDateStr, isoToTs } from '@/utils/date'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
+import PickingSimulationModal from '@/components/picking/PickingSimulationModal.vue'
 import {
   getOrder, getOrderItems, getPartsSummary, updateOrderStatus,
   getTodo, deleteLink, addOrderItem, deleteOrderItem,
   getCostSnapshot, updatePackagingCost, updateExtraInfo,
   getJewelryStatus, getJewelryForBatch, createTodoBatch, getTodoBatches,
-  linkBatchSupplier, downloadBatchPdf, downloadPartsSummaryPdf, deleteTodoBatch,
+  linkBatchSupplier, downloadBatchPdf, deleteTodoBatch,
   updateOrderItem, batchFillCustomerCode,
   getCuttingStats, downloadCuttingStatsPdf,
 } from '@/api/orders'
@@ -951,27 +955,9 @@ async function doBatchPdfExport(batch, index) {
   }
 }
 
-const exportingPartsPdf = ref(false)
-async function doPartsSummaryPdfExport() {
-  const partIds = filteredPartsRows.value.map((r) => r.part_id)
-  if (partIds.length === 0) {
-    message.warning('当前筛选下无配件可导出')
-    return
-  }
-  exportingPartsPdf.value = true
-  try {
-    const { data } = await downloadPartsSummaryPdf(route.params.id, partIds)
-    const url = window.URL.createObjectURL(data)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `配件汇总_${route.params.id}.pdf`
-    a.click()
-    window.URL.revokeObjectURL(url)
-  } catch (_) {
-    message.error('PDF 下载失败')
-  } finally {
-    exportingPartsPdf.value = false
-  }
+const pickingModalShow = ref(false)
+function openPickingSimulation() {
+  pickingModalShow.value = true
 }
 
 // --- Cutting stats ---

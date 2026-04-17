@@ -70,8 +70,10 @@ def test_order_picking_record_table_exists(db):
 def test_order_picking_record_insert_and_read(db):
     """Insert a picking record and read it back. Verifies columns exist,
     defaults work, and unique key isn't fighting normal inserts."""
-    order = Order(id="OR-PICK-1", customer_name="Test")
-    db.add(order)
+    from models.part import Part
+    part = Part(id="PJ-X-00001", name="Test Part", category="吊坠")
+    db.add(part)
+    db.add(Order(id="OR-PICK-1", customer_name="Test"))
     db.flush()
 
     rec = OrderPickingRecord(

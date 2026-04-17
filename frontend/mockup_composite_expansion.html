@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>配件汇总（BOM）— 组合配件展开效果</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #f5f5f5;
+    color: #333;
+    line-height: 1.5;
+    padding: 32px;
+  }
+
+  .page-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; color: #1a1a2e; }
+  .page-subtitle { font-size: 13px; color: #888; margin-bottom: 24px; line-height: 1.7; }
+
+  /* ─── Scenario info box ─── */
+  .scenario-box {
+    background: #fff;
+    border-left: 4px solid #4361ee;
+    border-radius: 4px;
+    padding: 14px 18px;
+    margin-bottom: 24px;
+    font-size: 13px;
+    line-height: 1.8;
+  }
+  .scenario-box h4 { font-size: 13px; color: #4361ee; margin-bottom: 6px; }
+  .scenario-box .mini-bom {
+    display: inline-block;
+    background: #f7f9ff;
+    border: 1px solid #dde4ff;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin: 2px 4px 2px 0;
+    font-size: 12px;
+    color: #555;
+  }
+
+  /* ─── Variant switcher ─── */
+  .variant-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .variant-tab {
+    padding: 8px 16px;
+    border: 1px solid #ddd;
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    color: #666;
+    transition: all 0.15s;
+  }
+  .variant-tab.active {
+    background: #4361ee;
+    color: #fff;
+    border-color: #4361ee;
+  }
+
+  /* ─── Card ─── */
+  .card {
+    background: #fff;
+    border-radius: 8px;
+    border: 1px solid #e8e8e8;
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 14px 20px;
+    font-size: 15px;
+    font-weight: 600;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-header-left { display: flex; align-items: center; gap: 10px; }
+  .card-header-right { display: flex; align-items: center; gap: 10px; }
+  .card-body { padding: 0; }
+
+  /* ─── Filter bar ─── */
+  .parts-filter { display: inline-flex; border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; }
+  .parts-filter-item {
+    display: flex; align-items: center; gap: 5px; padding: 4px 12px;
+    border: none; background: #fff; font-size: 12px; cursor: pointer;
+    font-family: inherit; color: #666; border-right: 1px solid #e0e0e0; transition: all 0.15s;
+  }
+  .parts-filter-item:last-child { border-right: none; }
+  .parts-filter-item--active { background: #f0f4ff; color: #4361ee; font-weight: 500; }
+  .filter-count {
+    font-size: 11px; background: #eee; padding: 0 5px; border-radius: 8px;
+    color: #888; min-width: 18px; text-align: center;
+  }
+  .parts-filter-item--active .filter-count { background: #dde4ff; color: #4361ee; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px;
+    border-radius: 4px; border: 1px solid #ddd; background: #fff;
+    font-size: 12px; cursor: pointer; font-family: inherit;
+  }
+
+  /* ─── Table ─── */
+  .parts-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .parts-table th {
+    text-align: left; padding: 10px 12px; font-weight: 500; color: #666;
+    border-bottom: 1px solid #eee; font-size: 12px; background: #fafbfc; white-space: nowrap;
+  }
+  .parts-table th.center { text-align: center; }
+  .parts-table td { padding: 10px 12px; border-bottom: 1px solid #f3f3f3; vertical-align: middle; }
+  .parts-table td.center { text-align: center; }
+  .parts-table tbody tr:last-child td { border-bottom: none; }
+  .parts-table tbody tr:hover { background: #f8f9fa; }
+
+  .part-cell { display: flex; align-items: center; gap: 8px; }
+  .part-thumb {
+    width: 36px; height: 36px; border-radius: 4px; display: flex;
+    align-items: center; justify-content: center; font-size: 13px;
+    font-weight: 600; color: #fff; flex-shrink: 0;
+  }
+  .part-name { font-weight: 500; }
+
+  .tag-composite {
+    display: inline-flex; font-size: 10px; padding: 1px 6px; border-radius: 3px;
+    background: #fff7e6; color: #d48806; border: 1px solid #ffe58f;
+    font-weight: 500; margin-left: 4px;
+  }
+  .tag-sub {
+    display: inline-flex; font-size: 10px; padding: 1px 6px; border-radius: 3px;
+    background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd;
+    font-weight: 500; margin-left: 4px;
+  }
+
+  .qty-red { color: #ff4d4f; font-weight: 500; }
+  .qty-green { color: #52c41a; font-weight: 500; }
+  .qty-muted { color: #999; }
+
+  /* ─── Sub-part row ─── */
+  .sub-row {
+    background: #fcfcfd;
+  }
+  .sub-row:hover { background: #f5f7fa !important; }
+  .sub-indent {
+    display: inline-flex; align-items: center; color: #bbb;
+    font-family: monospace; font-size: 12px; margin-right: 4px;
+    padding-left: 12px;
+  }
+
+  /* ─── Expand ─── */
+  .expand-toggle {
+    width: 20px; height: 20px; border: none; background: none; cursor: pointer;
+    font-size: 12px; color: #999; display: inline-flex; align-items: center;
+    justify-content: center; border-radius: 4px; transition: all 0.15s; flex-shrink: 0;
+  }
+  .expand-toggle:hover { background: #f0f0f0; color: #333; }
+  .expand-toggle.expanded { color: #1565c0; transform: rotate(90deg); }
+
+  .expand-row td { padding: 0 !important; border-bottom: 1px solid #f3f3f3; }
+  .expand-content { overflow: hidden; transition: max-height 0.25s ease; }
+  .expand-content.collapsed { max-height: 0; }
+  .expand-content.expanded { max-height: 500px; }
+
+  .expand-inner { padding: 10px 12px 14px 48px; background: #fafbfc; }
+  .expand-section {
+    margin-bottom: 8px;
+  }
+  .expand-section:last-child { margin-bottom: 0; }
+  .expand-section-title {
+    font-size: 11px; color: #888; font-weight: 500;
+    margin-bottom: 6px; padding-bottom: 4px;
+    border-bottom: 1px dashed #e0e0e0;
+  }
+  .source-detail-row {
+    display: flex; align-items: center; gap: 16px; padding: 4px 0;
+    font-size: 12px; color: #555;
+  }
+  .tree-connector { color: #ccc; margin-right: 4px; font-family: monospace; }
+  .src-jewelry { font-weight: 600; color: #333; min-width: 80px; }
+  .src-jewelry-name {
+    color: #4361ee; min-width: 90px; cursor: pointer;
+    transition: color 0.15s; text-decoration: none;
+  }
+  .src-jewelry-name:hover { color: #2a3db0; text-decoration: underline; }
+  .src-composite {
+    color: #d48806; min-width: 120px; font-weight: 500;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .src-calc { color: #888; font-family: 'SF Mono', Menlo, monospace; font-size: 11px; }
+  .src-subtotal { font-weight: 600; color: #333; }
+
+  .info-note {
+    font-size: 11px; color: #999; padding: 4px 0 0 0; font-style: italic;
+  }
+
+  /* ─── Variant B: composite section under composite row ─── */
+  .composite-breakdown {
+    padding: 10px 12px 14px 48px;
+    background: #fff8e6;
+    border-left: 3px solid #ffd666;
+  }
+  .composite-breakdown-title {
+    font-size: 11px; color: #d48806; font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .composite-sub-row {
+    display: flex; align-items: center; gap: 12px; padding: 5px 0;
+    font-size: 12px; color: #555;
+  }
+  .composite-sub-thumb {
+    width: 24px; height: 24px; border-radius: 3px; display: flex;
+    align-items: center; justify-content: center; font-size: 10px;
+    font-weight: 600; color: #fff; flex-shrink: 0;
+  }
+  .composite-sub-id { font-family: monospace; font-size: 11px; color: #666; min-width: 100px; }
+  .composite-sub-name { font-weight: 500; min-width: 100px; }
+  .composite-sub-calc { color: #888; font-family: 'SF Mono', Menlo, monospace; font-size: 11px; }
+
+  h2.variant-header {
+    font-size: 15px; font-weight: 600; color: #1a1a2e;
+    margin: 20px 0 12px 0;
+  }
+  h2.variant-header small {
+    font-weight: 400; color: #888; font-size: 12px; margin-left: 8px;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-title">配件汇总（BOM）— 组合配件展开效果 mockup</div>
+<div class="page-subtitle">
+  当前订单详情的「配件汇总（BOM）」只会列出饰品 BOM 直接引用的配件。如果其中有 <span class="tag-composite">组合</span> 配件，
+  其子配件（组件）不会出现。<br/>
+  下面模拟了两种展开方案，请选择更偏好的呈现方式。
+</div>
+
+<div class="scenario-box">
+  <h4>📖 模拟场景</h4>
+  订单 <strong>OR-0088</strong>：共 50 件 <strong>SP-0012 花型吊坠</strong><br/>
+  SP-0012 花型吊坠的 BOM：
+  <span class="mini-bom">🔗 18K金链条 × 1</span>
+  <span class="mini-bom">🌸 花型吊坠头 <span class="tag-composite">组合</span> × 1</span>
+  <span class="mini-bom">🔒 龙虾扣 × 1</span>
+  <span class="mini-bom">⭕ 开口圆环 × 2</span><br/>
+  其中 <strong>花型吊坠头（PJ-DZ-00008）</strong>是组合配件，由以下子配件组成：
+  <span class="mini-bom">🪨 吊坠基座 × 1</span>
+  <span class="mini-bom">🌺 花瓣片 × 3</span>
+  <span class="mini-bom">💎 中心宝石 × 1</span><br/>
+  <em style="color:#d48806;">花型吊坠头现有库存 30 个，缺 20 个需要自行组装 → 额外需要子配件：基座 20、花瓣 60、宝石 20。</em>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     VARIANT A: 组合展开为内联子行
+     ═══════════════════════════════════════════ -->
+<h2 class="variant-header">方案 A — 子配件内联为子行，子行带缩进与「来自组合」标签
+  <small>优点：子配件也纳入统一的筛选/排序/库存检查流</small>
+</h2>
+
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">配件汇总（BOM）</div>
+    <div class="card-header-right">
+      <button class="btn">裁剪统计</button>
+      <button class="btn">导出 PDF</button>
+      <div class="parts-filter">
+        <button class="parts-filter-item parts-filter-item--active">全部 <span class="filter-count">7</span></button>
+        <button class="parts-filter-item">需关注 <span class="filter-count">3</span></button>
+        <button class="parts-filter-item">已充足 <span class="filter-count">4</span></button>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <table class="parts-table">
+      <thead>
+        <tr>
+          <th style="width:32px"></th>
+          <th style="width:120px">配件编号</th>
+          <th style="min-width:180px">配件</th>
+          <th class="center" style="width:80px">总需求量</th>
+          <th class="center" style="width:90px">全局总需求</th>
+          <th class="center" style="width:80px">当前库存</th>
+          <th class="center" style="width:80px">他人预留</th>
+          <th class="center" style="width:90px">剩余需求量</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Row 1: 链条 -->
+        <tr>
+          <td><button class="expand-toggle">▶</button></td>
+          <td>PJ-LT-00012</td>
+          <td><div class="part-cell"><div class="part-thumb" style="background:#6c8ebf;">链</div><span class="part-name">18K金链条</span></div></td>
+          <td class="center">50</td>
+          <td class="center">180</td>
+          <td class="center">120</td>
+          <td class="center">40</td>
+          <td class="center"><span class="qty-green">0</span></td>
+        </tr>
+
+        <!-- Row 2: 花型吊坠头 (组合) — 展开 -->
+        <tr>
+          <td><button class="expand-toggle expanded" onclick="toggleExpand(this)">▶</button></td>
+          <td>PJ-DZ-00008</td>
+          <td>
+            <div class="part-cell">
+              <div class="part-thumb" style="background:#e76f51;">花</div>
+              <span class="part-name">花型吊坠头</span>
+              <span class="tag-composite">组合</span>
+            </div>
+          </td>
+          <td class="center">50</td>
+          <td class="center">50</td>
+          <td class="center">30</td>
+          <td class="center">0</td>
+          <td class="center"><span class="qty-red">20</span></td>
+        </tr>
+        <tr class="expand-row">
+          <td colspan="8">
+            <div class="expand-content expanded">
+              <div class="expand-inner">
+                <div class="expand-section">
+                  <div class="expand-section-title">需求来源（饰品）</div>
+                  <div class="source-detail-row">
+                    <span class="tree-connector">└─</span>
+                    <span class="src-jewelry">SP-0012</span>
+                    <a class="src-jewelry-name">花型吊坠</a>
+                    <span class="src-calc">1/件 × 50件</span>
+                    <span class="src-subtotal">= 50</span>
+                  </div>
+                </div>
+                <div class="expand-section">
+                  <div class="expand-section-title">子配件（组装所需 — 仅缺口 20 件）</div>
+                  <div class="source-detail-row">
+                    <span class="tree-connector">├─</span>
+                    <span class="src-jewelry">PJ-X-00070</span>
+                    <span class="part-name">吊坠基座</span>
+                    <span class="src-calc">1/组合 × 20 = 20</span>
+                  </div>
+                  <div class="source-detail-row">
+                    <span class="tree-connector">├─</span>
+                    <span class="src-jewelry">PJ-X-00071</span>
+                    <span class="part-name">花瓣片</span>
+                    <span class="src-calc">3/组合 × 20 = 60</span>
+                  </div>
+                  <div class="source-detail-row">
+                    <span class="tree-connector">└─</span>
+                    <span class="src-jewelry">PJ-X-00072</span>
+                    <span class="part-name">中心宝石</span>
+                    <span class="src-calc">1/组合 × 20 = 20</span>
+                  </div>
+                  <div class="info-note">注：库存已有 30 件花型吊坠头，不计入子配件需求</div>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+
+        <!-- Sub-row 2a: 吊坠基座 (子配件) -->
+        <tr class="sub-row">
+          <td><button class="expand-toggle">▶</button></td>
+          <td><span class="sub-indent">└─</span>PJ-X-00070</td>
+          <td>
+            <div class="part-cell">
+              <div class="part-thumb" style="background:#b08968; width:28px; height:28px; font-size:11px;">座</div>
+              <span class="part-name">吊坠基座</span>
+              <span class="tag-sub">来自「花型吊坠头」</span>
+            </div>
+          </td>
+          <td class="center">20</td>
+          <td class="center">60</td>
+          <td class="center">100</td>
+          <td class="center">0</td>
+          <td class="center"><span class="qty-green">0</span></td>
+        </tr>
+
+        <!-- Sub-row 2b: 花瓣片 (子配件) — 短缺 -->
+        <tr class="sub-row">
+          <td><button class="expand-toggle">▶</button></td>
+          <td><span class="sub-indent">└─</span>PJ-X-00071</td>
+          <td>
+            <div class="part-cell">
+              <div class="part-thumb" style="background:#e63946; width:28px; height:28px; font-size:11px;">瓣</div>
+              <span class="part-name">花瓣片</span>
+              <span class="tag-sub">来自「花型吊坠头」</span>
+            </div>
+          </td>
+          <td class="center">60</td>
+          <td class="center">120</td>
+          <td class="center">40</td>
+          <td class="center">10</td>
+          <td class="center"><span class="qty-red">30</span></td>
+        </tr>
+
+        <!-- Sub-row 2c: 中心宝石 (子配件) -->
+        <tr class="sub-row">
+          <td><button class="expand-toggle">▶</button></td>
+          <td><span class="sub-indent">└─</span>PJ-X-00072</td>
+          <td>
+            <div class="part-cell">
+              <div class="part-thumb" style="background:#7209b7; width:28px; height:28px; font-size:11px;">石</div>
+              <span class="part-name">中心宝石</span>
+              <span class="tag-sub">来自「花型吊坠头」</span>
+            </div>
+          </td>
+          <td class="center">20</td>
+          <td class="center">45</td>
+          <td class="center">15</td>
+          <td class="center">0</td>
+          <td class="center"><span class="qty-red">5</span></td>
+        </tr>
+
+        <!-- Row 3: 龙虾扣 -->
+        <tr>
+          <td><button class="expand-toggle">▶</button></td>
+          <td>PJ-X-00034</td>
+          <td><div class="part-cell"><div class="part-thumb" style="background:#e9c46a;">扣</div><span class="part-name">龙虾扣</span></div></td>
+          <td class="center">50</td>
+          <td class="center">100</td>
+          <td class="center">80</td>
+          <td class="center">0</td>
+          <td class="center"><span class="qty-green">0</span></td>
+        </tr>
+
+        <!-- Row 4: 开口圆环 -->
+        <tr>
+          <td><button class="expand-toggle">▶</button></td>
+          <td>PJ-X-00051</td>
+          <td><div class="part-cell"><div class="part-thumb" style="background:#8d99ae;">环</div><span class="part-name">开口圆环</span></div></td>
+          <td class="center">100</td>
+          <td class="center">300</td>
+          <td class="center">500</td>
+          <td class="center">20</td>
+          <td class="center"><span class="qty-green">0</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     VARIANT B: 组合行下方嵌入黄色子配件 breakdown
+     ═══════════════════════════════════════════ -->
+<h2 class="variant-header">方案 B — 子配件保留在组合行的展开面板内，不另行列出
+  <small>优点：表格更精简，子配件只作为组装信息参考；缺点：子配件无法独立筛选、统计</small>
+</h2>
+
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">配件汇总（BOM）</div>
+    <div class="card-header-right">
+      <button class="btn">裁剪统计</button>
+      <button class="btn">导出 PDF</button>
+      <div class="parts-filter">
+        <button class="parts-filter-item parts-filter-item--active">全部 <span class="filter-count">4</span></button>
+        <button class="parts-filter-item">需关注 <span class="filter-count">1</span></button>
+        <button class="parts-filter-item">已充足 <span class="filter-count">3</span></button>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <table class="parts-table">
+      <thead>
+        <tr>
+          <th style="width:32px"></th>
+          <th style="width:120px">配件编号</th>
+          <th style="min-width:180px">配件</th>
+          <th class="center" style="width:80px">总需求量</th>
+          <th class="center" style="width:90px">全局总需求</th>
+          <th class="center" style="width:80px">当前库存</th>
+          <th class="center" style="width:80px">他人预留</th>
+          <th class="center" style="width:90px">剩余需求量</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><button class="expand-toggle">▶</button></td>
+          <td>PJ-LT-00012</td>
+          <td><div class="part-cell"><div class="part-thumb" style="background:#6c8ebf;">链</div><span class="part-name">18K金链条</span></div></td>
+          <td class="center">50</td>
+          <td class="center">180</td>
+          <td class="center">120</td>
+          <td class="center">40</td>
+          <td class="center"><span class="qty-green">0</span></td>
+        </tr>
+
+        <!-- 花型吊坠头 (组合) — 展开 with breakdown -->
+        <tr>
+          <td><button class="expand-toggle expanded" onclick="toggleExpand(this)">▶</button></td>
+          <td>PJ-DZ-00008</td>
+          <td>
+            <div class="part-cell">
+              <div class="part-thumb" style="background:#e76f51;">花</div>
+              <span class="part-name">花型吊坠头</span>
+              <span class="tag-composite">组合</span>
+            </div>
+          </td>
+          <td class="center">50</td>
+          <td class="center">50</td>
+          <td class="center">30</td>
+          <td class="center">0</td>
+          <td class="center"><span class="qty-red">20</span></td>
+        </tr>
+        <tr class="expand-row">
+          <td colspan="8">
+            <div class="expand-content expanded">
+              <div class="expand-inner">
+                <div class="expand-section">
+                  <div class="expand-section-title">需求来源（饰品）</div>
+                  <div class="source-detail-row">
+                    <span class="tree-connector">└─</span>
+                    <span class="src-jewelry">SP-0012</span>
+                    <a class="src-jewelry-name">花型吊坠</a>
+                    <span class="src-calc">1/件 × 50件</span>
+                    <span class="src-subtotal">= 50</span>
+                  </div>
+                </div>
+              </div>
+              <div class="composite-breakdown">
+                <div class="composite-breakdown-title">
+                  🛠 组装所需子配件（需自行组装 20 件，库存 30 件不计）
+                </div>
+                <div class="composite-sub-row">
+                  <div class="composite-sub-thumb" style="background:#b08968;">座</div>
+                  <span class="composite-sub-id">PJ-X-00070</span>
+                  <span class="composite-sub-name">吊坠基座</span>
+                  <span class="composite-sub-calc">1/组合 × 20 = 20（库存 100，充足）</span>
+                </div>
+                <div class="composite-sub-row">
+                  <div class="composite-sub-thumb" style="background:#e63946;">瓣</div>
+                  <span class="composite-sub-id">PJ-X-00071</span>
+                  <span class="composite-sub-name">花瓣片</span>
+                  <span class="composite-sub-calc" style="color:#ff4d4f;">3/组合 × 20 = 60（库存 40，<strong>缺 20</strong>）</span>
+                </div>
+                <div class="composite-sub-row">
+                  <div class="composite-sub-thumb" style="background:#7209b7;">石</div>
+                  <span class="composite-sub-id">PJ-X-00072</span>
+                  <span class="composite-sub-name">中心宝石</span>
+                  <span class="composite-sub-calc" style="color:#ff4d4f;">1/组合 × 20 = 20（库存 15，<strong>缺 5</strong>）</span>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+
+        <tr>
+          <td><button class="expand-toggle">▶</button></td>
+          <td>PJ-X-00034</td>
+          <td><div class="part-cell"><div class="part-thumb" style="background:#e9c46a;">扣</div><span class="part-name">龙虾扣</span></div></td>
+          <td class="center">50</td>
+          <td class="center">100</td>
+          <td class="center">80</td>
+          <td class="center">0</td>
+          <td class="center"><span class="qty-green">0</span></td>
+        </tr>
+        <tr>
+          <td><button class="expand-toggle">▶</button></td>
+          <td>PJ-X-00051</td>
+          <td><div class="part-cell"><div class="part-thumb" style="background:#8d99ae;">环</div><span class="part-name">开口圆环</span></div></td>
+          <td class="center">100</td>
+          <td class="center">300</td>
+          <td class="center">500</td>
+          <td class="center">20</td>
+          <td class="center"><span class="qty-green">0</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     VARIANT C: 子配件需求累加到独立行（如果已在其他饰品 BOM 中出现则合并）
+     ═══════════════════════════════════════════ -->
+<h2 class="variant-header">方案 C — 子配件作为独立行显示，需求与直接 BOM 合并求和
+  <small>推荐：最接近采购/备料的真实逻辑。子配件只出现一次，需求为「直接用量 + 组合缺口带来的用量」合计</small>
+</h2>
+
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-left">配件汇总（BOM）</div>
+    <div class="card-header-right">
+      <button class="btn">裁剪统计</button>
+      <button class="btn">导出 PDF</button>
+      <div class="parts-filter">
+        <button class="parts-filter-item parts-filter-item--active">全部 <span class="filter-count">7</span></button>
+        <button class="parts-filter-item">需关注 <span class="filter-count">3</span></button>
+        <button class="parts-filter-item">已充足 <span class="filter-count">4</span></button>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <table class="parts-table">
+      <thead>
+        <tr>
+          <th style="width:32px"></th>
+          <th style="width:120px">配件编号</th>
+          <th style="min-width:180px">配件</th>
+          <th class="center" style="width:80px">总需求量</th>
+          <th class="center" style="width:90px">全局总需求</th>
+          <th class="center" style="width:80px">当前库存</th>
+          <th class="center" style="width:80px">他人预留</th>
+          <th class="center" style="width:90px">剩余需求量</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><button class="expand-toggle">▶</button></td>
+          <td>PJ-LT-00012</td>
+          <td><div class="part-cell"><div class="part-thumb" style="background:#6c8ebf;">链</div><span class="part-name">18K金链条</span></div></td>
+          <td class="center">50</td>
+          <td class="center">180</td>
+          <td class="center">120</td>
+          <td class="center">40</td>
+          <td class="center"><span class="qty-green">0</span></td>
+        </tr>
+
+        <!-- 组合配件保留（便于查看是否有成品库存可用） -->
+        <tr>
+          <td><button class="expand-toggle">▶</button></td>
+          <td>PJ-DZ-00008</td>
+          <td>
+            <div class="part-cell">
+              <div class="part-thumb" style="background:#e76f51;">花</div>
+              <span class="part-name">花型吊坠头</span>
+              <span class="tag-composite">组合</span>
+            </div>
+          </td>
+          <td class="center">50</td>
+          <td class="center">50</td>
+          <td class="center">30</td>
+          <td class="center">0</td>
+          <td class="center"><span class="qty-red">20</span></td>
+        </tr>
+
+        <!-- 子配件 1: 吊坠基座 — 展开查看来源 -->
+        <tr>
+          <td><button class="expand-toggle expanded" onclick="toggleExpand(this)">▶</button></td>
+          <td>PJ-X-00070</td>
+          <td>
+            <div class="part-cell">
+              <div class="part-thumb" style="background:#b08968;">座</div>
+              <span class="part-name">吊坠基座</span>
+            </div>
+          </td>
+          <td class="center">20</td>
+          <td class="center">60</td>
+          <td class="center">100</td>
+          <td class="center">0</td>
+          <td class="center"><span class="qty-green">0</span></td>
+        </tr>
+        <tr class="expand-row">
+          <td colspan="8">
+            <div class="expand-content expanded">
+              <div class="expand-inner">
+                <div class="expand-section">
+                  <div class="expand-section-title">需求来源</div>
+                  <div class="source-detail-row">
+                    <span class="tree-connector">└─</span>
+                    <span class="src-composite">
+                      <span class="tag-composite" style="margin-left:0;">组合</span>
+                      花型吊坠头
+                    </span>
+                    <span class="src-calc">1/组合 × 20缺口 = 20</span>
+                    <span class="src-calc" style="color:#aaa;">（来自 SP-0012 花型吊坠）</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+
+        <!-- 子配件 2: 花瓣片 — 重点展示（假设它也直接被另一个饰品引用，需求合并） -->
+        <tr>
+          <td><button class="expand-toggle expanded" onclick="toggleExpand(this)">▶</button></td>
+          <td>PJ-X-00071</td>
+          <td>
+            <div class="part-cell">
+              <div class="part-thumb" style="background:#e63946;">瓣</div>
+              <span class="part-name">花瓣片</span>
+            </div>
+          </td>
+          <td class="center">60</td>
+          <td class="center">120</td>
+          <td class="center">40</td>
+          <td class="center">10</td>
+          <td class="center"><span class="qty-red">30</span></td>
+        </tr>
+        <tr class="expand-row">
+          <td colspan="8">
+            <div class="expand-content expanded">
+              <div class="expand-inner">
+                <div class="expand-section">
+                  <div class="expand-section-title">需求来源（合计 60）</div>
+                  <div class="source-detail-row">
+                    <span class="tree-connector">└─</span>
+                    <span class="src-composite">
+                      <span class="tag-composite" style="margin-left:0;">组合</span>
+                      花型吊坠头
+                    </span>
+                    <span class="src-calc">3/组合 × 20缺口 = 60</span>
+                    <span class="src-calc" style="color:#aaa;">（来自 SP-0012 花型吊坠）</span>
+                  </div>
+                  <div class="info-note">如果该子配件在其他饰品的 BOM 中被直接使用，这里会把「直接需求」与「组合缺口需求」合并显示。</div>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+
+        <!-- 子配件 3: 中心宝石 -->
+        <tr>
+          <td><button class="expand-toggle">▶</button></td>
+          <td>PJ-X-00072</td>
+          <td>
+            <div class="part-cell">
+              <div class="part-thumb" style="background:#7209b7;">石</div>
+              <span class="part-name">中心宝石</span>
+            </div>
+          </td>
+          <td class="center">20</td>
+          <td class="center">45</td>
+          <td class="center">15</td>
+          <td class="center">0</td>
+          <td class="center"><span class="qty-red">5</span></td>
+        </tr>
+
+        <tr>
+          <td><button class="expand-toggle">▶</button></td>
+          <td>PJ-X-00034</td>
+          <td><div class="part-cell"><div class="part-thumb" style="background:#e9c46a;">扣</div><span class="part-name">龙虾扣</span></div></td>
+          <td class="center">50</td>
+          <td class="center">100</td>
+          <td class="center">80</td>
+          <td class="center">0</td>
+          <td class="center"><span class="qty-green">0</span></td>
+        </tr>
+        <tr>
+          <td><button class="expand-toggle">▶</button></td>
+          <td>PJ-X-00051</td>
+          <td><div class="part-cell"><div class="part-thumb" style="background:#8d99ae;">环</div><span class="part-name">开口圆环</span></div></td>
+          <td class="center">100</td>
+          <td class="center">300</td>
+          <td class="center">500</td>
+          <td class="center">20</td>
+          <td class="center"><span class="qty-green">0</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function toggleExpand(btn) {
+  btn.classList.toggle('expanded');
+  const row = btn.closest('tr');
+  const expandRow = row.nextElementSibling;
+  if (expandRow && expandRow.classList.contains('expand-row')) {
+    const content = expandRow.querySelector('.expand-content');
+    if (content) {
+      content.classList.toggle('collapsed');
+      content.classList.toggle('expanded');
+    }
+  }
+}
+</script>
+
+</body>
+</html>

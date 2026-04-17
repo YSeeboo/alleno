@@ -225,3 +225,48 @@ class PartsSummaryItemResponse(BaseModel):
     # disagree with the raw comparison around fractional meter quantities.
     globally_sufficient: bool
     source_jewelries: list[SourceJewelryItem] = []
+
+
+# --- Picking Simulation (配货模拟) ---
+
+
+class PickingVariant(BaseModel):
+    """One (qty_per_unit, units_count) row under a part."""
+    qty_per_unit: float
+    units_count: int
+    subtotal: float
+    picked: bool
+
+
+class PickingPartRow(BaseModel):
+    """One part with its variants. `is_composite_child=True` means this part
+    appears — at least partly — because of a composite parent in some
+    jewelry's BOM."""
+    part_id: str
+    part_name: str
+    part_image: Optional[str] = None
+    current_stock: float
+    is_composite_child: bool
+    variants: List[PickingVariant]
+    total_required: float
+
+
+class PickingProgress(BaseModel):
+    total: int    # total number of variant rows
+    picked: int   # number of variant rows currently marked picked
+
+
+class PickingSimulationResponse(BaseModel):
+    order_id: str
+    customer_name: str
+    rows: List[PickingPartRow]
+    progress: PickingProgress
+
+
+class PickingMarkRequest(BaseModel):
+    part_id: str
+    qty_per_unit: float
+
+
+class PickingPdfRequest(BaseModel):
+    include_picked: bool = False

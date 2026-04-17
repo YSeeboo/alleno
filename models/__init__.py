@@ -2,7 +2,7 @@ from .part import Part, PartCostLog
 from .jewelry import Jewelry
 from .bom import Bom
 from .part_bom import PartBom
-from .order import Order, OrderItem, OrderTodoItem, OrderItemLink
+from .order import Order, OrderItem, OrderTodoItem, OrderItemLink, OrderPickingRecord
 from .inventory_log import InventoryLog
 from .plating_order import PlatingOrder, PlatingOrderItem
 from .handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
@@ -25,8 +25,9 @@ __all__ = [
     "PartBom",
     "Order",
     "OrderItem",
-    "OrderTodoItem",
     "OrderItemLink",
+    "OrderPickingRecord",
+    "OrderTodoItem",
     "InventoryLog",
     "PlatingOrder",
     "PlatingOrderItem",

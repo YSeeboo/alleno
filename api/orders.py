@@ -13,6 +13,7 @@ from schemas.order import (
     OrderTodoItemResponse, LinkCreateRequest, LinkResponse,
     BatchLinkRequest, BatchLinkResponse, OrderProgressResponse,
     OrderItemUpdate, BatchCustomerCodeRequest, PartsSummaryItemResponse,
+    PickingSimulationResponse, PickingMarkRequest, PickingPdfRequest,
 )
 from schemas.order import OrderItemCreate
 from schemas.order_cost_snapshot import OrderCostSnapshotResponse
@@ -39,18 +40,18 @@ from services.order_todo import (
 )
 from schemas.order import TodoBatchCreateRequest, LinkSupplierRequest
 from services.order_todo_pdf import build_order_todo_pdf
-from services.parts_summary_pdf import build_parts_summary_pdf
 from services.cutting_stats import get_order_cutting_stats
 from services.cutting_stats_pdf import build_cutting_stats_pdf
+from services.picking import (
+    get_picking_simulation, mark_picked, unmark_picked, reset_picking,
+)
+from services.picking_list_pdf import build_picking_list_pdf
 from api._errors import service_errors
 
 
 class PackagingCostUpdate(_BaseModel):
     packaging_cost: float = _Field(ge=0)
 
-
-class PartsSummaryPdfRequest(_BaseModel):
-    part_ids: list[str] = _Field(default_factory=list)
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
@@ -182,34 +183,6 @@ def api_download_todo_pdf(order_id: str, batch_id: int | None = None, db: Sessio
         headers={
             "Content-Disposition": (
                 f'attachment; filename="todo-{order_id}.pdf"; filename*=UTF-8\'\'{quote(filename)}'
-            )
-        },
-    )
-
-
-@router.post("/{order_id}/parts-summary/pdf")
-def api_download_parts_summary_pdf(
-    order_id: str,
-    body: PartsSummaryPdfRequest,
-    db: Session = Depends(get_db),
-):
-    """导出配件汇总 PDF。part_ids 由前端按当前筛选/排序传入，后端只负责渲染。"""
-    order = get_order(db, order_id)
-    if order is None:
-        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
-    if not body.part_ids:
-        raise HTTPException(status_code=400, detail="part_ids 不能为空")
-    with service_errors():
-        file_bytes, filename = build_parts_summary_pdf(
-            db, order_id, order.customer_name, part_ids=body.part_ids,
-        )
-    return Response(
-        content=file_bytes,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": (
-                f'attachment; filename="parts-summary-{order_id}.pdf"; '
-                f"filename*=UTF-8''{quote(filename)}"
             )
         },
     )
@@ -391,3 +364,71 @@ def api_get_order_progress(order_id: str, db: Session = Depends(get_db)):
     if order is None:
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
     return get_order_progress(db, order_id)
+
+
+# --- Picking simulation (配货模拟) ---
+
+
+@router.get("/{order_id}/picking", response_model=PickingSimulationResponse)
+def api_get_picking(order_id: str, db: Session = Depends(get_db)):
+    """Aggregate order parts into a picking-oriented structure, join picked state."""
+    with service_errors():
+        return get_picking_simulation(db, order_id)
+
+
+@router.post("/{order_id}/picking/mark")
+def api_picking_mark(
+    order_id: str,
+    body: PickingMarkRequest,
+    db: Session = Depends(get_db),
+):
+    """Mark a variant as picked. Idempotent."""
+    with service_errors():
+        result = mark_picked(db, order_id, body.part_id, body.qty_per_unit)
+    return {"picked": result.picked, "picked_at": result.picked_at}
+
+
+@router.post("/{order_id}/picking/unmark")
+def api_picking_unmark(
+    order_id: str,
+    body: PickingMarkRequest,
+    db: Session = Depends(get_db),
+):
+    """Unmark a variant. Idempotent."""
+    with service_errors():
+        result = unmark_picked(db, order_id, body.part_id, body.qty_per_unit)
+    return {"picked": result.picked}
+
+
+@router.delete("/{order_id}/picking/reset")
+def api_picking_reset(order_id: str, db: Session = Depends(get_db)):
+    """Clear all picking records for this order."""
+    with service_errors():
+        deleted = reset_picking(db, order_id)
+    return {"deleted": deleted}
+
+
+@router.post("/{order_id}/picking/pdf")
+def api_picking_pdf(
+    order_id: str,
+    body: PickingPdfRequest,
+    db: Session = Depends(get_db),
+):
+    """Export the picking list PDF. By default, only unpicked rows appear."""
+    order = get_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    with service_errors():
+        file_bytes, filename = build_picking_list_pdf(
+            db, order_id, order.customer_name, include_picked=body.include_picked,
+        )
+    return Response(
+        content=file_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="picking-list-{order_id}.pdf"; '
+                f"filename*=UTF-8''{quote(filename)}"
+            )
+        },
+    )

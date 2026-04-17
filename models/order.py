@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 
 from database import Base
 from time_utils import now_beijing
@@ -72,3 +72,22 @@ class OrderItemLink(Base):
     handcraft_part_item_id = Column(Integer, ForeignKey("handcraft_part_item.id"), nullable=True, unique=True)
     handcraft_jewelry_item_id = Column(Integer, ForeignKey("handcraft_jewelry_item.id"), nullable=True, unique=True)
     purchase_order_item_id = Column(Integer, ForeignKey("purchase_order_item.id"), nullable=True, unique=True)
+
+
+class OrderPickingRecord(Base):
+    """Per-variant picking state for the 配货模拟 (picking simulation) feature.
+    Row exists = picked; no row = not picked. No boolean column — presence IS
+    the state. Does not affect inventory or order status; purely a UI helper."""
+
+    __tablename__ = "order_picking_record"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(String, ForeignKey("order.id"), nullable=False, index=True)
+    part_id = Column(String, ForeignKey("part.id"), nullable=False)
+    qty_per_unit = Column(Numeric(10, 4), nullable=False)
+    picked_at = Column(DateTime, default=now_beijing, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("order_id", "part_id", "qty_per_unit",
+                         name="uq_order_picking_record_order_part_qty"),
+    )

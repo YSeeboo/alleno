@@ -30,13 +30,6 @@ export const linkBatchSupplier = (orderId, batchId, supplierName) =>
   api.post(`/orders/${orderId}/todo-batch/${batchId}/link-supplier`, { supplier_name: supplierName })
 export const downloadBatchPdf = (orderId, batchId) =>
   api.get(`/orders/${orderId}/todo-pdf`, { params: { batch_id: batchId }, responseType: 'blob' })
-export const downloadPartsSummaryPdf = (orderId, partIds) =>
-  api.post(
-    `/orders/${orderId}/parts-summary/pdf`,
-    { part_ids: partIds },
-    { responseType: 'blob' },
-  )
-
 // --- Customer Code ---
 export const updateOrderItem = (orderId, itemId, data) =>
   api.patch(`/orders/${orderId}/items/${itemId}`, data)
@@ -55,3 +48,24 @@ export const updatePackagingCost = (orderId, data) => api.patch(`/orders/${order
 export const getCuttingStats = (orderId) => api.get(`/orders/${orderId}/cutting-stats`)
 export const downloadCuttingStatsPdf = (orderId) =>
   api.post(`/orders/${orderId}/cutting-stats/pdf`, {}, { responseType: 'blob' })
+
+// --- Picking Simulation (配货模拟) ---
+export const getPicking = (orderId) => api.get(`/orders/${orderId}/picking`)
+export const markPicked = (orderId, partId, qtyPerUnit) =>
+  api.post(`/orders/${orderId}/picking/mark`, {
+    part_id: partId,
+    qty_per_unit: qtyPerUnit,
+  })
+export const unmarkPicked = (orderId, partId, qtyPerUnit) =>
+  api.post(`/orders/${orderId}/picking/unmark`, {
+    part_id: partId,
+    qty_per_unit: qtyPerUnit,
+  })
+export const resetPicking = (orderId) =>
+  api.delete(`/orders/${orderId}/picking/reset`)
+export const downloadPickingListPdf = (orderId, includePicked = false) =>
+  api.post(
+    `/orders/${orderId}/picking/pdf`,
+    { include_picked: includePicked },
+    { responseType: 'blob' },
+  )
