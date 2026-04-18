@@ -1,0 +1,70 @@
+/* frontend/src/styles/responsive.css */
+
+/* ===== Global Mobile Overrides (max-width: 768px) ===== */
+@media (max-width: 768px) {
+
+  /* --- Layout --- */
+  .n-layout-content {
+    padding: 12px !important;
+  }
+
+  /* --- Filter bars: stack vertically --- */
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 8px;
+  }
+  .filter-bar > * {
+    width: 100% !important;
+  }
+  .filter-bar .n-input,
+  .filter-bar .n-select {
+    width: 100% !important;
+  }
+  .filter-bar-end {
+    margin-top: 4px;
+  }
+
+  /* --- Page header: tighter spacing --- */
+  .page-header {
+    padding: 0 0 8px 0;
+  }
+  .page-title {
+    font-size: 18px !important;
+  }
+
+  /* --- Modals: full-width on mobile --- */
+  .n-modal {
+    width: 95vw !important;
+    max-width: 95vw !important;
+  }
+
+  /* --- Forms: full-width inputs --- */
+  .n-form-item .n-input,
+  .n-form-item .n-select,
+  .n-form-item .n-input-number,
+  .n-form-item .n-date-picker {
+    width: 100% !important;
+  }
+
+  /* --- Data tables: horizontal scroll --- */
+  .n-data-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* --- Cards: reduce padding --- */
+  .n-card .n-card__content {
+    padding: 12px !important;
+  }
+
+  /* --- Inline fixed-width inputs in tables/forms --- */
+  .n-input-number {
+    min-width: 80px;
+  }
+
+  /* --- NSpace: allow wrapping --- */
+  .n-space {
+    flex-wrap: wrap !important;
+  }
+}
