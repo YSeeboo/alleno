@@ -4,7 +4,7 @@
       <h2 class="page-title">仪表盘</h2>
       <div class="page-divider"></div>
     </div>
-    <n-grid :cols="4" :x-gap="16" :y-gap="16">
+    <n-grid :cols="isMobile ? 2 : 4" :x-gap="12" :y-gap="12">
       <n-gi v-for="card in cards" :key="card.key">
         <n-card
           hoverable
@@ -25,6 +25,7 @@
 
 <script setup>
 import { reactive, onMounted } from 'vue'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { useRouter } from 'vue-router'
 import { NGrid, NGi, NCard, NSpin, NH1, NText } from 'naive-ui'
 import { listParts } from '@/api/parts'
@@ -34,6 +35,7 @@ import { listPlating } from '@/api/plating'
 import { listHandcraft } from '@/api/handcraft'
 
 const router = useRouter()
+const { isMobile } = useIsMobile()
 
 const cards = reactive([
   { key: 'low-stock', title: '低库存配件（< 10）', value: null, loading: true, route: '/parts', color: '#F59E0B' },
