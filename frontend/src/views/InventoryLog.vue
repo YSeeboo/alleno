@@ -9,11 +9,11 @@
         v-model:value="filters.item_type"
         :options="[{ label: '全部', value: null }, { label: '配件', value: 'part' }, { label: '饰品', value: 'jewelry' }]"
         placeholder="品类"
-        style="width: 100px;"
+        :style="{ width: isMobile ? '100%' : '100px' }"
         @update:value="resetAndLoad"
       />
-      <n-input v-model:value="filters.item_id" placeholder="编号" style="width: 160px;" clearable @clear="resetAndLoad" @keyup.enter="resetAndLoad" />
-      <n-input v-model:value="filters.reason" placeholder="原因" style="width: 140px;" clearable @clear="resetAndLoad" @keyup.enter="resetAndLoad" />
+      <n-input v-model:value="filters.item_id" placeholder="编号" :style="{ width: isMobile ? '100%' : '160px' }" clearable @clear="resetAndLoad" @keyup.enter="resetAndLoad" />
+      <n-input v-model:value="filters.reason" placeholder="原因" :style="{ width: isMobile ? '100%' : '140px' }" clearable @clear="resetAndLoad" @keyup.enter="resetAndLoad" />
       <n-button type="primary" :loading="loading" @click="resetAndLoad">查询</n-button>
     </n-space>
 
@@ -25,9 +25,11 @@
 
 <script setup>
 import { ref, reactive, onMounted, h } from 'vue'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { NSpace, NButton, NSelect, NInput, NDataTable, NSpin } from 'naive-ui'
 import { listStockLogs } from '@/api/inventory'
 
+const { isMobile } = useIsMobile()
 const PAGE_SIZE = 50
 
 const filters = reactive({

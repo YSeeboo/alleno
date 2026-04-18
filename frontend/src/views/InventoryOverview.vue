@@ -10,7 +10,7 @@
       <n-select
         v-model:value="itemType"
         :options="itemTypeOptions"
-        style="width: 140px;"
+        :style="{ width: isMobile ? '100%' : '140px' }"
         placeholder="全部品类"
         clearable
       />
@@ -18,7 +18,7 @@
         v-model:value="searchName"
         placeholder="搜索编号或名称"
         clearable
-        style="width: 220px;"
+        :style="{ width: isMobile ? '100%' : '220px' }"
         @keydown.enter="load"
       />
       <n-switch v-model:value="inStockOnly" />
@@ -33,7 +33,7 @@
       <n-empty v-else-if="!loading" description="暂无库存数据" style="margin-top: 24px;" />
     </n-spin>
 
-    <n-modal v-model:show="showStockModal" preset="card" :title="stockAction === 'add' ? '快速入库' : '快速出库'" style="width: 380px;">
+    <n-modal v-model:show="showStockModal" preset="card" :title="stockAction === 'add' ? '快速入库' : '快速出库'" :style="{ width: isMobile ? '95vw' : '380px' }">
       <form @submit.prevent="doStock">
       <n-form label-placement="left" label-width="80">
         <n-form-item label="对象">
@@ -67,6 +67,7 @@
 
 <script setup>
 import { computed, h, ref, onMounted } from 'vue'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
@@ -78,6 +79,7 @@ import { renderNamedImage } from '@/utils/ui'
 
 const router = useRouter()
 const message = useMessage()
+const { isMobile } = useIsMobile()
 
 const loading = ref(false)
 const rows = ref([])
