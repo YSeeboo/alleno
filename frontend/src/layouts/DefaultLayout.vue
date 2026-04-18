@@ -1,9 +1,9 @@
 <template>
   <n-layout style="height: 100vh">
-    <n-layout-header bordered style="height: 52px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between;">
+    <n-layout-header bordered :style="{ height: '52px', padding: isMobile ? '0 12px' : '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }">
       <div class="brand">
-        <span class="brand-icon">◈</span>
-        <span class="brand-en">ALLENOP</span>
+        <span class="brand-icon" @click="collapsed = !collapsed" style="cursor: pointer;">◈</span>
+        <span v-if="!isMobile" class="brand-en">ALLENOP</span>
       </div>
       <div class="header-right">
         <span class="username-text">{{ authStore.user?.owner || authStore.user?.username }}</span>
@@ -11,13 +11,23 @@
       </div>
     </n-layout-header>
     <n-layout has-sider style="height: calc(100vh - 52px)">
+      <div v-if="isMobile && !collapsed" class="sidebar-overlay" @click="collapsed = true" />
       <n-layout-sider
+        v-if="!isMobile || !collapsed"
         bordered
         collapse-mode="width"
-        :collapsed-width="52"
+        :collapsed-width="isMobile ? 0 : 52"
         :width="240"
         :collapsed="collapsed"
-        show-trigger
+        :show-trigger="!isMobile"
+        :native-scrollbar="false"
+        :style="{
+          height: 'calc(100vh - 52px)',
+          position: isMobile ? 'fixed' : 'static',
+          top: isMobile ? '52px' : undefined,
+          left: '0',
+          zIndex: isMobile ? 1000 : undefined,
+        }"
         @collapse="collapsed = true"
         @expand="collapsed = false"
       >
@@ -30,7 +40,7 @@
           @update:value="handleSelect"
         />
       </n-layout-sider>
-      <n-layout-content content-style="padding: 28px; overflow-y: auto;">
+      <n-layout-content :content-style="`padding: ${isMobile ? '12px' : '28px'}; overflow-y: auto;`">
         <router-view />
       </n-layout-content>
     </n-layout>
@@ -38,9 +48,10 @@
 </template>
 
 <script setup>
-import { ref, computed, h } from 'vue'
+import { ref, computed, h, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NLayout, NLayoutHeader, NLayoutSider, NLayoutContent, NMenu, NButton } from 'naive-ui'
+import { useIsMobile } from '@/composables/useIsMobile'
 import {
   HomeOutline, ExtensionPuzzleOutline, DiamondOutline, ReceiptOutline,
   CartOutline, ColorWandOutline, HammerOutline, ListOutline, GridOutline, ArchiveOutline,
@@ -52,6 +63,11 @@ const router = useRouter()
 const route = useRoute()
 const collapsed = ref(false)
 const authStore = useAuthStore()
+const { isMobile } = useIsMobile()
+
+watch(isMobile, (mobile) => {
+  collapsed.value = mobile
+}, { immediate: true })
 
 const icon = (Comp) => () => h(Comp)
 
@@ -150,6 +166,9 @@ const activeKey = computed(() => {
 
 const handleSelect = (key) => {
   router.push(key === 'dashboard' ? '/' : `/${key}`)
+  if (isMobile.value) {
+    collapsed.value = true
+  }
 }
 </script>
 
@@ -194,6 +213,16 @@ const handleSelect = (key) => {
 
 :deep(.n-menu-item-content) {
   height: 36px !important;
+}
+
+.sidebar-overlay {
+  position: fixed;
+  top: 52px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 999;
 }
 
 </style>
