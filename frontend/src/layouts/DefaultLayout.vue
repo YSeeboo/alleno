@@ -19,7 +19,7 @@
         :collapsed-width="isMobile ? 0 : 52"
         :width="240"
         :collapsed="collapsed"
-        :show-trigger="!isMobile"
+        :show-trigger="isMobile ? false : 'bar'"
         :native-scrollbar="false"
         :style="{
           height: 'calc(100vh - 52px)',

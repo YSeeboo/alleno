@@ -1,15 +1,5 @@
 /* frontend/src/styles/responsive.css */
 
-/* ===== Global: data tables always scroll horizontally instead of compressing ===== */
-.n-data-table-wrapper {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-.n-data-table th,
-.n-data-table td {
-  white-space: nowrap;
-}
-
 /* ===== Mobile Overrides (max-width: 768px) ===== */
 @media (max-width: 768px) {
 
@@ -57,7 +47,15 @@
     width: 100% !important;
   }
 
-  /* --- Data tables: (scroll rules moved to global scope above) --- */
+  /* --- Data tables: horizontal scroll instead of compressing columns --- */
+  .n-data-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .n-data-table th,
+  .n-data-table td {
+    white-space: nowrap;
+  }
 
   /* --- Cards: reduce padding --- */
   .n-card .n-card__content {
