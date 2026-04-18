@@ -16,7 +16,7 @@
       <n-empty v-else-if="!loading" description="暂无用户" style="margin-top: 24px;" />
     </n-spin>
 
-    <n-modal v-model:show="showModal" preset="card" :title="editingUser ? '修改用户' : '新建用户'" style="width: 480px;">
+    <n-modal v-model:show="showModal" preset="card" :title="editingUser ? '修改用户' : '新建用户'" :style="{ width: isMobile ? '95vw' : '480px' }">
       <form @submit.prevent="handleSave">
       <n-form ref="modalFormRef" :model="modalForm" :rules="modalRules" label-placement="top">
         <n-form-item label="账号" path="username">
@@ -54,8 +54,10 @@ import {
   NCheckboxGroup, NCheckbox, NSpace, NTag, NPopconfirm, useMessage,
 } from 'naive-ui'
 import { listUsers, createUser, updateUser, deleteUser } from '@/api/users'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const message = useMessage()
+const { isMobile } = useIsMobile()
 const loading = ref(true)
 const users = ref([])
 const showModal = ref(false)

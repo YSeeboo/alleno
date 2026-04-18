@@ -7,12 +7,13 @@
     </div>
 
     <div class="filter-bar">
+      <n-input v-model:value="searchName" placeholder="搜索饰品名称" clearable :style="{ width: isMobile ? '100%' : '200px' }" @update:value="debouncedLoad" />
       <n-select
         v-model:value="filterStatus"
         :options="statusOptions"
         clearable
         placeholder="筛选状态"
-        style="width: 140px;"
+        :style="{ width: isMobile ? '100%' : '140px' }"
         @update:value="load"
       />
       <div class="filter-bar-end">
@@ -26,7 +27,7 @@
       <n-empty v-else-if="!loading" description="暂无数据" style="margin-top: 24px;" />
     </n-spin>
 
-    <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑饰品' : '新增饰品'" style="width: 480px;">
+    <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑饰品' : '新增饰品'" :style="{ width: isMobile ? '95vw' : '480px' }">
       <form @submit.prevent="save">
       <n-form ref="formRef" :model="form" label-placement="left" label-width="100">
         <n-form-item label="名称" path="name" :rule="{ required: true, message: '请输入名称' }">
@@ -85,7 +86,7 @@
     />
 
     <!-- Template selection modal for "从模板创建" -->
-    <n-modal v-model:show="showTemplateSelectModal" preset="card" title="从模板创建饰品" style="width: 520px;">
+    <n-modal v-model:show="showTemplateSelectModal" preset="card" title="从模板创建饰品" :style="{ width: isMobile ? '95vw' : '520px' }">
       <n-spin :show="loadingTemplateList">
         <n-empty v-if="!loadingTemplateList && templateList.length === 0" description="暂无模板" />
         <div v-for="tpl in templateList" :key="tpl.id" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
@@ -104,6 +105,7 @@
 import { ref, reactive, computed, onMounted, watch, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
+import { useIsMobile } from '@/composables/useIsMobile'
 import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
   NModal, NDataTable, NSpin, NEmpty, NImage, NDropdown,
@@ -119,10 +121,12 @@ const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
 const authStore = useAuthStore()
+const { isMobile } = useIsMobile()
 const canUseTemplates = computed(() => authStore.hasPermission('parts'))
 const loading = ref(true)
 const rows = ref([])
 const filterStatus = ref(null)
+const searchName = ref('')
 const statusOptions = [
   { label: '启用', value: 'active' },
   { label: '停用', value: 'inactive' },
@@ -230,6 +234,7 @@ const load = async () => {
   loading.value = true
   try {
     const params = {}
+    if (searchName.value) params.name = searchName.value
     if (filterStatus.value) params.status = filterStatus.value
     const { data: jewelries } = await listJewelries(params)
     const stockMap = jewelries.length
@@ -239,6 +244,12 @@ const load = async () => {
   } finally {
     loading.value = false
   }
+}
+
+let _searchTimer = null
+const debouncedLoad = () => {
+  clearTimeout(_searchTimer)
+  _searchTimer = setTimeout(load, 300)
 }
 
 const openTemplateSelect = async () => {

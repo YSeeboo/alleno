@@ -7,9 +7,9 @@
     </div>
     <div class="filter-bar">
       <n-select v-model:value="filterStatus" :options="statusOptions" clearable placeholder="筛选状态"
-        style="width: 140px;" @update:value="load" />
+        :style="{ width: isMobile ? '100%' : '140px' }" @update:value="load" />
       <n-select v-model:value="filterSupplier" :options="supplierOptions" clearable placeholder="筛选厂家"
-        style="width: 160px;" @update:value="load" />
+        :style="{ width: isMobile ? '100%' : '160px' }" @update:value="load" />
       <div class="filter-bar-end">
         <n-button type="primary" @click="router.push('/plating/create')">新建电镀单</n-button>
       </div>
@@ -27,10 +27,12 @@ import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDialog, useMessage, NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
 import { listPlating, deletePlating, getPlatingSuppliers } from '@/api/plating'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const router = useRouter()
 const dialog = useDialog()
 const message = useMessage()
+const { isMobile } = useIsMobile()
 const loading = ref(true)
 const deletingId = ref(null)
 const rows = ref([])

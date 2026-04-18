@@ -7,13 +7,13 @@
     </div>
 
     <div class="filter-bar">
-      <n-input v-model:value="searchName" placeholder="搜索配件名称" clearable style="width: 200px;" @update:value="debouncedLoad" />
+      <n-input v-model:value="searchName" placeholder="搜索配件名称" clearable :style="{ width: isMobile ? '100%' : '200px' }" @update:value="debouncedLoad" />
       <n-select
         v-model:value="searchCategory"
         :options="categoryOptions"
         clearable
         placeholder="筛选类目"
-        style="width: 160px;"
+        :style="{ width: isMobile ? '100%' : '160px' }"
         @update:value="load"
       />
       <div class="filter-bar-end">
@@ -30,7 +30,7 @@
     </n-spin>
 
     <!-- Create / Edit Modal -->
-    <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑配件' : '新增配件'" style="width: 480px;">
+    <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑配件' : '新增配件'" :style="{ width: isMobile ? '95vw' : '480px' }">
       <form @submit.prevent="save">
       <n-form ref="formRef" :model="form" label-placement="left" label-width="100">
         <n-form-item label="名称" path="name" :rule="{ required: true, message: '请输入名称' }">
@@ -132,7 +132,7 @@
     </n-modal>
 
     <!-- Quick Stock-In Modal -->
-    <n-modal v-model:show="showStockModal" preset="card" title="快速入库" style="width: 360px;">
+    <n-modal v-model:show="showStockModal" preset="card" title="快速入库" :style="{ width: isMobile ? '95vw' : '360px' }">
       <form @submit.prevent="doStock">
       <n-form label-placement="left" label-width="80">
         <n-form-item label="数量">
@@ -151,7 +151,7 @@
       </template>
     </n-modal>
 
-    <n-modal v-model:show="showImportModal" preset="card" title="导入配件" style="width: 560px;">
+    <n-modal v-model:show="showImportModal" preset="card" title="导入配件" :style="{ width: isMobile ? '95vw' : '560px' }">
       <n-space vertical :size="16" style="width: 100%;">
         <div style="padding: 14px 16px; border-radius: 14px; background: #fff9ec; color: #6f5214; line-height: 1.75;">
           仅支持 `.xlsx` 文件。系统按首个工作表导入，表头建议使用：
@@ -205,6 +205,7 @@
 import { ref, reactive, computed, onMounted, watch, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
+import { useIsMobile } from '@/composables/useIsMobile'
 import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
   NModal, NDataTable, NSpin, NEmpty, NDropdown, NImage,
@@ -218,6 +219,7 @@ import BatchImageUpload from '@/components/BatchImageUpload.vue'
 const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
+const { isMobile } = useIsMobile()
 
 const loading = ref(true)
 const rows = ref([])

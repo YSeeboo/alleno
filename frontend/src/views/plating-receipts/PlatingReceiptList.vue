@@ -7,7 +7,7 @@
     </div>
     <div class="filter-bar">
       <n-select v-model:value="filterVendor" :options="vendorOptions" clearable placeholder="筛选商家"
-        style="width: 160px;" @update:value="load" />
+        :style="{ width: isMobile ? '100%' : '160px' }" @update:value="load" />
       <div class="filter-bar-end">
         <n-button type="primary" @click="router.push('/plating-receipts/create')">新建回收单</n-button>
       </div>
@@ -26,10 +26,12 @@ import { useRouter } from 'vue-router'
 import { useDialog, useMessage, NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
 import { listPlatingReceipts, deletePlatingReceipt, getPlatingReceiptVendors } from '@/api/platingReceipts'
 import { fmtMoney } from '@/utils/ui'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const router = useRouter()
 const dialog = useDialog()
 const message = useMessage()
+const { isMobile } = useIsMobile()
 const loading = ref(true)
 const deletingId = ref(null)
 const rows = ref([])

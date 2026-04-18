@@ -20,7 +20,7 @@
         v-model:value="searchQuery"
         placeholder="搜索商家名称"
         clearable
-        style="width: 240px;"
+        :style="{ width: isMobile ? '100%' : '240px' }"
       />
       <div class="filter-bar-end">
         <n-button type="primary" @click="openCreate">新增</n-button>
@@ -37,7 +37,7 @@
       <n-empty v-else-if="!loading" description="暂无商家" style="margin-top: 24px;" />
     </n-spin>
 
-    <n-modal v-model:show="showModal" preset="card" :title="editingSupplier ? '编辑商家' : '新增商家'" style="width: 400px;">
+    <n-modal v-model:show="showModal" preset="card" :title="editingSupplier ? '编辑商家' : '新增商家'" :style="{ width: isMobile ? '95vw' : '400px' }">
       <form @submit.prevent="handleSave">
       <n-form label-placement="top">
         <n-form-item label="商家名称">
@@ -58,6 +58,7 @@
 <script setup>
 import { ref, computed, onMounted, h } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
+import { useIsMobile } from '@/composables/useIsMobile'
 import {
   NTabs, NTabPane, NInput, NButton, NSpin, NDataTable,
   NEmpty, NModal, NForm, NFormItem, NSpace,
@@ -66,6 +67,7 @@ import { listSuppliers, createSupplier, updateSupplier, deleteSupplier } from '@
 
 const message = useMessage()
 const dialog = useDialog()
+const { isMobile } = useIsMobile()
 
 const tabs = [
   { label: '电镀厂', value: 'plating' },

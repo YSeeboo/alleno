@@ -11,7 +11,7 @@
         :options="statusOptions"
         clearable
         placeholder="筛选状态"
-        style="width: 140px;"
+        :style="{ width: isMobile ? '100%' : '140px' }"
         @update:value="load"
       />
       <div class="filter-bar-end">
@@ -31,8 +31,10 @@ import { useRouter } from 'vue-router'
 import { NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
 import { listOrders, batchGetProgress } from '@/api/orders'
 import { fmtMoney } from '@/utils/ui'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const router = useRouter()
+const { isMobile } = useIsMobile()
 const loading = ref(true)
 const orders = ref([])
 const filterStatus = ref(null)
