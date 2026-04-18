@@ -8,7 +8,7 @@
     <n-spin :show="loading">
       <n-empty v-if="!loading && !receipt" description="加载失败，请返回重试" style="margin-top: 24px;" />
       <n-card v-if="receipt" title="基本信息" style="margin-bottom: 16px;">
-        <n-descriptions :column="3" bordered>
+        <n-descriptions :column="isMobile ? 1 : 3" bordered>
           <n-descriptions-item label="回收单号">{{ receipt.id }}</n-descriptions-item>
           <n-descriptions-item label="商家">{{ receipt.vendor_name }}</n-descriptions-item>
           <n-descriptions-item label="状态">
@@ -34,7 +34,7 @@
                   v-model:value="editingCreatedAtTs"
                   type="date"
                   size="small"
-                  style="width: 160px;"
+                  :style="{ width: isMobile ? '100%' : '160px' }"
                 />
                 <n-button size="small" type="primary" :loading="savingCreatedAt" @click="saveCreatedAt">确认</n-button>
                 <n-button size="small" :disabled="savingCreatedAt" @click="editingCreatedAt = false">取消</n-button>
@@ -160,9 +160,9 @@
     </n-spin>
 
     <!-- Edit Item Modal -->
-    <n-modal v-model:show="editModalVisible" preset="card" title="修改明细" style="width: 500px;">
+    <n-modal v-model:show="editModalVisible" preset="card" title="修改明细" :style="{ width: isMobile ? '95vw' : '500px' }">
       <form @submit.prevent="doEditItem">
-      <n-form label-placement="left" label-width="90">
+      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="90">
         <n-form-item label="数量">
           <n-input-number v-model:value="editForm.qty" :min="0.0001" :precision="4" :step="1" style="width: 100%;" />
         </n-form-item>
@@ -200,13 +200,13 @@
     />
 
     <!-- Add Items Modal -->
-    <n-modal v-model:show="addItemsModalVisible" preset="card" :title="`增加回收配件（${receipt?.vendor_name}）`" style="width: 800px;">
+    <n-modal v-model:show="addItemsModalVisible" preset="card" :title="`增加回收配件（${receipt?.vendor_name}）`" :style="{ width: isMobile ? '95vw' : '800px' }">
       <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
         <n-input
           v-model:value="addItemsFilterKeyword"
           placeholder="编号/名称搜索"
           clearable
-          style="width: 200px;"
+          :style="{ width: isMobile ? '100%' : '200px' }"
           @update:value="onAddItemsFilterKeyword"
         />
         <span style="font-size: 13px; color: #666;">发出日期</span>
@@ -214,7 +214,7 @@
           v-model:value="addItemsFilterDateOn"
           type="date"
           clearable
-          style="width: 160px;"
+          :style="{ width: isMobile ? '100%' : '160px' }"
           @update:value="onAddItemsFilterDate"
         />
       </div>
@@ -241,7 +241,7 @@
     </n-modal>
 
     <!-- Cost Diff Modal (from add items) -->
-    <n-modal v-model:show="addItemsCostDiffVisible" :mask-closable="false" preset="card" title="电镀成本变动确认" style="width: 550px;">
+    <n-modal v-model:show="addItemsCostDiffVisible" :mask-closable="false" preset="card" title="电镀成本变动确认" :style="{ width: isMobile ? '95vw' : '550px' }">
       <div style="margin-bottom: 12px; color: #333;">
         当前电镀成本与配件已有电镀成本金额不相同，是否更新电镀成本？
       </div>
@@ -265,8 +265,8 @@
     </n-modal>
 
     <!-- Confirm Loss Modal -->
-    <n-modal v-model:show="showLossModal" preset="card" title="确认损耗" style="width: 420px;">
-      <n-form label-placement="left" label-width="80">
+    <n-modal v-model:show="showLossModal" preset="card" title="确认损耗" :style="{ width: isMobile ? '95vw' : '420px' }">
+      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="80">
         <n-form-item label="差额信息">
           <span v-if="lossTarget">已收回 {{ lossTarget.source_received_qty || 0 }} / 发出 {{ lossTarget.source_qty || 0 }}，差额 {{ (lossTarget.source_qty || 0) - (lossTarget.source_received_qty || 0) }}</span>
         </n-form-item>
@@ -298,6 +298,7 @@
 import { ref, reactive, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
+import { useIsMobile } from '@/composables/useIsMobile'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
@@ -321,6 +322,7 @@ const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
+const { isMobile } = useIsMobile()
 
 const loading = ref(true)
 const receipt = ref(null)

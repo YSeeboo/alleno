@@ -8,12 +8,12 @@
     <n-spin :show="loading">
       <!-- Basic info — full width -->
       <n-card title="基本信息" style="margin-bottom: 16px;">
-        <n-descriptions :column="3" bordered>
+        <n-descriptions :column="isMobile ? 1 : 3" bordered>
           <n-descriptions-item label="订单号">{{ order?.id }}</n-descriptions-item>
           <n-descriptions-item label="客户名">
             <template v-if="editingCustomerName">
               <n-space align="center" size="small">
-                <n-input v-model:value="editingCustomerNameVal" size="small" style="width: 160px;" />
+                <n-input v-model:value="editingCustomerNameVal" size="small" :style="{ width: isMobile ? '100%' : '160px' }" />
                 <n-button size="small" type="primary" :loading="savingCustomerName" @click="saveCustomerName">确认</n-button>
                 <n-button size="small" :disabled="savingCustomerName" @click="editingCustomerName = false">取消</n-button>
               </n-space>
@@ -36,7 +36,7 @@
                   v-model:value="editingCreatedAtTs"
                   type="date"
                   size="small"
-                  style="width: 160px;"
+                  :style="{ width: isMobile ? '100%' : '160px' }"
                 />
                 <n-button size="small" type="primary" :loading="savingCreatedAt" @click="saveCreatedAt">确认</n-button>
                 <n-button size="small" :disabled="savingCreatedAt" @click="editingCreatedAt = false">取消</n-button>
@@ -149,7 +149,7 @@
             :min="0"
             :precision="2"
             placeholder="包装费"
-            style="width: 180px;"
+            :style="{ width: isMobile ? '100%' : '180px' }"
           />
           <n-button type="primary" size="small" :loading="savingPkg" @click="savePackagingCost">保存</n-button>
         </n-space>
@@ -182,7 +182,7 @@
             filterable
             clearable
             placeholder="选择饰品"
-            style="width: 220px;"
+            :style="{ width: isMobile ? '100%' : '220px' }"
             @update:value="onNewJewelrySelect"
           />
           <n-input-number v-model:value="newItem.quantity" :min="1" placeholder="数量" style="width: 90px;" />
@@ -195,7 +195,7 @@
             placeholder="单价"
             style="width: 120px;"
           />
-          <n-input v-model:value="newItem.remarks" placeholder="备注" style="width: 160px;" />
+          <n-input v-model:value="newItem.remarks" placeholder="备注" :style="{ width: isMobile ? '100%' : '160px' }" />
           <n-button type="primary" size="small" :loading="addingItem" @click="doAddItem">添加</n-button>
         </n-space>
         </template>
@@ -208,7 +208,7 @@
         <n-alert v-if="snapshot.has_incomplete_cost" type="warning" style="margin-bottom: 12px;">
           部分配件缺少成本数据，成本可能不完整
         </n-alert>
-        <n-descriptions :column="4" bordered style="margin-bottom: 16px;">
+        <n-descriptions :column="isMobile ? 2 : 4" bordered style="margin-bottom: 16px;">
           <n-descriptions-item label="订单总成本">{{ fmtMoney(snapshot.total_cost) }}</n-descriptions-item>
           <n-descriptions-item label="包装费">{{ snapshot.packaging_cost != null ? fmtMoney(snapshot.packaging_cost) : '-' }}</n-descriptions-item>
           <n-descriptions-item label="售价总额">{{ snapshot.total_amount != null ? fmtMoney(snapshot.total_amount) : '-' }}</n-descriptions-item>
@@ -379,7 +379,7 @@
     </teleport>
 
     <!-- Batch select modal -->
-    <n-modal v-model:show="showBatchModal" preset="card" title="选择饰品生成配件清单" style="width: 620px;">
+    <n-modal v-model:show="showBatchModal" preset="card" title="选择饰品生成配件清单" :style="{ width: isMobile ? '95vw' : '620px' }">
       <n-data-table
         :columns="batchSelectColumns"
         :data="batchJewelryList"
@@ -399,7 +399,7 @@
     </n-modal>
 
     <!-- Supplier modal -->
-    <n-modal v-model:show="showSupplierModal" preset="card" title="关联手工商家" style="width: 440px;">
+    <n-modal v-model:show="showSupplierModal" preset="card" title="关联手工商家" :style="{ width: isMobile ? '95vw' : '440px' }">
       <n-auto-complete
         v-model:value="supplierName"
         :options="supplierOptions"
@@ -418,8 +418,8 @@
     </n-modal>
 
     <!-- Batch customer code modal -->
-    <n-modal v-model:show="showBatchCodeModal" preset="card" title="批量填入客户货号" style="width: 420px;">
-      <n-form label-placement="left" label-width="80">
+    <n-modal v-model:show="showBatchCodeModal" preset="card" title="批量填入客户货号" :style="{ width: isMobile ? '95vw' : '420px' }">
+      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="80">
         <n-form-item label="前缀">
           <n-input v-model:value="batchCodeForm.prefix" placeholder="如 MG-" />
         </n-form-item>
@@ -442,7 +442,7 @@
     </n-modal>
 
     <!-- Composite part BOM modal -->
-    <n-modal v-model:show="showPartBomModal" preset="card" :title="partBomTitle" style="width: 720px;">
+    <n-modal v-model:show="showPartBomModal" preset="card" :title="partBomTitle" :style="{ width: isMobile ? '95vw' : '720px' }">
       <n-spin :show="partBomLoading">
         <n-data-table
           v-if="partBomData.length > 0"
@@ -456,7 +456,7 @@
     </n-modal>
 
     <!-- Jewelry info modal -->
-    <n-modal v-model:show="showJewelryModal" preset="card" :title="`饰品详情`" style="width: 560px;">
+    <n-modal v-model:show="showJewelryModal" preset="card" :title="`饰品详情`" :style="{ width: isMobile ? '95vw' : '560px' }">
       <n-spin :show="jewelryModalLoading">
         <template v-if="jewelryModalData">
           <!-- Header: image + basic info -->
@@ -500,7 +500,7 @@
           </div>
 
           <!-- Info grid -->
-          <n-descriptions :column="2" bordered size="small" style="margin-bottom: 16px;">
+          <n-descriptions :column="isMobile ? 1 : 2" bordered size="small" style="margin-bottom: 16px;">
             <n-descriptions-item label="零售价">{{ jewelryModalData.retail_price != null ? fmtMoney(jewelryModalData.retail_price) : '-' }}</n-descriptions-item>
             <n-descriptions-item label="批发价">{{ jewelryModalData.wholesale_price != null ? fmtMoney(jewelryModalData.wholesale_price) : '-' }}</n-descriptions-item>
             <n-descriptions-item label="手工费">{{ jewelryModalData.handcraft_cost != null ? fmtMoney(jewelryModalData.handcraft_cost) : '-' }}</n-descriptions-item>
@@ -524,7 +524,7 @@
     </n-modal>
 
     <!-- Cutting stats modal -->
-    <n-modal v-model:show="cuttingStatsVisible" preset="card" title="裁剪统计" style="width: 720px;">
+    <n-modal v-model:show="cuttingStatsVisible" preset="card" title="裁剪统计" :style="{ width: isMobile ? '95vw' : '720px' }">
       <n-spin :show="cuttingStatsLoading">
         <n-data-table
           v-if="cuttingStatsData.length > 0"
@@ -554,6 +554,7 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
+import { useIsMobile } from '@/composables/useIsMobile'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NSelect, NInputNumber, NInput, NDivider, NPopconfirm, NAlert,
@@ -590,6 +591,7 @@ const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
+const { isMobile } = useIsMobile()
 
 const loading = ref(true)
 const updating = ref(false)
@@ -1113,7 +1115,17 @@ async function confirmLinkSupplier() {
     message.success('已关联手工商家')
     router.push(`/handcraft/${data.handcraft_order_id}`)
   } catch (e) {
-    message.error(e.response?.data?.detail || '关联失败')
+    const detail = e.response?.data?.detail || ''
+    if (detail.includes('库存不足') || detail.includes('库存数量不足')) {
+      const items = detail.replace(/^库存(?:数量)?不足[：:]?\s*/, '').split('；').filter(Boolean)
+      dialog.warning({
+        title: '库存不足',
+        content: () => h('ul', { style: 'padding-left: 20px; margin: 0;' }, items.map(t => h('li', { style: 'margin: 4px 0;' }, t))),
+        positiveText: '知道了',
+      })
+    } else {
+      message.error(detail || '关联失败')
+    }
   } finally {
     linkingSupplier.value = false
   }

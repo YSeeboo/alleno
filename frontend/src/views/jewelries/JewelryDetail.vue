@@ -7,7 +7,7 @@
 
     <n-spin :show="loading">
       <n-card v-if="jewelry" title="基本信息" style="margin-bottom: 16px;">
-        <n-descriptions :column="3" bordered>
+        <n-descriptions :column="isMobile ? 1 : 3" bordered>
           <n-descriptions-item label="编号">{{ jewelry.id }}</n-descriptions-item>
           <n-descriptions-item label="饰品">{{ jewelry.name }}</n-descriptions-item>
           <n-descriptions-item label="图片">
@@ -67,7 +67,7 @@
             filterable
             clearable
             placeholder="选择配件"
-            style="width: 240px;"
+            :style="{ width: isMobile ? '100%' : '240px' }"
           />
           <n-input-number v-model:value="newQty" :min="0.01" :precision="4" placeholder="每件用量" style="width: 140px;" />
           <n-button type="primary" :loading="adding" @click="addBom">确认添加</n-button>
@@ -76,7 +76,7 @@
     </n-spin>
 
     <!-- Template import modal -->
-    <n-modal v-model:show="showTemplateModal" preset="card" title="导入饰品模板" style="width: 520px;">
+    <n-modal v-model:show="showTemplateModal" preset="card" title="导入饰品模板" :style="{ width: isMobile ? '95vw' : '520px' }">
       <n-alert type="info" style="margin-bottom: 12px;">
         导入会覆盖已有相同配件的用量
       </n-alert>
@@ -113,6 +113,7 @@
 import { ref, onMounted, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
+import { useIsMobile } from '@/composables/useIsMobile'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NEmpty, NDivider, NSelect, NInputNumber, NPopconfirm, NImage,
@@ -130,6 +131,7 @@ import { useAuthStore } from '@/stores/auth'
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
+const { isMobile } = useIsMobile()
 const authStore = useAuthStore()
 const canUseTemplates = authStore.hasPermission('parts')
 

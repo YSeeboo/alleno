@@ -7,10 +7,10 @@
 
     <n-spin :show="loading">
       <n-card v-if="template" title="基本信息" style="margin-bottom: 16px;">
-        <n-descriptions :column="3" bordered>
+        <n-descriptions :column="isMobile ? 1 : 3" bordered>
           <n-descriptions-item label="编号">{{ template.id }}</n-descriptions-item>
           <n-descriptions-item label="名称">
-            <n-input v-model:value="editForm.name" size="small" style="width: 200px;" />
+            <n-input v-model:value="editForm.name" size="small" :style="{ width: isMobile ? '100%' : '200px' }" />
           </n-descriptions-item>
           <n-descriptions-item label="图片">
             <n-space align="center">
@@ -28,7 +28,7 @@
             </n-space>
           </n-descriptions-item>
           <n-descriptions-item label="备注" :span="2">
-            <n-input v-model:value="editForm.note" size="small" type="textarea" :rows="1" style="width: 300px;" />
+            <n-input v-model:value="editForm.note" size="small" type="textarea" :rows="1" :style="{ width: isMobile ? '100%' : '300px' }" />
           </n-descriptions-item>
           <n-descriptions-item label="创建时间">
             {{ template.created_at ? new Date(template.created_at).toLocaleString('zh-CN') : '-' }}
@@ -46,9 +46,9 @@
               filterable
               clearable
               placeholder="选择配件"
-              style="width: 240px;"
+              :style="{ width: isMobile ? '100%' : '240px' }"
             />
-            <n-input-number v-model:value="item.qty_per_unit" :min="0.001" :precision="4" placeholder="每件用量" style="width: 140px;" />
+            <n-input-number v-model:value="item.qty_per_unit" :min="0.001" :precision="4" placeholder="每件用量" :style="{ width: isMobile ? '100%' : '140px' }" />
             <n-button type="error" size="small" @click="items.splice(idx, 1)">删</n-button>
           </n-space>
         </div>
@@ -75,6 +75,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
+import { useIsMobile } from '@/composables/useIsMobile'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin,
   NSpace, NButton, NH2, NInput, NInputNumber, NSelect, NImage,
@@ -87,6 +88,7 @@ import ImageUploadModal from '../../components/ImageUploadModal.vue'
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
+const { isMobile } = useIsMobile()
 
 const loading = ref(true)
 const saving = ref(false)

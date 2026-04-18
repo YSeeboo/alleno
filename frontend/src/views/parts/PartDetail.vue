@@ -7,7 +7,7 @@
 
     <n-spin :show="loading">
       <n-card v-if="part" title="基本信息" style="margin-bottom: 16px;">
-        <n-descriptions :column="3" bordered>
+        <n-descriptions :column="isMobile ? 1 : 3" bordered>
           <n-descriptions-item label="编号">{{ part.id }}</n-descriptions-item>
           <n-descriptions-item label="配件">{{ part.name }}</n-descriptions-item>
           <n-descriptions-item label="图片">
@@ -44,7 +44,7 @@
                     &#x1F4CB;
                   </span>
                 </template>
-                <div style="min-width: 460px;">
+                <div :style="{ minWidth: isMobile ? 'auto' : '460px' }">
                   <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px; color: #333;">价格变动历史</div>
                   <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                     <thead>
@@ -128,7 +128,7 @@
             filterable
             clearable
             placeholder="选择配件"
-            style="width: 240px;"
+            :style="{ width: isMobile ? '100%' : '240px' }"
           />
           <n-input-number v-model:value="newChildQty" :min="0.01" :precision="4" placeholder="每单位用量" style="width: 140px;" />
           <n-button type="primary" :loading="addingBom" @click="addPartBom">确认添加</n-button>
@@ -147,6 +147,7 @@
 import { ref, h, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
+import { useIsMobile } from '@/composables/useIsMobile'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NText, NEmpty, NImage, NPopover,
@@ -159,6 +160,7 @@ import { fmtMoney, renderNamedImage, renderOptionWithImage } from '@/utils/ui'
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
+const { isMobile } = useIsMobile()
 const loading = ref(true)
 const part = ref(null)
 const parentPartName = ref('')

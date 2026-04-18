@@ -25,7 +25,7 @@
             </n-button>
           </n-space>
         </template>
-        <n-descriptions :column="3" bordered>
+        <n-descriptions :column="isMobile ? 1 : 3" bordered>
           <n-descriptions-item label="电镀单号">{{ order.id }}</n-descriptions-item>
           <n-descriptions-item label="电镀厂">
             <template v-if="editingSupplier && order.status === 'pending'">
@@ -37,7 +37,7 @@
                   tag
                   size="small"
                   placeholder="选择或输入电镀厂"
-                  style="width: 200px;"
+                  :style="{ width: isMobile ? '100%' : '200px' }"
                 />
                 <n-button size="small" type="primary" :loading="savingSupplier" @click="saveSupplierName">确认</n-button>
                 <n-button size="small" :disabled="savingSupplier" @click="editingSupplier = false">取消</n-button>
@@ -73,7 +73,7 @@
                   v-model:value="editingCreatedAtTs"
                   type="date"
                   size="small"
-                  style="width: 160px;"
+                  :style="{ width: isMobile ? '100%' : '160px' }"
                 />
                 <n-button size="small" type="primary" :loading="savingCreatedAt" @click="saveCreatedAt">确认</n-button>
                 <n-button size="small" :disabled="savingCreatedAt" @click="editingCreatedAt = false">取消</n-button>
@@ -206,9 +206,9 @@
     </n-spin>
 
     <!-- Add Item Modal -->
-    <n-modal v-model:show="addModalVisible" preset="card" title="添加电镀明细" style="width: 500px;">
+    <n-modal v-model:show="addModalVisible" preset="card" title="添加电镀明细" :style="{ width: isMobile ? '95vw' : '500px' }">
       <form @submit.prevent="doAddItem">
-      <n-form label-placement="left" label-width="90">
+      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="90">
         <n-form-item label="发出配件">
           <n-select
             v-model:value="addForm.part_id"
@@ -287,8 +287,8 @@
     />
 
     <!-- Single Link Modal: select order → select matching todo item → confirm -->
-    <n-modal v-model:show="linkModalVisible" preset="card" title="关联订单" style="width: 600px;">
-      <n-form label-placement="left" label-width="80">
+    <n-modal v-model:show="linkModalVisible" preset="card" title="关联订单" :style="{ width: isMobile ? '95vw' : '600px' }">
+      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="80">
         <n-form-item label="选择订单">
           <n-select
             v-model:value="linkForm.orderId"
@@ -321,8 +321,8 @@
     </n-modal>
 
     <!-- Batch Link Modal: select order → auto-match by part_id -->
-    <n-modal v-model:show="batchLinkModalVisible" preset="card" title="批量关联订单" style="width: 500px;">
-      <n-form label-placement="left" label-width="80">
+    <n-modal v-model:show="batchLinkModalVisible" preset="card" title="批量关联订单" :style="{ width: isMobile ? '95vw' : '500px' }">
+      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="80">
         <n-form-item label="选择订单">
           <n-select
             v-model:value="batchLinkOrderId"
@@ -344,8 +344,8 @@
     </n-modal>
 
     <!-- Confirm Loss Modal -->
-    <n-modal v-model:show="showLossModal" preset="card" title="确认损耗" style="width: 420px;">
-      <n-form label-placement="left" label-width="80">
+    <n-modal v-model:show="showLossModal" preset="card" title="确认损耗" :style="{ width: isMobile ? '95vw' : '420px' }">
+      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="80">
         <n-form-item label="差额信息">
           <span v-if="lossTarget">已收回 {{ lossTarget.received_qty || 0 }} / 发出 {{ lossTarget.qty }}，差额 {{ lossTarget.qty - (lossTarget.received_qty || 0) }}</span>
         </n-form-item>
@@ -377,6 +377,7 @@
 import { ref, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
+import { useIsMobile } from '@/composables/useIsMobile'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
@@ -404,6 +405,7 @@ const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
+const { isMobile } = useIsMobile()
 
 const loading = ref(true)
 const sending = ref(false)

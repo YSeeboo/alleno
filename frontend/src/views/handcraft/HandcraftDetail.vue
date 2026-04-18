@@ -30,7 +30,7 @@
             </n-button>
           </n-space>
         </template>
-        <n-descriptions :column="3" bordered>
+        <n-descriptions :column="isMobile ? 1 : 3" bordered>
           <n-descriptions-item label="手工单号">{{ order.id }}</n-descriptions-item>
           <n-descriptions-item label="手工商家">
             <template v-if="editingSupplier && order.status === 'pending'">
@@ -42,7 +42,7 @@
                   tag
                   placeholder="选择或输入手工商家名称"
                   size="small"
-                  style="width: 200px;"
+                  :style="{ width: isMobile ? '100%' : '200px' }"
                 />
                 <n-button size="small" type="primary" :loading="savingSupplier" @click="saveSupplier">确认</n-button>
                 <n-button size="small" :disabled="savingSupplier" @click="editingSupplier = false">取消</n-button>
@@ -78,7 +78,7 @@
                   v-model:value="editingCreatedAtTs"
                   type="date"
                   size="small"
-                  style="width: 160px;"
+                  :style="{ width: isMobile ? '100%' : '160px' }"
                 />
                 <n-button size="small" type="primary" :loading="savingCreatedAt" @click="saveCreatedAt">确认</n-button>
                 <n-button size="small" :disabled="savingCreatedAt" @click="editingCreatedAt = false">取消</n-button>
@@ -224,9 +224,9 @@
       </n-card>
     </n-spin>
 
-    <n-modal v-model:show="addModalVisible" preset="card" title="添加配件明细" style="width: 500px;">
+    <n-modal v-model:show="addModalVisible" preset="card" title="添加配件明细" :style="{ width: isMobile ? '95vw' : '500px' }">
       <form @submit.prevent="doAddItem">
-      <n-form label-placement="left" label-width="90">
+      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="90">
         <n-form-item label="配件">
           <n-select
             v-model:value="addForm.part_id"
@@ -257,9 +257,9 @@
       </template>
     </n-modal>
 
-    <n-modal v-model:show="editModalVisible" preset="card" title="修改配件明细" style="width: 500px;">
+    <n-modal v-model:show="editModalVisible" preset="card" title="修改配件明细" :style="{ width: isMobile ? '95vw' : '500px' }">
       <form @submit.prevent="doEditItem">
-      <n-form label-placement="left" label-width="90">
+      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="90">
         <n-form-item label="数量">
           <n-input-number v-model:value="editForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
         </n-form-item>
@@ -285,8 +285,8 @@
     />
 
     <!-- Single Link Modal for part items -->
-    <n-modal v-model:show="linkModalVisible" preset="card" title="关联订单" style="width: 600px;">
-      <n-form label-placement="left" label-width="80">
+    <n-modal v-model:show="linkModalVisible" preset="card" title="关联订单" :style="{ width: isMobile ? '95vw' : '600px' }">
+      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="80">
         <n-form-item label="选择订单">
           <n-select
             v-model:value="linkForm.orderId"
@@ -319,8 +319,8 @@
     </n-modal>
 
     <!-- Jewelry Link Modal: just select order -->
-    <n-modal v-model:show="jewelryLinkModalVisible" preset="card" title="关联订单（产出）" style="width: 500px;">
-      <n-form label-placement="left" label-width="80">
+    <n-modal v-model:show="jewelryLinkModalVisible" preset="card" title="关联订单（产出）" :style="{ width: isMobile ? '95vw' : '500px' }">
+      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="80">
         <n-form-item label="选择订单">
           <n-select
             v-model:value="jewelryLinkOrderId"
@@ -339,8 +339,8 @@
     </n-modal>
 
     <!-- Batch Link Modal -->
-    <n-modal v-model:show="batchLinkModalVisible" preset="card" title="批量关联订单" style="width: 500px;">
-      <n-form label-placement="left" label-width="80">
+    <n-modal v-model:show="batchLinkModalVisible" preset="card" title="批量关联订单" :style="{ width: isMobile ? '95vw' : '500px' }">
+      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="80">
         <n-form-item label="选择订单">
           <n-select
             v-model:value="batchLinkOrderId"
@@ -362,7 +362,7 @@
     </n-modal>
 
     <!-- Cutting stats modal -->
-    <n-modal v-model:show="cuttingStatsVisible" preset="card" title="裁剪统计" style="width: 720px;">
+    <n-modal v-model:show="cuttingStatsVisible" preset="card" title="裁剪统计" :style="{ width: isMobile ? '95vw' : '720px' }">
       <n-spin :show="cuttingStatsLoading">
         <n-data-table
           v-if="cuttingStatsData.length > 0"
@@ -383,8 +383,8 @@
     </n-modal>
 
     <!-- Confirm Loss Modal -->
-    <n-modal v-model:show="showLossModal" preset="card" title="确认损耗" style="width: 420px;">
-      <n-form label-placement="left" label-width="80">
+    <n-modal v-model:show="showLossModal" preset="card" title="确认损耗" :style="{ width: isMobile ? '95vw' : '420px' }">
+      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="80">
         <n-form-item label="差额信息">
           <span v-if="lossTarget">已收回 {{ lossTarget.received_qty || 0 }} / 发出 {{ lossTarget.qty }}，差额 {{ lossTarget.qty - (lossTarget.received_qty || 0) }}</span>
         </n-form-item>
@@ -416,6 +416,7 @@
 import { ref, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
+import { useIsMobile } from '@/composables/useIsMobile'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
@@ -446,6 +447,7 @@ const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
+const { isMobile } = useIsMobile()
 
 const loading = ref(true)
 const sending = ref(false)
@@ -627,6 +629,18 @@ const doSend = async () => {
     await sendHandcraft(route.params.id)
     message.success('已确认发出')
     await loadData()
+  } catch (e) {
+    const detail = e.response?.data?.detail || ''
+    if (detail.includes('库存不足')) {
+      const items = detail.replace(/^库存不足[：:]?\s*/, '').split('；').filter(Boolean)
+      dialog.warning({
+        title: '库存不足',
+        content: () => h('ul', { style: 'padding-left: 20px; margin: 0;' }, items.map(t => h('li', { style: 'margin: 4px 0;' }, t))),
+        positiveText: '知道了',
+      })
+    } else {
+      message.error(detail || '发出失败')
+    }
   } finally {
     sending.value = false
   }
