@@ -16,18 +16,11 @@
         v-if="!isMobile || !collapsed"
         bordered
         collapse-mode="width"
-        :collapsed-width="isMobile ? 0 : 52"
+        :collapsed-width="52"
         :width="240"
         :collapsed="collapsed"
-        :show-trigger="isMobile ? false : 'bar'"
-        :native-scrollbar="false"
-        :style="{
-          height: 'calc(100vh - 52px)',
-          position: isMobile ? 'fixed' : 'static',
-          top: isMobile ? '52px' : undefined,
-          left: '0',
-          zIndex: isMobile ? 1000 : undefined,
-        }"
+        show-trigger
+        v-bind="isMobile ? { collapsedWidth: 0, showTrigger: false, nativeScrollbar: false, style: { height: 'calc(100vh - 52px)', position: 'fixed', top: '52px', left: '0', zIndex: 1000 } } : {}"
         @collapse="collapsed = true"
         @expand="collapsed = false"
       >
