@@ -2,7 +2,7 @@
   <n-modal v-model:show="visible" :mask-closable="!uploading">
     <n-card
       title="上传图片"
-      style="width: 460px; max-width: 92vw;"
+      :style="{ width: isMobile ? '95vw' : '460px', maxWidth: '95vw' }"
       :bordered="false"
       role="dialog"
     >

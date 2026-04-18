@@ -43,10 +43,6 @@ import { NModal, NCard, NButton, NIcon, NSpin, NDataTable, NTag, NDropdown, useD
 import { CloseOutline } from '@vicons/ionicons5'
 import { getVendorDetail, changeOrderStatus } from '@/api/kanban'
 import { renderImageThumb } from '@/utils/ui'
-import { useIsMobile } from '@/composables/useIsMobile'
-
-const { isMobile } = useIsMobile()
-
 const props = defineProps({
   show: Boolean,
   vendor: Object, // { vendor_name, order_type }

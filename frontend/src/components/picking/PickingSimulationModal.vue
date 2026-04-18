@@ -149,6 +149,7 @@ function fmtQty(v) {
           </n-space>
         </div>
 
+        <div class="table-scroll">
         <table class="picking-table">
           <thead>
             <tr>
@@ -199,6 +200,7 @@ function fmtQty(v) {
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
     </n-spin>
   </n-modal>
@@ -210,16 +212,23 @@ function fmtQty(v) {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .progress {
   margin-left: 20px;
   color: #4361ee;
   font-weight: 500;
 }
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .picking-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  min-width: 580px;
 }
 .picking-table th,
 .picking-table td {
