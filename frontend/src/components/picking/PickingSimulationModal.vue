@@ -7,6 +7,9 @@ import {
 import {
   getPicking, markPicked, unmarkPicked, resetPicking, downloadPickingListPdf,
 } from '@/api/orders'
+import { useIsMobile } from '@/composables/useIsMobile'
+
+const { isMobile } = useIsMobile()
 
 const props = defineProps({
   show: { type: Boolean, required: true },
@@ -118,7 +121,7 @@ function fmtQty(v) {
 
 <template>
   <n-modal :show="show" @update:show="(v) => emit('update:show', v)"
-           preset="card" style="width: 960px; max-width: 95vw"
+           preset="card" :style="{ width: isMobile ? '95vw' : '960px', maxWidth: '95vw' }"
            :title="`配货模拟 · 订单 ${orderId}`">
     <n-spin :show="loading">
       <div v-if="data">

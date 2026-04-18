@@ -36,6 +36,9 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { NModal, NCard, NButton, NSpace, NIcon, useMessage } from 'naive-ui'
 import { ClipboardOutline } from '@vicons/ionicons5'
 import { uploadImageToOss } from '@/api/uploads'
+import { useIsMobile } from '@/composables/useIsMobile'
+
+const { isMobile } = useIsMobile()
 
 const props = defineProps({
   show: Boolean,

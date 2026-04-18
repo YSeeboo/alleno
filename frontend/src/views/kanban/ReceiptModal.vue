@@ -13,7 +13,7 @@
       </template>
 
       <form @submit.prevent="handleSubmit">
-      <n-form label-placement="left" label-width="64" :model="form">
+      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="64" :model="form">
         <!-- 厂家 -->
         <n-form-item label="厂家">
           <n-select
@@ -111,6 +111,9 @@ import {
 } from 'naive-ui'
 import { CloseOutline } from '@vicons/ionicons5'
 import { submitReturn, searchVendors, searchParts, searchJewelries, getVendorOrders, getOrderItems } from '@/api/kanban'
+import { useIsMobile } from '@/composables/useIsMobile'
+
+const { isMobile } = useIsMobile()
 
 const props = defineProps({ show: Boolean })
 const emit = defineEmits(['update:show', 'success'])

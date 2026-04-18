@@ -3,7 +3,7 @@
     :show="show"
     preset="card"
     title="批量上传配件图片"
-    style="width: 680px; max-height: 80vh;"
+    :style="{ width: isMobile ? '95vw' : '680px', maxHeight: '80vh' }"
     :mask-closable="false"
     @update:show="$emit('update:show', $event)"
   >
@@ -71,6 +71,9 @@ import { NModal, NTable, NImage, NButton, NIcon, NSpin, NSpace, useMessage } fro
 import { CloseOutline } from '@vicons/ionicons5'
 import { uploadImageToOss } from '@/api/uploads'
 import { updatePart } from '@/api/parts'
+import { useIsMobile } from '@/composables/useIsMobile'
+
+const { isMobile } = useIsMobile()
 
 const props = defineProps({
   show: Boolean,

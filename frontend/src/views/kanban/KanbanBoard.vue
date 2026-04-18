@@ -1,5 +1,5 @@
 <template>
-  <div class="kanban-page">
+  <div class="kanban-page" :style="{ maxWidth: isMobile ? '100%' : '1100px', margin: '0 auto' }">
     <!-- 顶部工具栏 -->
     <div class="kanban-toolbar">
       <h2 class="page-title">进度看板</h2>
@@ -64,6 +64,9 @@ import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { NSelect, NSpin, NEmpty } from 'naive-ui'
 import VendorDetailModal from './VendorDetailModal.vue'
 import { getKanban } from '@/api/kanban'
+import { useIsMobile } from '@/composables/useIsMobile'
+
+const { isMobile } = useIsMobile()
 
 const PAGE_SIZE = 20
 
@@ -156,7 +159,6 @@ const openDetail = (card) => {
 
 <style scoped>
 .kanban-page {
-  max-width: 1100px;
 }
 
 .kanban-toolbar {

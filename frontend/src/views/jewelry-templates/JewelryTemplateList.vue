@@ -26,6 +26,9 @@ import { useMessage } from 'naive-ui'
 import { NButton, NSpace, NDataTable, NSpin, NEmpty, NPopconfirm } from 'naive-ui'
 import { listTemplates, getTemplate, createTemplate, deleteTemplate } from '@/api/jewelryTemplates'
 import { renderNamedImage } from '@/utils/ui'
+import { useIsMobile } from '@/composables/useIsMobile'
+
+const { isMobile } = useIsMobile()
 
 const router = useRouter()
 const message = useMessage()
