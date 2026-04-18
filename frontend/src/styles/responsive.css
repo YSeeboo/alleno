@@ -1,6 +1,16 @@
 /* frontend/src/styles/responsive.css */
 
-/* ===== Global Mobile Overrides (max-width: 768px) ===== */
+/* ===== Global: data tables always scroll horizontally instead of compressing ===== */
+.n-data-table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.n-data-table th,
+.n-data-table td {
+  white-space: nowrap;
+}
+
+/* ===== Mobile Overrides (max-width: 768px) ===== */
 @media (max-width: 768px) {
 
   /* --- Layout --- */
@@ -47,15 +57,7 @@
     width: 100% !important;
   }
 
-  /* --- Data tables: horizontal scroll instead of compressing columns --- */
-  .n-data-table-wrapper {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-  .n-data-table th,
-  .n-data-table td {
-    white-space: nowrap;
-  }
+  /* --- Data tables: (scroll rules moved to global scope above) --- */
 
   /* --- Cards: reduce padding --- */
   .n-card .n-card__content {
