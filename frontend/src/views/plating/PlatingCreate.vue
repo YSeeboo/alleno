@@ -1,11 +1,11 @@
 <template>
-  <div style="max-width: 800px;">
+  <div :style="{ maxWidth: isMobile ? '100%' : '800px' }">
     <n-space align="center" style="margin-bottom: 16px;">
       <n-button text @click="router.back()">← 返回</n-button>
       <n-h2 style="margin: 0;">新建电镀单</n-h2>
     </n-space>
 
-    <n-form label-placement="left" label-width="100" style="margin-bottom: 16px;">
+    <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="100" style="margin-bottom: 16px;">
       <n-form-item label="电镀厂名称">
         <n-select
           v-model:value="supplierName"
@@ -13,11 +13,11 @@
           filterable
           tag
           placeholder="选择或输入电镀厂名称"
-          style="width: 300px;"
+          :style="{ width: isMobile ? '100%' : '300px' }"
         />
       </n-form-item>
       <n-form-item label="备注">
-        <n-input v-model:value="note" type="textarea" :rows="2" style="width: 300px;" />
+        <n-input v-model:value="note" type="textarea" :rows="2" :style="{ width: isMobile ? '100%' : '300px' }" />
       </n-form-item>
       <n-form-item label="创建时间">
         <n-date-picker
@@ -25,7 +25,7 @@
           type="date"
           clearable
           placeholder="不填则使用当前时间"
-          style="width: 300px;"
+          :style="{ width: isMobile ? '100%' : '300px' }"
         />
       </n-form-item>
     </n-form>
@@ -40,7 +40,7 @@
             filterable
             clearable
             placeholder="发出配件"
-            style="width: 220px;"
+            :style="{ width: isMobile ? '100%' : '220px' }"
             @update:value="(val) => onPartSelect(item, val)"
           />
           <n-input-number v-model:value="item.qty" :min="1" :precision="0" :step="1" placeholder="发出数量" style="width: 110px;" />
@@ -113,10 +113,12 @@ import { createPlating } from '@/api/plating'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { renderOptionWithImage } from '@/utils/ui'
 import { tsToDateStr } from '@/utils/date'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
+const { isMobile } = useIsMobile()
 const supplierName = ref(null)
 const supplierOptions = ref([])
 const note = ref('')

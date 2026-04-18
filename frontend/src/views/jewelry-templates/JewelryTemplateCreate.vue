@@ -1,22 +1,22 @@
 <template>
-  <div style="max-width: 900px;">
+  <div :style="{ maxWidth: isMobile ? '100%' : '900px' }">
     <n-space align="center" style="margin-bottom: 16px;">
       <n-button text @click="router.back()">← 返回</n-button>
       <n-h2 style="margin: 0;">新建饰品模板</n-h2>
     </n-space>
 
-    <n-form label-placement="left" label-width="100" style="margin-bottom: 16px;">
+    <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="100" style="margin-bottom: 16px;">
       <n-form-item label="模板名称">
-        <n-input v-model:value="form.name" placeholder="输入模板名称" style="width: 300px;" />
+        <n-input v-model:value="form.name" placeholder="输入模板名称" :style="{ width: isMobile ? '100%' : '300px' }" />
       </n-form-item>
       <n-form-item label="图片">
         <n-space align="center">
-          <n-input v-model:value="form.image" placeholder="上传后自动填充，也可手动输入 URL" style="width: 300px;" />
+          <n-input v-model:value="form.image" placeholder="上传后自动填充，也可手动输入 URL" :style="{ width: isMobile ? '100%' : '300px' }" />
           <n-button @click="showImageModal = true">上传图片</n-button>
         </n-space>
       </n-form-item>
       <n-form-item label="备注">
-        <n-input v-model:value="form.note" type="textarea" :rows="2" style="width: 300px;" />
+        <n-input v-model:value="form.note" type="textarea" :rows="2" :style="{ width: isMobile ? '100%' : '300px' }" />
       </n-form-item>
     </n-form>
 
@@ -30,7 +30,7 @@
             filterable
             clearable
             placeholder="选择配件"
-            style="width: 240px;"
+            :style="{ width: isMobile ? '100%' : '240px' }"
           />
           <n-input-number v-model:value="item.qty_per_unit" :min="0.001" :precision="4" placeholder="每件用量" style="width: 140px;" />
           <n-button type="error" size="small" @click="items.splice(idx, 1)">删</n-button>
@@ -63,9 +63,11 @@ import { listParts } from '@/api/parts'
 import { createTemplate } from '@/api/jewelryTemplates'
 import { renderOptionWithImage } from '@/utils/ui'
 import ImageUploadModal from '../../components/ImageUploadModal.vue'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const router = useRouter()
 const message = useMessage()
+const { isMobile } = useIsMobile()
 const submitting = ref(false)
 const showImageModal = ref(false)
 const partOptions = ref([])

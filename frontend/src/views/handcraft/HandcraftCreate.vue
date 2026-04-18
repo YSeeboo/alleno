@@ -1,11 +1,11 @@
 <template>
-  <div style="max-width: 900px;">
+  <div :style="{ maxWidth: isMobile ? '100%' : '900px' }">
     <n-space align="center" style="margin-bottom: 16px;">
       <n-button text @click="router.back()">← 返回</n-button>
       <n-h2 style="margin: 0;">新建手工单</n-h2>
     </n-space>
 
-    <n-form label-placement="left" label-width="110" style="margin-bottom: 16px;">
+    <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="110" style="margin-bottom: 16px;">
       <n-form-item label="手工商家名称">
         <n-select
           v-model:value="supplierName"
@@ -13,11 +13,11 @@
           filterable
           tag
           placeholder="选择或输入手工商家名称"
-          style="width: 300px;"
+          :style="{ width: isMobile ? '100%' : '300px' }"
         />
       </n-form-item>
       <n-form-item label="备注">
-        <n-input v-model:value="note" type="textarea" :rows="2" style="width: 300px;" />
+        <n-input v-model:value="note" type="textarea" :rows="2" :style="{ width: isMobile ? '100%' : '300px' }" />
       </n-form-item>
       <n-form-item label="创建时间">
         <n-date-picker
@@ -25,12 +25,12 @@
           type="date"
           clearable
           placeholder="不填则使用当前时间，填写后不触发同日合并"
-          style="width: 360px;"
+          :style="{ width: isMobile ? '100%' : '360px' }"
         />
       </n-form-item>
     </n-form>
 
-    <n-grid :cols="2" :x-gap="16" style="margin-bottom: 16px;">
+    <n-grid :cols="isMobile ? 1 : 2" :x-gap="16" style="margin-bottom: 16px;">
       <!-- 左: 预期产出 -->
       <n-gi>
         <n-card title="预期产出">
@@ -174,9 +174,11 @@ import { createHandcraft } from '@/api/handcraft'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { renderOptionWithImage } from '@/utils/ui'
 import { tsToDateStr } from '@/utils/date'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const router = useRouter()
 const message = useMessage()
+const { isMobile } = useIsMobile()
 const supplierName = ref(null)
 const supplierOptions = ref([])
 const note = ref('')

@@ -1,13 +1,13 @@
 <template>
-  <div style="max-width: 800px;">
+  <div :style="{ maxWidth: isMobile ? '100%' : '800px' }">
     <n-space align="center" style="margin-bottom: 16px;">
       <n-button text @click="router.back()">← 返回</n-button>
       <n-h2 style="margin: 0;">新建订单</n-h2>
     </n-space>
 
-    <n-form label-placement="left" label-width="90" style="margin-bottom: 16px;">
+    <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="90" style="margin-bottom: 16px;">
       <n-form-item label="客户名">
-        <n-input v-model:value="customerName" placeholder="请输入客户名称" style="width: 300px;" />
+        <n-input v-model:value="customerName" placeholder="请输入客户名称" :style="{ width: isMobile ? '100%' : '300px' }" />
       </n-form-item>
       <n-form-item label="创建时间">
         <n-date-picker
@@ -15,7 +15,7 @@
           type="date"
           clearable
           placeholder="不填则使用当前时间"
-          style="width: 300px;"
+          :style="{ width: isMobile ? '100%' : '300px' }"
         />
       </n-form-item>
     </n-form>
@@ -30,7 +30,7 @@
             filterable
             clearable
             placeholder="选择饰品"
-            style="width: 220px;"
+            :style="{ width: isMobile ? '100%' : '220px' }"
             @update:value="(v) => onJewelrySelect(idx, v)"
           />
           <n-input-number v-model:value="item.quantity" :min="1" placeholder="数量" style="width: 90px;" />
@@ -68,9 +68,11 @@ import { listJewelries } from '@/api/jewelries'
 import { createOrder } from '@/api/orders'
 import { renderOptionWithImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import { tsToDateStr } from '@/utils/date'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const router = useRouter()
 const message = useMessage()
+const { isMobile } = useIsMobile()
 
 const customerName = ref('')
 const createdAtTs = ref(null)

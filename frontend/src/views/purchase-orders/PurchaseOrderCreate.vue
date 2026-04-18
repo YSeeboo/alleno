@@ -1,11 +1,11 @@
 <template>
-  <div style="max-width: 800px;">
+  <div :style="{ maxWidth: isMobile ? '100%' : '800px' }">
     <n-space align="center" style="margin-bottom: 16px;">
       <n-button text @click="router.back()">← 返回</n-button>
       <n-h2 style="margin: 0;">新建购入单</n-h2>
     </n-space>
 
-    <n-form label-placement="left" label-width="100" style="margin-bottom: 16px;">
+    <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="100" style="margin-bottom: 16px;">
       <n-form-item label="商家名称">
         <n-select
           v-model:value="vendorName"
@@ -13,11 +13,11 @@
           filterable
           tag
           placeholder="选择或输入商家名称"
-          style="width: 300px;"
+          :style="{ width: isMobile ? '100%' : '300px' }"
         />
       </n-form-item>
       <n-form-item label="备注">
-        <n-input v-model:value="note" type="textarea" :rows="2" style="width: 300px;" />
+        <n-input v-model:value="note" type="textarea" :rows="2" :style="{ width: isMobile ? '100%' : '300px' }" />
       </n-form-item>
       <n-form-item label="创建时间">
         <n-date-picker
@@ -25,7 +25,7 @@
           type="date"
           clearable
           placeholder="不填则使用当前时间"
-          style="width: 300px;"
+          :style="{ width: isMobile ? '100%' : '300px' }"
         />
       </n-form-item>
     </n-form>
@@ -40,7 +40,7 @@
             filterable
             clearable
             placeholder="选择配件"
-            style="width: 220px;"
+            :style="{ width: isMobile ? '100%' : '220px' }"
             @update:value="(val) => onPartSelect(item, val)"
           />
           <n-input-number v-model:value="item.qty" :min="1" :precision="0" :step="1" placeholder="数量" style="width: 100px;" />
@@ -63,7 +63,7 @@
       总金额：¥ {{ totalAmount }}
     </div>
 
-    <n-form label-placement="left" label-width="100" style="margin-bottom: 16px;">
+    <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="100" style="margin-bottom: 16px;">
       <n-form-item label="付款状态">
         <n-radio-group v-model:value="status">
           <n-radio value="未付款">未付款</n-radio>
@@ -76,7 +76,7 @@
       <n-button type="primary" :loading="submitting" @click="submit">提交</n-button>
     </n-space>
     <!-- Cost Diff Modal -->
-    <n-modal v-model:show="costDiffVisible" :mask-closable="false" preset="card" title="成本变动确认" style="width: 600px;">
+    <n-modal v-model:show="costDiffVisible" :mask-closable="false" preset="card" title="成本变动确认" :style="{ width: isMobile ? '95vw' : '600px' }">
       <div style="margin-bottom: 12px; color: #333;">
         当前成本与配件已有成本金额不相同，是否更新配件成本？
       </div>
@@ -112,9 +112,11 @@ import { createPurchaseOrder } from '@/api/purchaseOrders'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { renderOptionWithImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import { tsToDateStr } from '@/utils/date'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const router = useRouter()
 const message = useMessage()
+const { isMobile } = useIsMobile()
 const vendorName = ref(null)
 const note = ref('')
 const status = ref('未付款')
