@@ -47,10 +47,14 @@
     width: 100% !important;
   }
 
-  /* --- Data tables: horizontal scroll --- */
+  /* --- Data tables: horizontal scroll instead of compressing columns --- */
   .n-data-table-wrapper {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+  }
+  .n-data-table th,
+  .n-data-table td {
+    white-space: nowrap;
   }
 
   /* --- Cards: reduce padding --- */
