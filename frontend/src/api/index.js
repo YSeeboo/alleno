@@ -28,6 +28,7 @@ api.interceptors.response.use(
       return Promise.reject(err)
     }
     if (isLoginReq) return Promise.reject(err)
+    if (err.config?._silentError) return Promise.reject(err)
     const detail = err.response?.data?.detail
     const msg = Array.isArray(detail)
       ? detail.map((d) => d.msg).join('; ')

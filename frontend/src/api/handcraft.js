@@ -7,7 +7,7 @@ export const deleteHandcraft = (id) => api.delete(`/handcraft/${id}`)
 export const getHandcraftParts = (id) => api.get(`/handcraft/${id}/parts`)
 export const getHandcraftJewelries = (id) => api.get(`/handcraft/${id}/jewelries`)
 export const createHandcraft = (data) => api.post('/handcraft/', data)
-export const sendHandcraft = (id) => api.post(`/handcraft/${id}/send`)
+export const sendHandcraft = (id) => api.post(`/handcraft/${id}/send`, null, { _silentError: true })
 export const receiveHandcraft = (id, receipts) =>
   api.post(`/handcraft/${id}/receive`, { receipts })
 export const downloadHandcraftExcel = (id) =>

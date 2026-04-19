@@ -114,8 +114,9 @@ function fmtQty(v) {
   if (v == null) return '-'
   const f = Number(v)
   if (Number.isNaN(f)) return String(v)
-  if (f === Math.trunc(f)) return String(Math.trunc(f))
-  return f.toString()
+  const r = parseFloat(f.toPrecision(12))
+  if (r === Math.trunc(r)) return String(Math.trunc(r))
+  return r.toString()
 }
 </script>
 

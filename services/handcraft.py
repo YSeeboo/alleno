@@ -8,7 +8,7 @@ from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJ
 from models.jewelry import Jewelry
 from models.part import Part
 from services._helpers import _next_id, keyword_filter
-from services.inventory import add_stock, deduct_stock
+from services.inventory import add_stock, batch_get_stock, deduct_stock
 from time_utils import now_beijing
 
 
@@ -165,12 +165,21 @@ def send_handcraft_order(db: Session, handcraft_order_id: str) -> HandcraftOrder
     part_totals: dict[str, float] = {}
     for item in part_items:
         part_totals[item.part_id] = part_totals.get(item.part_id, 0.0) + float(item.qty)
+    # Batch check all parts before deducting
+    stocks = batch_get_stock(db, "part", list(part_totals.keys()))
+    insufficient = []
+    for part_id, total_qty in part_totals.items():
+        current = stocks.get(part_id, 0.0)
+        if current < total_qty:
+            insufficient.append(f"{part_id} 当前库存 {current}，需要 {total_qty}")
+    if insufficient:
+        raise ValueError("库存不足：" + "；".join(insufficient))
     deducted = []
     try:
         for part_id, total_qty in part_totals.items():
             deduct_stock(db, "part", part_id, total_qty, "手工发出")
             deducted.append((part_id, total_qty))
-    except ValueError:
+    except Exception:
         for part_id, qty in deducted:
             add_stock(db, "part", part_id, qty, "手工发出回滚")
         raise

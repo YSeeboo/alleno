@@ -132,7 +132,7 @@ def _filter_rows(
                 current_stock=r.current_stock,
                 is_composite_child=r.is_composite_child,
                 variants=remaining,
-                total_required=sum(v.subtotal for v in remaining),
+                total_required=round(sum(v.subtotal for v in remaining), 10),
             )
         )
     return out

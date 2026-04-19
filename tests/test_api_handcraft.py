@@ -301,6 +301,34 @@ def test_send_handcraft_order_insufficient_stock(client, db):
     assert resp.status_code == 400
 
 
+def test_send_handcraft_order_multiple_insufficient_stock(client, db):
+    """When multiple parts lack stock, the error should list all of them and deduct nothing."""
+    part_a = create_part(db, {"name": "PA", "category": "小配件"})
+    part_b = create_part(db, {"name": "PB", "category": "链条"})
+    jewelry = create_jewelry(db, {"name": "JX", "category": "单件"})
+    # Give partial stock — both insufficient
+    add_stock(db, "part", part_a.id, 3.0, "入库")
+    add_stock(db, "part", part_b.id, 1.0, "入库")
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier Z",
+        "parts": [
+            {"part_id": part_a.id, "qty": 10.0},
+            {"part_id": part_b.id, "qty": 5.0},
+        ],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 1}],
+    }).json()
+    resp = client.post(f"/api/handcraft/{created['id']}/send")
+    assert resp.status_code == 400
+    detail = resp.json()["detail"]
+    # Both parts mentioned
+    assert part_a.id in detail
+    assert part_b.id in detail
+    assert "；" in detail  # joined with separator
+    # Stock unchanged — nothing was deducted
+    assert get_stock(db, "part", part_a.id) == 3.0
+    assert get_stock(db, "part", part_b.id) == 1.0
+
+
 def test_receive_handcraft_via_receipt(client, db):
     """Receiving jewelry via HandcraftReceipt (replaces old /receive endpoint)."""
     from services.handcraft_receipt import create_handcraft_receipt

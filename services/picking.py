@@ -81,13 +81,15 @@ def get_picking_simulation(db: Session, order_id: str) -> PickingSimulationRespo
 def _expand_to_atoms(
     db: Session,
     composite_part_id: str,
-    multiplier: float,
+    multiplier: Decimal,
     _ancestors: frozenset[str] = frozenset(),
 ) -> list[tuple[str, float]]:
     """Recursively walk a composite part's BOM. Return a list of
     (atom_part_id, effective_qty_per_unit) tuples for every non-composite
-    descendant. `multiplier` is the running product of qty_per_unit along
-    the path from the jewelry BOM root.
+    descendant. `multiplier` is a Decimal running product of qty_per_unit
+    along the path from the jewelry BOM root — kept as Decimal throughout
+    recursion to avoid cumulative rounding errors. Only leaf nodes are
+    quantized to 4 decimal places (matching the DB column precision).
 
     Uses `services.part_bom.get_part_bom()` just like
     `services.cutting_stats._expand_composite_part` does, but does NOT
@@ -103,11 +105,11 @@ def _expand_to_atoms(
     out: list[tuple[str, float]] = []
     for child in children:
         child_id = child["child_part_id"]
-        child_qty = multiplier * float(child["qty_per_unit"])
+        child_qty = multiplier * Decimal(str(child["qty_per_unit"]))
         if child.get("child_is_composite"):
             out.extend(_expand_to_atoms(db, child_id, child_qty, path))
         else:
-            out.append((child_id, child_qty))
+            out.append((child_id, float(round(child_qty, 4))))
     return out
 
 
@@ -135,7 +137,7 @@ def _collect_triples(db: Session, order_items: list[OrderItem]) -> list[_Triple]
             qpu_root = float(b.qty_per_unit)
             if is_composite.get(b.part_id):
                 # Expand: each atom contributes qty_per_unit = qpu_root × child_qty.
-                atoms = _expand_to_atoms(db, b.part_id, qpu_root)
+                atoms = _expand_to_atoms(db, b.part_id, Decimal(str(b.qty_per_unit)))
                 for atom_id, atom_qpu in atoms:
                     out.append(_Triple(
                         part_id=atom_id,
@@ -203,7 +205,7 @@ def _build_rows(db: Session, triples: list[_Triple], order_id: str) -> list[Pick
             PickingVariant(
                 qty_per_unit=qpu,
                 units_count=units,
-                subtotal=qpu * units,
+                subtotal=round(qpu * units, 10),
                 picked=(pid, qpu) in picked_keys,
             )
         )
@@ -214,7 +216,7 @@ def _build_rows(db: Session, triples: list[_Triple], order_id: str) -> list[Pick
     for pid in part_ids:
         part = part_by_id[pid]  # FK guarantees presence
         variants = sorted(variants_by_part[pid], key=lambda v: v.qty_per_unit)
-        total_required = sum(v.subtotal for v in variants)
+        total_required = round(sum(v.subtotal for v in variants), 10)
         rows.append(
             PickingPartRow(
                 part_id=pid,
