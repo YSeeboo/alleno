@@ -301,7 +301,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, h, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, watch, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
@@ -331,6 +331,18 @@ const highlightItemId = computed(() => {
   const val = route.query.highlight
   return val ? Number(val) : null
 })
+
+const scrollToHighlight = async () => {
+  if (!highlightItemId.value) return
+  await nextTick()
+  const row = document.querySelector('.receipt-highlight-row')
+  if (row) {
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+}
+
+watch(highlightItemId, scrollToHighlight)
+
 const message = useMessage()
 const dialog = useDialog()
 const { isMobile } = useIsMobile()
@@ -1036,13 +1048,7 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-  if (highlightItemId.value) {
-    await nextTick()
-    const row = document.querySelector('.receipt-highlight-row')
-    if (row) {
-      row.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }
-  }
+  await scrollToHighlight()
 })
 </script>
 

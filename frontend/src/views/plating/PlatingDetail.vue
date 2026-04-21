@@ -393,7 +393,7 @@
           <n-input-number
             v-model:value="receiptLinkForm.price"
             :min="0"
-            :precision="4"
+            :precision="7"
             placeholder="元"
             style="width: 100%;"
           />

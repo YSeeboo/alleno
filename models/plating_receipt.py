@@ -1,6 +1,6 @@
 import json
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -39,6 +39,9 @@ class PlatingReceipt(Base):
 
 class PlatingReceiptItem(Base):
     __tablename__ = "plating_receipt_item"
+    __table_args__ = (
+        UniqueConstraint("plating_receipt_id", "plating_order_item_id", name="uq_receipt_item_poi"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     plating_receipt_id = Column(String, ForeignKey("plating_receipt.id"), nullable=False)

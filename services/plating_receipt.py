@@ -532,7 +532,11 @@ def link_plating_item_to_receipt(
     if poi.status not in ("电镀中", "已收回"):
         raise ValueError(f"配件项状态为「{poi.status}」，无法关联回收单")
 
-    # 3. Validate qty
+    # 3. Validate qty and price
+    if qty <= 0:
+        raise ValueError("回收数量必须大于 0")
+    if price is not None and price < 0:
+        raise ValueError("回收单价不能为负数")
     remaining = float(poi.qty) - float(poi.received_qty or 0)
     if qty > remaining:
         raise ValueError(f"最多可回收 {remaining}，当前填写 {qty}")
