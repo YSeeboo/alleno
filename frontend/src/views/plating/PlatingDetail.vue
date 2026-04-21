@@ -343,6 +343,77 @@
       </template>
     </n-modal>
 
+    <!-- Receipt Link Modal -->
+    <n-modal v-model:show="receiptLinkModalVisible" preset="card" title="关联电镀回收单" :style="{ width: isMobile ? '95vw' : '520px' }">
+      <div style="background: #f8f9fa; border-radius: 6px; padding: 12px; margin-bottom: 16px; font-size: 13px;">
+        <div style="color: #999; font-size: 11px; margin-bottom: 4px;">当前配件</div>
+        <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px;">
+          <span><strong>{{ receiptLinkItemInfo?.part_id }}</strong> {{ receiptLinkItemInfo?.part_name }}</span>
+          <span style="color: #666;">
+            发出 {{ receiptLinkItemInfo?.qty }} · 已收 {{ receiptLinkItemInfo?.received_qty }} ·
+            <strong style="color: #e67e22;">剩余 {{ receiptLinkItemInfo?.remaining }}</strong>
+          </span>
+        </div>
+        <div v-if="receiptLinkItemInfo?.receive_part_name" style="font-size: 12px; color: #666; margin-top: 4px;">
+          收回配件：{{ receiptLinkItemInfo.receive_part_name }}
+        </div>
+      </div>
+      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="90">
+        <n-form-item label="选择回收单">
+          <n-spin :show="receiptLinkLoading" style="width: 100%;">
+            <div v-if="receiptLinkOptions.length === 0 && !receiptLinkLoading" style="color: #999; font-size: 13px; padding: 8px 0;">
+              暂无可用的回收单（需同供应商、未付款）
+            </div>
+            <n-radio-group v-else v-model:value="receiptLinkForm.receiptId" style="width: 100%;">
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <n-radio v-for="r in receiptLinkOptions" :key="r.id" :value="r.id" style="padding: 6px 0;">
+                  <span style="font-weight: 500;">{{ r.id }}</span>
+                  <span style="font-size: 12px; color: #888; margin-left: 8px;">
+                    {{ r.vendor_name }} · {{ r.created_at?.slice(0, 10) }} · {{ r.item_count }} 项
+                  </span>
+                </n-radio>
+              </div>
+            </n-radio-group>
+          </n-spin>
+        </n-form-item>
+        <n-form-item label="回收数量">
+          <n-input-number
+            v-model:value="receiptLinkForm.qty"
+            :min="0.0001"
+            :max="receiptLinkItemInfo?.remaining || 0"
+            :precision="4"
+            placeholder="回收数量"
+            style="width: 100%;"
+          />
+          <span style="font-size: 11px; color: #999; margin-left: 8px; white-space: nowrap;">
+            最多 {{ receiptLinkItemInfo?.remaining }}
+          </span>
+        </n-form-item>
+        <n-form-item label="回收单价">
+          <n-input-number
+            v-model:value="receiptLinkForm.price"
+            :min="0"
+            :precision="4"
+            placeholder="元"
+            style="width: 100%;"
+          />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="receiptLinkModalVisible = false">取消</n-button>
+          <n-button
+            type="primary"
+            :loading="receiptLinkSubmitting"
+            :disabled="receiptLinkOptions.length === 0"
+            @click="doLinkReceipt"
+          >
+            确认关联
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
     <!-- Confirm Loss Modal -->
     <n-modal v-model:show="showLossModal" preset="card" title="确认损耗" :style="{ width: isMobile ? '95vw' : '420px' }">
       <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="80">
@@ -392,7 +463,9 @@ import {
   updatePlatingDeliveryImages, updatePlatingOrder,
   downloadPlatingExcel, downloadPlatingPdf,
   getPlatingAllItemOrders, getPlatingItemOrders, deletePlatingItemOrderLink,
+  getPlatingReceiptLinks, getAvailableReceipts, linkPlatingItemToReceipt,
 } from '@/api/plating'
+import { deletePlatingReceiptItem } from '@/api/platingReceipts'
 import { confirmPlatingLoss } from '@/api/productionLoss'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { changeOrderStatus } from '@/api/kanban'
@@ -662,6 +735,18 @@ const doSend = async () => {
     await sendPlating(route.params.id)
     message.success('已确认发出')
     await loadData()
+  } catch (e) {
+    const detail = e.response?.data?.detail || ''
+    if (detail.includes('库存不足')) {
+      const items = detail.replace(/^库存不足[：:]?\s*/, '').split('；').filter(Boolean)
+      dialog.warning({
+        title: '库存不足',
+        content: () => h('ul', { style: 'padding-left: 20px; margin: 0;' }, items.map(t => h('li', { style: 'margin: 4px 0;' }, t))),
+        positiveText: '知道了',
+      })
+    } else {
+      message.error(detail || '发出失败')
+    }
   } finally {
     sending.value = false
   }
@@ -1137,6 +1222,94 @@ const renderNoteCell = (row) => {
   )
 }
 
+// --- Receipt Link ---
+const itemReceiptLinks = ref({}) // itemId -> [{receipt_id, receipt_item_id, qty, price}]
+const receiptLinkModalVisible = ref(false)
+const receiptLinkForm = ref({ itemId: null, receiptId: null, qty: null, price: null })
+const receiptLinkOptions = ref([])
+const receiptLinkLoading = ref(false)
+const receiptLinkSubmitting = ref(false)
+const receiptLinkItemInfo = ref(null)
+
+const loadItemReceiptLinks = async () => {
+  try {
+    const { data } = await getPlatingReceiptLinks(route.params.id)
+    const map = {}
+    for (const [key, val] of Object.entries(data)) {
+      map[Number(key)] = val
+    }
+    itemReceiptLinks.value = map
+  } catch (_) {
+    itemReceiptLinks.value = {}
+  }
+}
+
+const openReceiptLinkModal = async (row) => {
+  receiptLinkForm.value = { itemId: row.id, receiptId: null, qty: null, price: null }
+  const remaining = row.qty - (row.received_qty || 0)
+  receiptLinkItemInfo.value = {
+    part_id: row.part_id,
+    part_name: row.part_name,
+    qty: row.qty,
+    received_qty: row.received_qty || 0,
+    remaining,
+    receive_part_name: row.receive_part_name,
+  }
+  receiptLinkOptions.value = []
+  receiptLinkModalVisible.value = true
+  receiptLinkLoading.value = true
+  try {
+    const { data } = await getAvailableReceipts(route.params.id, row.id)
+    receiptLinkOptions.value = data
+  } catch (_) {
+    receiptLinkOptions.value = []
+  } finally {
+    receiptLinkLoading.value = false
+  }
+}
+
+const doLinkReceipt = async () => {
+  const { itemId, receiptId, qty, price } = receiptLinkForm.value
+  if (!receiptId) { message.warning('请选择回收单'); return }
+  if (!qty || qty <= 0) { message.warning('请输入回收数量'); return }
+  if (price == null || price < 0) { message.warning('请输入回收单价'); return }
+  const remaining = receiptLinkItemInfo.value?.remaining || 0
+  if (qty > remaining) { message.warning(`回收数量不能超过剩余可收数量 ${remaining}`); return }
+  receiptLinkSubmitting.value = true
+  try {
+    await linkPlatingItemToReceipt(route.params.id, itemId, {
+      receipt_id: receiptId,
+      qty,
+      price,
+    })
+    message.success('关联成功')
+    receiptLinkModalVisible.value = false
+    await Promise.all([loadItemReceiptLinks(), loadData()])
+  } catch (e) {
+    message.error(e.response?.data?.detail || '关联失败')
+  } finally {
+    receiptLinkSubmitting.value = false
+  }
+}
+
+const doUnlinkReceipt = (itemId, link) => {
+  dialog.warning({
+    title: '确认取消关联',
+    content: `取消关联回收单「${link.receipt_id}」将回滚对应的库存变更，是否继续？`,
+    positiveText: '确认',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await deletePlatingReceiptItem(link.receipt_id, link.receipt_item_id)
+        message.success('已取消关联')
+        await Promise.all([loadItemReceiptLinks(), loadData()])
+      } catch (e) {
+        message.error(e.response?.data?.detail || '取消关联失败')
+      }
+    },
+  })
+}
+
 // --- Order Link ---
 const orderOptions = ref([])
 const itemOrderLinks = ref({}) // itemId -> [{order_id, customer_name, link_id}]
@@ -1296,6 +1469,61 @@ const renderOrderLinkCell = (row) => {
   ])
 }
 
+const renderReceiptLinkCell = (row) => {
+  if (row.status === '未送出') {
+    return h('span', { style: 'color: #ccc;' }, '—')
+  }
+  const links = itemReceiptLinks.value[row.id] || []
+  const receivedQty = row.received_qty || 0
+  const qty = row.qty || 0
+  const fullyReceived = receivedQty >= qty
+
+  if (links.length === 0) {
+    return h(NButton, {
+      size: 'small',
+      text: true,
+      type: 'primary',
+      onClick: () => openReceiptLinkModal(row),
+    }, { default: () => '关联电镀单' })
+  }
+
+  const children = []
+  children.push(...links.map((link) => {
+    const badge = [
+      h('span', {
+        style: 'cursor: pointer; text-decoration: underline;',
+        onClick: () => router.push(`/plating-receipts/${link.receipt_id}?highlight=${link.receipt_item_id}`),
+      }, link.receipt_id),
+    ]
+    if (!fullyReceived) {
+      badge.push(h(NButton, {
+        size: 'tiny',
+        quaternary: true,
+        type: 'error',
+        style: 'padding: 0 2px;',
+        onClick: () => doUnlinkReceipt(row.id, link),
+      }, { default: () => '×' }))
+    }
+    return h('span', {
+      style: 'display: inline-flex; align-items: center; gap: 2px; background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 4px; padding: 1px 6px; font-size: 12px;',
+    }, badge)
+  }))
+
+  if (!fullyReceived) {
+    children.push(h(NButton, {
+      size: 'tiny',
+      text: true,
+      type: 'primary',
+      onClick: () => openReceiptLinkModal(row),
+    }, { default: () => '+' }))
+  }
+
+  const hint = fullyReceived ? '已全部回收' : `已收 ${receivedQty} / ${qty}`
+  children.push(h('div', { style: 'font-size: 11px; color: #999; margin-top: 2px; width: 100%;' }, hint))
+
+  return h('div', { style: 'display: flex; flex-wrap: wrap; gap: 4px; align-items: center;' }, children)
+}
+
 const itemColumns = [
   { title: '配件编号', key: 'part_id', width: 110 },
   {
@@ -1451,6 +1679,12 @@ const itemColumns = [
     render: (row) => renderOrderLinkCell(row),
   },
   {
+    title: '关联电镀单',
+    key: 'receipt_link',
+    minWidth: 160,
+    render: (row) => renderReceiptLinkCell(row),
+  },
+  {
     title: '操作',
     key: 'actions',
     width: 100,
@@ -1512,7 +1746,7 @@ onMounted(async () => {
       unit: p.unit,
     }))
     colorVariantList.value = colorsRes.data
-    await Promise.all([loadData(), loadItemOrderLinks()])
+    await Promise.all([loadData(), loadItemOrderLinks(), loadItemReceiptLinks()])
   } finally {
     loading.value = false
   }
