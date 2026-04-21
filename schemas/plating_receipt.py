@@ -40,6 +40,12 @@ class PlatingReceiptAddItemsRequest(BaseModel):
     items: List[PlatingReceiptItemCreate] = Field(min_length=1)
 
 
+class LinkReceiptRequest(BaseModel):
+    receipt_id: str
+    qty: float = Field(gt=0)
+    price: float = Field(ge=0)
+
+
 class PlatingReceiptItemUpdate(BaseModel):
     qty: float = Field(None, gt=0)
     weight: Optional[float] = Field(None, ge=0)
