@@ -18,9 +18,15 @@ from schemas.plating import (
     PlatingResponse,
     PlatingUpdate,
 )
+from schemas.plating_receipt import LinkReceiptRequest
 from schemas.production_loss import ConfirmLossRequest, ProductionLossResponse
 from services.production_loss import confirm_plating_loss
 from services.order_todo import get_links_for_production_item, get_links_for_plating_order, delete_link
+from services.plating_receipt import (
+    get_receipt_links_for_plating_order,
+    get_available_receipts_for_item,
+    link_plating_item_to_receipt,
+)
 from services.plating_excel import build_plating_order_excel
 from services.plating_pdf import build_plating_order_pdf
 from services.plating import (
@@ -235,6 +241,35 @@ def api_update_plating_delivery_images(order_id: str, body: PlatingDeliveryImage
     with service_errors():
         order = update_plating_delivery_images(db, order_id, body.delivery_images)
     return order
+
+
+@router.get("/{order_id}/receipt-links")
+def api_get_receipt_links(order_id: str, db: Session = Depends(get_db)):
+    """批量获取电镀单所有配件项的关联回收单"""
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
+    return get_receipt_links_for_plating_order(db, order_id)
+
+
+@router.get("/{order_id}/items/{item_id}/available-receipts")
+def api_get_available_receipts(order_id: str, item_id: int, db: Session = Depends(get_db)):
+    """获取可关联的回收单列表（同供应商、未付款、未关联该配件项）"""
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
+    with service_errors():
+        return get_available_receipts_for_item(db, order_id, item_id)
+
+
+@router.post("/{order_id}/items/{item_id}/link-receipt")
+def api_link_receipt(order_id: str, item_id: int, body: LinkReceiptRequest, db: Session = Depends(get_db)):
+    """将电镀配件项关联到已有的回收单"""
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
+    with service_errors():
+        return link_plating_item_to_receipt(db, order_id, item_id, body.receipt_id, body.qty, body.price)
 
 
 @router.get("/{order_id}/items/order-links")

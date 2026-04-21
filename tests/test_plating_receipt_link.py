@@ -182,3 +182,68 @@ def test_link_receipt_paid_rejected(db):
     ], status="已付款")
     with pytest.raises(ValueError, match="已付款"):
         link_plating_item_to_receipt(db, order.id, poi.id, receipt.id, 5.0, 0.5)
+
+
+# --- API Tests ---
+
+def test_api_receipt_links(client, db):
+    part, order, poi = _setup(db, supplier="Supplier A")
+    receipt = create_plating_receipt(db, "Supplier A", [
+        {"plating_order_item_id": poi.id, "part_id": part.id, "qty": 10.0, "price": 1.5},
+    ])
+    resp = client.get(f"/api/plating/{order.id}/receipt-links")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert str(poi.id) in data
+    assert data[str(poi.id)][0]["receipt_id"] == receipt.id
+
+
+def test_api_available_receipts(client, db):
+    part, order, poi = _setup(db, supplier="Supplier A")
+    # Create a receipt with a different item from same supplier
+    other_part = create_part(db, {"name": "AP1", "category": "小配件"})
+    add_stock(db, "part", other_part.id, 100, "stock")
+    other_order = create_plating_order(db, "Supplier A", [{"part_id": other_part.id, "qty": 10}])
+    send_plating_order(db, other_order.id)
+    db.flush()
+    other_poi = get_plating_items(db, other_order.id)[0]
+    receipt = create_plating_receipt(db, "Supplier A", [
+        {"plating_order_item_id": other_poi.id, "part_id": other_part.id, "qty": 5, "price": 1},
+    ])
+    resp = client.get(f"/api/plating/{order.id}/items/{poi.id}/available-receipts")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) >= 1
+    assert any(r["id"] == receipt.id for r in data)
+
+
+def test_api_link_receipt(client, db):
+    part, order, poi = _setup(db, supplier="Supplier A")
+    other_part = create_part(db, {"name": "AP2", "category": "小配件"})
+    add_stock(db, "part", other_part.id, 100, "stock")
+    other_order = create_plating_order(db, "Supplier A", [{"part_id": other_part.id, "qty": 10}])
+    send_plating_order(db, other_order.id)
+    db.flush()
+    other_poi = get_plating_items(db, other_order.id)[0]
+    receipt = create_plating_receipt(db, "Supplier A", [
+        {"plating_order_item_id": other_poi.id, "part_id": other_part.id, "qty": 5, "price": 1},
+    ])
+    resp = client.post(f"/api/plating/{order.id}/items/{poi.id}/link-receipt", json={
+        "receipt_id": receipt.id,
+        "qty": 20.0,
+        "price": 0.5,
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["receipt_id"] == receipt.id
+    assert data["qty"] == 20.0
+
+
+def test_api_link_receipt_validation_error(client, db):
+    part, order, poi = _setup(db, supplier="Supplier A", qty=10.0)
+    resp = client.post(f"/api/plating/{order.id}/items/{poi.id}/link-receipt", json={
+        "receipt_id": "ER-9999",
+        "qty": 5.0,
+        "price": 0.5,
+    })
+    assert resp.status_code == 400
