@@ -150,7 +150,13 @@
             <n-button v-if="!isPaid()" size="small" type="primary" @click="openAddItemsModal">+ 增加配件</n-button>
           </div>
         </template>
-        <n-data-table v-if="receipt.items?.length > 0" :columns="itemColumns" :data="receipt.items" :bordered="false" />
+        <n-data-table
+          v-if="receipt.items?.length > 0"
+          :columns="itemColumns"
+          :data="receipt.items"
+          :bordered="false"
+          :row-class-name="(row) => row.id === highlightItemId ? 'receipt-highlight-row' : ''"
+        />
         <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
       </n-card>
 
@@ -320,6 +326,11 @@ import ImageUploadModal from '@/components/ImageUploadModal.vue'
 
 const route = useRoute()
 const router = useRouter()
+
+const highlightItemId = computed(() => {
+  const val = route.query.highlight
+  return val ? Number(val) : null
+})
 const message = useMessage()
 const dialog = useDialog()
 const { isMobile } = useIsMobile()
@@ -1025,6 +1036,13 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+  if (highlightItemId.value) {
+    await nextTick()
+    const row = document.querySelector('.receipt-highlight-row')
+    if (row) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }
 })
 </script>
 
@@ -1119,5 +1137,24 @@ onMounted(async () => {
 .delivery-images-meta {
   color: #8a6b39;
   font-size: 12px;
+}
+
+@keyframes receipt-highlight-flash {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: #c8e6c9; }
+}
+.receipt-highlight-row td {
+  animation: receipt-highlight-flash 1.6s ease-in-out 3;
+  position: relative;
+}
+.receipt-highlight-row td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: #18a058;
+  border-radius: 2px;
 }
 </style>
