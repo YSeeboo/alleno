@@ -444,6 +444,145 @@ def delete_plating_receipt_item(db: Session, receipt_id: str, item_id: int) -> N
         db.flush()
 
 
+def get_receipt_links_for_plating_order(db: Session, plating_order_id: str) -> dict:
+    """Return {item_id: [{receipt_id, receipt_item_id, qty, price}, ...]} for all items in this order."""
+    item_ids = [
+        row.id for row in
+        db.query(PlatingOrderItem.id).filter(PlatingOrderItem.plating_order_id == plating_order_id).all()
+    ]
+    if not item_ids:
+        return {}
+    rows = (
+        db.query(PlatingReceiptItem)
+        .filter(PlatingReceiptItem.plating_order_item_id.in_(item_ids))
+        .all()
+    )
+    result = {}
+    for r in rows:
+        result.setdefault(r.plating_order_item_id, []).append({
+            "receipt_id": r.plating_receipt_id,
+            "receipt_item_id": r.id,
+            "qty": float(r.qty),
+            "price": float(r.price) if r.price is not None else None,
+        })
+    return result
+
+
+def get_available_receipts_for_item(db: Session, plating_order_id: str, item_id: int) -> list:
+    """Return unpaid receipts from the same supplier, excluding those already linked to this item."""
+    poi = db.query(PlatingOrderItem).filter(
+        PlatingOrderItem.id == item_id,
+        PlatingOrderItem.plating_order_id == plating_order_id,
+    ).first()
+    if poi is None:
+        raise ValueError(f"PlatingOrderItem {item_id} not found in order {plating_order_id}")
+
+    order = db.query(PlatingOrder).filter(PlatingOrder.id == plating_order_id).first()
+    if order is None:
+        raise ValueError(f"PlatingOrder {plating_order_id} not found")
+
+    # Find receipt IDs already linked to this item
+    linked_receipt_ids = {
+        row.plating_receipt_id for row in
+        db.query(PlatingReceiptItem.plating_receipt_id)
+        .filter(PlatingReceiptItem.plating_order_item_id == item_id)
+        .all()
+    }
+
+    query = db.query(PlatingReceipt).filter(
+        PlatingReceipt.vendor_name == order.supplier_name,
+        PlatingReceipt.status == "未付款",
+    )
+    if linked_receipt_ids:
+        query = query.filter(PlatingReceipt.id.notin_(linked_receipt_ids))
+
+    receipts = query.order_by(PlatingReceipt.created_at.desc()).all()
+    result = []
+    for r in receipts:
+        item_count = db.query(PlatingReceiptItem).filter(
+            PlatingReceiptItem.plating_receipt_id == r.id
+        ).count()
+        result.append({
+            "id": r.id,
+            "vendor_name": r.vendor_name,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "item_count": item_count,
+        })
+    return result
+
+
+def link_plating_item_to_receipt(
+    db: Session,
+    plating_order_id: str,
+    item_id: int,
+    receipt_id: str,
+    qty: float,
+    price: float,
+) -> dict:
+    """Link a plating order item to an existing receipt. Returns {receipt_item_id, qty, price}."""
+    # 1. Validate item exists and belongs to order
+    poi = db.query(PlatingOrderItem).filter(
+        PlatingOrderItem.id == item_id,
+        PlatingOrderItem.plating_order_id == plating_order_id,
+    ).first()
+    if poi is None:
+        raise ValueError(f"PlatingOrderItem {item_id} not found in order {plating_order_id}")
+
+    # 2. Validate item status
+    if poi.status not in ("电镀中", "已收回"):
+        raise ValueError(f"配件项状态为「{poi.status}」，无法关联回收单")
+
+    # 3. Validate qty
+    remaining = float(poi.qty) - float(poi.received_qty or 0)
+    if qty > remaining:
+        raise ValueError(f"最多可回收 {remaining}，当前填写 {qty}")
+
+    # 4. Validate receipt exists and is unpaid
+    receipt = db.query(PlatingReceipt).filter(PlatingReceipt.id == receipt_id).first()
+    if receipt is None:
+        raise ValueError(f"回收单 {receipt_id} 不存在")
+    if receipt.status == "已付款":
+        raise ValueError("已付款的回收单不能添加明细")
+
+    # 5. Validate vendor match
+    order = db.query(PlatingOrder).filter(PlatingOrder.id == plating_order_id).first()
+    if order.supplier_name != receipt.vendor_name:
+        raise ValueError(
+            f"电镀单供应商「{order.supplier_name}」与回收单商家「{receipt.vendor_name}」不一致"
+        )
+
+    # 6. Validate no duplicate
+    existing = db.query(PlatingReceiptItem).filter(
+        PlatingReceiptItem.plating_receipt_id == receipt_id,
+        PlatingReceiptItem.plating_order_item_id == item_id,
+    ).first()
+    if existing:
+        raise ValueError(f"该配件项已存在于回收单 {receipt_id} 中")
+
+    # 7. Build item data and delegate to add_plating_receipt_items
+    part_id = poi.receive_part_id or poi.part_id
+    item_data = {
+        "plating_order_item_id": poi.id,
+        "part_id": part_id,
+        "qty": qty,
+        "price": price,
+    }
+    add_plating_receipt_items(db, receipt_id, [item_data])
+
+    # Find the newly created receipt item
+    new_item = db.query(PlatingReceiptItem).filter(
+        PlatingReceiptItem.plating_receipt_id == receipt_id,
+        PlatingReceiptItem.plating_order_item_id == item_id,
+    ).first()
+
+    return {
+        "receipt_id": receipt_id,
+        "receipt_item_id": new_item.id,
+        "qty": float(new_item.qty),
+        "price": float(new_item.price) if new_item.price is not None else None,
+    }
+
+
 def get_receipt_vendor_names(db: Session) -> list[str]:
     rows = db.query(PlatingReceipt.vendor_name).distinct().all()
     return [row[0] for row in rows]
