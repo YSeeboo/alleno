@@ -32,3 +32,11 @@ export const getPlatingItemOrders = (orderId, itemId) =>
   api.get(`/plating/${orderId}/items/${itemId}/orders`)
 export const deletePlatingItemOrderLink = (orderId, itemId, linkId) =>
   api.delete(`/plating/${orderId}/items/${itemId}/orders/${linkId}`)
+
+// --- Receipt links ---
+export const getPlatingReceiptLinks = (orderId) =>
+  api.get(`/plating/${orderId}/receipt-links`)
+export const getAvailableReceipts = (orderId, itemId) =>
+  api.get(`/plating/${orderId}/items/${itemId}/available-receipts`)
+export const linkPlatingItemToReceipt = (orderId, itemId, data) =>
+  api.post(`/plating/${orderId}/items/${itemId}/link-receipt`, data)
