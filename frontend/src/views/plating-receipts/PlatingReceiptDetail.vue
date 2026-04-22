@@ -1149,11 +1149,11 @@ onMounted(async () => {
   0%, 100% { background-color: transparent; }
   50% { background-color: #c8e6c9; }
 }
-.receipt-highlight-row td {
+:deep(.receipt-highlight-row td) {
   animation: receipt-highlight-flash 1.6s ease-in-out 3;
   position: relative;
 }
-.receipt-highlight-row td:first-child::before {
+:deep(.receipt-highlight-row td:first-child)::before {
   content: '';
   position: absolute;
   left: 0;
