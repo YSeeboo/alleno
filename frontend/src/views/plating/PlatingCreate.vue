@@ -49,6 +49,12 @@
             :options="unitOptions"
             style="width: 90px;"
           />
+          <n-input-number v-model:value="item.weight" :min="0" :precision="4" :step="0.1" placeholder="重量" style="width: 110px;" />
+          <n-select
+            v-model:value="item.weight_unit"
+            :options="weightUnitOptions"
+            style="width: 80px;"
+          />
           <n-input v-model:value="item.note" placeholder="备注" style="width: 140px;" />
           <n-button type="error" size="small" @click="items.splice(idx, 1)">删除</n-button>
         </n-space>
@@ -105,7 +111,7 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NDatePicker } from 'naive-ui'
 import { listParts, findOrCreateVariant, createPartVariant, getColorVariants } from '@/api/parts'
@@ -116,6 +122,7 @@ import { tsToDateStr } from '@/utils/date'
 import { useIsMobile } from '@/composables/useIsMobile'
 
 const router = useRouter()
+const route = useRoute()
 const message = useMessage()
 const dialog = useDialog()
 const { isMobile } = useIsMobile()
@@ -133,7 +140,7 @@ const BADGE_COLORS = { G: '#DAA520', S: '#C0C0C0', RG: '#B76E79' }
 const COLOR_CODE_TO_METHOD = { G: '金', S: '白K', RG: '玫瑰金' }
 
 function createEmptyItem() {
-  return { part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金', note: '', _selectedColor: null, _variantInfo: null, _variantLoading: false, _creatingVariant: false, _reqSeq: 0 }
+  return { part_id: null, receive_part_id: null, qty: 1, unit: '个', weight: null, weight_unit: 'kg', plating_method: '金', note: '', _selectedColor: null, _variantInfo: null, _variantLoading: false, _creatingVariant: false, _reqSeq: 0 }
 }
 
 const unitOptions = [
@@ -142,6 +149,11 @@ const unitOptions = [
   { label: '米', value: '米' },
   { label: 'g', value: 'g' },
   { label: 'kg', value: 'kg' },
+]
+
+const weightUnitOptions = [
+  { label: 'kg', value: 'kg' },
+  { label: 'g', value: 'g' },
 ]
 
 const COLOR_LABEL_TO_CODE = { '金色': 'G', '白K': 'S', '玫瑰金': 'RG' }
@@ -282,6 +294,32 @@ onMounted(async () => {
     }))
     colorVariants.value = colorsRes.data
     supplierOptions.value = suppliersRes.data.map((s) => ({ label: s.name, value: s.name }))
+    // Prefill from purchase order
+    if (route.query.prefill) {
+      try {
+        const prefillItems = JSON.parse(route.query.prefill)
+        if (Array.isArray(prefillItems) && prefillItems.length > 0) {
+          items.splice(0, items.length)
+          for (const pi of prefillItems) {
+            const item = createEmptyItem()
+            item.part_id = pi.part_id
+            item.qty = pi.qty
+            item.unit = pi.unit || '个'
+            items.push(item)
+          }
+          // Trigger color variant lookup for each prefilled item
+          for (const item of items) {
+            if (item.part_id) {
+              const part = allParts.value.find((p) => p.id === item.part_id)
+              const existingCode = getPartColorCode(part)
+              toggleColor(item, existingCode || 'G')
+            }
+          }
+        }
+      } catch (_) {
+        // Invalid prefill JSON, ignore
+      }
+    }
   } catch (_) {
     // error already shown by axios interceptor
   }
