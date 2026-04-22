@@ -1282,11 +1282,11 @@ const doLinkReceipt = async () => {
       qty,
       price,
     })
-    message.success('关联成功')
+    message.success('关联回收单成功')
     receiptLinkModalVisible.value = false
     await Promise.all([loadItemReceiptLinks(), loadData()])
   } catch (e) {
-    message.error(e.response?.data?.detail || '关联失败')
+    message.error(e.response?.data?.detail || '关联回收单失败')
   } finally {
     receiptLinkSubmitting.value = false
   }
@@ -1484,7 +1484,7 @@ const renderReceiptLinkCell = (row) => {
       text: true,
       type: 'primary',
       onClick: () => openReceiptLinkModal(row),
-    }, { default: () => '关联电镀单' })
+    }, { default: () => '关联回收单' })
   }
 
   const children = []
@@ -1679,7 +1679,7 @@ const itemColumns = [
     render: (row) => renderOrderLinkCell(row),
   },
   {
-    title: '关联电镀单',
+    title: '关联回收单',
     key: 'receipt_link',
     minWidth: 160,
     render: (row) => renderReceiptLinkCell(row),
