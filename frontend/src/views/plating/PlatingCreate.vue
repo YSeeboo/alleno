@@ -14,6 +14,7 @@
           tag
           placeholder="选择或输入电镀厂名称"
           :style="{ width: isMobile ? '100%' : '300px' }"
+          @update:value="checkSameDayOrder"
         />
       </n-form-item>
       <n-form-item label="备注">
@@ -29,6 +30,24 @@
         />
       </n-form-item>
     </n-form>
+
+    <n-alert
+      v-if="mergeCandidate"
+      type="warning"
+      style="margin-bottom: 16px;"
+      :title="`该厂家今天已有电镀单`"
+    >
+      <div style="margin-bottom: 8px;">
+        <strong>{{ mergeCandidate.supplier_name }}</strong> 今天已有电镀单
+        <strong>{{ mergeCandidate.id }}</strong>（待发出）。是否将当前配件合并到该电镀单？
+      </div>
+      <n-space size="small">
+        <n-button type="primary" size="small" :loading="merging" @click="doMerge">
+          合并到 {{ mergeCandidate.id }}
+        </n-button>
+        <n-button size="small" @click="mergeCandidate = null">仍然新建</n-button>
+      </n-space>
+    </n-alert>
 
     <n-card title="电镀明细" style="margin-bottom: 16px;">
       <div v-for="(item, idx) in items" :key="idx" style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #f0f0f0;">
@@ -113,9 +132,9 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
-import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NDatePicker } from 'naive-ui'
+import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NDatePicker, NAlert } from 'naive-ui'
 import { listParts, findOrCreateVariant, createPartVariant, getColorVariants } from '@/api/parts'
-import { createPlating } from '@/api/plating'
+import { createPlating, listPlating, addPlatingItem } from '@/api/plating'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { renderOptionWithImage } from '@/utils/ui'
 import { tsToDateStr } from '@/utils/date'
@@ -135,6 +154,59 @@ const submitting = ref(false)
 const partOptions = ref([])
 const allParts = ref([])
 const colorVariants = ref([])
+
+const mergeCandidate = ref(null)
+const checkingMerge = ref(false)
+const merging = ref(false)
+
+const checkSameDayOrder = async (supplier) => {
+  if (!supplier?.trim()) {
+    mergeCandidate.value = null
+    return
+  }
+  checkingMerge.value = true
+  try {
+    const { data: orders } = await listPlating({ supplier_name: supplier, status: 'pending' })
+    const today = new Date().toISOString().slice(0, 10)
+    const match = orders.find((o) => o.created_at?.slice(0, 10) === today)
+    if (match) {
+      mergeCandidate.value = {
+        id: match.id,
+        supplier_name: match.supplier_name,
+        created_at: match.created_at,
+      }
+    } else {
+      mergeCandidate.value = null
+    }
+  } catch (_) {
+    mergeCandidate.value = null
+  } finally {
+    checkingMerge.value = false
+  }
+}
+
+const doMerge = async () => {
+  if (!mergeCandidate.value) return
+  const validItems = items.filter((i) => i.part_id)
+  if (validItems.length === 0) {
+    message.warning('请至少有一条有效明细')
+    return
+  }
+  merging.value = true
+  try {
+    const orderId = mergeCandidate.value.id
+    for (const item of validItems) {
+      const { _selectedColor, _variantInfo, _variantLoading, _creatingVariant, _reqSeq, ...clean } = item
+      await addPlatingItem(orderId, clean)
+    }
+    message.success(`已合并 ${validItems.length} 项配件到 ${orderId}`)
+    router.push(`/plating/${orderId}`)
+  } catch (e) {
+    message.error(e.response?.data?.detail || '合并失败')
+  } finally {
+    merging.value = false
+  }
+}
 
 const BADGE_COLORS = { G: '#DAA520', S: '#C0C0C0', RG: '#B76E79' }
 const COLOR_CODE_TO_METHOD = { G: '金', S: '白K', RG: '玫瑰金' }
