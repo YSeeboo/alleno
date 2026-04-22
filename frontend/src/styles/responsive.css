@@ -52,10 +52,7 @@
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
-  .n-data-table th,
-  .n-data-table td {
-    white-space: nowrap;
-  }
+  /* nowrap is now global — see global.css */
 
   /* --- Cards: reduce padding --- */
   .n-card .n-card__content {

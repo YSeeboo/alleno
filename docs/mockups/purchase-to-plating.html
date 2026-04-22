@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>采购单 → 创建电镀单 Mockup</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f5f5; color: #333; }
+
+  .mockup-nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: #fff; border-bottom: 1px solid #e0e0e0; padding: 12px 24px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .mockup-nav .step { padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; border: 1px solid #ddd; background: #fff; }
+  .mockup-nav .step.active { background: #18a058; color: #fff; border-color: #18a058; }
+  .mockup-nav .step-arrow { color: #999; font-size: 18px; }
+  .mockup-nav .title { font-size: 14px; color: #999; margin-left: auto; }
+
+  .page { display: none; max-width: 900px; margin: 72px auto 40px; padding: 0 16px; }
+  .page.active { display: block; }
+
+  .card { background: #fff; border-radius: 8px; border: 1px solid #e8e8e8; margin-bottom: 16px; }
+  .card-header { padding: 16px 20px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
+  .card-header h3 { font-size: 16px; font-weight: 600; }
+  .card-body { padding: 20px; }
+
+  .desc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid #e8e8e8; border-radius: 4px; }
+  .desc-item { display: flex; border-bottom: 1px solid #e8e8e8; }
+  .desc-item:nth-last-child(-n+3) { border-bottom: none; }
+  .desc-label { background: #fafafa; padding: 10px 16px; font-size: 13px; color: #666; min-width: 80px; border-right: 1px solid #e8e8e8; white-space: nowrap; }
+  .desc-value { padding: 10px 16px; font-size: 13px; flex: 1; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: #fafafa; padding: 10px 16px; text-align: left; font-weight: 500; color: #666; border-bottom: 1px solid #e8e8e8; white-space: nowrap; }
+  td { padding: 10px 16px; border-bottom: 1px solid #f0f0f0; }
+
+  .btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 14px; border-radius: 4px; font-size: 13px; cursor: pointer; border: 1px solid #ddd; background: #fff; transition: all .15s; }
+  .btn:hover { border-color: #18a058; color: #18a058; }
+  .btn-primary { background: #18a058; color: #fff; border-color: #18a058; }
+  .btn-primary:hover { background: #16914e; }
+  .btn-warning { background: #f0a020; color: #fff; border-color: #f0a020; }
+  .btn-warning:hover { background: #d89018; }
+  .btn-sm { padding: 3px 10px; font-size: 12px; }
+  .btn-dashed { border-style: dashed; }
+
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; }
+  .tag-success { background: #e8f5e9; color: #18a058; }
+  .tag-warning { background: #fff3e0; color: #f0a020; }
+
+  /* Modal */
+  .modal-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,.35); z-index: 200; justify-content: center; align-items: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: #fff; border-radius: 12px; width: 560px; max-width: 95vw;
+    max-height: 85vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,.15);
+  }
+  .modal-header {
+    padding: 20px 24px 16px; border-bottom: 1px solid #f0f0f0;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .modal-header h3 { font-size: 16px; font-weight: 600; }
+  .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #999; padding: 4px 8px; }
+  .modal-close:hover { color: #333; }
+  .modal-body { padding: 20px 24px; }
+  .modal-footer { padding: 16px 24px; border-top: 1px solid #f0f0f0; display: flex; justify-content: flex-end; gap: 8px; }
+
+  /* Checkbox table */
+  .check-table td, .check-table th { padding: 10px 12px; }
+  .check-table input[type="checkbox"] { width: 16px; height: 16px; accent-color: #18a058; }
+  .qty-input {
+    width: 80px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px;
+    font-size: 13px; text-align: center;
+  }
+  .qty-input:focus { outline: none; border-color: #18a058; }
+
+  /* Plating create page */
+  .form-row { display: flex; align-items: center; margin-bottom: 16px; gap: 12px; }
+  .form-label { min-width: 90px; font-size: 14px; color: #333; text-align: right; }
+  .form-input { flex: 1; max-width: 300px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+  .form-input:focus { outline: none; border-color: #18a058; }
+  select.form-input { background: #fff; }
+
+  .plating-item {
+    padding: 16px; margin-bottom: 12px; border-bottom: 1px solid #f0f0f0;
+  }
+  .plating-item-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .item-field { display: flex; flex-direction: column; gap: 4px; }
+  .item-field label { font-size: 11px; color: #999; }
+  .item-field input, .item-field select {
+    padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;
+  }
+  .item-field input:focus, .item-field select:focus { outline: none; border-color: #18a058; }
+  .prefilled { background: #f0faf4 !important; border-color: #18a058 !important; }
+
+  .color-badges { margin-top: 8px; display: flex; gap: 6px; }
+  .color-badge {
+    padding: 2px 12px; border-radius: 4px; font-size: 11px; font-weight: bold;
+    cursor: pointer; border: 1px solid;
+  }
+
+  /* Merge dialog */
+  .merge-alert {
+    background: #fff8e1; border: 1px solid #ffe082; border-radius: 8px;
+    padding: 16px 20px; margin-bottom: 16px; display: none;
+  }
+  .merge-alert.active { display: block; }
+  .merge-alert-title { font-weight: 600; font-size: 14px; color: #e65100; margin-bottom: 8px; }
+  .merge-alert-text { font-size: 13px; color: #666; line-height: 1.6; }
+  .merge-alert-actions { margin-top: 12px; display: flex; gap: 8px; }
+
+  .back-link { font-size: 14px; color: #333; cursor: pointer; text-decoration: none; }
+  .back-link:hover { color: #18a058; }
+
+  .highlight-row { background: #f0faf4; }
+  .annotation {
+    font-size: 11px; color: #e65100; background: #fff3e0; padding: 2px 8px;
+    border-radius: 3px; margin-left: 8px; font-weight: 500;
+  }
+</style>
+</head>
+<body>
+
+<!-- Navigation -->
+<div class="mockup-nav">
+  <button class="step active" onclick="showPage('page1')">① 采购单详情</button>
+  <span class="step-arrow">→</span>
+  <button class="step" onclick="showPage('page2')">② 勾选配件弹窗</button>
+  <span class="step-arrow">→</span>
+  <button class="step" onclick="showPage('page3')">③ 新建电镀单（预填）</button>
+  <span class="step-arrow">→</span>
+  <button class="step" onclick="showPage('page4')">④ 合并提示</button>
+  <span class="title">采购单整单电镀 · 交互 Mockup</span>
+</div>
+
+<!-- ==================== Page 1: 采购单详情 ==================== -->
+<div id="page1" class="page active">
+  <div style="margin-bottom: 16px;">
+    <span class="back-link">← 返回</span>
+    <h2 style="display: inline; margin-left: 12px; font-size: 20px;">采购单详情</h2>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>基本信息</h3></div>
+    <div class="card-body">
+      <div class="desc-grid">
+        <div class="desc-item"><div class="desc-label">购入单号</div><div class="desc-value">CG-0042</div></div>
+        <div class="desc-item"><div class="desc-label">商家</div><div class="desc-value">义乌小张饰品</div></div>
+        <div class="desc-item"><div class="desc-label">状态</div><div class="desc-value"><span class="tag tag-warning">未付款 ▾</span></div></div>
+        <div class="desc-item"><div class="desc-label">总金额</div><div class="desc-value">¥ 1,250.00</div></div>
+        <div class="desc-item"><div class="desc-label">创建时间</div><div class="desc-value">2026-04-22</div></div>
+        <div class="desc-item"><div class="desc-label">付款时间</div><div class="desc-value">-</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h3>购入明细</h3>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn btn-warning btn-sm" onclick="showPage('page2')">
+          创建电镀单
+          <span class="annotation">NEW</span>
+        </button>
+        <button class="btn btn-primary btn-sm">追加配件</button>
+        <button class="btn btn-sm">批量关联订单</button>
+      </div>
+    </div>
+    <div class="card-body" style="padding: 0;">
+      <table>
+        <thead>
+          <tr>
+            <th>配件编号</th>
+            <th>配件名称</th>
+            <th>数量</th>
+            <th>单位</th>
+            <th>单价</th>
+            <th>金额</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>PJ-DZ-00123</td>
+            <td>水滴吊坠</td>
+            <td>500</td>
+            <td>个</td>
+            <td>1.20</td>
+            <td>¥ 600.00</td>
+            <td><button class="btn btn-sm">修改</button> <button class="btn btn-sm">删除</button></td>
+          </tr>
+          <tr>
+            <td>PJ-LT-00045</td>
+            <td>O字链 45cm</td>
+            <td>200</td>
+            <td>条</td>
+            <td>2.50</td>
+            <td>¥ 500.00</td>
+            <td><button class="btn btn-sm">修改</button> <button class="btn btn-sm">删除</button></td>
+          </tr>
+          <tr>
+            <td>PJ-X-00078</td>
+            <td>龙虾扣 12mm</td>
+            <td>300</td>
+            <td>个</td>
+            <td>0.50</td>
+            <td>¥ 150.00</td>
+            <td><button class="btn btn-sm">修改</button> <button class="btn btn-sm">删除</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Page 2: 勾选配件弹窗 ==================== -->
+<div id="page2" class="page active" style="display:none;">
+  <div style="margin-bottom: 16px;">
+    <span class="back-link">← 返回</span>
+    <h2 style="display: inline; margin-left: 12px; font-size: 20px;">采购单详情</h2>
+  </div>
+
+  <!-- 背景虚化的详情页（简略） -->
+  <div class="card" style="opacity: 0.3; pointer-events: none;">
+    <div class="card-header"><h3>基本信息</h3></div>
+    <div class="card-body" style="height: 60px;"></div>
+  </div>
+  <div class="card" style="opacity: 0.3; pointer-events: none;">
+    <div class="card-header"><h3>购入明细</h3></div>
+    <div class="card-body" style="height: 80px;"></div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay active">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>选择电镀配件</h3>
+        <button class="modal-close" onclick="showPage('page1')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="font-size: 13px; color: #999; margin-bottom: 12px;">
+          来源：CG-0042（义乌小张饰品）· 勾选需要电镀的配件，数量可调整
+        </div>
+        <table class="check-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox" checked id="checkAll" onchange="toggleAll(this)"></th>
+              <th>配件编号</th>
+              <th>配件名称</th>
+              <th>电镀数量</th>
+              <th>单位</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><input type="checkbox" checked class="item-check"></td>
+              <td>PJ-DZ-00123</td>
+              <td>水滴吊坠</td>
+              <td><input type="number" class="qty-input" value="500"></td>
+              <td>个</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox" checked class="item-check"></td>
+              <td>PJ-LT-00045</td>
+              <td>O字链 45cm</td>
+              <td><input type="number" class="qty-input" value="200"></td>
+              <td>条</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox" checked class="item-check"></td>
+              <td>PJ-X-00078</td>
+              <td>龙虾扣 12mm</td>
+              <td><input type="number" class="qty-input" value="300"></td>
+              <td>个</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="showPage('page1')">取消</button>
+        <button class="btn btn-primary" onclick="showPage('page3')">新建电镀单 →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Page 3: 新建电镀单（预填） ==================== -->
+<div id="page3" class="page" style="display:none;">
+  <div style="margin-bottom: 16px;">
+    <span class="back-link" onclick="showPage('page1')">← 返回</span>
+    <h2 style="display: inline; margin-left: 12px; font-size: 20px;">新建电镀单</h2>
+    <span class="annotation">配件已从 CG-0042 预填</span>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <div class="form-row">
+        <span class="form-label">电镀厂名称</span>
+        <select class="form-input" id="supplierSelect" onchange="checkMerge()">
+          <option value="">选择或输入电镀厂名称</option>
+          <option value="鑫达电镀">鑫达电镀</option>
+          <option value="永兴电镀厂">永兴电镀厂</option>
+          <option value="金辉表面处理">金辉表面处理</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <span class="form-label">备注</span>
+        <input class="form-input" placeholder="备注（可选）" />
+      </div>
+      <div class="form-row">
+        <span class="form-label">创建时间</span>
+        <input class="form-input" type="date" value="2026-04-22" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Merge alert -->
+  <div class="merge-alert" id="mergeAlert">
+    <div class="merge-alert-title">⚠ 该厂家今天已有电镀单</div>
+    <div class="merge-alert-text">
+      <strong>鑫达电镀</strong> 在 2026-04-22 已有电镀单 <strong>EP-0087</strong>（3 项配件，待发出）。<br>
+      是否将当前配件合并到该电镀单？
+    </div>
+    <div class="merge-alert-actions">
+      <button class="btn btn-primary" onclick="showPage('page5')">合并到 EP-0087</button>
+      <button class="btn" onclick="closeMerge()">仍然新建</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>电镀明细</h3></div>
+    <div class="card-body" style="padding: 0;">
+      <div class="plating-item">
+        <div class="plating-item-row">
+          <div class="item-field">
+            <label>发出配件</label>
+            <input class="prefilled" value="PJ-DZ-00123 水滴吊坠" style="width: 200px;" readonly>
+          </div>
+          <div class="item-field">
+            <label>发出数量</label>
+            <input class="prefilled" type="number" value="500" style="width: 90px;">
+          </div>
+          <div class="item-field">
+            <label>单位</label>
+            <select style="width: 70px;"><option>个</option></select>
+          </div>
+          <div class="item-field">
+            <label>备注</label>
+            <input placeholder="备注" style="width: 120px;">
+          </div>
+          <button class="btn btn-sm" style="margin-top: 18px; color: #e03050; border-color: #e03050;">删除</button>
+        </div>
+        <div class="color-badges">
+          <span class="color-badge" style="background: #DAA520; color: #fff; border-color: #DAA520;">G</span>
+          <span class="color-badge" style="background: #f5f5f5; color: #C0C0C0; border-color: #C0C0C0;">S</span>
+          <span class="color-badge" style="background: #f5f5f5; color: #B76E79; border-color: #B76E79;">RG</span>
+        </div>
+        <div style="font-size: 13px; color: #333; margin-top: 4px;">对应配件：水滴吊坠_金色 (PJ-DZ-00124)</div>
+      </div>
+
+      <div class="plating-item">
+        <div class="plating-item-row">
+          <div class="item-field">
+            <label>发出配件</label>
+            <input class="prefilled" value="PJ-LT-00045 O字链 45cm" style="width: 200px;" readonly>
+          </div>
+          <div class="item-field">
+            <label>发出数量</label>
+            <input class="prefilled" type="number" value="200" style="width: 90px;">
+          </div>
+          <div class="item-field">
+            <label>单位</label>
+            <select style="width: 70px;"><option>条</option></select>
+          </div>
+          <div class="item-field">
+            <label>备注</label>
+            <input placeholder="备注" style="width: 120px;">
+          </div>
+          <button class="btn btn-sm" style="margin-top: 18px; color: #e03050; border-color: #e03050;">删除</button>
+        </div>
+        <div class="color-badges">
+          <span class="color-badge" style="background: #DAA520; color: #fff; border-color: #DAA520;">G</span>
+          <span class="color-badge" style="background: #f5f5f5; color: #C0C0C0; border-color: #C0C0C0;">S</span>
+          <span class="color-badge" style="background: #f5f5f5; color: #B76E79; border-color: #B76E79;">RG</span>
+        </div>
+        <div style="font-size: 13px; color: #333; margin-top: 4px;">对应配件：O字链 45cm_金色 (PJ-LT-00046)</div>
+      </div>
+
+      <div class="plating-item">
+        <div class="plating-item-row">
+          <div class="item-field">
+            <label>发出配件</label>
+            <input class="prefilled" value="PJ-X-00078 龙虾扣 12mm" style="width: 200px;" readonly>
+          </div>
+          <div class="item-field">
+            <label>发出数量</label>
+            <input class="prefilled" type="number" value="300" style="width: 90px;">
+          </div>
+          <div class="item-field">
+            <label>单位</label>
+            <select style="width: 70px;"><option>个</option></select>
+          </div>
+          <div class="item-field">
+            <label>备注</label>
+            <input placeholder="备注" style="width: 120px;">
+          </div>
+          <button class="btn btn-sm" style="margin-top: 18px; color: #e03050; border-color: #e03050;">删除</button>
+        </div>
+        <div class="color-badges">
+          <span class="color-badge" style="background: #DAA520; color: #fff; border-color: #DAA520;">G</span>
+          <span class="color-badge" style="background: #f5f5f5; color: #C0C0C0; border-color: #C0C0C0;">S</span>
+          <span class="color-badge" style="background: #f5f5f5; color: #B76E79; border-color: #B76E79;">RG</span>
+        </div>
+        <div style="font-size: 13px; color: #333; margin-top: 4px;">对应配件：龙虾扣 12mm_金色 (PJ-X-00079)</div>
+      </div>
+
+      <div style="padding: 12px 16px;">
+        <button class="btn btn-dashed" style="width: 100%;">+ 添加明细行</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align: right;">
+    <button class="btn btn-primary" style="padding: 8px 24px; font-size: 14px;">提交</button>
+  </div>
+</div>
+
+<!-- ==================== Page 4: 合并提示（独立展示） ==================== -->
+<div id="page4" class="page" style="display:none;">
+  <div style="margin-bottom: 16px;">
+    <span class="back-link" onclick="showPage('page3')">← 返回</span>
+    <h2 style="display: inline; margin-left: 12px; font-size: 20px;">新建电镀单</h2>
+    <span class="annotation">合并提示演示</span>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <div class="form-row">
+        <span class="form-label">电镀厂名称</span>
+        <select class="form-input">
+          <option selected>鑫达电镀</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="merge-alert active">
+    <div class="merge-alert-title">⚠ 该厂家今天已有电镀单</div>
+    <div class="merge-alert-text">
+      <strong>鑫达电镀</strong> 在 2026-04-22 已有电镀单 <strong>EP-0087</strong>（3 项配件，待发出）。<br>
+      是否将当前配件合并到该电镀单？
+    </div>
+    <div class="merge-alert-actions">
+      <button class="btn btn-primary" onclick="showPage('page5')">合并到 EP-0087</button>
+      <button class="btn" onclick="showPage('page3')">仍然新建</button>
+    </div>
+  </div>
+
+  <div class="card" style="opacity: 0.3;">
+    <div class="card-header"><h3>电镀明细</h3></div>
+    <div class="card-body" style="height: 120px;"></div>
+  </div>
+</div>
+
+<!-- ==================== Page 5: 合并后跳转到电镀单详情 ==================== -->
+<div id="page5" class="page" style="display:none;">
+  <div style="margin-bottom: 16px;">
+    <span class="back-link" onclick="showPage('page1')">← 返回</span>
+    <h2 style="display: inline; margin-left: 12px; font-size: 20px;">电镀单详情</h2>
+    <span class="tag tag-success" style="margin-left: 8px;">已合并 3 项配件</span>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>基本信息</h3></div>
+    <div class="card-body">
+      <div class="desc-grid">
+        <div class="desc-item"><div class="desc-label">电镀单号</div><div class="desc-value">EP-0087</div></div>
+        <div class="desc-item"><div class="desc-label">电镀厂</div><div class="desc-value">鑫达电镀</div></div>
+        <div class="desc-item"><div class="desc-label">状态</div><div class="desc-value"><span class="tag tag-warning">待发出</span></div></div>
+        <div class="desc-item"><div class="desc-label">创建时间</div><div class="desc-value">2026-04-22</div></div>
+        <div class="desc-item"><div class="desc-label">明细数</div><div class="desc-value">6 项（原 3 + 新 3）</div></div>
+        <div class="desc-item"><div class="desc-label">备注</div><div class="desc-value">-</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>电镀明细</h3></div>
+    <div class="card-body" style="padding: 0;">
+      <table>
+        <thead>
+          <tr><th>配件编号</th><th>配件名称</th><th>数量</th><th>单位</th><th>电镀方式</th><th>状态</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>PJ-DZ-00050</td><td>心形吊坠</td><td>100</td><td>个</td><td>金</td><td><span class="tag tag-warning">未送出</span></td></tr>
+          <tr><td>PJ-LT-00030</td><td>蛇骨链 40cm</td><td>80</td><td>条</td><td>白K</td><td><span class="tag tag-warning">未送出</span></td></tr>
+          <tr><td>PJ-X-00060</td><td>弹簧扣 10mm</td><td>200</td><td>个</td><td>金</td><td><span class="tag tag-warning">未送出</span></td></tr>
+          <tr class="highlight-row">
+            <td>PJ-DZ-00123 <span class="annotation">新增</span></td>
+            <td>水滴吊坠</td><td>500</td><td>个</td><td>金</td>
+            <td><span class="tag tag-warning">未送出</span></td>
+          </tr>
+          <tr class="highlight-row">
+            <td>PJ-LT-00045 <span class="annotation">新增</span></td>
+            <td>O字链 45cm</td><td>200</td><td>条</td><td>金</td>
+            <td><span class="tag tag-warning">未送出</span></td>
+          </tr>
+          <tr class="highlight-row">
+            <td>PJ-X-00078 <span class="annotation">新增</span></td>
+            <td>龙虾扣 12mm</td><td>300</td><td>个</td><td>金</td>
+            <td><span class="tag tag-warning">未送出</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.style.display = 'none')
+  document.getElementById(id).style.display = 'block'
+  document.querySelectorAll('.mockup-nav .step').forEach((s, i) => {
+    s.classList.toggle('active', s.getAttribute('onclick')?.includes(id))
+  })
+}
+
+function toggleAll(el) {
+  document.querySelectorAll('.item-check').forEach(cb => cb.checked = el.checked)
+}
+
+function checkMerge() {
+  const sel = document.getElementById('supplierSelect')
+  const alert = document.getElementById('mergeAlert')
+  alert.classList.toggle('active', sel.value === '鑫达电镀')
+}
+
+function closeMerge() {
+  document.getElementById('mergeAlert').classList.remove('active')
+}
+</script>
+
+</body>
+</html>

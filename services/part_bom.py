@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Optional, Set
 
 from sqlalchemy.orm import Session
 
@@ -100,7 +101,7 @@ def calculate_child_parts_needed(db: Session, parent_part_id: str, qty: float) -
     return {row.child_part_id: float(row.qty_per_unit) * qty for row in rows}
 
 
-def recalc_part_unit_cost(db: Session, part_id: str, _visited: set | None = None) -> None:
+def recalc_part_unit_cost(db: Session, part_id: str, _visited: Optional[Set[str]] = None) -> None:
     """Recalculate unit_cost for a composite part based on its part_bom.
 
     unit_cost = Σ(child.unit_cost × qty_per_unit) + assembly_cost

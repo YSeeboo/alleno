@@ -321,7 +321,7 @@
       <n-data-table
         :columns="platingSelectColumns"
         :data="platingSelectData"
-        :row-key="(row) => row.part_id"
+        :row-key="(row) => row.id"
         size="small"
         :bordered="false"
       />
@@ -488,6 +488,7 @@ const platingSelectData = ref([])
 
 const openPlatingModal = () => {
   platingSelectData.value = (order.value.items || []).map((item) => ({
+    id: item.id,
     part_id: item.part_id,
     part_name: item.part_name,
     qty: item.qty,
@@ -535,6 +536,8 @@ const platingSelectColumns = [
 ]
 
 const goPlatingCreate = () => {
+  const invalid = platingSelectedItems.value.some((r) => !r.qty || r.qty <= 0)
+  if (invalid) { message.warning('请填写有效的电镀数量'); return }
   const items = platingSelectedItems.value.map(({ part_id, qty, unit }) => ({
     part_id, qty, unit,
   }))

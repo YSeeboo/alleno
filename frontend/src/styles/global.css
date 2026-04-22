@@ -1,3 +1,9 @@
+/* ─── Data Table: prevent vertical text in narrow columns ─── */
+.n-data-table th,
+.n-data-table td {
+  white-space: nowrap;
+}
+
 /* ─── Badge ─────────────────────────────────────────── */
 .badge {
   display: inline-flex;

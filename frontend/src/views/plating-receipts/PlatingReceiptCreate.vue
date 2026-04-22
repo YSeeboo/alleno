@@ -161,7 +161,7 @@ const getRemaining = (item) => item.qty - (item.received_qty || 0)
 
 const getInput = (id) => {
   if (!itemInputs[id]) {
-    itemInputs[id] = { qty: null, price: null, unit: '个', weight: null, weight_unit: 'g' }
+    itemInputs[id] = { qty: null, price: null, unit: '个', weight: null }
   }
   return itemInputs[id]
 }
@@ -283,23 +283,25 @@ const pendingColumns = [
     width: 140,
     render: (row) => {
       const input = getInput(row.id)
-      return h('div', { style: 'display:flex;gap:4px;align-items:center' }, [
-        h(NInputNumber, {
-          value: input.weight,
-          size: 'small',
-          style: 'width:80px',
-          min: 0,
-          placeholder: '重量',
-          'onUpdate:value': (v) => { input.weight = v },
-        }),
-        h(NSelect, {
-          value: input.weight_unit || 'g',
-          size: 'small',
-          style: 'width:55px',
-          options: [{ label: 'g', value: 'g' }, { label: 'kg', value: 'kg' }],
-          'onUpdate:value': (v) => { input.weight_unit = v },
-        }),
-      ])
+      const wu = row.weight_unit || 'g'
+      const children = []
+      if (row.weight != null) {
+        children.push(h('div', { style: 'color:#999;font-size:11px;margin-bottom:2px' }, `发出: ${row.weight}${wu}`))
+      }
+      children.push(
+        h('div', { style: 'display:flex;gap:4px;align-items:center' }, [
+          h(NInputNumber, {
+            value: input.weight,
+            size: 'small',
+            style: 'width:80px',
+            min: 0,
+            placeholder: '重量',
+            'onUpdate:value': (v) => { input.weight = v },
+          }),
+          h('span', { style: 'font-size:12px;color:#666' }, wu),
+        ]),
+      )
+      return h('div', null, children)
     },
   },
   {
@@ -374,7 +376,7 @@ const submit = async () => {
       part_id: pending.receive_part_id || pending.part_id,
       qty: input.qty,
       weight: input.weight != null ? input.weight : null,
-      weight_unit: input.weight != null ? (input.weight_unit || 'g') : null,
+      weight_unit: input.weight != null ? (pending.weight_unit || 'g') : null,
       price: input.price != null ? input.price : null,
       unit: input.unit || '个',
     })

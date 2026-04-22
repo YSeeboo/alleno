@@ -562,7 +562,7 @@ import {
   NTooltip,
 } from 'naive-ui'
 import {
-  Close as CloseIcon, CreateOutline,
+  Close as CloseIcon, CreateOutline, CopyOutline,
   Apps, AppsOutline,
   Warning, WarningOutline,
   CheckmarkCircle, CheckmarkCircleOutline,
@@ -1120,7 +1120,23 @@ async function confirmLinkSupplier() {
       const items = detail.replace(/^库存(?:数量)?不足[：:]?\s*/, '').split('；').filter(Boolean)
       dialog.warning({
         title: '库存不足',
-        content: () => h('ul', { style: 'padding-left: 20px; margin: 0;' }, items.map(t => h('li', { style: 'margin: 4px 0;' }, t))),
+        content: () => h('ul', { style: 'padding-left: 20px; margin: 0;' }, items.map(t => {
+          const cleaned = t.replace(/^part\s+/i, '')
+          const partId = cleaned.match(/^(PJ-\S+)/)?.[1] || ''
+          const rest = partId ? cleaned.slice(partId.length) : cleaned
+          return h('li', { style: 'margin: 4px 0; display: flex; align-items: center; gap: 2px;' }, [
+            partId ? [
+              h('span', null, partId),
+              h('span', {
+                style: 'display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 4px; cursor: pointer; color: #666; background: #f0f0f0; margin: 0 4px; transition: all 0.2s;',
+                onMouseenter: (e) => { e.currentTarget.style.background = '#e0e0e0'; e.currentTarget.style.color = '#333'; },
+                onMouseleave: (e) => { e.currentTarget.style.background = '#f0f0f0'; e.currentTarget.style.color = '#666'; },
+                onClick: () => { navigator.clipboard?.writeText(partId).then(() => message.success('已复制')).catch(() => message.error('复制失败')) ?? message.error('复制失败') },
+              }, [h(NIcon, { size: 14 }, { default: () => h(CopyOutline) })]),
+              h('span', null, rest),
+            ] : cleaned,
+          ])
+        })),
         positiveText: '知道了',
       })
     } else {

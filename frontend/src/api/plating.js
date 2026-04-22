@@ -5,7 +5,7 @@ export const getPlating = (id) => api.get(`/plating/${id}`)
 export const deletePlating = (id) => api.delete(`/plating/${id}`)
 export const getPlatingItems = (id) => api.get(`/plating/${id}/items`)
 export const createPlating = (data) => api.post('/plating/', data)
-export const sendPlating = (id) => api.post(`/plating/${id}/send`)
+export const sendPlating = (id) => api.post(`/plating/${id}/send`, null, { _silentError: true })
 export const downloadPlatingExcel = (id) =>
   api.get(`/plating/${id}/excel`, {
     responseType: 'blob',

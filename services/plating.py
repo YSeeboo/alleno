@@ -8,7 +8,7 @@ from models.part import Part
 from models.plating_order import PlatingOrder, PlatingOrderItem
 from models.vendor_receipt import VendorReceipt
 from services._helpers import _next_id, keyword_filter
-from services.inventory import add_stock, deduct_stock
+from services.inventory import add_stock, batch_get_stock, deduct_stock
 
 
 def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
@@ -93,17 +93,29 @@ def send_plating_order(db: Session, plating_order_id: str) -> PlatingOrder:
     )
     if not items:
         raise ValueError(f"PlatingOrder {plating_order_id} has no items and cannot be sent")
+    # Aggregate total qty per part and batch-check stock before deducting
+    part_totals: dict[str, float] = {}
+    for item in items:
+        part_totals[item.part_id] = part_totals.get(item.part_id, 0.0) + float(item.qty)
+    stocks = batch_get_stock(db, "part", list(part_totals.keys()))
+    insufficient = []
+    for part_id, total_qty in part_totals.items():
+        current = stocks.get(part_id, 0.0)
+        if current < total_qty:
+            insufficient.append(f"{part_id} 当前库存 {current}，需要 {total_qty}")
+    if insufficient:
+        raise ValueError("库存不足：" + "；".join(insufficient))
     deducted = []
     try:
-        for item in items:
-            deduct_stock(db, "part", item.part_id, float(item.qty), "电镀发出")
-            deducted.append((item.part_id, float(item.qty)))
-            item.status = "电镀中"
-    except ValueError:
-        # Roll back already-deducted stock by adding it back
+        for part_id, total_qty in part_totals.items():
+            deduct_stock(db, "part", part_id, total_qty, "电镀发出")
+            deducted.append((part_id, total_qty))
+    except Exception:
         for part_id, qty in deducted:
             add_stock(db, "part", part_id, qty, "电镀发出回滚")
         raise
+    for item in items:
+        item.status = "电镀中"
     order.status = "processing"
     db.flush()
     return order
@@ -362,6 +374,8 @@ def list_pending_receive_items(db: Session, part_keyword: str = None, supplier_n
             PlatingOrderItem.qty,
             PlatingOrderItem.received_qty,
             PlatingOrderItem.unit,
+            PlatingOrderItem.weight,
+            PlatingOrderItem.weight_unit,
             PlatingOrder.created_at,
         )
         .join(PlatingOrder, PlatingOrderItem.plating_order_id == PlatingOrder.id)
@@ -404,6 +418,8 @@ def list_pending_receive_items(db: Session, part_keyword: str = None, supplier_n
             "qty": float(row.qty),
             "received_qty": float(row.received_qty or 0),
             "unit": row.unit,
+            "weight": float(row.weight) if row.weight is not None else None,
+            "weight_unit": row.weight_unit,
             "created_at": row.created_at,
         }
         for row in rows

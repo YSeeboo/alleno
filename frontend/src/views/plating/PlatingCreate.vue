@@ -1,5 +1,5 @@
 <template>
-  <div :style="{ maxWidth: isMobile ? '100%' : '800px' }">
+  <div :style="{ maxWidth: isMobile ? '100%' : '1000px' }">
     <n-space align="center" style="margin-bottom: 16px;">
       <n-button text @click="router.back()">← 返回</n-button>
       <n-h2 style="margin: 0;">新建电镀单</n-h2>
@@ -27,6 +27,7 @@
           clearable
           placeholder="不填则使用当前时间"
           :style="{ width: isMobile ? '100%' : '300px' }"
+          @update:value="() => checkSameDayOrder(supplierName)"
         />
       </n-form-item>
     </n-form>
@@ -35,10 +36,10 @@
       v-if="mergeCandidate"
       type="warning"
       style="margin-bottom: 16px;"
-      :title="`该厂家今天已有电镀单`"
+      :title="`该厂家同日已有电镀单`"
     >
       <div style="margin-bottom: 8px;">
-        <strong>{{ mergeCandidate.supplier_name }}</strong> 今天已有电镀单
+        <strong>{{ mergeCandidate.supplier_name }}</strong> 在 {{ mergeCandidate.created_at?.slice(0, 10) }} 已有电镀单
         <strong>{{ mergeCandidate.id }}</strong>（待发出）。是否将当前配件合并到该电镀单？
       </div>
       <n-space size="small">
@@ -158,17 +159,26 @@ const colorVariants = ref([])
 const mergeCandidate = ref(null)
 const checkingMerge = ref(false)
 const merging = ref(false)
+let mergeSeq = 0
+
+const beijingToday = () => {
+  const d = new Date(Date.now() + 8 * 3600_000)
+  return d.toISOString().slice(0, 10)
+}
 
 const checkSameDayOrder = async (supplier) => {
-  if (!supplier?.trim()) {
+  const trimmed = supplier?.trim()
+  if (!trimmed) {
     mergeCandidate.value = null
     return
   }
+  const seq = ++mergeSeq
   checkingMerge.value = true
   try {
-    const { data: orders } = await listPlating({ supplier_name: supplier, status: 'pending' })
-    const today = new Date().toISOString().slice(0, 10)
-    const match = orders.find((o) => o.created_at?.slice(0, 10) === today)
+    const { data: orders } = await listPlating({ supplier_name: trimmed, status: 'pending' })
+    if (seq !== mergeSeq) return
+    const targetDate = createdAtTs.value ? tsToDateStr(createdAtTs.value) : beijingToday()
+    const match = orders.find((o) => o.supplier_name === trimmed && o.created_at?.slice(0, 10) === targetDate)
     if (match) {
       mergeCandidate.value = {
         id: match.id,
@@ -179,9 +189,9 @@ const checkSameDayOrder = async (supplier) => {
       mergeCandidate.value = null
     }
   } catch (_) {
-    mergeCandidate.value = null
+    if (seq === mergeSeq) mergeCandidate.value = null
   } finally {
-    checkingMerge.value = false
+    if (seq === mergeSeq) checkingMerge.value = false
   }
 }
 
@@ -192,17 +202,25 @@ const doMerge = async () => {
     message.warning('请至少有一条有效明细')
     return
   }
+  if (validItems.some((i) => i._variantLoading || i._creatingVariant)) { message.warning('颜色变体处理中，请稍候'); return }
   merging.value = true
+  const orderId = mergeCandidate.value.id
+  let added = 0
   try {
-    const orderId = mergeCandidate.value.id
     for (const item of validItems) {
       const { _selectedColor, _variantInfo, _variantLoading, _creatingVariant, _reqSeq, ...clean } = item
       await addPlatingItem(orderId, clean)
+      added++
     }
-    message.success(`已合并 ${validItems.length} 项配件到 ${orderId}`)
+    message.success(`已合并 ${added} 项配件到 ${orderId}`)
     router.push(`/plating/${orderId}`)
   } catch (e) {
-    message.error(e.response?.data?.detail || '合并失败')
+    if (added > 0) {
+      message.warning(`已合并 ${added}/${validItems.length} 项，部分失败: ${e.response?.data?.detail || '未知错误'}`)
+      router.push(`/plating/${orderId}`)
+    } else {
+      message.error(e.response?.data?.detail || '合并失败')
+    }
   } finally {
     merging.value = false
   }
@@ -327,19 +345,21 @@ const addItem = () => {
 }
 
 const submit = async () => {
-  if (!supplierName.value?.trim()) { message.warning('请输入电镀厂名称'); return }
+  const trimmedSupplier = supplierName.value?.trim()
+  if (!trimmedSupplier) { message.warning('请输入电镀厂名称'); return }
   if (items.length === 0) { message.warning('请至少添加一条明细'); return }
   if (items.some((i) => !i.part_id)) { message.warning('请选择配件'); return }
+  if (items.some((i) => i._variantLoading || i._creatingVariant)) { message.warning('颜色变体处理中，请稍候'); return }
   submitting.value = true
   try {
     // Auto-create supplier if new (swallow duplicate 400, rethrow others)
-    const isNew = !supplierOptions.value.some((o) => o.value === supplierName.value)
+    const isNew = !supplierOptions.value.some((o) => o.value === trimmedSupplier)
     if (isNew) {
-      try { await createSupplier({ name: supplierName.value, type: 'plating' }) } catch (e) { if (e.response?.status !== 400) throw e }
+      try { await createSupplier({ name: trimmedSupplier, type: 'plating' }) } catch (e) { if (e.response?.status !== 400) throw e }
     }
     // Strip internal fields before submit
     const cleanItems = items.map(({ _selectedColor, _variantInfo, _variantLoading, _creatingVariant, ...rest }) => rest)
-    const payload = { supplier_name: supplierName.value, items: cleanItems, note: note.value }
+    const payload = { supplier_name: trimmedSupplier, items: cleanItems, note: note.value }
     const createdAt = tsToDateStr(createdAtTs.value)
     if (createdAt) payload.created_at = createdAt
     const { data } = await createPlating(payload)
