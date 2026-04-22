@@ -147,6 +147,14 @@
         <template #header-extra>
           <n-space>
             <n-button
+              v-if="order.items?.length > 0"
+              size="small"
+              type="warning"
+              @click="openPlatingModal"
+            >
+              创建电镀单
+            </n-button>
+            <n-button
               v-if="!isPaid() && canAccessParts"
               size="small"
               type="primary"
@@ -305,6 +313,28 @@
       </template>
     </n-modal>
 
+    <!-- Plating Modal -->
+    <n-modal v-model:show="platingModalVisible" preset="card" title="选择电镀配件" :style="{ width: isMobile ? '95vw' : '560px' }">
+      <div style="font-size: 13px; color: #999; margin-bottom: 12px;">
+        来源：{{ order.id }}（{{ order.vendor_name }}）· 勾选需要电镀的配件，数量可调整
+      </div>
+      <n-data-table
+        :columns="platingSelectColumns"
+        :data="platingSelectData"
+        :row-key="(row) => row.part_id"
+        size="small"
+        :bordered="false"
+      />
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="platingModalVisible = false">取消</n-button>
+          <n-button type="primary" :disabled="platingSelectedItems.length === 0" @click="goPlatingCreate">
+            新建电镀单 →
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
     <!-- Addon Cost Diff Modal -->
     <n-modal v-model:show="addonCostDiffVisible" :mask-closable="false" preset="card" title="穿珠成本变动确认" :style="{ width: isMobile ? '95vw' : '550px' }">
       <div style="margin-bottom: 12px; color: #333;">
@@ -451,6 +481,69 @@ const batchLinkModalVisible = ref(false)
 const batchLinkOrderId = ref(null)
 const batchLinkSubmitting = ref(false)
 const batchLinkCheckedIds = ref([])
+
+// --- Plating Modal ---
+const platingModalVisible = ref(false)
+const platingSelectData = ref([])
+
+const openPlatingModal = () => {
+  platingSelectData.value = (order.value.items || []).map((item) => ({
+    part_id: item.part_id,
+    part_name: item.part_name,
+    qty: item.qty,
+    unit: item.unit || '个',
+    checked: true,
+  }))
+  platingModalVisible.value = true
+}
+
+const platingSelectedItems = computed(() =>
+  platingSelectData.value.filter((r) => r.checked)
+)
+
+const platingSelectColumns = [
+  {
+    title: () => h(NCheckbox, {
+      checked: platingSelectData.value.length > 0 && platingSelectData.value.every((r) => r.checked),
+      indeterminate: platingSelectData.value.some((r) => r.checked) && !platingSelectData.value.every((r) => r.checked),
+      onUpdateChecked: (val) => platingSelectData.value.forEach((r) => r.checked = val),
+    }),
+    key: 'checked',
+    width: 50,
+    render: (row) => h(NCheckbox, {
+      checked: row.checked,
+      onUpdateChecked: (val) => row.checked = val,
+    }),
+  },
+  { title: '配件编号', key: 'part_id', width: 130 },
+  { title: '配件名称', key: 'part_name' },
+  {
+    title: '电镀数量',
+    key: 'qty',
+    width: 120,
+    render: (row) => h(NInputNumber, {
+      value: row.qty,
+      min: 1,
+      precision: 0,
+      step: 1,
+      size: 'small',
+      style: 'width: 100px',
+      onUpdateValue: (val) => row.qty = val,
+    }),
+  },
+  { title: '单位', key: 'unit', width: 60 },
+]
+
+const goPlatingCreate = () => {
+  const items = platingSelectedItems.value.map(({ part_id, qty, unit }) => ({
+    part_id, qty, unit,
+  }))
+  platingModalVisible.value = false
+  router.push({
+    path: '/plating/create',
+    query: { prefill: JSON.stringify(items) },
+  })
+}
 
 // Items that don't yet have a link (available for batch linking)
 const unlinkableItems = computed(() => {
