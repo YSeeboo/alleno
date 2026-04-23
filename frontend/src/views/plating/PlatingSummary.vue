@@ -82,6 +82,11 @@ const supplierOptions = ref([])
 
 const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 
+function tsToLocalDate(ms) {
+  const d = new Date(ms)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function syncStateFromQuery() {
   const q = route.query
   tab.value = q.tab === 'in' ? 'in' : 'out'
@@ -104,8 +109,8 @@ function pushQuery() {
   if (tab.value !== 'out') q.tab = tab.value
   if (supplier.value) q.supplier = supplier.value
   if (dateRangeRaw.value) {
-    q.date_from = new Date(dateRangeRaw.value[0]).toISOString().slice(0, 10)
-    q.date_to = new Date(dateRangeRaw.value[1]).toISOString().slice(0, 10)
+    q.date_from = tsToLocalDate(dateRangeRaw.value[0])
+    q.date_to = tsToLocalDate(dateRangeRaw.value[1])
   }
   if (qDebounced.value) q.q = qDebounced.value
   if (sortByDays.value) q.sort = 'days'
@@ -131,8 +136,8 @@ function buildParams() {
   const params = { skip: (page.value - 1) * pageSize, limit: pageSize }
   if (supplier.value) params.supplier_name = supplier.value
   if (dateRangeRaw.value) {
-    params.date_from = new Date(dateRangeRaw.value[0]).toISOString().slice(0, 10)
-    params.date_to = new Date(dateRangeRaw.value[1]).toISOString().slice(0, 10)
+    params.date_from = tsToLocalDate(dateRangeRaw.value[0])
+    params.date_to = tsToLocalDate(dateRangeRaw.value[1])
   }
   if (qDebounced.value) params.part_keyword = qDebounced.value
   if (tab.value === 'out' && sortByDays.value) params.sort = 'days_out_desc'

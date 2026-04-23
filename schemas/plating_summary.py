@@ -15,8 +15,8 @@ class DispatchedItem(BaseModel):
     plating_order_item_id: int
     plating_order_id: str
     supplier_name: str
-    part_id: str
-    part_name: str
+    part_id: Optional[str] = None
+    part_name: Optional[str] = None
     part_image: Optional[str] = None
     plating_method: Optional[str] = None
     qty: float
