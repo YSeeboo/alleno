@@ -189,7 +189,55 @@ const dispatchedColumns = computed(() => [
   { title: '电镀单号', key: 'plating_order_id', render: renderOrderLink },
 ])
 
-const columns = computed(() => tab.value === 'out' ? dispatchedColumns.value : [])
+const renderReceiptDate = (row) => row.receipts.length === 0
+  ? h('span', { style: 'color:#94A3B8' }, '—')
+  : row.receipts.map((r) => r.receipt_date).join(', ')
+
+const renderReceiptLinks = (row) => row.receipts.length === 0
+  ? h('span', { style: 'color:#94A3B8' }, '—')
+  : h('span', null, row.receipts.flatMap((r, idx) => {
+      const link = h('span', {
+        style: 'color:#6366F1;cursor:pointer;font-family:ui-monospace,monospace;',
+        onClick: () => navigateToDetail('receipt', r.receipt_id, r.receipt_item_id),
+      }, r.receipt_id)
+      return idx < row.receipts.length - 1 ? [link, ', '] : [link]
+    }))
+
+const renderLoss = (row) => {
+  if (row.loss_state === 'confirmed') {
+    return h('span', { style: 'color:#EF4444;font-weight:600;' }, row.loss_total_qty)
+  }
+  if (row.loss_state === 'none') {
+    return h('span', { style: 'color:#94A3B8' }, '—')
+  }
+  return h(NButton, {
+    size: 'tiny', type: 'error', ghost: true,
+    onClick: () => openLossModal(row),
+  }, { default: () => '确认损耗' })
+}
+
+const receivedColumns = computed(() => [
+  { title: '商家', key: 'supplier_name' },
+  { title: 'ID', key: 'part_id' },
+  { title: '配件', key: 'part_name', render: renderPart },
+  { title: '电镀颜色', key: 'plating_method', render: renderColor },
+  { title: '收回配件', key: 'receive_part_name', render: renderReceivePart },
+  { title: '发出日期', key: 'dispatch_date' },
+  { title: '收回日期', key: 'receipt_dates', render: renderReceiptDate },
+  { title: '发出数量', key: 'qty', align: 'right' },
+  { title: '单位', key: 'unit' },
+  { title: '重量', key: 'weight', render: (row) => row.weight == null ? '' : `${row.weight} ${row.weight_unit || ''}`.trim() },
+  { title: '已回收', key: 'actual_received_qty', align: 'right' },
+  { title: '未回收', key: 'unreceived_qty', align: 'right' },
+  { title: '损耗', key: 'loss', render: renderLoss },
+  { title: '备注', key: 'note' },
+  { title: '电镀单号', key: 'plating_order_id', render: renderOrderLink },
+  { title: '回收单号', key: 'receipt_ids', render: renderReceiptLinks },
+])
+
+function openLossModal(row) { console.log('TODO loss modal for', row) }
+
+const columns = computed(() => tab.value === 'out' ? dispatchedColumns.value : receivedColumns.value)
 
 const rowClassName = (row) => row.is_completed ? 'row-completed' : ''
 
