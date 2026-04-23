@@ -255,3 +255,38 @@ def test_list_received_full_loss_no_receipt_appears(db):
     assert items[0]["loss_state"] == "confirmed"
     assert items[0]["receipts"] == []
     assert items[0]["latest_receipt_id"] is None
+
+
+def test_list_received_date_range_filter_on_receipt_date(db):
+    _make_part(db, "PJ-DZ-DR1")
+    _make_part(db, "PJ-DZ-DR2")
+    _make_order(db, "EP-DR1", "厂", days_ago=20)
+    poi1 = _make_item(db, order_id="EP-DR1", part_id="PJ-DZ-DR1", qty=5, received=5)
+    _make_receipt(db, "ER-DR1", "厂", days_ago=15)
+    _make_receipt_item(db, receipt_id="ER-DR1", plating_order_item_id=poi1.id,
+                       part_id="PJ-DZ-DR1", qty=5)
+
+    _make_order(db, "EP-DR2", "厂", days_ago=10)
+    poi2 = _make_item(db, order_id="EP-DR2", part_id="PJ-DZ-DR2", qty=5, received=5)
+    _make_receipt(db, "ER-DR2", "厂", days_ago=2)
+    _make_receipt_item(db, receipt_id="ER-DR2", plating_order_item_id=poi2.id,
+                       part_id="PJ-DZ-DR2", qty=5)
+
+    today = now_beijing().date()
+    items, total = list_received(db, date_from=today - timedelta(days=5))
+    assert total == 1
+    assert items[0]["plating_order_item_id"] == poi2.id
+
+
+def test_list_received_pagination(db):
+    for i in range(5):
+        pid = f"PJ-DZ-RP{i}"
+        _make_part(db, pid)
+        _make_order(db, f"EP-RP{i}", "厂", days_ago=i)
+        poi = _make_item(db, order_id=f"EP-RP{i}", part_id=pid, qty=5, received=5)
+        _make_receipt(db, f"ER-RP{i}", "厂", days_ago=i)
+        _make_receipt_item(db, receipt_id=f"ER-RP{i}", plating_order_item_id=poi.id,
+                           part_id=pid, qty=5)
+    items, total = list_received(db, skip=2, limit=2)
+    assert total == 5
+    assert len(items) == 2
