@@ -80,9 +80,9 @@ const allFlatItems = [
   { label: '饰品模板', key: 'jewelry-templates', icon: icon(JewelryTemplateIcon), perm: 'parts' },
   { label: '订单管理', key: 'orders', icon: icon(OrderIcon), perm: 'orders' },
   { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
+  { label: '电镀汇总', key: 'plating-summary', icon: icon(PlatingSummaryIcon), perm: 'plating' },
   { label: '电镀发出', key: 'plating', icon: icon(PaperPlaneOutline), perm: 'plating' },
   { label: '电镀回收', key: 'plating-receipts', icon: icon(DownloadOutline), perm: 'plating' },
-  { label: '电镀汇总', key: 'plating-summary', icon: icon(PlatingSummaryIcon), perm: 'plating' },
   { label: '手工发出', key: 'handcraft', icon: icon(PaperPlaneOutline), perm: 'handcraft' },
   { label: '手工回收', key: 'handcraft-receipts', icon: icon(DownloadOutline), perm: 'handcraft' },
   { label: '库存总表', key: 'inventory', icon: icon(ArchiveOutline), perm: 'inventory' },
@@ -120,9 +120,9 @@ const allGroupedItems = [
       {
         label: '电镀', key: 'plating-group', icon: icon(PlatingIcon), perm: 'plating',
         children: [
+          { label: '电镀汇总', key: 'plating-summary', icon: icon(PlatingSummaryIcon), perm: 'plating' },
           { label: '电镀发出', key: 'plating', icon: icon(PaperPlaneOutline), perm: 'plating' },
           { label: '电镀回收', key: 'plating-receipts', icon: icon(DownloadOutline), perm: 'plating' },
-          { label: '电镀汇总', key: 'plating-summary', icon: icon(PlatingSummaryIcon), perm: 'plating' },
         ],
       },
       {
