@@ -128,8 +128,12 @@ function setTab(t) { tab.value = t; page.value = 1; sortByDays.value = false }
 function toggleSortDays() { sortByDays.value = !sortByDays.value; page.value = 1 }
 
 async function loadSuppliers() {
-  const list = await getPlatingSuppliers()
-  supplierOptions.value = list.map((s) => ({ label: s, value: s }))
+  try {
+    const list = await getPlatingSuppliers()
+    supplierOptions.value = list.map((s) => ({ label: s, value: s }))
+  } catch (e) {
+    message.error('加载商家列表失败')
+  }
 }
 
 function buildParams() {
@@ -151,6 +155,8 @@ async function load() {
     const data = await fn(buildParams())
     rows.value = data.items
     total.value = data.total
+  } catch (e) {
+    message.error(e?.response?.data?.detail || '加载汇总数据失败')
   } finally {
     loading.value = false
   }
@@ -300,6 +306,9 @@ const columns = computed(() => tab.value === 'out' ? dispatchedColumns.value : r
 const rowClassName = (row) => row.is_completed ? 'row-completed' : ''
 
 onMounted(async () => {
+  // Clear any stale return state from a prior summary visit so a future
+  // direct visit to a detail page won't show a misleading 返回汇总 button.
+  sessionStorage.removeItem('plating-summary-return')
   syncStateFromQuery()
   await loadSuppliers()
   await load()

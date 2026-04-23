@@ -332,3 +332,45 @@ def test_api_received_smoke(client, db):
     assert body["total"] == 1
     assert body["items"][0]["loss_state"] == "none"
     assert body["items"][0]["latest_receipt_id"] == "ER-RA1"
+
+
+def test_list_received_default_sort_by_latest_receipt_date(db):
+    """Within partition, sort by latest receipt date desc — aligns with date-filter dimension."""
+    _make_part(db, "PJ-DZ-RS1")
+    _make_part(db, "PJ-DZ-RS2")
+    # Item A: dispatched 20 days ago, received 1 day ago (recent receipt).
+    _make_order(db, "EP-RS1", "厂", days_ago=20)
+    poi_a = _make_item(db, order_id="EP-RS1", part_id="PJ-DZ-RS1", qty=5, received=5)
+    _make_receipt(db, "ER-RS1", "厂", days_ago=1)
+    _make_receipt_item(db, receipt_id="ER-RS1", plating_order_item_id=poi_a.id,
+                       part_id="PJ-DZ-RS1", qty=5)
+    # Item B: dispatched 5 days ago, received 3 days ago (older receipt than A).
+    _make_order(db, "EP-RS2", "厂", days_ago=5)
+    poi_b = _make_item(db, order_id="EP-RS2", part_id="PJ-DZ-RS2", qty=5, received=5)
+    _make_receipt(db, "ER-RS2", "厂", days_ago=3)
+    _make_receipt_item(db, receipt_id="ER-RS2", plating_order_item_id=poi_b.id,
+                       part_id="PJ-DZ-RS2", qty=5)
+
+    items, _ = list_received(db)
+    # Expected by latest-receipt sort: A (1d) before B (3d).
+    # If still sorted by dispatch_date: B (5d) would come before A (20d) — opposite.
+    assert [i["plating_order_item_id"] for i in items] == [poi_a.id, poi_b.id]
+
+
+def test_list_received_full_loss_sinks_below_real_receipts(db):
+    """100%-loss items (no receipts) sort to the bottom via NULLS LAST."""
+    _make_part(db, "PJ-DZ-FL1")
+    _make_part(db, "PJ-DZ-FL2")
+    # Real receipt item, completed.
+    _make_order(db, "EP-FL1", "厂", days_ago=10)
+    poi_real = _make_item(db, order_id="EP-FL1", part_id="PJ-DZ-FL1", qty=5, received=5)
+    _make_receipt(db, "ER-FL1", "厂", days_ago=5)
+    _make_receipt_item(db, receipt_id="ER-FL1", plating_order_item_id=poi_real.id,
+                       part_id="PJ-DZ-FL1", qty=5)
+    # 100%-loss item, no receipts.
+    _make_order(db, "EP-FL2", "厂", days_ago=10)
+    poi_loss = _make_item(db, order_id="EP-FL2", part_id="PJ-DZ-FL2", qty=5, received=5)
+    _make_loss(db, order_id="EP-FL2", item_id=poi_loss.id, loss_qty=5, part_id="PJ-DZ-FL2")
+
+    items, _ = list_received(db)
+    assert [i["plating_order_item_id"] for i in items] == [poi_real.id, poi_loss.id]

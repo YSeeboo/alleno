@@ -173,19 +173,45 @@ def list_received(
         if kw is not None:
             q = q.filter(kw)
 
-    # Date filter applies to receipt date — handled post-fetch (multi-row aggregation).
+    # Push date filter on receipt date to SQL. Items with NO receipts (full-loss
+    # case) are excluded when any date filter is set — matches earlier behavior.
+    if date_from is not None or date_to is not None:
+        receipt_subq = (
+            db.query(PlatingReceiptItem)
+            .join(PlatingReceipt, PlatingReceiptItem.plating_receipt_id == PlatingReceipt.id)
+            .filter(PlatingReceiptItem.plating_order_item_id == PlatingOrderItem.id)
+        )
+        if date_from is not None:
+            receipt_subq = receipt_subq.filter(func.date(PlatingReceipt.created_at) >= date_from)
+        if date_to is not None:
+            receipt_subq = receipt_subq.filter(func.date(PlatingReceipt.created_at) <= date_to)
+        q = q.filter(receipt_subq.exists())
+
+    total = q.count()
+
+    # Sort by latest receipt date desc within each partition. Aligns with the
+    # date-filter dimension so "more recently returned" sorts to the top.
+    # NULLS LAST handles the 100%-loss-no-receipt case (sinks to bottom).
+    latest_receipt_at = (
+        db.query(func.max(PlatingReceipt.created_at))
+        .select_from(PlatingReceiptItem)
+        .join(PlatingReceipt, PlatingReceiptItem.plating_receipt_id == PlatingReceipt.id)
+        .filter(PlatingReceiptItem.plating_order_item_id == PlatingOrderItem.id)
+        .correlate(PlatingOrderItem)
+        .scalar_subquery()
+    )
 
     q = q.order_by(
         case((is_completed_expr, 1), else_=0),
-        desc(PlatingOrder.created_at),
+        desc(latest_receipt_at).nullslast(),
         desc(PlatingOrderItem.id),
     )
 
-    all_rows = q.all()  # paginated AFTER post-fetch date filter applied
+    rows = q.offset(skip).limit(limit).all()
 
-    poi_ids = [poi.id for poi, _ in all_rows]
+    poi_ids = [poi.id for poi, _ in rows]
     if not poi_ids:
-        return [], 0
+        return [], total
 
     # Batch-load receipts (newest first per item)
     receipt_rows = (
@@ -214,41 +240,23 @@ def list_received(
         .group_by(ProductionLoss.item_id)
         .all()
     )
-    loss_by_poi = {item_id: float(total) for item_id, total in loss_rows}
+    loss_by_poi = {item_id: float(total_loss) for item_id, total_loss in loss_rows}
 
     # Batch-load parts
-    part_ids = {poi.part_id for poi, _ in all_rows} | {
-        poi.receive_part_id for poi, _ in all_rows if poi.receive_part_id
+    part_ids = {poi.part_id for poi, _ in rows} | {
+        poi.receive_part_id for poi, _ in rows if poi.receive_part_id
     }
     parts = {p.id: p for p in db.query(Part).filter(Part.id.in_(part_ids)).all()} if part_ids else {}
 
-    items = []
-    for poi, po in all_rows:
-        receipts = receipts_by_poi.get(poi.id, [])
-        loss_total = loss_by_poi.get(poi.id, 0.0)
-
-        # Date filter on receipt date (any receipt in range matches).
-        # Items with NO receipts (full-loss case) match only when no date filter is set.
-        if date_from is not None or date_to is not None:
-            matched = False
-            for r in receipts:
-                d = r["receipt_date"]
-                if date_from is not None and d < date_from:
-                    continue
-                if date_to is not None and d > date_to:
-                    continue
-                matched = True
-                break
-            if not matched:
-                continue
-
-        items.append(_serialize_received(
+    items = [
+        _serialize_received(
             poi, po,
             parts.get(poi.part_id),
             parts.get(poi.receive_part_id) if poi.receive_part_id else None,
-            today, receipts, loss_total,
-        ))
-
-    total = len(items)
-    paged = items[skip:skip + limit]
-    return paged, total
+            today,
+            receipts_by_poi.get(poi.id, []),
+            loss_by_poi.get(poi.id, 0.0),
+        )
+        for poi, po in rows
+    ]
+    return items, total
