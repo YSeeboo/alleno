@@ -290,3 +290,45 @@ def test_list_received_pagination(db):
     items, total = list_received(db, skip=2, limit=2)
     assert total == 5
     assert len(items) == 2
+
+
+def test_api_dispatched_smoke(client, db):
+    _make_part(db, "PJ-DZ-API1")
+    _make_order(db, "EP-API1", "厂A", days_ago=2)
+    _make_item(db, order_id="EP-API1", part_id="PJ-DZ-API1", qty=5)
+
+    resp = client.get("/api/plating-summary/dispatched")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 1
+    assert body["items"][0]["plating_order_id"] == "EP-API1"
+    assert body["items"][0]["is_completed"] is False
+
+
+def test_api_dispatched_filters_pass_through(client, db):
+    _make_part(db, "PJ-DZ-API2")
+    _make_part(db, "PJ-DZ-API3")
+    _make_order(db, "EP-API2", "厂A", days_ago=2)
+    _make_item(db, order_id="EP-API2", part_id="PJ-DZ-API2", qty=5)
+    _make_order(db, "EP-API3", "厂B", days_ago=2)
+    _make_item(db, order_id="EP-API3", part_id="PJ-DZ-API3", qty=5)
+
+    resp = client.get("/api/plating-summary/dispatched", params={"supplier_name": "厂A"})
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+
+
+def test_api_received_smoke(client, db):
+    _make_part(db, "PJ-DZ-RA1")
+    _make_order(db, "EP-RA1", "厂", days_ago=2)
+    poi = _make_item(db, order_id="EP-RA1", part_id="PJ-DZ-RA1", qty=5, received=5)
+    _make_receipt(db, "ER-RA1", "厂", days_ago=1)
+    _make_receipt_item(db, receipt_id="ER-RA1", plating_order_item_id=poi.id,
+                       part_id="PJ-DZ-RA1", qty=5)
+
+    resp = client.get("/api/plating-summary/received")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 1
+    assert body["items"][0]["loss_state"] == "none"
+    assert body["items"][0]["latest_receipt_id"] == "ER-RA1"
