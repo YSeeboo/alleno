@@ -300,6 +300,7 @@ onMounted(async () => {
   await load()
 })
 
+watch([supplier, dateRangeRaw, qDebounced, sortByDays], () => { page.value = 1 })
 watch([tab, supplier, dateRangeRaw, qDebounced, sortByDays, page], load)
 </script>
 
