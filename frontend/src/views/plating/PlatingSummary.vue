@@ -27,6 +27,24 @@
       />
     </n-spin>
 
+    <n-modal v-model:show="lossModal.visible" preset="card" title="确认损耗" style="width: 480px">
+      <n-form label-placement="left" label-width="90">
+        <n-form-item label="损耗数量">
+          <n-input-number v-model:value="lossModal.loss_qty" :min="0.0001" :max="lossModal.row?.unreceived_qty" />
+        </n-form-item>
+        <n-form-item label="扣款金额">
+          <n-input-number v-model:value="lossModal.deduct_amount" :min="0" />
+        </n-form-item>
+        <n-form-item label="原因">
+          <n-input v-model:value="lossModal.reason" />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-button @click="lossModal.visible = false" style="margin-right: 8px">取消</n-button>
+        <n-button type="primary" @click="submitLoss">确认</n-button>
+      </template>
+    </n-modal>
+
     <div class="pager-wrap">
       <n-pagination v-model:page="page" :page-count="pageCount" :page-size="pageSize" />
     </div>
@@ -37,8 +55,10 @@
 import { ref, computed, watch, onMounted, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  NButton, NButtonGroup, NDataTable, NDatePicker, NInput, NPagination, NSelect, NSpin, NTag,
+  NButton, NButtonGroup, NDataTable, NDatePicker, NForm, NFormItem, NInput,
+  NInputNumber, NModal, NPagination, NSelect, NSpin, NTag, useMessage,
 } from 'naive-ui'
+import api from '@/api/index'
 import { listDispatchedSummary, listReceivedSummary } from '@/api/platingSummary'
 import { getPlatingSuppliers } from '@/api/plating'
 import { renderImageThumb } from '@/utils/ui'
@@ -235,7 +255,40 @@ const receivedColumns = computed(() => [
   { title: '回收单号', key: 'receipt_ids', render: renderReceiptLinks },
 ])
 
-function openLossModal(row) { console.log('TODO loss modal for', row) }
+const message = useMessage()
+const lossModal = ref({ visible: false, row: null, loss_qty: null, deduct_amount: null, reason: '' })
+
+function openLossModal(row) {
+  lossModal.value = {
+    visible: true, row,
+    loss_qty: row.unreceived_qty,
+    deduct_amount: null,
+    reason: '',
+  }
+}
+
+async function submitLoss() {
+  const m = lossModal.value
+  if (!m.row || !m.loss_qty || m.loss_qty <= 0) {
+    message.error('请输入有效的损耗数量')
+    return
+  }
+  try {
+    await api.post(`/plating-receipts/${m.row.latest_receipt_id}/confirm-loss`, {
+      items: [{
+        plating_order_item_id: m.row.plating_order_item_id,
+        loss_qty: m.loss_qty,
+        deduct_amount: m.deduct_amount,
+        reason: m.reason || null,
+      }],
+    })
+    message.success('损耗已确认')
+    lossModal.value.visible = false
+    await load()
+  } catch (e) {
+    message.error(e?.response?.data?.detail || '确认损耗失败')
+  }
+}
 
 const columns = computed(() => tab.value === 'out' ? dispatchedColumns.value : receivedColumns.value)
 
