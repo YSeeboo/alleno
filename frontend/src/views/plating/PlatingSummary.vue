@@ -129,7 +129,7 @@ function toggleSortDays() { sortByDays.value = !sortByDays.value; page.value = 1
 
 async function loadSuppliers() {
   try {
-    const list = await getPlatingSuppliers()
+    const { data: list } = await getPlatingSuppliers()
     supplierOptions.value = list.map((s) => ({ label: s, value: s }))
   } catch (e) {
     message.error('加载商家列表失败')
@@ -152,7 +152,7 @@ async function load() {
   loading.value = true
   try {
     const fn = tab.value === 'out' ? listDispatchedSummary : listReceivedSummary
-    const data = await fn(buildParams())
+    const { data } = await fn(buildParams())
     rows.value = data.items
     total.value = data.total
   } catch (e) {
