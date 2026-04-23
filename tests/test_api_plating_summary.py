@@ -5,7 +5,9 @@ import pytest
 
 from models.plating_order import PlatingOrder, PlatingOrderItem
 from models.part import Part
-from services.plating_summary import list_dispatched
+from models.plating_receipt import PlatingReceipt, PlatingReceiptItem
+from models.production_loss import ProductionLoss
+from services.plating_summary import list_dispatched, list_received
 from time_utils import now_beijing
 
 
@@ -129,3 +131,127 @@ def test_list_dispatched_pagination(db):
     items, total = list_dispatched(db, skip=2, limit=2)
     assert total == 5
     assert len(items) == 2
+
+
+def _make_receipt(db, rid: str, vendor: str, *, days_ago: int = 0):
+    created = now_beijing() - timedelta(days=days_ago)
+    r = PlatingReceipt(id=rid, vendor_name=vendor, status="未付款", created_at=created)
+    db.add(r); db.flush()
+    return r
+
+
+def _make_receipt_item(db, *, receipt_id: str, plating_order_item_id: int,
+                       part_id: str, qty: float, price: float = 1.0):
+    ri = PlatingReceiptItem(
+        plating_receipt_id=receipt_id,
+        plating_order_item_id=plating_order_item_id,
+        part_id=part_id,
+        qty=Decimal(str(qty)),
+        price=Decimal(str(price)),
+        amount=Decimal(str(qty * price)),
+        unit="件",
+    )
+    db.add(ri); db.flush()
+    return ri
+
+
+def _make_loss(db, *, order_id: str, item_id: int, loss_qty: float, part_id: str):
+    pl = ProductionLoss(
+        order_type="plating", order_id=order_id, item_id=item_id,
+        item_type="plating_item", part_id=part_id,
+        loss_qty=Decimal(str(loss_qty)),
+    )
+    db.add(pl); db.flush()
+    return pl
+
+
+def test_list_received_inclusion_excludes_zero_received(db):
+    _make_part(db, "PJ-DZ-R1")
+    _make_part(db, "PJ-DZ-R2")
+    _make_order(db, "EP-R1", "厂A", days_ago=2)
+    _make_item(db, order_id="EP-R1", part_id="PJ-DZ-R1", qty=10, received=0)
+    _make_order(db, "EP-R2", "厂A", days_ago=2)
+    it2 = _make_item(db, order_id="EP-R2", part_id="PJ-DZ-R2", qty=10, received=5)
+
+    items, total = list_received(db)
+    assert total == 1
+    assert items[0]["plating_order_item_id"] == it2.id
+
+
+def test_list_received_actual_vs_loss_split(db):
+    _make_part(db, "PJ-DZ-S1")
+    _make_order(db, "EP-S1", "厂", days_ago=2)
+    poi = _make_item(db, order_id="EP-S1", part_id="PJ-DZ-S1", qty=10, received=8)
+    _make_receipt(db, "ER-S1", "厂", days_ago=1)
+    _make_receipt_item(db, receipt_id="ER-S1", plating_order_item_id=poi.id,
+                       part_id="PJ-DZ-S1", qty=5)
+    _make_loss(db, order_id="EP-S1", item_id=poi.id, loss_qty=3, part_id="PJ-DZ-S1")
+
+    items, _ = list_received(db)
+    assert items[0]["actual_received_qty"] == 5
+    assert items[0]["loss_total_qty"] == 3
+    assert items[0]["unreceived_qty"] == 2
+
+
+def test_list_received_loss_state(db):
+    _make_part(db, "PJ-DZ-N1")
+    _make_order(db, "EP-N1", "厂", days_ago=2)
+    poi1 = _make_item(db, order_id="EP-N1", part_id="PJ-DZ-N1", qty=5, received=5)
+    _make_receipt(db, "ER-N1", "厂", days_ago=1)
+    _make_receipt_item(db, receipt_id="ER-N1", plating_order_item_id=poi1.id,
+                       part_id="PJ-DZ-N1", qty=5)
+
+    _make_part(db, "PJ-DZ-P1")
+    _make_order(db, "EP-P1", "厂", days_ago=2)
+    poi2 = _make_item(db, order_id="EP-P1", part_id="PJ-DZ-P1", qty=10, received=5)
+    _make_receipt(db, "ER-P1", "厂", days_ago=1)
+    _make_receipt_item(db, receipt_id="ER-P1", plating_order_item_id=poi2.id,
+                       part_id="PJ-DZ-P1", qty=5)
+
+    _make_part(db, "PJ-DZ-C1")
+    _make_order(db, "EP-C1", "厂", days_ago=2)
+    poi3 = _make_item(db, order_id="EP-C1", part_id="PJ-DZ-C1", qty=10, received=10)
+    _make_receipt(db, "ER-C1", "厂", days_ago=1)
+    _make_receipt_item(db, receipt_id="ER-C1", plating_order_item_id=poi3.id,
+                       part_id="PJ-DZ-C1", qty=8)
+    _make_loss(db, order_id="EP-C1", item_id=poi3.id, loss_qty=2, part_id="PJ-DZ-C1")
+
+    items, _ = list_received(db)
+    by_id = {i["plating_order_item_id"]: i for i in items}
+    assert by_id[poi1.id]["loss_state"] == "none"
+    assert by_id[poi2.id]["loss_state"] == "pending"
+    assert by_id[poi3.id]["loss_state"] == "confirmed"
+
+
+def test_list_received_multi_receipt_aggregation(db):
+    _make_part(db, "PJ-DZ-M1")
+    _make_order(db, "EP-M1", "厂", days_ago=10)
+    poi = _make_item(db, order_id="EP-M1", part_id="PJ-DZ-M1", qty=10, received=8)
+    _make_receipt(db, "ER-M1", "厂", days_ago=5)
+    _make_receipt_item(db, receipt_id="ER-M1", plating_order_item_id=poi.id,
+                       part_id="PJ-DZ-M1", qty=3)
+    _make_receipt(db, "ER-M2", "厂", days_ago=2)
+    _make_receipt_item(db, receipt_id="ER-M2", plating_order_item_id=poi.id,
+                       part_id="PJ-DZ-M1", qty=5)
+
+    items, _ = list_received(db)
+    item = items[0]
+    assert [r["receipt_id"] for r in item["receipts"]] == ["ER-M2", "ER-M1"]
+    assert item["latest_receipt_id"] == "ER-M2"
+    assert item["actual_received_qty"] == 8
+
+
+def test_list_received_full_loss_no_receipt_appears(db):
+    _make_part(db, "PJ-DZ-F1")
+    _make_order(db, "EP-F1", "厂", days_ago=2)
+    poi = _make_item(db, order_id="EP-F1", part_id="PJ-DZ-F1", qty=10, received=10)
+    _make_loss(db, order_id="EP-F1", item_id=poi.id, loss_qty=10, part_id="PJ-DZ-F1")
+
+    items, total = list_received(db)
+    assert total == 1
+    assert items[0]["actual_received_qty"] == 0
+    assert items[0]["loss_total_qty"] == 10
+    assert items[0]["unreceived_qty"] == 0
+    assert items[0]["loss_state"] == "confirmed"
+    assert items[0]["receipts"] == []
+    assert items[0]["latest_receipt_id"] is None
