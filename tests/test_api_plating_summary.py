@@ -62,3 +62,70 @@ def test_list_dispatched_default_sort_partition(db):
     # Order: in-progress B (newer) → in-progress A (older) → completed C
     assert [i["plating_order_id"] for i in items] == ["EP-0002", "EP-0001", "EP-0003"]
     assert [i["is_completed"] for i in items] == [False, False, True]
+
+
+def test_list_dispatched_supplier_filter(db):
+    _make_part(db, "PJ-DZ-A1")
+    _make_part(db, "PJ-DZ-A2")
+    _make_order(db, "EP-A1", "厂A", days_ago=2)
+    _make_item(db, order_id="EP-A1", part_id="PJ-DZ-A1", qty=5)
+    _make_order(db, "EP-A2", "厂B", days_ago=2)
+    _make_item(db, order_id="EP-A2", part_id="PJ-DZ-A2", qty=5)
+
+    items, total = list_dispatched(db, supplier_name="厂A")
+    assert total == 1
+    assert items[0]["supplier_name"] == "厂A"
+
+
+def test_list_dispatched_date_range_filter(db):
+    _make_part(db, "PJ-DZ-D1")
+    _make_part(db, "PJ-DZ-D2")
+    _make_order(db, "EP-D1", "厂", days_ago=10)
+    _make_item(db, order_id="EP-D1", part_id="PJ-DZ-D1", qty=5)
+    _make_order(db, "EP-D2", "厂", days_ago=2)
+    _make_item(db, order_id="EP-D2", part_id="PJ-DZ-D2", qty=5)
+
+    today = now_beijing().date()
+    items, total = list_dispatched(db, date_from=today - timedelta(days=5))
+    assert total == 1
+    assert items[0]["plating_order_id"] == "EP-D2"
+
+
+def test_list_dispatched_keyword_filter(db):
+    _make_part(db, "PJ-DZ-K1", name="圆形吊坠")
+    _make_part(db, "PJ-DZ-K2", name="椭圆吊坠")
+    _make_order(db, "EP-K1", "厂", days_ago=2)
+    _make_item(db, order_id="EP-K1", part_id="PJ-DZ-K1", qty=5)
+    _make_order(db, "EP-K2", "厂", days_ago=2)
+    _make_item(db, order_id="EP-K2", part_id="PJ-DZ-K2", qty=5)
+
+    items, total = list_dispatched(db, part_keyword="圆形")
+    assert total == 1
+    assert items[0]["part_name"] == "圆形吊坠"
+
+
+def test_list_dispatched_sort_days_out_flattens_partition(db):
+    """When sort=days_out_desc, completed items are NOT pushed to bottom."""
+    _make_part(db, "PJ-DZ-S1")
+    _make_part(db, "PJ-DZ-S2")
+    _make_part(db, "PJ-DZ-S3")
+    _make_order(db, "EP-S1", "厂", days_ago=20)
+    _make_item(db, order_id="EP-S1", part_id="PJ-DZ-S1", qty=5, received=5)
+    _make_order(db, "EP-S2", "厂", days_ago=10)
+    _make_item(db, order_id="EP-S2", part_id="PJ-DZ-S2", qty=5, received=0)
+    _make_order(db, "EP-S3", "厂", days_ago=2)
+    _make_item(db, order_id="EP-S3", part_id="PJ-DZ-S3", qty=5, received=0)
+
+    items, total = list_dispatched(db, sort="days_out_desc")
+    assert [i["plating_order_id"] for i in items] == ["EP-S2", "EP-S3", "EP-S1"]
+
+
+def test_list_dispatched_pagination(db):
+    for i in range(5):
+        pid = f"PJ-DZ-P{i}"
+        _make_part(db, pid)
+        _make_order(db, f"EP-P{i}", "厂", days_ago=i)
+        _make_item(db, order_id=f"EP-P{i}", part_id=pid, qty=5)
+    items, total = list_dispatched(db, skip=2, limit=2)
+    assert total == 5
+    assert len(items) == 2
