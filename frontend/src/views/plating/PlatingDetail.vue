@@ -2,6 +2,7 @@
   <div>
     <n-space align="center" style="margin-bottom: 16px;">
       <n-button text @click="router.back()">← 返回</n-button>
+      <n-button v-if="summaryReturn" size="small" @click="backToSummary">← 返回汇总</n-button>
       <n-h2 style="margin: 0;">电镀单详情</n-h2>
     </n-space>
 
@@ -449,6 +450,7 @@ import { ref, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
+import { useSummaryReturn } from '@/composables/useSummaryReturn'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
@@ -479,6 +481,7 @@ const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
 const { isMobile } = useIsMobile()
+const { returnQuery: summaryReturn, back: backToSummary } = useSummaryReturn()
 
 const loading = ref(true)
 const sending = ref(false)
