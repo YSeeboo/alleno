@@ -446,6 +446,8 @@ def update_order_item(db: Session, order_id: str, item_id: int, fields: dict) ->
     item = db.query(OrderItem).filter_by(id=item_id, order_id=order_id).first()
     if not item:
         raise ValueError(f"订单项 {item_id} 不存在")
+    if "customer_code" in fields and item.part_id is not None:
+        raise ValueError("配件项不允许设置客户货号")
     price_fields = {"quantity", "unit_price"}
     if price_fields & fields.keys() and order.status not in ("待生产", "生产中"):
         raise ValueError("仅待生产或生产中状态可修改数量和单价")
@@ -532,6 +534,8 @@ def batch_fill_customer_code(
     )
     if len(items) != len(item_ids):
         raise ValueError("部分订单项不存在或不属于该订单")
+    if any(it.part_id is not None for it in items):
+        raise ValueError("配件项不允许设置客户货号")
     for i, item in enumerate(items):
         code = f"{prefix}{start_number + i:0{padding}d}"
         item.customer_code = code

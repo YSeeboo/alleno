@@ -4,6 +4,7 @@ from models.order import Order, OrderItem
 from models.part import Part
 from services.inventory import add_stock, get_stock
 from services.order import create_order, add_order_item, update_order_item, update_order_status
+from services.order import update_order_item_customer_code, batch_fill_customer_code
 
 
 @pytest.fixture
@@ -155,3 +156,26 @@ def test_complete_order_jewelry_only_does_not_touch_stock(db):
     update_order_status(db, order.id, "已完成")
     db.refresh(order)
     assert order.status == "已完成"
+
+
+def test_reject_customer_code_on_part_item(db, part_chain):
+    order = create_order(db, "客户A", [{
+        "part_id": part_chain.id, "quantity": 1, "unit_price": 15, "remarks": None,
+    }])
+    item = db.query(OrderItem).filter_by(order_id=order.id).first()
+    with pytest.raises(ValueError, match="配件项不允许设置客户货号"):
+        update_order_item_customer_code(db, order.id, item.id, "C001")
+
+
+def test_reject_batch_customer_code_with_part_item(db, part_chain):
+    from models.jewelry import Jewelry
+    db.add(Jewelry(id="SP-T3", name="j", status="active", wholesale_price=100))
+    db.flush()
+    order = create_order(db, "客户A", [
+        {"jewelry_id": "SP-T3", "quantity": 1, "unit_price": 100, "remarks": None},
+        {"part_id": part_chain.id, "quantity": 1, "unit_price": 15, "remarks": None},
+    ])
+    items = db.query(OrderItem).filter_by(order_id=order.id).all()
+    item_ids = [i.id for i in items]
+    with pytest.raises(ValueError, match="配件项不允许设置客户货号"):
+        batch_fill_customer_code(db, order.id, item_ids, "C", 0, 2)
