@@ -375,9 +375,41 @@ def update_order_status(db: Session, order_id: str, status: str) -> Order:
         raise ValueError(f"Order not found: {order_id}")
     if order.status == status:
         return order  # no-op，避免重复生成快照
-    if status == "已完成":
-        from services.order_cost_snapshot import generate_cost_snapshot
-        generate_cost_snapshot(db, order_id)
+
+    items = get_order_items(db, order_id)
+    part_qty_map: dict[str, int] = {}
+    for it in items:
+        if it.part_id is not None:
+            part_qty_map[it.part_id] = part_qty_map.get(it.part_id, 0) + it.quantity
+
+    # Transition INTO "已完成" — pre-check then deduct part stock
+    if status == "已完成" and order.status != "已完成":
+        if part_qty_map:
+            from services.inventory import batch_get_stock, deduct_stock
+            stocks = batch_get_stock(db, "part", list(part_qty_map.keys()))
+            insufficient = [
+                f"{pid} 需要 {qty}，仅有 {stocks.get(pid, 0):.2f}"
+                for pid, qty in part_qty_map.items()
+                if stocks.get(pid, 0) < qty
+            ]
+            if insufficient:
+                raise ValueError("配件库存不足：" + "；".join(insufficient))
+            for pid, qty in part_qty_map.items():
+                deduct_stock(db, "part", pid, qty, "订单出货")
+        # Snapshot generation currently only supports jewelry items;
+        # part-item snapshot integration is Task 9. Skip for part-only orders.
+        has_jewelry = any(it.jewelry_id is not None for it in items)
+        if has_jewelry:
+            from services.order_cost_snapshot import generate_cost_snapshot
+            generate_cost_snapshot(db, order_id)
+
+    # Transition OUT of "已完成" — restore part stock
+    elif order.status == "已完成" and status != "已完成":
+        if part_qty_map:
+            from services.inventory import add_stock
+            for pid, qty in part_qty_map.items():
+                add_stock(db, "part", pid, qty, "订单出货撤回")
+
     order.status = status
     db.flush()
     return order
