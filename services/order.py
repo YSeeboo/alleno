@@ -8,11 +8,22 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func as sa_func
 from models.order import Order, OrderItem, OrderTodoBatch, OrderTodoBatchJewelry, OrderItemLink
 from models.handcraft_order import HandcraftJewelryItem
+from models.part import Part
 from services._helpers import _next_id
 from services.bom import get_bom
 
 _VALID_STATUSES = {"待生产", "生产中", "已完成", "已取消"}
 _Q7 = Decimal("0.0000001")
+
+
+def _writeback_part_wholesale_price(db: Session, part_id: str, new_price: Decimal) -> None:
+    """If part.wholesale_price differs from new_price, overwrite it."""
+    part = db.query(Part).filter(Part.id == part_id).first()
+    if part is None:
+        return
+    if part.wholesale_price != new_price:
+        part.wholesale_price = new_price
+        db.flush()
 
 
 def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
@@ -45,11 +56,14 @@ def create_order(db: Session, customer_name: str, items: list, created_at: Optio
         total += subtotal
         db.add(OrderItem(
             order_id=order_id,
-            jewelry_id=item["jewelry_id"],
+            jewelry_id=item.get("jewelry_id"),
+            part_id=item.get("part_id"),
             quantity=item["quantity"],
             unit_price=unit_price,
             remarks=item.get("remarks"),
         ))
+        if item.get("part_id"):
+            _writeback_part_wholesale_price(db, item["part_id"], unit_price)
     order.total_amount = total
     db.flush()
     return order
@@ -316,16 +330,21 @@ def add_order_item(db: Session, order_id: str, data: dict) -> OrderItem:
         raise ValueError(f"Order not found: {order_id}")
     if order.status != "待生产":
         raise ValueError(f"订单状态为「{order.status}」，只有「待生产」状态可以修改饰品明细")
+    if (data.get("jewelry_id") is None) == (data.get("part_id") is None):
+        raise ValueError("jewelry_id 和 part_id 必须且只能填一个")
     unit_price = Decimal(str(data["unit_price"])).quantize(_Q7, rounding=ROUND_HALF_UP)
     item = OrderItem(
         order_id=order_id,
-        jewelry_id=data["jewelry_id"],
+        jewelry_id=data.get("jewelry_id"),
+        part_id=data.get("part_id"),
         quantity=data["quantity"],
         unit_price=unit_price,
         remarks=data.get("remarks"),
     )
     db.add(item)
     db.flush()
+    if data.get("part_id"):
+        _writeback_part_wholesale_price(db, data["part_id"], unit_price)
     _recalc_total(db, order)
     return item
 
@@ -399,49 +418,53 @@ def update_order_item(db: Session, order_id: str, item_id: int, fields: dict) ->
         raise ValueError("仅待生产或生产中状态可修改数量和单价")
     if "quantity" in fields:
         new_qty = fields["quantity"]
-        jewelry_id = item.jewelry_id
-        # Sum allocated from batch flow
-        batch_allocated = (
-            db.query(sa_func.coalesce(sa_func.sum(OrderTodoBatchJewelry.quantity), 0))
-            .join(OrderTodoBatch, OrderTodoBatchJewelry.batch_id == OrderTodoBatch.id)
-            .filter(OrderTodoBatch.order_id == order_id, OrderTodoBatchJewelry.jewelry_id == jewelry_id)
-            .scalar()
-        )
-        # Sum allocated from legacy direct HC jewelry links (not already in batch)
-        legacy_allocated = 0
-        batch_hc_ids = {
-            b.handcraft_order_id
-            for b in db.query(OrderTodoBatch).filter_by(order_id=order_id).all()
-            if b.handcraft_order_id
-        }
-        links = (
-            db.query(OrderItemLink)
-            .filter(OrderItemLink.order_id == order_id, OrderItemLink.handcraft_jewelry_item_id.isnot(None))
-            .all()
-        )
-        if links:
-            hc_item_ids = [l.handcraft_jewelry_item_id for l in links]
-            hc_items = db.query(HandcraftJewelryItem).filter(
-                HandcraftJewelryItem.id.in_(hc_item_ids),
-                HandcraftJewelryItem.jewelry_id == jewelry_id,
-            ).all()
-            for hci in hc_items:
-                if hci.handcraft_order_id not in batch_hc_ids:
-                    legacy_allocated += hci.qty
-        total_allocated = batch_allocated + legacy_allocated
-        # Compare against whole-order total for this jewelry after the edit
-        other_qty = (
-            db.query(sa_func.coalesce(sa_func.sum(OrderItem.quantity), 0))
-            .filter(OrderItem.order_id == order_id, OrderItem.jewelry_id == jewelry_id, OrderItem.id != item_id)
-            .scalar()
-        )
-        new_total = other_qty + new_qty
-        if new_total < total_allocated:
-            raise ValueError(f"该饰品整单已分配 {total_allocated}，修改后总数量 {new_total} 不足")
+        if item.jewelry_id is not None:
+            jewelry_id = item.jewelry_id
+            # Sum allocated from batch flow
+            batch_allocated = (
+                db.query(sa_func.coalesce(sa_func.sum(OrderTodoBatchJewelry.quantity), 0))
+                .join(OrderTodoBatch, OrderTodoBatchJewelry.batch_id == OrderTodoBatch.id)
+                .filter(OrderTodoBatch.order_id == order_id, OrderTodoBatchJewelry.jewelry_id == jewelry_id)
+                .scalar()
+            )
+            # Sum allocated from legacy direct HC jewelry links (not already in batch)
+            legacy_allocated = 0
+            batch_hc_ids = {
+                b.handcraft_order_id
+                for b in db.query(OrderTodoBatch).filter_by(order_id=order_id).all()
+                if b.handcraft_order_id
+            }
+            links = (
+                db.query(OrderItemLink)
+                .filter(OrderItemLink.order_id == order_id, OrderItemLink.handcraft_jewelry_item_id.isnot(None))
+                .all()
+            )
+            if links:
+                hc_item_ids = [l.handcraft_jewelry_item_id for l in links]
+                hc_items = db.query(HandcraftJewelryItem).filter(
+                    HandcraftJewelryItem.id.in_(hc_item_ids),
+                    HandcraftJewelryItem.jewelry_id == jewelry_id,
+                ).all()
+                for hci in hc_items:
+                    if hci.handcraft_order_id not in batch_hc_ids:
+                        legacy_allocated += hci.qty
+            total_allocated = batch_allocated + legacy_allocated
+            # Compare against whole-order total for this jewelry after the edit
+            other_qty = (
+                db.query(sa_func.coalesce(sa_func.sum(OrderItem.quantity), 0))
+                .filter(OrderItem.order_id == order_id, OrderItem.jewelry_id == jewelry_id, OrderItem.id != item_id)
+                .scalar()
+            )
+            new_total = other_qty + new_qty
+            if new_total < total_allocated:
+                raise ValueError(f"该饰品整单已分配 {total_allocated}，修改后总数量 {new_total} 不足")
     for key, value in fields.items():
         if hasattr(item, key):
             setattr(item, key, value)
     db.flush()
+    if "unit_price" in fields and item.part_id is not None:
+        new_price = Decimal(str(fields["unit_price"])).quantize(_Q7, rounding=ROUND_HALF_UP)
+        _writeback_part_wholesale_price(db, item.part_id, new_price)
     if price_fields & fields.keys():
         _recalc_total(db, order)
     return item
