@@ -79,3 +79,20 @@ def test_update_part_item_unit_price_writes_back(db, part_chain):
     update_order_item(db, order.id, item.id, {"unit_price": 19.5})
     db.refresh(part_chain)
     assert part_chain.wholesale_price == Decimal("19.5")
+
+
+def test_create_order_mixed_jewelry_and_part(db, part_chain):
+    from models.jewelry import Jewelry
+    db.add(Jewelry(id="SP-MIX1", name="环", status="active",
+                   handcraft_cost=0, wholesale_price=100))
+    db.flush()
+    order = create_order(db, "客户A", [
+        {"jewelry_id": "SP-MIX1", "quantity": 2, "unit_price": 100, "remarks": None},
+        {"part_id": part_chain.id, "quantity": 3, "unit_price": 15, "remarks": None},
+    ])
+    items = db.query(OrderItem).filter_by(order_id=order.id).order_by(OrderItem.id).all()
+    assert len(items) == 2
+    assert items[0].jewelry_id == "SP-MIX1" and items[0].part_id is None
+    assert items[1].part_id == part_chain.id and items[1].jewelry_id is None
+    # 2*100 + 3*15 = 245
+    assert order.total_amount == Decimal("245.0000000")

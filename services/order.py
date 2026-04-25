@@ -17,10 +17,11 @@ _Q7 = Decimal("0.0000001")
 
 
 def _writeback_part_wholesale_price(db: Session, part_id: str, new_price: Decimal) -> None:
-    """If part.wholesale_price differs from new_price, overwrite it."""
+    """Overwrite part.wholesale_price with the latest sale price.
+    Raises ValueError if the part does not exist."""
     part = db.query(Part).filter(Part.id == part_id).first()
     if part is None:
-        return
+        raise ValueError(f"配件 {part_id} 不存在")
     if part.wholesale_price != new_price:
         part.wholesale_price = new_price
         db.flush()
