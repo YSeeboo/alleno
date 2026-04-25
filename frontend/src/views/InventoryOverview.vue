@@ -153,7 +153,7 @@ const doStock = async () => {
 
 const columns = [
   { title: '品类', key: 'item_type', width: 90, render: (row) => kindLabel.value[row.item_type] || row.item_type },
-  { title: '编号', key: 'item_id', width: 130 },
+  { title: '编号', key: 'item_id', width: 160 },
   {
     title: '名称',
     key: 'name',

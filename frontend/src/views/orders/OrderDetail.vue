@@ -969,7 +969,7 @@ const cuttingStatsData = ref([])
 const cuttingStatsPdfLoading = ref(false)
 
 const cuttingStatsColumns = [
-  { title: '编号', key: 'part_id', width: 120 },
+  { title: '编号', key: 'part_id', width: 160 },
   {
     title: '配件',
     key: 'part_name',
@@ -1176,7 +1176,7 @@ async function openPartBomModal(row) {
 }
 
 const partBomColumns = [
-  { title: '子配件编号', key: 'child_part_id', width: 130 },
+  { title: '子配件编号', key: 'child_part_id', width: 160 },
   {
     title: '子配件',
     key: 'child_part_name',
@@ -1239,7 +1239,7 @@ const jewelryModalBomColumns = [
     minWidth: 160,
     render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name, 32),
   },
-  { title: '编号', key: 'part_id', width: 120 },
+  { title: '编号', key: 'part_id', width: 160 },
   { title: '每件用量', key: 'qty_per_unit', width: 90, align: 'center' },
 ]
 
@@ -1584,7 +1584,7 @@ function renderPartWithBomLink(row) {
 }
 
 const todoColumns = [
-  { title: '配件编号', key: 'part_id', width: 110 },
+  { title: '配件编号', key: 'part_id', width: 160 },
   {
     title: '配件',
     key: 'part_name',
@@ -1646,7 +1646,7 @@ const todoColumns = [
 
 // --- Batch item columns (used in expanded batch detail) ---
 const batchItemColumns = [
-  { title: '配件编号', key: 'part_id', width: 110 },
+  { title: '配件编号', key: 'part_id', width: 160 },
   {
     title: '配件',
     key: 'part_name',

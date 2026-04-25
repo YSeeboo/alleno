@@ -342,7 +342,7 @@
       </div>
       <n-data-table
         :columns="[
-          { title: '配件编号', key: 'part_id', width: 130 },
+          { title: '配件编号', key: 'part_id', width: 160 },
           { title: '配件名称', key: 'part_name', minWidth: 120 },
           { title: '原穿珠费用', key: 'current_value', width: 120, render: (r) => r.current_value != null ? `¥ ${fmtMoney(r.current_value)}` : '-' },
           { title: '更新穿珠费用', key: 'new_value', width: 120, render: (r) => h('span', { style: 'color: #d03050; font-weight: 600;' }, `¥ ${fmtMoney(r.new_value)}`) },
@@ -516,7 +516,7 @@ const platingSelectColumns = [
       onUpdateChecked: (val) => row.checked = val,
     }),
   },
-  { title: '配件编号', key: 'part_id', width: 130 },
+  { title: '配件编号', key: 'part_id', width: 160 },
   { title: '配件名称', key: 'part_name' },
   {
     title: '电镀数量',
@@ -1167,7 +1167,7 @@ const itemColumns = [
   {
     title: '配件编号',
     key: 'part_id',
-    width: 120,
+    width: 160,
     render: (row) => {
       if (row._rowType === 'addon' || row._rowType === 'addon_new') {
         return h('span', { style: { ...addonRowStyle, color: '#bbb', paddingLeft: '16px' } }, '└')

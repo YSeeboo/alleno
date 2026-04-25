@@ -1574,7 +1574,7 @@ const renderReceiptLinkCell = (row) => {
 }
 
 const itemColumns = [
-  { title: '配件编号', key: 'part_id', width: 110 },
+  { title: '配件编号', key: 'part_id', width: 160 },
   {
     title: '发出配件',
     key: 'part_name',

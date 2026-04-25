@@ -767,7 +767,7 @@ const cuttingStatsData = ref([])
 const cuttingStatsPdfLoading = ref(false)
 
 const cuttingStatsColumns = [
-  { title: '编号', key: 'part_id', width: 120 },
+  { title: '编号', key: 'part_id', width: 160 },
   {
     title: '配件',
     key: 'part_name',
@@ -1415,7 +1415,7 @@ const partStatusLabel = { '未送出': '未送出', '制作中': '制作中', '�
 const partStatusBadge = { '未送出': 'badge-gray', '制作中': 'badge-blue', '已收回': 'badge-green' }
 
 const itemColumns = [
-  { title: '配件编号', key: 'part_id', width: 110 },
+  { title: '配件编号', key: 'part_id', width: 160 },
   {
     title: '配件',
     key: 'part_name',

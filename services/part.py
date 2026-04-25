@@ -1,3 +1,4 @@
+import re
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
@@ -14,12 +15,31 @@ COLOR_VARIANTS = [
 ]
 COLOR_SUFFIXES = [v["label"] for v in COLOR_VARIANTS]
 
+_VARIANT_SPEC_REGEX = re.compile(r"^\d+(\.\d+)?(cm|mm|m)$")
+# Matches names like xxx_金色_45cm / xxx_白K_17.5cm — a variant masquerading as a root.
+_COLOR_PLUS_SPEC_NAME_REGEX = re.compile(
+    r"_(" + "|".join(COLOR_SUFFIXES) + r")_\d+(\.\d+)?(cm|mm|m)$"
+)
+
 _COST_FIELDS = {"purchase_cost", "bead_cost", "plating_cost"}
 _Q7 = Decimal("0.0000001")
 
 
 def _is_color_variant(name: str) -> bool:
     return any(name.endswith(f"_{suffix}") for suffix in COLOR_SUFFIXES)
+
+
+def _looks_like_orphan_variant_name(name: str) -> bool:
+    """Name pattern suggests the record is really a variant, not a root.
+
+    Covers:
+      - color-only suffix:   xxx_金色 / xxx_白K / xxx_玫瑰金
+      - color+spec suffix:   xxx_金色_45cm / xxx_白K_17.5cm
+    Spec-only (xxx_45cm) is NOT matched here — too easy to false-positive on
+    legitimate root names. No real occurrences of spec-only orphans in
+    production (per audit), so we keep the check conservative.
+    """
+    return _is_color_variant(name) or bool(_COLOR_PLUS_SPEC_NAME_REGEX.search(name))
 
 
 PART_CATEGORIES = {
@@ -118,6 +138,7 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
 
 
 COLOR_CODES = {v["code"]: v["label"] for v in COLOR_VARIANTS}
+_LABEL_TO_CODE = {v["label"]: v["code"] for v in COLOR_VARIANTS}
 
 
 def _validate_variant_request(db: Session, part_id: str, color_code: Optional[str] = None, spec: Optional[str] = None):
@@ -125,6 +146,10 @@ def _validate_variant_request(db: Session, part_id: str, color_code: Optional[st
     # Normalize spec: strip whitespace, treat blank as None
     if spec is not None:
         spec = spec.strip() or None
+    if spec is not None and not _VARIANT_SPEC_REGEX.match(spec):
+        raise ValueError(
+            f"规格格式不合法 '{spec}'。仅支持 \\d+(\\.\\d+)?(cm|mm|m)，例如 45cm、17.5cm、8mm"
+        )
     if not color_code and not spec:
         raise ValueError("必须提供 color_code 或 spec 中的至少一个")
     color = None
@@ -145,8 +170,13 @@ def _validate_variant_request(db: Session, part_id: str, color_code: Optional[st
         if not color and root.color:
             color = root.color
         root = get_part(db, root.parent_part_id)
-    elif _is_color_variant(root.name):
-        raise ValueError("该配件名称含颜色后缀但无父配件关联，请先修正数据")
+    elif _looks_like_orphan_variant_name(root.name):
+        # Name pattern alone is the reliable signal: a legit root can have
+        # color='金色' or spec='45cm' populated (API allows it), but its NAME
+        # won't end with `_金色` or `_金色_45cm`.
+        raise ValueError(
+            "该配件疑似未挂载的变体（名称含颜色 / 颜色+规格后缀），请先修正数据"
+        )
     return source, root, color, spec
 
 
@@ -159,23 +189,63 @@ def _build_variant_name(root_name: str, color: Optional[str], spec: Optional[str
     return "_".join(parts)
 
 
+def _next_variant_id(root: Part, color: Optional[str], spec: Optional[str]) -> str:
+    """Build variant ID as {root_id}-{color_code}[-{spec}].
+
+    Examples:
+        root PJ-DZ-00001 + color 金色        -> PJ-DZ-00001-G
+        root PJ-DZ-00001 + color 金色 + 45cm -> PJ-DZ-00001-G-45cm
+        root PJ-LT-00008 + spec only 45cm    -> PJ-LT-00008-45cm
+
+    Relies on variant suffix shape never colliding with flat {prefix}-NNNNN IDs
+    (flat IDs contain only digits after the last dash).
+    """
+    segments = [root.id]
+    if color:
+        code = _LABEL_TO_CODE.get(color)
+        if code is None:
+            raise ValueError(f"未知颜色 '{color}'（不在 COLOR_VARIANTS 中）")
+        segments.append(code)
+    if spec:
+        segments.append(spec)
+    return "-".join(segments)
+
+
 def _find_existing_variant(db: Session, part_id: str, variant_name: str, color: Optional[str], spec: Optional[str] = None):
-    """Find existing variant by exact name under the same parent, with fallback to global name match."""
-    by_parent = (
+    """Find existing variant matching (name, color, spec) exactly.
+
+    Search order:
+      1) children of part_id whose name + color + spec ALL match
+      2) orphans in same category (no parent) whose name + color + spec ALL match
+
+    Crucially, if a child's name matches but color/spec does not, that child is
+    treated as corrupted data and skipped — we do NOT return it for reuse.
+    """
+    def _match(candidate: Part) -> bool:
+        return (
+            (candidate.color or None) == color
+            and (candidate.spec or None) == spec
+        )
+
+    # 1) Children of the target parent with matching name
+    children = (
         db.query(Part)
         .filter(
             Part.parent_part_id == part_id,
             Part.name == variant_name,
         )
-        .first()
+        .all()
     )
-    if by_parent is not None:
-        return by_parent
-    # Fallback: match by exact name among orphan parts in the same category
+    for child in children:
+        if _match(child):
+            return child
+    # Any name-matching child that fails color/spec check is corrupted — skip dedup.
+
+    # 2) Fallback: orphans in the same category
     parent = db.get(Part, part_id)
     if parent is None:
         return None
-    by_name = (
+    orphans = (
         db.query(Part)
         .filter(
             Part.name == variant_name,
@@ -183,17 +253,13 @@ def _find_existing_variant(db: Session, part_id: str, variant_name: str, color: 
             Part.category == parent.category,
             Part.parent_part_id.is_(None),
         )
-        .first()
+        .all()
     )
-    if by_name is not None:
-        # Orphan's color/spec must exactly match the request
-        orphan_color = by_name.color or None
-        orphan_spec = by_name.spec or None
-        if orphan_color != color or orphan_spec != spec:
-            return None
-        by_name.parent_part_id = part_id
-        db.flush()
-        return by_name
+    for orphan in orphans:
+        if _match(orphan):
+            orphan.parent_part_id = part_id
+            db.flush()
+            return orphan
     return None
 
 
@@ -210,9 +276,8 @@ def create_part_variant(db: Session, part_id: str, color_code: Optional[str] = N
     # Cross-color (e.g. xx_金色 → xx_白K): inherit from root to avoid pollution
     same_color = source.id != root.id and (not color or color == source.color)
     donor = source if same_color else root
-    prefix = PART_CATEGORIES[root.category]
     variant = Part(
-        id=_next_id_by_category(db, Part, prefix),
+        id=_next_variant_id(root, color, spec),
         name=variant_name,
         category=root.category,
         unit="条" if spec else donor.unit,

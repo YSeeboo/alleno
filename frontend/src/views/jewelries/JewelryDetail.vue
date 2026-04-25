@@ -269,7 +269,7 @@ const doDeleteBom = async (row) => {
 }
 
 const bomColumns = [
-  { title: '配件编号', key: 'part_id', width: 110 },
+  { title: '配件编号', key: 'part_id', width: 160 },
   {
     title: '配件',
     key: 'part_name',

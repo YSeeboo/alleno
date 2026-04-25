@@ -657,3 +657,220 @@ def test_variant_inherits_all_costs_including_plating(client):
     assert v["bead_cost"] == 2
     assert v["plating_cost"] == 3
     assert v["unit_cost"] == 6
+
+
+# --- New variant ID format tests (base+suffix: {root_id}-{G|S|RG}[-{spec}]) ---
+
+def test_variant_id_new_format_color_only(client):
+    root, variant = _create_root_and_variant(client)
+    # Color G → suffix -G
+    assert variant["id"] == f"{root['id']}-G"
+
+
+def test_variant_id_new_format_with_spec(client):
+    root = client.post("/api/parts/", json={"name": "扁链 3.5mm", "category": "链条"}).json()
+    resp = client.post(
+        f"/api/parts/{root['id']}/create-variant",
+        json={"color_code": "G", "spec": "45cm"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["id"] == f"{root['id']}-G-45cm"
+
+
+def test_variant_id_new_format_all_color_codes(client):
+    for code, expected_suffix in [("G", "G"), ("S", "S"), ("RG", "RG")]:
+        root = client.post(
+            "/api/parts/", json={"name": f"片 {code}", "category": "小配件"}
+        ).json()
+        resp = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": code})
+        assert resp.status_code == 201
+        assert resp.json()["id"] == f"{root['id']}-{expected_suffix}"
+
+
+def test_variant_spec_invalid_format_rejected(client):
+    root = client.post("/api/parts/", json={"name": "链 A", "category": "链条"}).json()
+    for bad_spec in ["大号", "L", "45", "45 cm", "cm45", "45厘米", "abc"]:
+        resp = client.post(
+            f"/api/parts/{root['id']}/create-variant",
+            json={"color_code": "G", "spec": bad_spec},
+        )
+        assert resp.status_code == 400, f"Expected 400 for spec={bad_spec!r}, got {resp.status_code}"
+        assert "规格格式不合法" in resp.json()["detail"]
+
+
+def test_variant_spec_valid_formats_accepted(client):
+    root = client.post("/api/parts/", json={"name": "链 B", "category": "链条"}).json()
+    for good_spec in ["45cm", "17.5cm", "8mm", "2m", "0.5m", "100mm"]:
+        resp = client.post(
+            f"/api/parts/{root['id']}/create-variant",
+            json={"color_code": "G", "spec": good_spec},
+        )
+        assert resp.status_code == 201, f"Expected 201 for spec={good_spec!r}, got {resp.status_code}"
+        assert resp.json()["id"] == f"{root['id']}-G-{good_spec}"
+
+
+def test_variant_id_no_collision_with_flat_root_ids(client):
+    """New variant IDs contain '-<letter>' and can never collide with flat root IDs."""
+    root, variant = _create_root_and_variant(client)
+    # variant ID has at least one non-digit segment after root ID
+    suffix = variant["id"][len(root["id"]) + 1 :]  # strip "{root_id}-"
+    assert not suffix.isdigit(), f"variant suffix {suffix!r} must not be all digits"
+
+
+def test_find_or_create_variant_dedupes_old_flat_format_variant(client, db):
+    """When an old flat-ID variant exists (simulating pre-migration data),
+    create-variant should return it instead of creating a new suffix-ID variant.
+    """
+    # Create root via API
+    root = client.post("/api/parts/", json={"name": "手动老变体 root", "category": "小配件"}).json()
+    # Directly craft an "old-format" flat-ID variant (simulate pre-migration data)
+    from models.part import Part
+    old_variant = Part(
+        id="PJ-X-OLDVAR1",  # flat-style arbitrary ID, no -G suffix
+        name=f"{root['name']}_金色",
+        category=root["category"],
+        color="金色",
+        parent_part_id=root["id"],
+    )
+    db.add(old_variant)
+    db.flush()
+    # Now request creating a 金色 variant through API
+    resp = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G"})
+    assert resp.status_code == 201
+    # Should return the existing old-format variant, NOT create a new -G one
+    assert resp.json()["id"] == "PJ-X-OLDVAR1"
+
+
+# --- Transition-period / legacy-data safety tests ---
+
+def test_create_variant_from_orphan_color_plus_spec_rejected(client, db):
+    """Orphan whose NAME ends with _颜色_规格 must NOT be used as a root."""
+    from models.part import Part
+    orphan = Part(
+        id="PJ-LT-OLDORPH1",
+        name="链条_金色_45cm",  # name-pattern match: color+spec suffix
+        category="链条",
+        color="金色",
+        spec="45cm",
+        parent_part_id=None,
+    )
+    db.add(orphan)
+    db.flush()
+    resp = client.post(
+        f"/api/parts/{orphan.id}/create-variant", json={"color_code": "G", "spec": "50cm"}
+    )
+    assert resp.status_code == 400
+    assert "未挂载的变体" in resp.json()["detail"]
+
+
+def test_create_variant_allows_root_with_legit_yuan_se_color(client, db):
+    """Sanity: a real root with color='原色' (base/unplated marker) is NOT an orphan."""
+    from models.part import Part
+    legit_root = Part(
+        id="PJ-X-LEGITROOT",
+        name="黑珍珠 6mm",
+        category="小配件",
+        color="原色",  # legitimate base marker, not a plated color
+        parent_part_id=None,
+    )
+    db.add(legit_root)
+    db.flush()
+    resp = client.post(
+        f"/api/parts/{legit_root.id}/create-variant", json={"color_code": "G"}
+    )
+    assert resp.status_code == 201
+    assert resp.json()["parent_part_id"] == legit_root.id
+    assert resp.json()["color"] == "金色"
+
+
+def test_create_variant_allows_root_with_plated_color_column(client, db):
+    """Regression: a legit root may carry color='金色' in its column without the
+    name ending in `_金色`. Don't treat it as an orphan."""
+    from models.part import Part
+    legit_root = Part(
+        id="PJ-X-GOLDROOT",
+        name="金色扣环 12mm",  # name does NOT end with _金色
+        category="小配件",
+        color="金色",  # legit column value, not an orphan signal
+        parent_part_id=None,
+    )
+    db.add(legit_root)
+    db.flush()
+    resp = client.post(
+        f"/api/parts/{legit_root.id}/create-variant", json={"color_code": "S"}
+    )
+    assert resp.status_code == 201
+    assert resp.json()["parent_part_id"] == legit_root.id
+
+
+def test_create_variant_allows_root_with_spec_column(client, db):
+    """Regression: a legit root may carry spec='45cm' without the name ending
+    with a color/spec suffix. Don't treat it as an orphan (caught by reviewer)."""
+    from models.part import Part
+    legit_root = Part(
+        id="PJ-LT-SPECROOT",
+        name="某链条",  # plain root name, no variant suffix
+        category="链条",
+        spec="45cm",  # legit spec column on a root — must NOT trigger orphan guard
+        parent_part_id=None,
+    )
+    db.add(legit_root)
+    db.flush()
+    resp = client.post(
+        f"/api/parts/{legit_root.id}/create-variant", json={"color_code": "G"}
+    )
+    assert resp.status_code == 201
+    assert resp.json()["parent_part_id"] == legit_root.id
+    assert resp.json()["color"] == "金色"
+
+
+def test_find_existing_variant_skips_corrupted_child(client, db):
+    """If a child's name matches but color/spec column is wrong, don't reuse — create new."""
+    from models.part import Part
+    root = client.post("/api/parts/", json={"name": "铜 X", "category": "小配件"}).json()
+    # Corrupted child: name looks like spec-only variant "铜 X_45cm" but color column is set
+    corrupted = Part(
+        id="PJ-X-CORRUPT1",
+        name=f"{root['name']}_45cm",
+        category=root["category"],
+        color="金色",  # wrong: request is spec-only, but this child has color
+        spec="45cm",
+        parent_part_id=root["id"],
+    )
+    db.add(corrupted)
+    db.flush()
+    # Request spec-only (no color)
+    resp = client.post(f"/api/parts/{root['id']}/create-variant", json={"spec": "45cm"})
+    assert resp.status_code == 201
+    # Must not return the corrupted child
+    assert resp.json()["id"] != "PJ-X-CORRUPT1"
+    # Should be a fresh variant with new-format ID
+    assert resp.json()["id"] == f"{root['id']}-45cm"
+
+
+def test_find_existing_variant_picks_exact_match_among_multiple_orphans(client, db):
+    """Multiple same-name orphans: picker must match color+spec exactly, not just the first row."""
+    from models.part import Part
+    root = client.post("/api/parts/", json={"name": "多孤儿 root", "category": "小配件"}).json()
+    # Orphan A: name matches, but wrong color
+    orphan_wrong = Part(
+        id="PJ-X-MULTI1",
+        name=f"{root['name']}_金色",
+        category=root["category"],
+        color="白K",  # wrong color
+        parent_part_id=None,
+    )
+    # Orphan B: name matches AND color matches (the correct one)
+    orphan_right = Part(
+        id="PJ-X-MULTI2",
+        name=f"{root['name']}_金色",
+        category=root["category"],
+        color="金色",  # exact match
+        parent_part_id=None,
+    )
+    db.add_all([orphan_wrong, orphan_right])
+    db.flush()
+    # Request 金色 variant — should pick orphan_right, not orphan_wrong
+    resp = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G"})
+    assert resp.status_code == 201
+    assert resp.json()["id"] == "PJ-X-MULTI2"

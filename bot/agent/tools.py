@@ -13,7 +13,7 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "item_type": {"type": "string", "description": "part 或 jewelry"},
-                    "item_id": {"type": "string", "description": "物品 ID，如 PJ-0001 或 SP-0001"},
+                    "item_id": {"type": "string", "description": "物品 ID，如 PJ-DZ-00001（配件根）、PJ-DZ-00001-G（配件金色变体）、SP-SET-00001（饰品）"},
                 },
                 "required": ["item_type", "item_id"],
             },
@@ -28,7 +28,7 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "item_type": {"type": "string", "description": "part 或 jewelry"},
-                    "item_id": {"type": "string", "description": "物品 ID，如 PJ-0001 或 SP-0001"},
+                    "item_id": {"type": "string", "description": "物品 ID，如 PJ-DZ-00001（配件根）、PJ-DZ-00001-G（配件金色变体）、SP-SET-00001（饰品）"},
                 },
                 "required": ["item_type", "item_id"],
             },
@@ -43,7 +43,7 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "item_type": {"type": "string", "description": "part 或 jewelry"},
-                    "item_id": {"type": "string", "description": "物品 ID，如 PJ-0001"},
+                    "item_id": {"type": "string", "description": "物品 ID，如 PJ-DZ-00001 或 PJ-DZ-00001-G"},
                     "qty": {"type": "number", "description": "入库数量（正数）"},
                     "reason": {"type": "string", "description": "入库原因，如 采购入库"},
                     "note": {"type": "string", "description": "备注（可选）"},
@@ -61,7 +61,7 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "item_type": {"type": "string", "description": "part 或 jewelry"},
-                    "item_id": {"type": "string", "description": "物品 ID，如 PJ-0001"},
+                    "item_id": {"type": "string", "description": "物品 ID，如 PJ-DZ-00001 或 PJ-DZ-00001-G"},
                     "qty": {"type": "number", "description": "出库数量（正数）"},
                     "reason": {"type": "string", "description": "出库原因，如 销售出库"},
                     "note": {"type": "string", "description": "备注（可选）"},

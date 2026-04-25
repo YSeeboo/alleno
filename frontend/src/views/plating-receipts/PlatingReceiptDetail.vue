@@ -254,7 +254,7 @@
       </div>
       <n-data-table
         :columns="[
-          { title: '配件编号', key: 'part_id', width: 130 },
+          { title: '配件编号', key: 'part_id', width: 160 },
           { title: '配件名称', key: 'part_name', minWidth: 120 },
           { title: '原电镀费用', key: 'current_value', width: 120, render: (r) => r.current_value != null ? `¥ ${fmtMoney(r.current_value)}` : '-' },
           { title: '更新电镀费用', key: 'new_value', width: 120, render: (r) => h('span', { style: 'color: #d03050; font-weight: 600;' }, `¥ ${fmtMoney(r.new_value)}`) },
@@ -747,7 +747,7 @@ const renderNoteCell = (row) => {
 }
 
 const itemColumns = [
-  { title: '配件编号', key: 'part_id', width: 120 },
+  { title: '配件编号', key: 'part_id', width: 160 },
   {
     title: '配件',
     key: 'part_name',
