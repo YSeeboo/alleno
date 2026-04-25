@@ -245,6 +245,27 @@ def ensure_schema_compat(target_engine=None):
                 ))
                 logger.warning("Added missing order_item XOR CHECK constraint")
 
+        # --- order_cost_snapshot_item: part_id columns + nullability ---
+        if inspector.has_table("order_cost_snapshot_item"):
+            cols = {c["name"]: c for c in inspector.get_columns("order_cost_snapshot_item")}
+            if "part_id" not in cols:
+                conn.execute(text(
+                    "ALTER TABLE order_cost_snapshot_item ADD COLUMN part_id VARCHAR NULL"
+                ))
+                logger.warning("Added missing order_cost_snapshot_item.part_id column")
+            if "part_name" not in cols:
+                conn.execute(text(
+                    "ALTER TABLE order_cost_snapshot_item ADD COLUMN part_name VARCHAR NULL"
+                ))
+                logger.warning("Added missing order_cost_snapshot_item.part_name column")
+            for col_name in ("jewelry_id", "jewelry_unit_cost", "jewelry_total_cost"):
+                if cols.get(col_name) and cols[col_name]["nullable"] is False:
+                    conn.execute(text(
+                        f"ALTER TABLE order_cost_snapshot_item "
+                        f"ALTER COLUMN {col_name} DROP NOT NULL"
+                    ))
+                    logger.warning("Made order_cost_snapshot_item.%s nullable", col_name)
+
         if inspector.has_table("order_item_link"):
             columns = {col["name"] for col in inspector.get_columns("order_item_link")}
             if "purchase_order_item_id" not in columns:

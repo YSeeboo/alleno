@@ -28,13 +28,15 @@ class OrderCostSnapshotItem(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     snapshot_id = Column(Integer, ForeignKey("order_cost_snapshot.id"), nullable=False)
-    jewelry_id = Column(String, nullable=False)
+    jewelry_id = Column(String, nullable=True)
     jewelry_name = Column(String, nullable=True)
+    part_id = Column(String, nullable=True)
+    part_name = Column(String, nullable=True)
     quantity = Column(Integer, nullable=False)
     unit_price = Column(Numeric(18, 7), nullable=True)
     handcraft_cost = Column(Numeric(18, 7), nullable=True)
-    jewelry_unit_cost = Column(Numeric(18, 7), nullable=False)
-    jewelry_total_cost = Column(Numeric(18, 7), nullable=False)
+    jewelry_unit_cost = Column(Numeric(18, 7), nullable=True)
+    jewelry_total_cost = Column(Numeric(18, 7), nullable=True)
     bom_details_raw = Column("bom_details", Text, nullable=True)
 
     @property

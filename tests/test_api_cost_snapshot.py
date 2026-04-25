@@ -186,3 +186,30 @@ def test_negative_packaging_cost_rejected(client, db):
     order_id = resp.json()["id"]
     resp = client.patch(f"/api/orders/{order_id}/packaging-cost", json={"packaging_cost": -100})
     assert resp.status_code == 422
+
+
+def test_cost_snapshot_includes_part_items(client, db):
+    from sqlalchemy import text
+    db.execute(text(
+        "INSERT INTO part (id, name, unit_cost, wholesale_price) "
+        "VALUES ('PJ-CS1', 'chain', 8, 15)"
+    ))
+    db.commit()
+    # Stock the part directly via an inventory_log row (avoid coupling to API path)
+    from services.inventory import add_stock
+    add_stock(db, "part", "PJ-CS1", 100, "测试入库")
+    db.commit()
+    r = client.post("/api/orders/", json={
+        "customer_name": "X",
+        "items": [{"part_id": "PJ-CS1", "quantity": 5, "unit_price": 15}],
+    })
+    order_id = r.json()["id"]
+    r = client.patch(f"/api/orders/{order_id}/status", json={"status": "已完成"})
+    assert r.status_code == 200
+    r = client.get(f"/api/orders/{order_id}/cost-snapshot")
+    snap = r.json()
+    # 5 × 15 (price) - 5 × 8 (cost) = 35 profit
+    assert snap is not None
+    assert float(snap["total_amount"]) == 75.0
+    assert float(snap["total_cost"]) == 40.0
+    assert float(snap["profit"]) == 35.0
