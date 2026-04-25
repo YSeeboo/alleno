@@ -5,6 +5,7 @@ from models.part import Part
 from services.inventory import add_stock, get_stock
 from services.order import create_order, add_order_item, update_order_item, update_order_status
 from services.order import update_order_item_customer_code, batch_fill_customer_code
+from services.order import get_parts_summary
 
 
 @pytest.fixture
@@ -179,3 +180,38 @@ def test_reject_batch_customer_code_with_part_item(db, part_chain):
     item_ids = [i.id for i in items]
     with pytest.raises(ValueError, match="配件项不允许设置客户货号"):
         batch_fill_customer_code(db, order.id, item_ids, "C", 0, 2)
+
+
+def test_parts_summary_merges_bom_and_direct(db, part_chain):
+    from models.jewelry import Jewelry
+    from models.bom import Bom
+    db.add(Jewelry(id="SP-T4", name="j", status="active",
+                   handcraft_cost=0, wholesale_price=200))
+    db.flush()
+    db.add(Bom(id="BM-T4", jewelry_id="SP-T4", part_id=part_chain.id, qty_per_unit=3))
+    db.flush()
+    order = create_order(db, "客户A", [
+        {"jewelry_id": "SP-T4", "quantity": 1, "unit_price": 200, "remarks": None},
+        {"part_id": part_chain.id, "quantity": 5, "unit_price": 15, "remarks": None},
+    ])
+    summary = get_parts_summary(db, order.id)
+    row = next(r for r in summary if r["part_id"] == part_chain.id)
+    assert row["total_qty"] == 8  # 3 BOM + 5 direct (ceil)
+    sources = row["source_jewelries"]
+    types = {s.get("source_type", "jewelry") for s in sources}
+    assert "direct" in types
+    assert "jewelry" in types
+    direct = next(s for s in sources if s.get("source_type") == "direct")
+    assert direct["order_qty"] == 5
+
+
+def test_parts_summary_direct_only_order(db, part_chain):
+    order = create_order(db, "客户A", [{
+        "part_id": part_chain.id, "quantity": 7, "unit_price": 15, "remarks": None,
+    }])
+    summary = get_parts_summary(db, order.id)
+    assert len(summary) == 1
+    row = summary[0]
+    assert row["part_id"] == part_chain.id
+    assert row["total_qty"] == 7
+    assert row["source_jewelries"][0].get("source_type") == "direct"

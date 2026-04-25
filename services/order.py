@@ -104,11 +104,11 @@ def _calc_global_part_demand(db: Session, part_ids: list[str]) -> dict[str, floa
     if not active_items:
         return {}
 
-    jewelry_ids = list({oi.jewelry_id for oi in active_items})
+    jewelry_ids = list({oi.jewelry_id for oi in active_items if oi.jewelry_id is not None})
     all_bom = db.query(Bom).filter(
         Bom.jewelry_id.in_(jewelry_ids),
         Bom.part_id.in_(part_ids),
-    ).all()
+    ).all() if jewelry_ids else []
     bom_cache: dict[str, list] = {}
     for b in all_bom:
         bom_cache.setdefault(b.jewelry_id, []).append(b)
@@ -116,10 +116,12 @@ def _calc_global_part_demand(db: Session, part_ids: list[str]) -> dict[str, floa
     # Aggregate order qty per jewelry across all active orders
     agg_qty: dict[str, int] = {}
     for oi in active_items:
+        if oi.jewelry_id is None:
+            continue
         agg_qty[oi.jewelry_id] = agg_qty.get(oi.jewelry_id, 0) + oi.quantity
 
     # Deduct finished jewelry stock (parts already consumed)
-    jewelry_stocks = batch_get_stock(db, "jewelry", jewelry_ids)
+    jewelry_stocks = batch_get_stock(db, "jewelry", jewelry_ids) if jewelry_ids else {}
 
     global_map: dict[str, float] = {}
     for jid, total in agg_qty.items():
@@ -128,6 +130,20 @@ def _calc_global_part_demand(db: Session, part_ids: list[str]) -> dict[str, floa
             for bom in bom_cache.get(jid, []):
                 pid = bom.part_id
                 global_map[pid] = global_map.get(pid, 0) + float(bom.qty_per_unit) * unfulfilled
+
+    # Add direct part purchases from active orders
+    direct_rows = (
+        db.query(OrderItem.part_id, sa_func.sum(OrderItem.quantity))
+        .join(Order, OrderItem.order_id == Order.id)
+        .filter(
+            Order.status.notin_(["已完成", "已取消"]),
+            OrderItem.part_id.in_(part_ids),
+        )
+        .group_by(OrderItem.part_id)
+        .all()
+    )
+    for pid, qty in direct_rows:
+        global_map[pid] = global_map.get(pid, 0) + float(qty)
 
     return global_map
 
@@ -141,16 +157,19 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
     if not items:
         return []
 
+    jewelry_items = [oi for oi in items if oi.jewelry_id is not None]
+    part_items = [oi for oi in items if oi.part_id is not None]
+
     # Batch load BOM for all jewelry_ids once
-    jewelry_ids = list({oi.jewelry_id for oi in items})
-    all_bom = db.query(Bom).filter(Bom.jewelry_id.in_(jewelry_ids)).all()
+    jewelry_ids = list({oi.jewelry_id for oi in jewelry_items})
+    all_bom = db.query(Bom).filter(Bom.jewelry_id.in_(jewelry_ids)).all() if jewelry_ids else []
     bom_cache: dict[str, list] = {}
     for b in all_bom:
         bom_cache.setdefault(b.jewelry_id, []).append(b)
 
     # Calculate total BOM requirements
     total_map: dict[str, float] = {}
-    for oi in items:
+    for oi in jewelry_items:
         for bom in bom_cache.get(oi.jewelry_id, []):
             pid = bom.part_id
             total_map[pid] = total_map.get(pid, 0) + float(bom.qty_per_unit) * oi.quantity
@@ -159,11 +178,11 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
 
     # Aggregate order quantities by jewelry_id
     agg_qty: dict[str, int] = {}
-    for oi in items:
+    for oi in jewelry_items:
         agg_qty[oi.jewelry_id] = agg_qty.get(oi.jewelry_id, 0) + oi.quantity
 
     # Get jewelry stock — finished jewelry already in inventory means parts are consumed
-    jewelry_stocks = batch_get_stock(db, "jewelry", jewelry_ids)
+    jewelry_stocks = batch_get_stock(db, "jewelry", jewelry_ids) if jewelry_ids else {}
 
     # Only deduct for finished jewelry in stock (parts already consumed).
     # Do NOT deduct for handcraft allocation — those parts are either:
@@ -196,6 +215,25 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
         for entry in entries:
             j = jewelry_info.get(entry["jewelry_id"])
             entry["jewelry_name"] = j.name if j else ""
+
+    # Add direct part contributions (customer-purchased parts)
+    direct_part_qty: dict[str, int] = {}
+    for pi in part_items:
+        direct_part_qty[pi.part_id] = direct_part_qty.get(pi.part_id, 0) + pi.quantity
+    for pid, dq in direct_part_qty.items():
+        total_map[pid] = total_map.get(pid, 0) + dq
+        source_map.setdefault(pid, []).append({
+            "source_type": "direct",
+            "jewelry_id": None,
+            "jewelry_name": "",
+            "qty_per_unit": None,
+            "order_qty": dq,
+            "subtotal": float(dq),
+        })
+    # Tag existing BOM-derived sources with source_type="jewelry"
+    for entries in source_map.values():
+        for entry in entries:
+            entry.setdefault("source_type", "jewelry")
 
     # Enrich with part info
     part_ids = list(total_map.keys())

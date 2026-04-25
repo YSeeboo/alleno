@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime, date
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -212,9 +212,10 @@ class JewelryForBatchResponse(BaseModel):
 
 
 class SourceJewelryItem(BaseModel):
-    jewelry_id: str
+    source_type: Literal["jewelry", "direct"] = "jewelry"
+    jewelry_id: Optional[str] = None
     jewelry_name: str = ""
-    qty_per_unit: float
+    qty_per_unit: Optional[float] = None
     order_qty: int
     subtotal: float
 
