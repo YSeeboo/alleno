@@ -1990,10 +1990,18 @@ function renderPartsExpand(row) {
   return h('div', { style: 'padding: 8px 12px 12px 48px; background: #fafbfc;' },
     sources.map((s, i) => {
       const isLast = i === sources.length - 1
-      return h('div', {
-        style: `display: flex; align-items: center; gap: 16px; padding: 5px 0; font-size: 12px; color: #555;${isLast ? '' : ' border-bottom: 1px dashed #e8e8e8;'}`,
-      }, [
-        h('span', { style: 'color: #ccc; font-family: monospace; margin-right: 4px;' }, isLast ? '└─' : '├─'),
+      const rowStyle = `display: flex; align-items: center; gap: 16px; padding: 5px 0; font-size: 12px; color: #555;${isLast ? '' : ' border-bottom: 1px dashed #e8e8e8;'}`
+      const branchSpan = h('span', { style: 'color: #ccc; font-family: monospace; margin-right: 4px;' }, isLast ? '└─' : '├─')
+      if (s.source_type === 'direct') {
+        return h('div', { style: rowStyle }, [
+          branchSpan,
+          h('span', { style: 'font-weight: 600; color: #333; min-width: 80px;' }, '客户直购'),
+          h('span', { style: 'color: #888; font-family: "SF Mono", Menlo, monospace; font-size: 11px;' }, `× ${s.order_qty}`),
+          h('span', { style: 'font-weight: 600; color: #333;' }, `= ${Math.ceil(s.subtotal)}`),
+        ])
+      }
+      return h('div', { style: rowStyle }, [
+        branchSpan,
         h('span', { style: 'font-weight: 600; color: #333; min-width: 80px;' }, s.jewelry_id),
         h('span', {
           style: 'color: rgb(100,101,232); min-width: 80px; cursor: pointer;',
