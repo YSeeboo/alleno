@@ -14,6 +14,7 @@ class Part(Base):
     color = Column(String, nullable=True)
     unit = Column(String, nullable=True)
     unit_cost = Column(Numeric(18, 7), nullable=True)
+    wholesale_price = Column(Numeric(18, 7), nullable=True)
     purchase_cost = Column(Numeric(18, 7), nullable=True)
     bead_cost = Column(Numeric(18, 7), nullable=True)
     plating_cost = Column(Numeric(18, 7), nullable=True)
