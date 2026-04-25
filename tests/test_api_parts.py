@@ -874,3 +874,24 @@ def test_find_existing_variant_picks_exact_match_among_multiple_orphans(client, 
     resp = client.post(f"/api/parts/{root['id']}/create-variant", json={"color_code": "G"})
     assert resp.status_code == 201
     assert resp.json()["id"] == "PJ-X-MULTI2"
+
+
+def test_part_wholesale_price_round_trip(client):
+    # Create a part with wholesale_price
+    r = client.post("/api/parts/", json={
+        "name": "测试链条",
+        "category": "链条",
+        "wholesale_price": 15.0,
+    })
+    assert r.status_code == 201
+    part_id = r.json()["id"]
+    assert r.json()["wholesale_price"] == 15.0
+
+    # Update it
+    r = client.patch(f"/api/parts/{part_id}", json={"wholesale_price": 18.5})
+    assert r.status_code == 200
+    assert r.json()["wholesale_price"] == 18.5
+
+    # Get it
+    r = client.get(f"/api/parts/{part_id}")
+    assert r.json()["wholesale_price"] == 18.5

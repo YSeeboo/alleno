@@ -12,6 +12,7 @@ class PartCreate(BaseModel):
     unit: Optional[str] = None
     plating_process: Optional[str] = None
     parent_part_id: Optional[str] = None
+    wholesale_price: Optional[float] = None
 
 
 class PartUpdate(BaseModel):
@@ -24,6 +25,7 @@ class PartUpdate(BaseModel):
     plating_process: Optional[str] = None
     parent_part_id: Optional[str] = None
     assembly_cost: Optional[float] = None
+    wholesale_price: Optional[float] = None
 
 
 class PartResponse(BaseModel):
@@ -42,6 +44,7 @@ class PartResponse(BaseModel):
     plating_cost: Optional[float] = None
     plating_process: Optional[str] = None
     assembly_cost: Optional[float] = None
+    wholesale_price: Optional[float] = None
     parent_part_id: Optional[str] = None
     is_composite: bool = False
 
