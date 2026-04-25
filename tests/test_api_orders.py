@@ -176,3 +176,27 @@ def test_order_create_rejects_both_set_in_item(client, db):
         }],
     })
     assert r.status_code == 422
+
+
+def test_get_order_items_enriches_part_info(client, db):
+    from sqlalchemy import text
+    db.execute(text(
+        "INSERT INTO part (id, name, unit, image, wholesale_price) "
+        "VALUES ('PJ-EN1', '玫瑰金链', '米', '/images/chain.png', 15)"
+    ))
+    db.commit()
+    r = client.post("/api/orders/", json={
+        "customer_name": "E",
+        "items": [{"part_id": "PJ-EN1", "quantity": 3, "unit_price": 15}],
+    })
+    order_id = r.json()["id"]
+    r = client.get(f"/api/orders/{order_id}/items")
+    assert r.status_code == 200
+    items = r.json()
+    assert len(items) == 1
+    item = items[0]
+    assert item["part_id"] == "PJ-EN1"
+    assert item["jewelry_id"] is None
+    assert item["part_name"] == "玫瑰金链"
+    assert item["part_unit"] == "米"
+    assert item["part_image"] == "/images/chain.png"
