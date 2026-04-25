@@ -210,13 +210,18 @@
             >
               批量关联订单
             </n-button>
+            <n-button
+              v-if="order?.status === 'pending'"
+              type="primary"
+              size="small"
+              @click="openAddModal"
+            >
+              + 添加配件
+            </n-button>
           </n-space>
         </template>
         <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" />
         <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
-        <div v-if="order?.status === 'pending'" style="margin-top: 12px;">
-          <n-button dashed style="width: 100%;" @click="openAddModal">+ 添加明细行</n-button>
-        </div>
       </n-card>
 
       <n-card v-if="jewelryItems.length > 0" title="产出明细">
@@ -243,6 +248,24 @@
         </n-form-item>
         <n-form-item label="单位">
           <n-select v-model:value="addForm.unit" :options="unitOptions" />
+        </n-form-item>
+        <n-form-item label="重量">
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <n-input-number
+              v-model:value="addForm.weight"
+              :min="0"
+              :precision="2"
+              :step="0.1"
+              placeholder="可选"
+              clearable
+              style="flex: 1;"
+            />
+            <n-select
+              v-model:value="addForm.weight_unit"
+              :options="weightUnitOptions"
+              style="width: 90px;"
+            />
+          </div>
         </n-form-item>
         <n-form-item label="备注">
           <n-input v-model:value="addForm.note" placeholder="备注（可选）" />
@@ -580,9 +603,14 @@ const unitOptions = [
   { label: 'kg', value: 'kg' },
 ]
 
+const weightUnitOptions = [
+  { label: 'kg', value: 'kg' },
+  { label: 'g', value: 'g' },
+]
+
 const addModalVisible = ref(false)
 const addSubmitting = ref(false)
-const addForm = ref({ part_id: null, qty: 1, unit: '个', note: '' })
+const addForm = ref({ part_id: null, qty: 1, unit: '个', weight: null, weight_unit: 'kg', note: '' })
 
 const editModalVisible = ref(false)
 const editSubmitting = ref(false)
@@ -841,7 +869,7 @@ const doChangeStatus = (newStatus) => {
 }
 
 const openAddModal = () => {
-  addForm.value = { part_id: null, qty: 1, unit: '个', note: '' }
+  addForm.value = { part_id: null, qty: 1, unit: '个', weight: null, weight_unit: 'kg', note: '' }
   addModalVisible.value = true
 }
 

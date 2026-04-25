@@ -190,19 +190,26 @@
 
       <n-card title="电镀明细">
         <template #header-extra>
-          <n-button
-            v-if="items.length > 0"
-            size="small"
-            @click="openBatchLinkModal"
-          >
-            批量关联订单
-          </n-button>
+          <n-space size="small">
+            <n-button
+              v-if="items.length > 0"
+              size="small"
+              @click="openBatchLinkModal"
+            >
+              批量关联订单
+            </n-button>
+            <n-button
+              v-if="order?.status === 'pending'"
+              type="primary"
+              size="small"
+              @click="openAddModal"
+            >
+              + 添加配件
+            </n-button>
+          </n-space>
         </template>
         <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" :row-key="(r) => r.id" />
         <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
-        <div v-if="order?.status === 'pending'" style="margin-top: 12px;">
-          <n-button dashed style="width: 100%;" @click="openAddModal">+ 添加明细行</n-button>
-        </div>
       </n-card>
     </n-spin>
 
@@ -264,6 +271,24 @@
         </n-form-item>
         <n-form-item label="单位">
           <n-select v-model:value="addForm.unit" :options="unitOptions" />
+        </n-form-item>
+        <n-form-item label="重量">
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <n-input-number
+              v-model:value="addForm.weight"
+              :min="0"
+              :precision="2"
+              :step="0.1"
+              placeholder="可选"
+              clearable
+              style="flex: 1;"
+            />
+            <n-select
+              v-model:value="addForm.weight_unit"
+              :options="weightUnitOptions"
+              style="width: 90px;"
+            />
+          </div>
         </n-form-item>
         <n-form-item label="备注">
           <n-input v-model:value="addForm.note" placeholder="备注（可选）" />
@@ -618,6 +643,11 @@ const unitOptions = [
   { label: 'kg', value: 'kg' },
 ]
 
+const weightUnitOptions = [
+  { label: 'kg', value: 'kg' },
+  { label: 'g', value: 'g' },
+]
+
 const BADGE_COLORS = { G: '#DAA520', S: '#C0C0C0', RG: '#B76E79' }
 const COLOR_SUFFIX_MAP = { '_金色': 'G', '_白K': 'S', '_玫瑰金': 'RG' }
 const COLOR_CODE_TO_METHOD = { G: '金', S: '白K', RG: '玫瑰金' }
@@ -705,7 +735,7 @@ const renderInlineSelect = (row, field, options, { renderLabel, placeholder } = 
 // Add Item Modal
 const addModalVisible = ref(false)
 const addSubmitting = ref(false)
-const addForm = ref({ part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金', note: '' })
+const addForm = ref({ part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金', weight: null, weight_unit: 'kg', note: '' })
 const addFormColor = ref(null)
 const addVariantInfo = ref(null)
 const addVariantLoading = ref(false)
@@ -866,7 +896,7 @@ const doChangeStatus = (newStatus) => {
 }
 
 const openAddModal = () => {
-  addForm.value = { part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金', note: '' }
+  addForm.value = { part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金', weight: null, weight_unit: 'kg', note: '' }
   addFormColor.value = null
   addVariantInfo.value = null
   addVariantLoading.value = false
