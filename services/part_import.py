@@ -367,17 +367,28 @@ def _get_number(
 
 
 def _build_import_plans(db: Session, rows: list[_ImportRow]) -> list[dict]:
-    """Build import plans, auto-merging duplicate (name, category) rows by
-    summing their qty. Rows with an explicit part_id that collide are still
-    rejected — those represent a true editing mistake, not a quantity split.
+    """Build import plans, auto-merging rows that target the same Part:
+    - Two rows with the same (name, category) merge their qty.
+    - A row with explicit part_id and a row with name+category that resolves
+      to the same Part also merge (would otherwise double-update / double-stock).
+    Rows colliding on the SAME literal part_id are rejected — that is a true
+    editing mistake, not a quantity split.
     For merged rows, non-qty fields (color, unit, cost, plating_process) take
     the FIRST row's values; subsequent rows' values for those fields are
     discarded. Original row numbers are preserved on _ImportRow.merged_row_numbers
-    so import results / inventory_log notes can show the full set."""
-    seen_ids = set()
+    so import results / inventory_log notes can show the full set.
+    If the first row at a (name, category) key fails to resolve, subsequent
+    duplicate rows at that key are skipped silently — the error is reported once."""
+    seen_ids: set[str] = set()
     plan_by_key: dict[tuple[str, str], dict] = {}
-    plans = []
-    errors = []
+    plan_by_part_id: dict[str, dict] = {}
+    failed_keys: set[tuple[str, str]] = set()
+    plans: list[dict] = []
+    errors: list[str] = []
+
+    def _merge_into(existing: dict, row: _ImportRow) -> None:
+        existing["row"].qty += row.qty
+        existing["row"].merged_row_numbers.append(row.row_number)
 
     for row in rows:
         if row.part_id:
@@ -386,23 +397,46 @@ def _build_import_plans(db: Session, rows: list[_ImportRow]) -> list[dict]:
                 continue
             seen_ids.add(row.part_id)
             try:
-                plans.append(_build_single_plan(db, row))
+                plan = _build_single_plan(db, row)
             except ValueError as exc:
                 errors.append(f"第 {row.row_number} 行：{exc}")
+                continue
+            # part_id rows always resolve to a non-None part (else _build_single_plan raises).
+            existing = plan_by_part_id.get(plan["part"].id)
+            if existing is not None:
+                _merge_into(existing, row)
+                continue
+            plans.append(plan)
+            plan_by_part_id[plan["part"].id] = plan
             continue
 
         unique_key = (row.name, row.category)
+        # Silently skip rows whose (name, category) already reported an error.
+        if unique_key in failed_keys:
+            continue
         existing = plan_by_key.get(unique_key)
         if existing is not None:
-            existing["row"].qty += row.qty
-            existing["row"].merged_row_numbers.append(row.row_number)
+            _merge_into(existing, row)
             continue
 
         try:
             plan = _build_single_plan(db, row)
         except ValueError as exc:
             errors.append(f"第 {row.row_number} 行：{exc}")
+            failed_keys.add(unique_key)
             continue
+
+        # If this name+category row resolves to a part already claimed by an
+        # earlier part_id row, merge into that plan instead of duplicating.
+        if plan["part"] is not None:
+            existing_by_id = plan_by_part_id.get(plan["part"].id)
+            if existing_by_id is not None:
+                _merge_into(existing_by_id, row)
+                # Cache the key so subsequent same-key rows skip the DB lookup.
+                plan_by_key[unique_key] = existing_by_id
+                continue
+            plan_by_part_id[plan["part"].id] = plan
+
         plans.append(plan)
         plan_by_key[unique_key] = plan
 

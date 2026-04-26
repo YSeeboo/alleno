@@ -354,9 +354,10 @@ def test_import_parts_excel_merges_duplicate_name_category_rows(client):
 
     parts = client.get("/api/parts/").json()
     copper = next(p for p in parts if p["name"] == "铜扣")
-    # First row's non-qty fields win
+    # First row's non-qty fields win — subsequent rows' values are discarded
     assert copper["color"] == "金色"
     assert copper["plating_process"] == "真金"
+    assert copper["purchase_cost"] == 1.5  # not 1.8 from row 3, not 0 from row 4
 
     copper_stock = client.get(f"/api/inventory/part/{copper['id']}").json()
     assert copper_stock["current"] == 22.0  # 10 + 5 + 7
@@ -370,6 +371,64 @@ def test_import_parts_excel_merges_duplicate_name_category_rows(client):
     log = client.get(f"/api/inventory/part/{copper['id']}/log").json()
     import_entry = next(e for e in log if e["reason"] == "Excel导入")
     assert "第 2、3、4 行" in import_entry["note"]
+
+
+def test_import_parts_excel_dedups_part_id_and_name_category_to_same_part(client):
+    """A row with explicit part_id + a row with the same name+category that
+    resolves to that same Part should merge into one plan: one update, one
+    add_stock, qty summed."""
+    created = client.post("/api/parts/", json={"name": "铜扣", "category": "小配件"}).json()
+
+    file_bytes = _build_xlsx([
+        ["配件编号", "名称", "类目", "单件成本", "入库数量"],
+        [created["id"], "铜扣", "小配件", 1.5, 10],
+        ["", "铜扣", "小配件", 1.8, 5],
+    ])
+
+    resp = client.post(
+        "/api/parts/import?filename=cross-dedup.xlsx",
+        content=file_bytes,
+        headers={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["imported_count"] == 1
+    assert data["updated_count"] == 1
+    assert data["created_count"] == 0
+    assert data["stock_entry_count"] == 1
+
+    log = client.get(f"/api/inventory/part/{created['id']}/log").json()
+    import_logs = [e for e in log if e["reason"] == "Excel导入"]
+    assert len(import_logs) == 1
+    assert "第 2、3 行" in import_logs[0]["note"]
+
+    bal = client.get(f"/api/inventory/part/{created['id']}").json()
+    assert bal["current"] == 15.0  # 10 + 5
+
+
+def test_import_parts_excel_reports_failed_duplicate_key_only_once(client_real_get_db):
+    """If 3 rows share (name, category) and resolution fails on the first
+    (e.g., DB has multiple matching parts), the error is reported once and
+    the remaining 2 rows are skipped silently."""
+    client_real_get_db.post("/api/parts/", json={"name": "铜扣", "category": "小配件"})
+    client_real_get_db.post("/api/parts/", json={"name": "铜扣", "category": "小配件"})
+
+    file_bytes = _build_xlsx([
+        ["名称", "类目", "入库数量"],
+        ["铜扣", "小配件", 1],
+        ["铜扣", "小配件", 2],
+        ["铜扣", "小配件", 3],
+    ])
+
+    resp = client_real_get_db.post(
+        "/api/parts/import?filename=ambig.xlsx",
+        content=file_bytes,
+        headers={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+    )
+    assert resp.status_code == 400
+    detail = resp.json()["detail"]
+    # Only one error line for this key, not three.
+    assert detail.count("无法自动判断") == 1
 
 
 def test_import_response_includes_image(client):
