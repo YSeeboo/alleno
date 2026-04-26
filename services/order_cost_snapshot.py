@@ -21,42 +21,44 @@ def generate_cost_snapshot(db: Session, order_id: str) -> OrderCostSnapshot:
 
     items = db.query(OrderItem).filter(OrderItem.order_id == order_id).all()
     if not items:
-        raise ValueError(f"订单 {order_id} 没有饰品明细")
+        raise ValueError(f"订单 {order_id} 没有任何明细")
 
-    # Batch load all jewelry, BOM rows, and parts
-    jewelry_ids = list({item.jewelry_id for item in items})
-    jewelries = db.query(Jewelry).filter(Jewelry.id.in_(jewelry_ids)).all()
+    jewelry_items = [i for i in items if i.jewelry_id is not None]
+    part_items = [i for i in items if i.part_id is not None]
+
+    # --- Jewelry section: existing behavior ---
+    jewelry_ids = list({i.jewelry_id for i in jewelry_items})
+    jewelries = db.query(Jewelry).filter(Jewelry.id.in_(jewelry_ids)).all() if jewelry_ids else []
     jewelry_map = {j.id: j for j in jewelries}
-
-    all_bom = db.query(Bom).filter(Bom.jewelry_id.in_(jewelry_ids)).all()
+    all_bom = db.query(Bom).filter(Bom.jewelry_id.in_(jewelry_ids)).all() if jewelry_ids else []
     bom_by_jewelry: dict[str, list] = {}
-    all_part_ids = set()
+    bom_part_ids = set()
     for b in all_bom:
         bom_by_jewelry.setdefault(b.jewelry_id, []).append(b)
-        all_part_ids.add(b.part_id)
+        bom_part_ids.add(b.part_id)
 
+    # --- Part section: load part details ---
+    direct_part_ids = list({i.part_id for i in part_items})
+    all_part_ids = bom_part_ids | set(direct_part_ids)
     part_map = {}
     if all_part_ids:
         for p in db.query(Part).filter(Part.id.in_(list(all_part_ids))).all():
             part_map[p.id] = p
 
-    # 前置校验：所有饰品必须有 BOM
-    for item in items:
-        bom_rows = bom_by_jewelry.get(item.jewelry_id, [])
-        if not bom_rows:
+    for item in jewelry_items:
+        if not bom_by_jewelry.get(item.jewelry_id):
             jewelry = jewelry_map.get(item.jewelry_id)
             name = jewelry.name if jewelry else item.jewelry_id
             raise ValueError(f"饰品「{name}」({item.jewelry_id}) 没有 BOM，无法生成成本快照")
 
     has_incomplete = False
     total_cost = Decimal(0)
-    snapshot_items = []
+    snapshot_items: list[dict] = []
 
-    for item in items:
+    # Jewelry rows
+    for item in jewelry_items:
         jewelry = jewelry_map.get(item.jewelry_id)
         bom_rows = bom_by_jewelry.get(item.jewelry_id, [])
-
-        # 计算 BOM 配件成本
         bom_cost = Decimal(0)
         bom_details = []
         for row in bom_rows:
@@ -74,16 +76,15 @@ def generate_cost_snapshot(db: Session, order_id: str) -> OrderCostSnapshot:
                 "qty_per_unit": float(qty_per_unit),
                 "subtotal": float(subtotal),
             })
-
-        # 饰品单位成本 = BOM 配件成本 + handcraft_cost
         hc_cost = Decimal(str(jewelry.handcraft_cost or 0)) if jewelry else Decimal(0)
         jewelry_unit_cost = (bom_cost + hc_cost).quantize(_Q7, rounding=ROUND_HALF_UP)
         jewelry_total_cost = (jewelry_unit_cost * item.quantity).quantize(_Q7, rounding=ROUND_HALF_UP)
         total_cost += jewelry_total_cost
-
         snapshot_items.append({
             "jewelry_id": item.jewelry_id,
             "jewelry_name": jewelry.name if jewelry else None,
+            "part_id": None,
+            "part_name": None,
             "quantity": item.quantity,
             "unit_price": float(item.unit_price) if item.unit_price is not None else None,
             "handcraft_cost": float(hc_cost),
@@ -92,15 +93,32 @@ def generate_cost_snapshot(db: Session, order_id: str) -> OrderCostSnapshot:
             "bom_details": bom_details,
         })
 
-    # 订单总成本 = Σ饰品总成本 + 包装费
+    # Part rows
+    for item in part_items:
+        part = part_map.get(item.part_id)
+        unit_cost = Decimal(str(part.unit_cost or 0)) if part else Decimal(0)
+        if part and part.unit_cost is None:
+            has_incomplete = True
+        line_cost = (unit_cost * item.quantity).quantize(_Q7, rounding=ROUND_HALF_UP)
+        total_cost += line_cost
+        snapshot_items.append({
+            "jewelry_id": None,
+            "jewelry_name": None,
+            "part_id": item.part_id,
+            "part_name": part.name if part else None,
+            "quantity": item.quantity,
+            "unit_price": float(item.unit_price) if item.unit_price is not None else None,
+            "handcraft_cost": 0.0,
+            "jewelry_unit_cost": float(unit_cost),
+            "jewelry_total_cost": float(line_cost),
+            "bom_details": [],
+        })
+
     pkg_cost = Decimal(str(order.packaging_cost or 0))
     total_cost = (total_cost + pkg_cost).quantize(_Q7, rounding=ROUND_HALF_UP)
-
-    # 利润
     total_amount = Decimal(str(order.total_amount or 0))
     profit = (total_amount - total_cost).quantize(_Q7, rounding=ROUND_HALF_UP)
 
-    # 创建快照
     snapshot = OrderCostSnapshot(
         order_id=order_id,
         total_cost=total_cost,
@@ -111,14 +129,12 @@ def generate_cost_snapshot(db: Session, order_id: str) -> OrderCostSnapshot:
     )
     db.add(snapshot)
     db.flush()
-
     for si in snapshot_items:
         bom_details = si.pop("bom_details")
         item_obj = OrderCostSnapshotItem(snapshot_id=snapshot.id, **si)
         item_obj.bom_details = bom_details
         db.add(item_obj)
     db.flush()
-
     return snapshot
 
 

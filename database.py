@@ -211,6 +211,61 @@ def ensure_schema_compat(target_engine=None):
                 ))
                 logger.warning("Added missing order_item.customer_code column")
 
+        # --- part.wholesale_price ---
+        if inspector.has_table("part"):
+            cols = {c["name"] for c in inspector.get_columns("part")}
+            if "wholesale_price" not in cols:
+                conn.execute(text(
+                    "ALTER TABLE part ADD COLUMN wholesale_price NUMERIC(18,7) NULL"
+                ))
+                logger.warning("Added missing part.wholesale_price column")
+
+        # --- order_item: part_id + nullable jewelry_id + XOR CHECK ---
+        if inspector.has_table("order_item"):
+            cols = {c["name"]: c for c in inspector.get_columns("order_item")}
+            if "part_id" not in cols:
+                conn.execute(text(
+                    "ALTER TABLE order_item ADD COLUMN part_id VARCHAR NULL "
+                    "REFERENCES part(id)"
+                ))
+                logger.warning("Added missing order_item.part_id column")
+            if cols.get("jewelry_id") and cols["jewelry_id"]["nullable"] is False:
+                conn.execute(text(
+                    "ALTER TABLE order_item ALTER COLUMN jewelry_id DROP NOT NULL"
+                ))
+                logger.warning("Made order_item.jewelry_id nullable")
+            existing_constraints = {
+                c["name"] for c in inspector.get_check_constraints("order_item")
+            }
+            if "ck_order_item_jewelry_xor_part" not in existing_constraints:
+                conn.execute(text(
+                    "ALTER TABLE order_item ADD CONSTRAINT "
+                    "ck_order_item_jewelry_xor_part "
+                    "CHECK ((jewelry_id IS NULL) <> (part_id IS NULL))"
+                ))
+                logger.warning("Added missing order_item XOR CHECK constraint")
+
+        # --- order_cost_snapshot_item: part_id columns + nullability ---
+        if inspector.has_table("order_cost_snapshot_item"):
+            cols = {c["name"]: c for c in inspector.get_columns("order_cost_snapshot_item")}
+            if "part_id" not in cols:
+                conn.execute(text(
+                    "ALTER TABLE order_cost_snapshot_item ADD COLUMN part_id VARCHAR NULL"
+                ))
+                logger.warning("Added missing order_cost_snapshot_item.part_id column")
+            if "part_name" not in cols:
+                conn.execute(text(
+                    "ALTER TABLE order_cost_snapshot_item ADD COLUMN part_name VARCHAR NULL"
+                ))
+                logger.warning("Added missing order_cost_snapshot_item.part_name column")
+            for col_name in ("jewelry_id", "jewelry_unit_cost", "jewelry_total_cost"):
+                if cols.get(col_name) and cols[col_name]["nullable"] is False:
+                    conn.execute(text(
+                        f"ALTER TABLE order_cost_snapshot_item "
+                        f"ALTER COLUMN {col_name} DROP NOT NULL"
+                    ))
+                    logger.warning("Made order_cost_snapshot_item.%s nullable", col_name)
+
         if inspector.has_table("order_item_link"):
             columns = {col["name"] for col in inspector.get_columns("order_item_link")}
             if "purchase_order_item_id" not in columns:

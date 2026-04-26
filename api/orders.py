@@ -14,14 +14,15 @@ from schemas.order import (
     BatchLinkRequest, BatchLinkResponse, OrderProgressResponse,
     OrderItemUpdate, BatchCustomerCodeRequest, PartsSummaryItemResponse,
     PickingSimulationResponse, PickingMarkRequest, PickingPdfRequest,
+    OrderItemCreate, ExtraInfoUpdate,
+    TodoBatchCreateRequest, LinkSupplierRequest,
 )
-from schemas.order import OrderItemCreate
 from schemas.order_cost_snapshot import OrderCostSnapshotResponse
-from schemas.order import ExtraInfoUpdate
 from services.order import (
     add_order_item,
     create_order,
     delete_order_item,
+    enrich_order_items,
     get_order,
     get_order_items,
     get_parts_summary,
@@ -38,7 +39,6 @@ from services.order_todo import (
     batch_link, get_order_progress, batch_get_order_progress, get_jewelry_status,
     get_jewelry_for_batch, create_batch, get_batches, link_supplier, delete_batch,
 )
-from schemas.order import TodoBatchCreateRequest, LinkSupplierRequest
 from services.order_todo_pdf import build_order_todo_pdf
 from services.cutting_stats import get_order_cutting_stats
 from services.cutting_stats_pdf import build_cutting_stats_pdf
@@ -96,7 +96,8 @@ def api_get_order_items(order_id: str, db: Session = Depends(get_db)):
     order = get_order(db, order_id)
     if order is None:
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
-    return get_order_items(db, order_id)
+    items = get_order_items(db, order_id)
+    return enrich_order_items(db, items)
 
 
 @router.post("/{order_id}/items", response_model=OrderItemResponse, status_code=201)
@@ -105,7 +106,8 @@ def api_add_order_item(order_id: str, body: OrderItemCreate, db: Session = Depen
     if order is None:
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
     with service_errors():
-        return add_order_item(db, order_id, body.model_dump())
+        item = add_order_item(db, order_id, body.model_dump())
+    return enrich_order_items(db, [item])[0]
 
 
 @router.post("/{order_id}/items/batch-customer-code")
@@ -126,7 +128,8 @@ def api_update_order_item(order_id: str, item_id: int, body: OrderItemUpdate, db
     if not fields:
         raise HTTPException(status_code=400, detail="请提供至少一个要修改的字段")
     with service_errors():
-        return update_order_item(db, order_id, item_id, fields)
+        item = update_order_item(db, order_id, item_id, fields)
+    return enrich_order_items(db, [item])[0]
 
 
 @router.delete("/{order_id}/items/{item_id}", status_code=204)

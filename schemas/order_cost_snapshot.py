@@ -16,13 +16,15 @@ class OrderCostSnapshotItemResponse(BaseModel):
 
     id: int
     snapshot_id: int
-    jewelry_id: str
+    jewelry_id: Optional[str] = None
     jewelry_name: Optional[str] = None
+    part_id: Optional[str] = None
+    part_name: Optional[str] = None
     quantity: int
     unit_price: Optional[float] = None
     handcraft_cost: Optional[float] = None
-    jewelry_unit_cost: float
-    jewelry_total_cost: float
+    jewelry_unit_cost: Optional[float] = None
+    jewelry_total_cost: Optional[float] = None
     bom_details: list[BomDetailItem] = Field(default_factory=list)
 
 

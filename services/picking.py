@@ -114,29 +114,40 @@ def _expand_to_atoms(
 
 
 def _collect_triples(db: Session, order_items: list[OrderItem]) -> list[_Triple]:
-    """Return list of _Triple(part_id, qty_per_unit, units_count, from_composite).
+    """Return list of _Triple. Composite parts in a jewelry's BOM are expanded;
+    direct part purchases are added as a single triple per part item with
+    qty_per_unit=quantity, units_count=1, from_composite=False."""
+    jewelry_items = [oi for oi in order_items if oi.jewelry_id is not None]
+    part_items = [oi for oi in order_items if oi.part_id is not None]
 
-    Composite parts in a jewelry's BOM are expanded to their atomic descendants
-    via _expand_to_atoms(). The composite itself never appears in the output;
-    each atomic descendant gets from_composite=True."""
-    jewelry_ids = list({oi.jewelry_id for oi in order_items})
+    out: list[_Triple] = []
+
+    # Direct part purchases — one variant per item
+    for oi in part_items:
+        out.append(_Triple(
+            part_id=oi.part_id,
+            qty_per_unit=float(oi.quantity),
+            units_count=1,
+            from_composite=False,
+        ))
+
+    if not jewelry_items:
+        return out
+
+    jewelry_ids = list({oi.jewelry_id for oi in jewelry_items})
     boms = db.query(Bom).filter(Bom.jewelry_id.in_(jewelry_ids)).all()
     bom_by_jewelry: dict[str, list[Bom]] = defaultdict(list)
     for b in boms:
         bom_by_jewelry[b.jewelry_id].append(b)
 
-    # Batch-load part.is_composite for every part that appears directly in
-    # any BOM row. (Composite descendants are discovered via _expand_to_atoms.)
     direct_part_ids = list({b.part_id for bs in bom_by_jewelry.values() for b in bs})
     direct_parts = db.query(Part).filter(Part.id.in_(direct_part_ids)).all() if direct_part_ids else []
     is_composite = {p.id: p.is_composite for p in direct_parts}
 
-    out: list[_Triple] = []
-    for oi in order_items:
+    for oi in jewelry_items:
         for b in bom_by_jewelry.get(oi.jewelry_id, []):
             qpu_root = float(b.qty_per_unit)
             if is_composite.get(b.part_id):
-                # Expand: each atom contributes qty_per_unit = qpu_root × child_qty.
                 atoms = _expand_to_atoms(db, b.part_id, Decimal(str(b.qty_per_unit)))
                 for atom_id, atom_qpu in atoms:
                     out.append(_Triple(

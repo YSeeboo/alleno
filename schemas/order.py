@@ -1,13 +1,20 @@
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime, date
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class OrderItemCreate(BaseModel):
-    jewelry_id: str
+    jewelry_id: Optional[str] = None
+    part_id: Optional[str] = None
     quantity: int = Field(..., gt=0)
     unit_price: float = Field(..., ge=0)
     remarks: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _xor(self):
+        if (self.jewelry_id is None) == (self.part_id is None):
+            raise ValueError("jewelry_id 和 part_id 必须且只能填一个")
+        return self
 
 
 class OrderCreate(BaseModel):
@@ -25,11 +32,16 @@ class OrderItemResponse(BaseModel):
 
     id: int
     order_id: str
-    jewelry_id: str
+    jewelry_id: Optional[str] = None
+    part_id: Optional[str] = None
     quantity: int
     unit_price: float
     remarks: Optional[str] = None
     customer_code: str | None = None
+    # Enriched (populated by service layer at response time)
+    part_name: Optional[str] = None
+    part_image: Optional[str] = None
+    part_unit: Optional[str] = None
 
 
 class OrderResponse(BaseModel):
@@ -200,9 +212,10 @@ class JewelryForBatchResponse(BaseModel):
 
 
 class SourceJewelryItem(BaseModel):
-    jewelry_id: str
+    source_type: Literal["jewelry", "direct"] = "jewelry"
+    jewelry_id: Optional[str] = None
     jewelry_name: str = ""
-    qty_per_unit: float
+    qty_per_unit: Optional[float] = None
     order_qty: int
     subtotal: float
 

@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import text
 from services.jewelry import create_jewelry
 from services.part import create_part
 from services.bom import set_bom
@@ -148,3 +149,70 @@ def test_add_item_negative_price_rejected(client, db):
         "jewelry_id": jewelry.id, "quantity": 1, "unit_price": -5.0,
     })
     assert resp.status_code == 422
+
+
+def test_order_create_rejects_both_null_in_item(client):
+    r = client.post("/api/orders/", json={
+        "customer_name": "x",
+        "items": [{"quantity": 1, "unit_price": 0}],
+    })
+    assert r.status_code == 422
+
+
+def test_order_create_rejects_both_set_in_item(client, db):
+    # Need valid jewelry & part to make pydantic ID checks pass
+    db.execute(text(
+        "INSERT INTO jewelry (id, name, status) VALUES ('SP-T1', 'j', 'active')"
+    ))
+    db.execute(text("INSERT INTO part (id, name) VALUES ('PJ-T1', 'p')"))
+    db.commit()
+    r = client.post("/api/orders/", json={
+        "customer_name": "x",
+        "items": [{
+            "jewelry_id": "SP-T1",
+            "part_id": "PJ-T1",
+            "quantity": 1,
+            "unit_price": 0,
+        }],
+    })
+    assert r.status_code == 422
+
+
+def test_get_order_items_enriches_part_info(client, db):
+    from sqlalchemy import text
+    db.execute(text(
+        "INSERT INTO part (id, name, unit, image, wholesale_price) "
+        "VALUES ('PJ-EN1', '玫瑰金链', '米', '/images/chain.png', 15)"
+    ))
+    db.commit()
+    r = client.post("/api/orders/", json={
+        "customer_name": "E",
+        "items": [{"part_id": "PJ-EN1", "quantity": 3, "unit_price": 15}],
+    })
+    order_id = r.json()["id"]
+    r = client.get(f"/api/orders/{order_id}/items")
+    assert r.status_code == 200
+    items = r.json()
+    assert len(items) == 1
+    item = items[0]
+    assert item["part_id"] == "PJ-EN1"
+    assert item["jewelry_id"] is None
+    assert item["part_name"] == "玫瑰金链"
+    assert item["part_unit"] == "米"
+    assert item["part_image"] == "/images/chain.png"
+
+
+def test_add_order_item_missing_part_returns_400(client, db):
+    from sqlalchemy import text
+    db.execute(text("INSERT INTO part (id, name) VALUES ('PJ-VAL1', 'p')"))
+    db.commit()
+    r = client.post("/api/orders/", json={
+        "customer_name": "x",
+        "items": [{"part_id": "PJ-VAL1", "quantity": 1, "unit_price": 10}],
+    })
+    order_id = r.json()["id"]
+    r = client.post(f"/api/orders/{order_id}/items", json={
+        "part_id": "PJ-NOTREAL", "quantity": 1, "unit_price": 10,
+    })
+    assert r.status_code == 400
+    assert "PJ-NOTREAL" in r.json()["detail"]

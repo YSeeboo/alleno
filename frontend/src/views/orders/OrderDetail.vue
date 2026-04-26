@@ -155,10 +155,21 @@
         </n-space>
       </n-card>
 
-      <!-- Order items — full width -->
+      <!-- 💎 Jewelry items card -->
       <n-card style="margin-bottom: 16px;">
-        <n-collapse :default-expanded-names="['jewelry-list']">
-          <n-collapse-item title="饰品清单" name="jewelry-list">
+        <template #header>
+          <span>💎 饰品明细 <n-text depth="3" style="font-size: 13px;">({{ jewelryItems.length }} 项)</n-text></span>
+        </template>
+        <template #header-extra>
+          <n-button
+            v-if="canEditItems"
+            type="primary"
+            size="small"
+            @click="showAddJewelryRow = !showAddJewelryRow"
+          >
+            + 添加饰品
+          </n-button>
+        </template>
         <n-button
           v-if="canEditCustomerCode && checkedItemIds.length > 0"
           size="small"
@@ -168,11 +179,11 @@
         >
           批量填入客户货号 ({{ checkedItemIds.length }})
         </n-button>
-        <n-data-table v-if="orderItems.length > 0" :columns="itemColumns" :data="orderItems" :bordered="false" size="small" :row-key="row => row.id" v-model:checked-row-keys="checkedItemIds" :summary="itemSummary" />
+        <n-data-table v-if="jewelryItems.length > 0" :columns="itemColumns" :data="jewelryItems" :bordered="false" size="small" :row-key="row => row.id" v-model:checked-row-keys="checkedItemIds" :summary="itemSummary" />
         <n-empty v-else description="暂无饰品明细" style="margin-top: 16px;" />
 
-        <!-- Add item row -->
-        <template v-if="canEditItems">
+        <!-- Add jewelry row -->
+        <template v-if="canEditItems && showAddJewelryRow">
         <n-divider style="margin: 12px 0;" />
         <n-space align="center">
           <n-select
@@ -199,8 +210,54 @@
           <n-button type="primary" size="small" :loading="addingItem" @click="doAddItem">添加</n-button>
         </n-space>
         </template>
-          </n-collapse-item>
-        </n-collapse>
+      </n-card>
+
+      <!-- 🔧 Parts items card -->
+      <n-card style="margin-bottom: 16px;">
+        <template #header>
+          <span>🔧 配件明细 <n-text depth="3" style="font-size: 13px;">({{ partItems.length }} 项)</n-text></span>
+        </template>
+        <template #header-extra>
+          <n-button
+            v-if="canEditItems"
+            type="primary"
+            size="small"
+            @click="showAddPartRow = !showAddPartRow"
+          >
+            + 添加配件
+          </n-button>
+        </template>
+        <n-data-table v-if="partItems.length > 0" :columns="partItemColumns" :data="partItems" :bordered="false" size="small" :row-key="row => row.id" :summary="partItemSummary" />
+        <n-empty v-else description="暂无配件明细" style="margin-top: 16px;" />
+
+        <!-- Add part row -->
+        <template v-if="canEditItems && showAddPartRow">
+        <n-divider style="margin: 12px 0;" />
+        <n-space align="center">
+          <n-select
+            v-model:value="newPartItem.part_id"
+            :options="partOptions"
+            :render-label="renderOptionWithImage"
+            filterable
+            clearable
+            placeholder="选择配件"
+            :style="{ width: isMobile ? '100%' : '220px' }"
+            @update:value="onNewPartSelect"
+          />
+          <n-input-number v-model:value="newPartItem.quantity" :min="1" placeholder="数量" style="width: 90px;" />
+          <n-input-number
+            v-model:value="newPartItem.unit_price"
+            :min="0"
+            :precision="7"
+            :format="fmtPrice"
+            :parse="parseNum"
+            placeholder="单价"
+            style="width: 120px;"
+          />
+          <n-input v-model:value="newPartItem.remarks" placeholder="备注" :style="{ width: isMobile ? '100%' : '160px' }" />
+          <n-button type="primary" size="small" :loading="addingPartItem" @click="doAddPartItem">添加</n-button>
+        </n-space>
+        </template>
       </n-card>
 
       <!-- Cost Snapshot -->
@@ -559,7 +616,7 @@ import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NSelect, NInputNumber, NInput, NDivider, NPopconfirm, NAlert,
   NModal, NImage, NAutoComplete, NIcon, NCollapse, NCollapseItem, NForm, NFormItem, NDatePicker,
-  NTooltip,
+  NTooltip, NText,
 } from 'naive-ui'
 import {
   Close as CloseIcon, CreateOutline, CopyOutline,
@@ -794,8 +851,18 @@ async function confirmBatchCode() {
 
 const jewelryMap = ref({})
 const jewelryOptions = ref([])
+const partMap = ref({})
+const partOptions = ref([])
 
 const newItem = reactive({ jewelry_id: null, quantity: 1, unit_price: 0, remarks: '' })
+const newPartItem = reactive({ part_id: null, quantity: 1, unit_price: 0, remarks: '' })
+const addingPartItem = ref(false)
+const showAddJewelryRow = ref(false)
+const showAddPartRow = ref(false)
+
+// Split items by type
+const jewelryItems = computed(() => orderItems.value.filter((i) => i.jewelry_id !== null && i.jewelry_id !== undefined))
+const partItems = computed(() => orderItems.value.filter((i) => i.part_id !== null && i.part_id !== undefined))
 
 const statusColor = { '待生产': 'default', '生产中': 'info', '已完成': 'success', '已取消': 'error' }
 const statusFlow = { '待生产': '生产中', '生产中': '已完成' }
@@ -1260,6 +1327,12 @@ const onNewJewelrySelect = (v) => {
   newItem.unit_price = j?.wholesale_price ?? 0
 }
 
+const onNewPartSelect = (v) => {
+  if (!v) { newPartItem.unit_price = 0; return }
+  const p = partMap.value[v]
+  newPartItem.unit_price = p?.wholesale_price ?? 0
+}
+
 const savePackagingCost = async () => {
   if (!order.value) return
   savingPkg.value = true
@@ -1338,6 +1411,27 @@ const doAddItem = async () => {
   }
 }
 
+const doAddPartItem = async () => {
+  if (!newPartItem.part_id) { message.warning('请选择配件'); return }
+  addingPartItem.value = true
+  try {
+    await addOrderItem(order.value.id, {
+      part_id: newPartItem.part_id,
+      quantity: newPartItem.quantity,
+      unit_price: newPartItem.unit_price,
+      remarks: newPartItem.remarks || undefined,
+    })
+    message.success('配件已添加')
+    newPartItem.part_id = null
+    newPartItem.quantity = 1
+    newPartItem.unit_price = 0
+    newPartItem.remarks = ''
+    await reloadOrder()
+  } finally {
+    addingPartItem.value = false
+  }
+}
+
 const doDeleteItem = async (row) => {
   await deleteOrderItem(order.value.id, row.id)
   message.success('已删除')
@@ -1404,10 +1498,20 @@ const jewelryStatusColorMap = {
 }
 
 function itemSummary() {
-  const totalQty = orderItems.value.reduce((s, r) => s + (r.quantity || 0), 0)
-  const totalAmt = orderItems.value.reduce((s, r) => s + (r.quantity || 0) * (r.unit_price || 0), 0)
+  const totalQty = jewelryItems.value.reduce((s, r) => s + (r.quantity || 0), 0)
+  const totalAmt = jewelryItems.value.reduce((s, r) => s + (r.quantity || 0) * (r.unit_price || 0), 0)
   return {
     jewelry_name: { value: h('b', '合计') },
+    quantity: { value: h('b', totalQty) },
+    subtotal: { value: h('b', fmtMoney(totalAmt)) },
+  }
+}
+
+function partItemSummary() {
+  const totalQty = partItems.value.reduce((s, r) => s + (r.quantity || 0), 0)
+  const totalAmt = partItems.value.reduce((s, r) => s + (r.quantity || 0) * (r.unit_price || 0), 0)
+  return {
+    part_name: { value: h('b', '合计') },
     quantity: { value: h('b', totalQty) },
     subtotal: { value: h('b', fmtMoney(totalAmt)) },
   }
@@ -1541,9 +1645,87 @@ const itemColumns = computed(() => {
   return cols
 })
 
+const partItemColumns = computed(() => {
+  const cols = [
+    { title: '配件编号', key: 'part_id', width: 140 },
+    {
+      title: '配件',
+      key: 'part_name',
+      minWidth: 180,
+      render: (row) => renderNamedImage(row.part_name || row.part_id, row.part_image, row.part_name || row.part_id),
+    },
+    {
+      title: '数量', key: 'quantity',
+      render(row) {
+        const key = inlineKey(row.id, 'quantity')
+        if (key in inlineEditing.value) {
+          return h(NInputNumber, {
+            value: inlineEditing.value[key],
+            min: 1,
+            size: 'small',
+            style: 'width: 90px;',
+            autofocus: true,
+            'onUpdate:value': (v) => { inlineEditing.value[key] = v },
+            onBlur: () => { if (key in inlineEditing.value) saveInline(row, 'quantity', inlineEditing.value[key]) },
+            onKeydown: (e) => {
+              if (e.key === 'Enter') saveInline(row, 'quantity', inlineEditing.value[key])
+              if (e.key === 'Escape') { e.preventDefault(); cancelInline(row.id, 'quantity') }
+            },
+          })
+        }
+        if (!canInlineEdit.value) return row.quantity
+        return h('span', { class: 'editable-cell', onClick: () => startInline(row, 'quantity') }, row.quantity)
+      },
+    },
+    {
+      title: '单价', key: 'unit_price',
+      render(row) {
+        const key = inlineKey(row.id, 'unit_price')
+        if (key in inlineEditing.value) {
+          return h(NInputNumber, {
+            value: inlineEditing.value[key],
+            min: 0,
+            precision: 7,
+            format: fmtPrice,
+            parse: parseNum,
+            size: 'small',
+            style: 'width: 120px;',
+            autofocus: true,
+            'onUpdate:value': (v) => { inlineEditing.value[key] = v },
+            onBlur: () => { if (key in inlineEditing.value) saveInline(row, 'unit_price', inlineEditing.value[key]) },
+            onKeydown: (e) => {
+              if (e.key === 'Enter') saveInline(row, 'unit_price', inlineEditing.value[key])
+              if (e.key === 'Escape') { e.preventDefault(); cancelInline(row.id, 'unit_price') }
+            },
+          })
+        }
+        const display = row.unit_price != null ? fmtMoney(row.unit_price) : '-'
+        if (!canInlineEdit.value) return display
+        return h('span', { class: 'editable-cell', onClick: () => startInline(row, 'unit_price') }, display)
+      },
+    },
+    { title: '小计', key: 'subtotal', render: (r) => fmtMoney((r.quantity || 0) * (r.unit_price || 0)) },
+    { title: '备注', key: 'remarks', render: (r) => r.remarks || '-' },
+  ]
+  if (canEditItems.value) {
+    cols.push({
+      title: '操作',
+      key: 'actions',
+      width: 80,
+      render: (row) =>
+        h(NPopconfirm, { onPositiveClick: () => doDeleteItem(row) }, {
+          trigger: () => h(NButton, { size: 'small', type: 'error' }, () => '删除'),
+          default: () => `确认删除「${row.part_name || row.part_id}」？`,
+        }),
+    })
+  }
+  return cols
+})
+
 const snapshotColumns = [
   {
     type: 'expand',
+    expandable: (row) => Array.isArray(row.bom_details) && row.bom_details.length > 0,
     renderExpand: (row) => {
       return h('div', { style: 'padding: 8px 0 8px 32px;' }, [
         h(NDataTable, {
@@ -1555,7 +1737,12 @@ const snapshotColumns = [
       ])
     },
   },
-  { title: '饰品', key: 'jewelry_name', minWidth: 160 },
+  {
+    title: '饰品 / 配件',
+    key: 'jewelry_name',
+    minWidth: 160,
+    render: (row) => row.jewelry_name || row.part_name || '-',
+  },
   { title: '数量', key: 'quantity', width: 80 },
   { title: '售价单价', key: 'unit_price', width: 100, render: (r) => r.unit_price != null ? fmtMoney(r.unit_price) : '-' },
   { title: '手工费', key: 'handcraft_cost', width: 100, render: (r) => r.handcraft_cost != null ? fmtMoney(r.handcraft_cost) : '-' },
@@ -1809,10 +1996,18 @@ function renderPartsExpand(row) {
   return h('div', { style: 'padding: 8px 12px 12px 48px; background: #fafbfc;' },
     sources.map((s, i) => {
       const isLast = i === sources.length - 1
-      return h('div', {
-        style: `display: flex; align-items: center; gap: 16px; padding: 5px 0; font-size: 12px; color: #555;${isLast ? '' : ' border-bottom: 1px dashed #e8e8e8;'}`,
-      }, [
-        h('span', { style: 'color: #ccc; font-family: monospace; margin-right: 4px;' }, isLast ? '└─' : '├─'),
+      const rowStyle = `display: flex; align-items: center; gap: 16px; padding: 5px 0; font-size: 12px; color: #555;${isLast ? '' : ' border-bottom: 1px dashed #e8e8e8;'}`
+      const branchSpan = h('span', { style: 'color: #ccc; font-family: monospace; margin-right: 4px;' }, isLast ? '└─' : '├─')
+      if (s.source_type === 'direct') {
+        return h('div', { style: rowStyle }, [
+          branchSpan,
+          h('span', { style: 'font-weight: 600; color: #333; min-width: 80px;' }, '客户直购'),
+          h('span', { style: 'color: #888; font-family: "SF Mono", Menlo, monospace; font-size: 11px;' }, `× ${s.order_qty}`),
+          h('span', { style: 'font-weight: 600; color: #333;' }, `= ${Math.ceil(s.subtotal)}`),
+        ])
+      }
+      return h('div', { style: rowStyle }, [
+        branchSpan,
         h('span', { style: 'font-weight: 600; color: #333; min-width: 80px;' }, s.jewelry_id),
         h('span', {
           style: 'color: rgb(100,101,232); min-width: 80px; cursor: pointer;',
@@ -1831,12 +2026,13 @@ onMounted(async () => {
   const id = route.params.id
   try {
     // Core data: order, items, parts-summary load first
-    // Jewelries load in parallel but non-blocking for items table
-    const [oRes, iRes, sRes, jRes] = await Promise.all([
+    // Jewelries + parts load in parallel for the add-item pickers
+    const [oRes, iRes, sRes, jRes, pRes] = await Promise.all([
       getOrder(id),
       getOrderItems(id),
       getPartsSummary(id),
       listJewelries(),
+      listParts({}),
     ])
     order.value = oRes.data
     packagingCost.value = oRes.data.packaging_cost ?? null
@@ -1852,6 +2048,15 @@ onMounted(async () => {
         name: j.name,
         image: j.image,
       }))
+
+    pRes.data.forEach((p) => { partMap.value[p.id] = p })
+    partOptions.value = pRes.data.map((p) => ({
+      label: `${p.id} ${p.name}`,
+      value: p.id,
+      code: p.id,
+      name: p.name,
+      image: p.image,
+    }))
 
     orderItems.value = iRes.data.map((i) => ({
       ...i,

@@ -2,6 +2,8 @@
 
 from decimal import Decimal
 
+from sqlalchemy import text
+
 from models.bom import Bom
 from models.jewelry import Jewelry
 from models.order import Order, OrderItem, OrderPickingRecord
@@ -263,3 +265,42 @@ def test_picking_pdf_multi_page_has_footer_on_all_pages(db):
         assert "Allen Shop" in text, (
             f"Page {i}: footer brand missing. Text: {text[:200]}"
         )
+
+
+def test_picking_includes_direct_part_variant(client, db):
+    db.execute(text(
+        "INSERT INTO part (id, name, unit, wholesale_price) "
+        "VALUES ('PJ-PK1', 'chain', '米', 15)"
+    ))
+    db.commit()
+    r = client.post("/api/orders/", json={
+        "customer_name": "P",
+        "items": [{"part_id": "PJ-PK1", "quantity": 7, "unit_price": 15}],
+    })
+    order_id = r.json()["id"]
+    r = client.get(f"/api/orders/{order_id}/picking")
+    assert r.status_code == 200
+    rows = r.json()["rows"]
+    assert any(row["part_id"] == "PJ-PK1" for row in rows)
+    row = next(r for r in rows if r["part_id"] == "PJ-PK1")
+    assert row["is_composite_child"] is False
+    assert any(v["qty_per_unit"] == 7.0 and v["units_count"] == 1 for v in row["variants"])
+
+
+def test_picking_pdf_works_for_part_only_order(client, db):
+    from sqlalchemy import text
+    db.execute(text(
+        "INSERT INTO part (id, name, unit) VALUES ('PJ-PDF1', 'chain', '米')"
+    ))
+    db.commit()
+    r = client.post("/api/orders/", json={
+        "customer_name": "PdfTest",
+        "items": [{"part_id": "PJ-PDF1", "quantity": 4, "unit_price": 10}],
+    })
+    order_id = r.json()["id"]
+    r = client.post(f"/api/orders/{order_id}/picking/pdf",
+                    json={"include_picked": False})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    # Verify the PDF body is non-trivial (not an empty stub)
+    assert len(r.content) > 1000

@@ -1,4 +1,14 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 
 from database import Base
 from time_utils import now_beijing
@@ -25,11 +35,19 @@ class OrderItem(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     order_id = Column(String, ForeignKey("order.id"), nullable=False, index=True)
-    jewelry_id = Column(String, ForeignKey("jewelry.id"), nullable=False)
+    jewelry_id = Column(String, ForeignKey("jewelry.id"), nullable=True)
+    part_id = Column(String, ForeignKey("part.id"), nullable=True)
     quantity = Column(Integer, nullable=False)
     unit_price = Column(Numeric(18, 7), nullable=False)
     remarks = Column(Text, nullable=True)
     customer_code = Column(String, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "(jewelry_id IS NULL) <> (part_id IS NULL)",
+            name="ck_order_item_jewelry_xor_part",
+        ),
+    )
 
 
 class OrderTodoItem(Base):

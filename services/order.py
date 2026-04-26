@@ -8,11 +8,23 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func as sa_func
 from models.order import Order, OrderItem, OrderTodoBatch, OrderTodoBatchJewelry, OrderItemLink
 from models.handcraft_order import HandcraftJewelryItem
+from models.part import Part
 from services._helpers import _next_id
 from services.bom import get_bom
 
 _VALID_STATUSES = {"待生产", "生产中", "已完成", "已取消"}
 _Q7 = Decimal("0.0000001")
+
+
+def _writeback_part_wholesale_price(db: Session, part_id: str, new_price: Decimal) -> None:
+    """Overwrite part.wholesale_price with the latest sale price.
+    Raises ValueError if the part does not exist."""
+    part = db.query(Part).filter(Part.id == part_id).first()
+    if part is None:
+        raise ValueError(f"配件 {part_id} 不存在")
+    if part.wholesale_price != new_price:
+        part.wholesale_price = new_price
+        db.flush()
 
 
 def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
@@ -45,11 +57,14 @@ def create_order(db: Session, customer_name: str, items: list, created_at: Optio
         total += subtotal
         db.add(OrderItem(
             order_id=order_id,
-            jewelry_id=item["jewelry_id"],
+            jewelry_id=item.get("jewelry_id"),
+            part_id=item.get("part_id"),
             quantity=item["quantity"],
             unit_price=unit_price,
             remarks=item.get("remarks"),
         ))
+        if item.get("part_id"):
+            _writeback_part_wholesale_price(db, item["part_id"], unit_price)
     order.total_amount = total
     db.flush()
     return order
@@ -89,11 +104,11 @@ def _calc_global_part_demand(db: Session, part_ids: list[str]) -> dict[str, floa
     if not active_items:
         return {}
 
-    jewelry_ids = list({oi.jewelry_id for oi in active_items})
+    jewelry_ids = list({oi.jewelry_id for oi in active_items if oi.jewelry_id is not None})
     all_bom = db.query(Bom).filter(
         Bom.jewelry_id.in_(jewelry_ids),
         Bom.part_id.in_(part_ids),
-    ).all()
+    ).all() if jewelry_ids else []
     bom_cache: dict[str, list] = {}
     for b in all_bom:
         bom_cache.setdefault(b.jewelry_id, []).append(b)
@@ -101,10 +116,12 @@ def _calc_global_part_demand(db: Session, part_ids: list[str]) -> dict[str, floa
     # Aggregate order qty per jewelry across all active orders
     agg_qty: dict[str, int] = {}
     for oi in active_items:
+        if oi.jewelry_id is None:
+            continue
         agg_qty[oi.jewelry_id] = agg_qty.get(oi.jewelry_id, 0) + oi.quantity
 
     # Deduct finished jewelry stock (parts already consumed)
-    jewelry_stocks = batch_get_stock(db, "jewelry", jewelry_ids)
+    jewelry_stocks = batch_get_stock(db, "jewelry", jewelry_ids) if jewelry_ids else {}
 
     global_map: dict[str, float] = {}
     for jid, total in agg_qty.items():
@@ -113,6 +130,20 @@ def _calc_global_part_demand(db: Session, part_ids: list[str]) -> dict[str, floa
             for bom in bom_cache.get(jid, []):
                 pid = bom.part_id
                 global_map[pid] = global_map.get(pid, 0) + float(bom.qty_per_unit) * unfulfilled
+
+    # Add direct part purchases from active orders
+    direct_rows = (
+        db.query(OrderItem.part_id, sa_func.sum(OrderItem.quantity))
+        .join(Order, OrderItem.order_id == Order.id)
+        .filter(
+            Order.status.notin_(["已完成", "已取消"]),
+            OrderItem.part_id.in_(part_ids),
+        )
+        .group_by(OrderItem.part_id)
+        .all()
+    )
+    for pid, qty in direct_rows:
+        global_map[pid] = global_map.get(pid, 0) + float(qty)
 
     return global_map
 
@@ -126,16 +157,19 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
     if not items:
         return []
 
+    jewelry_items = [oi for oi in items if oi.jewelry_id is not None]
+    part_items = [oi for oi in items if oi.part_id is not None]
+
     # Batch load BOM for all jewelry_ids once
-    jewelry_ids = list({oi.jewelry_id for oi in items})
-    all_bom = db.query(Bom).filter(Bom.jewelry_id.in_(jewelry_ids)).all()
+    jewelry_ids = list({oi.jewelry_id for oi in jewelry_items})
+    all_bom = db.query(Bom).filter(Bom.jewelry_id.in_(jewelry_ids)).all() if jewelry_ids else []
     bom_cache: dict[str, list] = {}
     for b in all_bom:
         bom_cache.setdefault(b.jewelry_id, []).append(b)
 
     # Calculate total BOM requirements
     total_map: dict[str, float] = {}
-    for oi in items:
+    for oi in jewelry_items:
         for bom in bom_cache.get(oi.jewelry_id, []):
             pid = bom.part_id
             total_map[pid] = total_map.get(pid, 0) + float(bom.qty_per_unit) * oi.quantity
@@ -144,11 +178,11 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
 
     # Aggregate order quantities by jewelry_id
     agg_qty: dict[str, int] = {}
-    for oi in items:
+    for oi in jewelry_items:
         agg_qty[oi.jewelry_id] = agg_qty.get(oi.jewelry_id, 0) + oi.quantity
 
     # Get jewelry stock — finished jewelry already in inventory means parts are consumed
-    jewelry_stocks = batch_get_stock(db, "jewelry", jewelry_ids)
+    jewelry_stocks = batch_get_stock(db, "jewelry", jewelry_ids) if jewelry_ids else {}
 
     # Only deduct for finished jewelry in stock (parts already consumed).
     # Do NOT deduct for handcraft allocation — those parts are either:
@@ -181,6 +215,25 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
         for entry in entries:
             j = jewelry_info.get(entry["jewelry_id"])
             entry["jewelry_name"] = j.name if j else ""
+
+    # Add direct part contributions (customer-purchased parts)
+    direct_part_qty: dict[str, int] = {}
+    for pi in part_items:
+        direct_part_qty[pi.part_id] = direct_part_qty.get(pi.part_id, 0) + pi.quantity
+    for pid, dq in direct_part_qty.items():
+        total_map[pid] = total_map.get(pid, 0) + dq
+        source_map.setdefault(pid, []).append({
+            "source_type": "direct",
+            "jewelry_id": None,
+            "jewelry_name": "",
+            "qty_per_unit": None,
+            "order_qty": dq,
+            "subtotal": float(dq),
+        })
+    # Tag existing BOM-derived sources with source_type="jewelry"
+    for entries in source_map.values():
+        for entry in entries:
+            entry.setdefault("source_type", "jewelry")
 
     # Enrich with part info
     part_ids = list(total_map.keys())
@@ -316,15 +369,22 @@ def add_order_item(db: Session, order_id: str, data: dict) -> OrderItem:
         raise ValueError(f"Order not found: {order_id}")
     if order.status != "待生产":
         raise ValueError(f"订单状态为「{order.status}」，只有「待生产」状态可以修改饰品明细")
+    if (data.get("jewelry_id") is None) == (data.get("part_id") is None):
+        raise ValueError("jewelry_id 和 part_id 必须且只能填一个")
     unit_price = Decimal(str(data["unit_price"])).quantize(_Q7, rounding=ROUND_HALF_UP)
     item = OrderItem(
         order_id=order_id,
-        jewelry_id=data["jewelry_id"],
+        jewelry_id=data.get("jewelry_id"),
+        part_id=data.get("part_id"),
         quantity=data["quantity"],
         unit_price=unit_price,
         remarks=data.get("remarks"),
     )
     db.add(item)
+    if data.get("part_id"):
+        # Validate + writeback BEFORE flush, so a missing part raises a clean
+        # ValueError before the FK constraint fires an opaque IntegrityError.
+        _writeback_part_wholesale_price(db, data["part_id"], unit_price)
     db.flush()
     _recalc_total(db, order)
     return item
@@ -355,9 +415,37 @@ def update_order_status(db: Session, order_id: str, status: str) -> Order:
         raise ValueError(f"Order not found: {order_id}")
     if order.status == status:
         return order  # no-op，避免重复生成快照
-    if status == "已完成":
+
+    items = get_order_items(db, order_id)
+    part_qty_map: dict[str, int] = {}
+    for it in items:
+        if it.part_id is not None:
+            part_qty_map[it.part_id] = part_qty_map.get(it.part_id, 0) + it.quantity
+
+    # Transition INTO "已完成" — pre-check then deduct part stock
+    if status == "已完成" and order.status != "已完成":
+        if part_qty_map:
+            from services.inventory import batch_get_stock, deduct_stock
+            stocks = batch_get_stock(db, "part", list(part_qty_map.keys()))
+            insufficient = [
+                f"{pid} 需要 {qty}，仅有 {stocks.get(pid, 0):.2f}"
+                for pid, qty in part_qty_map.items()
+                if stocks.get(pid, 0) < qty
+            ]
+            if insufficient:
+                raise ValueError("配件库存不足：" + "；".join(insufficient))
+            for pid, qty in part_qty_map.items():
+                deduct_stock(db, "part", pid, qty, "订单出货")
         from services.order_cost_snapshot import generate_cost_snapshot
         generate_cost_snapshot(db, order_id)
+
+    # Transition OUT of "已完成" — restore part stock
+    elif order.status == "已完成" and status != "已完成":
+        if part_qty_map:
+            from services.inventory import add_stock
+            for pid, qty in part_qty_map.items():
+                add_stock(db, "part", pid, qty, "订单出货撤回")
+
     order.status = status
     db.flush()
     return order
@@ -394,54 +482,63 @@ def update_order_item(db: Session, order_id: str, item_id: int, fields: dict) ->
     item = db.query(OrderItem).filter_by(id=item_id, order_id=order_id).first()
     if not item:
         raise ValueError(f"订单项 {item_id} 不存在")
+    if "customer_code" in fields and item.part_id is not None:
+        raise ValueError("配件项不允许设置客户货号")
     price_fields = {"quantity", "unit_price"}
     if price_fields & fields.keys() and order.status not in ("待生产", "生产中"):
         raise ValueError("仅待生产或生产中状态可修改数量和单价")
     if "quantity" in fields:
         new_qty = fields["quantity"]
-        jewelry_id = item.jewelry_id
-        # Sum allocated from batch flow
-        batch_allocated = (
-            db.query(sa_func.coalesce(sa_func.sum(OrderTodoBatchJewelry.quantity), 0))
-            .join(OrderTodoBatch, OrderTodoBatchJewelry.batch_id == OrderTodoBatch.id)
-            .filter(OrderTodoBatch.order_id == order_id, OrderTodoBatchJewelry.jewelry_id == jewelry_id)
-            .scalar()
-        )
-        # Sum allocated from legacy direct HC jewelry links (not already in batch)
-        legacy_allocated = 0
-        batch_hc_ids = {
-            b.handcraft_order_id
-            for b in db.query(OrderTodoBatch).filter_by(order_id=order_id).all()
-            if b.handcraft_order_id
-        }
-        links = (
-            db.query(OrderItemLink)
-            .filter(OrderItemLink.order_id == order_id, OrderItemLink.handcraft_jewelry_item_id.isnot(None))
-            .all()
-        )
-        if links:
-            hc_item_ids = [l.handcraft_jewelry_item_id for l in links]
-            hc_items = db.query(HandcraftJewelryItem).filter(
-                HandcraftJewelryItem.id.in_(hc_item_ids),
-                HandcraftJewelryItem.jewelry_id == jewelry_id,
-            ).all()
-            for hci in hc_items:
-                if hci.handcraft_order_id not in batch_hc_ids:
-                    legacy_allocated += hci.qty
-        total_allocated = batch_allocated + legacy_allocated
-        # Compare against whole-order total for this jewelry after the edit
-        other_qty = (
-            db.query(sa_func.coalesce(sa_func.sum(OrderItem.quantity), 0))
-            .filter(OrderItem.order_id == order_id, OrderItem.jewelry_id == jewelry_id, OrderItem.id != item_id)
-            .scalar()
-        )
-        new_total = other_qty + new_qty
-        if new_total < total_allocated:
-            raise ValueError(f"该饰品整单已分配 {total_allocated}，修改后总数量 {new_total} 不足")
+        if item.jewelry_id is not None:
+            jewelry_id = item.jewelry_id
+            # Sum allocated from batch flow
+            batch_allocated = (
+                db.query(sa_func.coalesce(sa_func.sum(OrderTodoBatchJewelry.quantity), 0))
+                .join(OrderTodoBatch, OrderTodoBatchJewelry.batch_id == OrderTodoBatch.id)
+                .filter(OrderTodoBatch.order_id == order_id, OrderTodoBatchJewelry.jewelry_id == jewelry_id)
+                .scalar()
+            )
+            # Sum allocated from legacy direct HC jewelry links (not already in batch)
+            legacy_allocated = 0
+            batch_hc_ids = {
+                b.handcraft_order_id
+                for b in db.query(OrderTodoBatch).filter_by(order_id=order_id).all()
+                if b.handcraft_order_id
+            }
+            links = (
+                db.query(OrderItemLink)
+                .filter(OrderItemLink.order_id == order_id, OrderItemLink.handcraft_jewelry_item_id.isnot(None))
+                .all()
+            )
+            if links:
+                hc_item_ids = [l.handcraft_jewelry_item_id for l in links]
+                hc_items = db.query(HandcraftJewelryItem).filter(
+                    HandcraftJewelryItem.id.in_(hc_item_ids),
+                    HandcraftJewelryItem.jewelry_id == jewelry_id,
+                ).all()
+                for hci in hc_items:
+                    if hci.handcraft_order_id not in batch_hc_ids:
+                        legacy_allocated += hci.qty
+            total_allocated = batch_allocated + legacy_allocated
+            # Compare against whole-order total for this jewelry after the edit
+            other_qty = (
+                db.query(sa_func.coalesce(sa_func.sum(OrderItem.quantity), 0))
+                .filter(OrderItem.order_id == order_id, OrderItem.jewelry_id == jewelry_id, OrderItem.id != item_id)
+                .scalar()
+            )
+            new_total = other_qty + new_qty
+            if new_total < total_allocated:
+                raise ValueError(f"该饰品整单已分配 {total_allocated}，修改后总数量 {new_total} 不足")
     for key, value in fields.items():
         if hasattr(item, key):
+            # Skip setting NOT NULL fields to None
+            if key == "unit_price" and value is None:
+                continue
             setattr(item, key, value)
     db.flush()
+    if "unit_price" in fields and fields["unit_price"] is not None and item.part_id is not None:
+        new_price = Decimal(str(fields["unit_price"])).quantize(_Q7, rounding=ROUND_HALF_UP)
+        _writeback_part_wholesale_price(db, item.part_id, new_price)
     if price_fields & fields.keys():
         _recalc_total(db, order)
     return item
@@ -476,6 +573,8 @@ def batch_fill_customer_code(
     )
     if len(items) != len(item_ids):
         raise ValueError("部分订单项不存在或不属于该订单")
+    if any(it.part_id is not None for it in items):
+        raise ValueError("配件项不允许设置客户货号")
     for i, item in enumerate(items):
         code = f"{prefix}{start_number + i:0{padding}d}"
         item.customer_code = code
@@ -494,3 +593,28 @@ def update_packaging_cost(db: Session, order_id: str, packaging_cost: float) -> 
         from services.order_cost_snapshot import update_snapshot_packaging_cost
         update_snapshot_packaging_cost(db, order_id, packaging_cost)
     return order
+
+
+def enrich_order_items(db: Session, items: list) -> list:
+    """Attach part_name / part_image / part_unit for part-typed items."""
+    part_ids = [i.part_id for i in items if i.part_id is not None]
+    if not part_ids:
+        return items
+    parts = {p.id: p for p in db.query(Part).filter(Part.id.in_(part_ids)).all()}
+    enriched = []
+    for it in items:
+        if it.part_id is None:
+            enriched.append(it)
+            continue
+        p = parts.get(it.part_id)
+        d = {
+            "id": it.id, "order_id": it.order_id,
+            "jewelry_id": it.jewelry_id, "part_id": it.part_id,
+            "quantity": it.quantity, "unit_price": float(it.unit_price),
+            "remarks": it.remarks, "customer_code": it.customer_code,
+            "part_name": p.name if p else None,
+            "part_image": p.image if p else None,
+            "part_unit": p.unit if p else None,
+        }
+        enriched.append(d)
+    return enriched
