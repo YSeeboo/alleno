@@ -200,3 +200,19 @@ def test_get_order_items_enriches_part_info(client, db):
     assert item["part_name"] == "玫瑰金链"
     assert item["part_unit"] == "米"
     assert item["part_image"] == "/images/chain.png"
+
+
+def test_add_order_item_missing_part_returns_400(client, db):
+    from sqlalchemy import text
+    db.execute(text("INSERT INTO part (id, name) VALUES ('PJ-VAL1', 'p')"))
+    db.commit()
+    r = client.post("/api/orders/", json={
+        "customer_name": "x",
+        "items": [{"part_id": "PJ-VAL1", "quantity": 1, "unit_price": 10}],
+    })
+    order_id = r.json()["id"]
+    r = client.post(f"/api/orders/{order_id}/items", json={
+        "part_id": "PJ-NOTREAL", "quantity": 1, "unit_price": 10,
+    })
+    assert r.status_code == 400
+    assert "PJ-NOTREAL" in r.json()["detail"]

@@ -1725,6 +1725,7 @@ const partItemColumns = computed(() => {
 const snapshotColumns = [
   {
     type: 'expand',
+    expandable: (row) => Array.isArray(row.bom_details) && row.bom_details.length > 0,
     renderExpand: (row) => {
       return h('div', { style: 'padding: 8px 0 8px 32px;' }, [
         h(NDataTable, {
@@ -1736,7 +1737,12 @@ const snapshotColumns = [
       ])
     },
   },
-  { title: '饰品', key: 'jewelry_name', minWidth: 160 },
+  {
+    title: '饰品 / 配件',
+    key: 'jewelry_name',
+    minWidth: 160,
+    render: (row) => row.jewelry_name || row.part_name || '-',
+  },
   { title: '数量', key: 'quantity', width: 80 },
   { title: '售价单价', key: 'unit_price', width: 100, render: (r) => r.unit_price != null ? fmtMoney(r.unit_price) : '-' },
   { title: '手工费', key: 'handcraft_cost', width: 100, render: (r) => r.handcraft_cost != null ? fmtMoney(r.handcraft_cost) : '-' },

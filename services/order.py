@@ -381,9 +381,11 @@ def add_order_item(db: Session, order_id: str, data: dict) -> OrderItem:
         remarks=data.get("remarks"),
     )
     db.add(item)
-    db.flush()
     if data.get("part_id"):
+        # Validate + writeback BEFORE flush, so a missing part raises a clean
+        # ValueError before the FK constraint fires an opaque IntegrityError.
         _writeback_part_wholesale_price(db, data["part_id"], unit_price)
+    db.flush()
     _recalc_total(db, order)
     return item
 
@@ -529,9 +531,12 @@ def update_order_item(db: Session, order_id: str, item_id: int, fields: dict) ->
                 raise ValueError(f"该饰品整单已分配 {total_allocated}，修改后总数量 {new_total} 不足")
     for key, value in fields.items():
         if hasattr(item, key):
+            # Skip setting NOT NULL fields to None
+            if key == "unit_price" and value is None:
+                continue
             setattr(item, key, value)
     db.flush()
-    if "unit_price" in fields and item.part_id is not None:
+    if "unit_price" in fields and fields["unit_price"] is not None and item.part_id is not None:
         new_price = Decimal(str(fields["unit_price"])).quantize(_Q7, rounding=ROUND_HALF_UP)
         _writeback_part_wholesale_price(db, item.part_id, new_price)
     if price_fields & fields.keys():

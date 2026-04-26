@@ -243,3 +243,30 @@ def test_global_part_demand_includes_direct_purchases_across_orders(db, part_cha
     row = next(r for r in summary if r["part_id"] == part_chain.id)
     # global_demand = Order B's BOM (2) + Order A's direct (50) = 52
     assert row["global_demand"] >= 52
+
+
+def test_add_order_item_with_missing_part_raises_value_error(db, part_chain):
+    """Missing part_id in add_order_item must raise ValueError (HTTP 400),
+    not flow through to an IntegrityError (HTTP 500)."""
+    order = create_order(db, "客户A", [{
+        "part_id": part_chain.id, "quantity": 1, "unit_price": 15, "remarks": None,
+    }])
+    with pytest.raises(ValueError, match="配件 PJ-NOPE 不存在"):
+        add_order_item(db, order.id, {
+            "part_id": "PJ-NOPE", "quantity": 1, "unit_price": 10,
+        })
+
+
+def test_update_order_item_with_null_unit_price_does_not_crash(db, part_chain):
+    """PATCH with explicit unit_price=null should not crash."""
+    order = create_order(db, "客户A", [{
+        "part_id": part_chain.id, "quantity": 1, "unit_price": 15, "remarks": None,
+    }])
+    item = db.query(OrderItem).filter_by(order_id=order.id).first()
+    # Should not raise — null unit_price is treated as "no price change"
+    update_order_item(db, order.id, item.id, {"unit_price": None, "quantity": 2})
+    db.refresh(item)
+    assert item.quantity == 2
+    # Wholesale price unchanged because unit_price was null
+    db.refresh(part_chain)
+    assert part_chain.wholesale_price == Decimal("15")
