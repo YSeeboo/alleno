@@ -588,3 +588,28 @@ def update_packaging_cost(db: Session, order_id: str, packaging_cost: float) -> 
         from services.order_cost_snapshot import update_snapshot_packaging_cost
         update_snapshot_packaging_cost(db, order_id, packaging_cost)
     return order
+
+
+def enrich_order_items(db: Session, items: list) -> list:
+    """Attach part_name / part_image / part_unit for part-typed items."""
+    part_ids = [i.part_id for i in items if i.part_id is not None]
+    if not part_ids:
+        return items
+    parts = {p.id: p for p in db.query(Part).filter(Part.id.in_(part_ids)).all()}
+    enriched = []
+    for it in items:
+        if it.part_id is None:
+            enriched.append(it)
+            continue
+        p = parts.get(it.part_id)
+        d = {
+            "id": it.id, "order_id": it.order_id,
+            "jewelry_id": it.jewelry_id, "part_id": it.part_id,
+            "quantity": it.quantity, "unit_price": float(it.unit_price),
+            "remarks": it.remarks, "customer_code": it.customer_code,
+            "part_name": p.name if p else None,
+            "part_image": p.image if p else None,
+            "part_unit": p.unit if p else None,
+        }
+        enriched.append(d)
+    return enriched

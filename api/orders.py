@@ -14,14 +14,15 @@ from schemas.order import (
     BatchLinkRequest, BatchLinkResponse, OrderProgressResponse,
     OrderItemUpdate, BatchCustomerCodeRequest, PartsSummaryItemResponse,
     PickingSimulationResponse, PickingMarkRequest, PickingPdfRequest,
+    OrderItemCreate, ExtraInfoUpdate,
+    TodoBatchCreateRequest, LinkSupplierRequest,
 )
-from schemas.order import OrderItemCreate
 from schemas.order_cost_snapshot import OrderCostSnapshotResponse
-from schemas.order import ExtraInfoUpdate
 from services.order import (
     add_order_item,
     create_order,
     delete_order_item,
+    enrich_order_items,
     get_order,
     get_order_items,
     get_parts_summary,
@@ -38,7 +39,6 @@ from services.order_todo import (
     batch_link, get_order_progress, batch_get_order_progress, get_jewelry_status,
     get_jewelry_for_batch, create_batch, get_batches, link_supplier, delete_batch,
 )
-from schemas.order import TodoBatchCreateRequest, LinkSupplierRequest
 from services.order_todo_pdf import build_order_todo_pdf
 from services.cutting_stats import get_order_cutting_stats
 from services.cutting_stats_pdf import build_cutting_stats_pdf
@@ -51,32 +51,6 @@ from api._errors import service_errors
 
 class PackagingCostUpdate(_BaseModel):
     packaging_cost: float = _Field(ge=0)
-
-
-def _enrich_items(db: Session, items: list) -> list:
-    """Attach part_name / part_image / part_unit for part-typed items."""
-    from models.part import Part
-    part_ids = [i.part_id for i in items if i.part_id is not None]
-    if not part_ids:
-        return items
-    parts = {p.id: p for p in db.query(Part).filter(Part.id.in_(part_ids)).all()}
-    enriched = []
-    for it in items:
-        if it.part_id is None:
-            enriched.append(it)
-            continue
-        p = parts.get(it.part_id)
-        d = {
-            "id": it.id, "order_id": it.order_id,
-            "jewelry_id": it.jewelry_id, "part_id": it.part_id,
-            "quantity": it.quantity, "unit_price": float(it.unit_price),
-            "remarks": it.remarks, "customer_code": it.customer_code,
-            "part_name": p.name if p else None,
-            "part_image": p.image if p else None,
-            "part_unit": p.unit if p else None,
-        }
-        enriched.append(d)
-    return enriched
 
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -123,7 +97,7 @@ def api_get_order_items(order_id: str, db: Session = Depends(get_db)):
     if order is None:
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
     items = get_order_items(db, order_id)
-    return _enrich_items(db, items)
+    return enrich_order_items(db, items)
 
 
 @router.post("/{order_id}/items", response_model=OrderItemResponse, status_code=201)
@@ -133,7 +107,7 @@ def api_add_order_item(order_id: str, body: OrderItemCreate, db: Session = Depen
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
     with service_errors():
         item = add_order_item(db, order_id, body.model_dump())
-    return _enrich_items(db, [item])[0]
+    return enrich_order_items(db, [item])[0]
 
 
 @router.post("/{order_id}/items/batch-customer-code")
@@ -155,7 +129,7 @@ def api_update_order_item(order_id: str, item_id: int, body: OrderItemUpdate, db
         raise HTTPException(status_code=400, detail="请提供至少一个要修改的字段")
     with service_errors():
         item = update_order_item(db, order_id, item_id, fields)
-    return _enrich_items(db, [item])[0]
+    return enrich_order_items(db, [item])[0]
 
 
 @router.delete("/{order_id}/items/{item_id}", status_code=204)

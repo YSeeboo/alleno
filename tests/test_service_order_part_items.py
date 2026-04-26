@@ -215,3 +215,31 @@ def test_parts_summary_direct_only_order(db, part_chain):
     assert row["part_id"] == part_chain.id
     assert row["total_qty"] == 7
     assert row["source_jewelries"][0].get("source_type") == "direct"
+
+
+def test_global_part_demand_includes_direct_purchases_across_orders(db, part_chain):
+    """When Order A directly buys 50 of part X, Order B's parts-summary
+    `global_demand` for part X should include that 50 (so cross-order
+    contention is reflected)."""
+    from models.jewelry import Jewelry
+    from models.bom import Bom
+
+    # Order A: directly buys 50 of part_chain
+    create_order(db, "A", [{
+        "part_id": part_chain.id, "quantity": 50, "unit_price": 15, "remarks": None,
+    }])
+
+    # Order B: a jewelry order whose BOM also uses part_chain (qty 2 per unit, 1 unit)
+    db.add(Jewelry(id="SP-GD1", name="j", status="active",
+                   handcraft_cost=0, wholesale_price=200))
+    db.flush()
+    db.add(Bom(id="BM-GD1", jewelry_id="SP-GD1", part_id=part_chain.id, qty_per_unit=2))
+    db.flush()
+    order_b = create_order(db, "B", [
+        {"jewelry_id": "SP-GD1", "quantity": 1, "unit_price": 200, "remarks": None},
+    ])
+
+    summary = get_parts_summary(db, order_b.id)
+    row = next(r for r in summary if r["part_id"] == part_chain.id)
+    # global_demand = Order B's BOM (2) + Order A's direct (50) = 52
+    assert row["global_demand"] >= 52
