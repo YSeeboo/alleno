@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
 import posixpath
 import re
@@ -65,6 +65,9 @@ class _ImportRow:
     unit_cost: float | None
     plating_process: str | None
     qty: float
+    # Additional row numbers whose qty has been merged into this row.
+    # Empty unless the file contained duplicate (name, category) entries.
+    merged_row_numbers: list[int] = field(default_factory=list)
 
 
 def import_parts_excel(db: Session, file_bytes: bytes, filename: str | None) -> dict:
@@ -99,13 +102,16 @@ def import_parts_excel(db: Session, file_bytes: bytes, filename: str | None) -> 
 
         qty = plan["row"].qty
         if qty > 0:
+            row_label = "、".join(
+                str(n) for n in [plan["row"].row_number, *plan["row"].merged_row_numbers]
+            )
             add_stock(
                 db,
                 "part",
                 part.id,
                 qty,
                 reason="Excel导入",
-                note=f"Excel导入：{filename} 第 {plan['row'].row_number} 行",
+                note=f"Excel导入：{filename} 第 {row_label} 行",
             )
             stock_entry_count += 1
 
@@ -361,28 +367,44 @@ def _get_number(
 
 
 def _build_import_plans(db: Session, rows: list[_ImportRow]) -> list[dict]:
+    """Build import plans, auto-merging duplicate (name, category) rows by
+    summing their qty. Rows with an explicit part_id that collide are still
+    rejected — those represent a true editing mistake, not a quantity split.
+    For merged rows, non-qty fields (color, unit, cost, plating_process) take
+    the FIRST row's values; subsequent rows' values for those fields are
+    discarded. Original row numbers are preserved on _ImportRow.merged_row_numbers
+    so import results / inventory_log notes can show the full set."""
     seen_ids = set()
-    seen_keys = set()
+    plan_by_key: dict[tuple[str, str], dict] = {}
     plans = []
     errors = []
 
     for row in rows:
-        unique_key = (row.name, row.category)
         if row.part_id:
             if row.part_id in seen_ids:
                 errors.append(f"第 {row.row_number} 行：配件编号 {row.part_id} 在文件中重复")
                 continue
             seen_ids.add(row.part_id)
-        else:
-            if unique_key in seen_keys:
-                errors.append(f"第 {row.row_number} 行：名称 + 类目 在文件中重复，请合并后再导入")
-                continue
-            seen_keys.add(unique_key)
+            try:
+                plans.append(_build_single_plan(db, row))
+            except ValueError as exc:
+                errors.append(f"第 {row.row_number} 行：{exc}")
+            continue
+
+        unique_key = (row.name, row.category)
+        existing = plan_by_key.get(unique_key)
+        if existing is not None:
+            existing["row"].qty += row.qty
+            existing["row"].merged_row_numbers.append(row.row_number)
+            continue
 
         try:
-            plans.append(_build_single_plan(db, row))
+            plan = _build_single_plan(db, row)
         except ValueError as exc:
             errors.append(f"第 {row.row_number} 行：{exc}")
+            continue
+        plans.append(plan)
+        plan_by_key[unique_key] = plan
 
     if errors:
         raise ValueError("\n".join(errors))

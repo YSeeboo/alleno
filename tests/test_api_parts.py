@@ -328,6 +328,50 @@ def test_download_parts_import_template(client):
     assert data["created_count"] == 1
 
 
+def test_import_parts_excel_merges_duplicate_name_category_rows(client):
+    """Duplicate (name, category) rows should auto-merge: qty sums, non-qty
+    fields take the first row's values, and the inventory_log note records
+    every original row number."""
+    file_bytes = _build_xlsx([
+        ["名称", "类目", "颜色", "单位", "单件成本", "默认电镀工艺", "入库数量"],
+        ["铜扣", "小配件", "金色", "个", 1.5, "真金", 10],
+        ["铜扣", "小配件", "古金", "个", 1.8, "拉丝", 5],
+        ["铜扣", "小配件", "金色", "个", 0, "", 7],
+        ["银链", "链条", "银色", "条", 3.5, "白银", 8],
+    ])
+
+    resp = client.post(
+        "/api/parts/import?filename=dups.xlsx",
+        content=file_bytes,
+        headers={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    # 4 rows in → 2 logical parts (3 dup + 1 unique)
+    assert data["imported_count"] == 2
+    assert data["created_count"] == 2
+    assert data["stock_entry_count"] == 2
+
+    parts = client.get("/api/parts/").json()
+    copper = next(p for p in parts if p["name"] == "铜扣")
+    # First row's non-qty fields win
+    assert copper["color"] == "金色"
+    assert copper["plating_process"] == "真金"
+
+    copper_stock = client.get(f"/api/inventory/part/{copper['id']}").json()
+    assert copper_stock["current"] == 22.0  # 10 + 5 + 7
+
+    # The merged row's import-result row_number is the FIRST occurrence
+    copper_result = next(r for r in data["results"] if r["name"] == "铜扣")
+    assert copper_result["row_number"] == 2
+    assert copper_result["stock_added"] == 22.0
+
+    # Inventory log note records all merged source rows
+    log = client.get(f"/api/inventory/part/{copper['id']}/log").json()
+    import_entry = next(e for e in log if e["reason"] == "Excel导入")
+    assert "第 2、3、4 行" in import_entry["note"]
+
+
 def test_import_response_includes_image(client):
     """Import response results should include image field."""
     file_bytes = _build_xlsx([
