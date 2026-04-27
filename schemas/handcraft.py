@@ -122,3 +122,47 @@ class HandcraftSuggestPartItem(BaseModel):
     theoretical_qty: float
     buffer: int
     suggested_qty: int
+
+
+# --- Picking simulation (配货模拟) ---
+
+
+class HandcraftPickingVariant(BaseModel):
+    """One picking row inside a part_item group. For atomic items this is the
+    only row; for composites this is one expanded atom."""
+    part_id: str
+    part_name: str
+    part_image: Optional[str] = None
+    needed_qty: float
+    suggested_qty: Optional[int] = None
+    current_stock: float
+    picked: bool
+
+
+class HandcraftPickingGroup(BaseModel):
+    part_item_id: int
+    parent_part_id: str
+    parent_part_name: str
+    parent_part_image: Optional[str] = None
+    parent_is_composite: bool
+    parent_qty: float
+    parent_bom_qty: Optional[float] = None
+    rows: List[HandcraftPickingVariant]
+
+
+class HandcraftPickingProgress(BaseModel):
+    total: int
+    picked: int
+
+
+class HandcraftPickingResponse(BaseModel):
+    handcraft_order_id: str
+    supplier_name: str
+    status: str
+    groups: List[HandcraftPickingGroup]
+    progress: HandcraftPickingProgress
+
+
+class HandcraftPickingMarkRequest(BaseModel):
+    part_item_id: int
+    part_id: str
