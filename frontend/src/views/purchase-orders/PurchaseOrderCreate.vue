@@ -1,5 +1,5 @@
 <template>
-  <div :style="{ maxWidth: isMobile ? '100%' : '800px' }">
+  <div :style="{ maxWidth: isMobile ? '100%' : '960px' }">
     <n-space align="center" style="margin-bottom: 16px;">
       <n-button text @click="router.back()">← 返回</n-button>
       <n-h2 style="margin: 0;">新建购入单</n-h2>
@@ -31,6 +31,14 @@
     </n-form>
 
     <n-card title="购入明细" style="margin-bottom: 16px;">
+      <n-space v-if="!isMobile" align="center" class="items-header">
+        <div style="width: 220px;">配件</div>
+        <div style="width: 100px;">数量</div>
+        <div style="width: 90px;">单位</div>
+        <div style="width: 130px;">单价</div>
+        <div style="width: 100px;">金额</div>
+        <div style="width: 56px; text-align: center;">操作</div>
+      </n-space>
       <div v-for="(item, idx) in items" :key="idx" style="margin-bottom: 10px;">
         <n-space align="center">
           <n-select
@@ -50,8 +58,10 @@
             style="width: 90px;"
           />
           <n-input-number v-model:value="item.price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" :step="0.1" placeholder="单价" style="width: 130px;" />
-          <span style="min-width: 80px; color: #666;">{{ formatAmount(item.qty, item.price) }}</span>
-          <n-button type="error" size="small" @click="items.splice(idx, 1)">删除</n-button>
+          <span style="display: inline-block; width: 100px; color: #666;">{{ formatAmount(item.qty, item.price) }}</span>
+          <div style="width: 56px; text-align: center;">
+            <n-button type="error" size="small" @click="items.splice(idx, 1)">删除</n-button>
+          </div>
         </n-space>
       </div>
       <n-button dashed style="width: 100%;" @click="addRow">
@@ -83,7 +93,7 @@
       <div style="margin-bottom: 12px; color: #999; font-size: 12px;">来源：{{ costDiffSourceId }}</div>
       <n-data-table
         :columns="[
-          { title: '配件编号', key: 'part_id', width: 130 },
+          { title: '配件编号', key: 'part_id', width: 160 },
           { title: '配件名称', key: 'part_name', minWidth: 120 },
           { title: '原单价', key: 'current_value', width: 110, render: (r) => r.current_value != null ? `¥ ${fmtMoney(r.current_value)}` : '-' },
           { title: '更新单价', key: 'new_value', width: 110, render: (r) => h('span', { style: 'color: #d03050; font-weight: 600;' }, `¥ ${fmtMoney(r.new_value)}`) },
@@ -241,3 +251,13 @@ onMounted(async () => {
   await Promise.all([partsPromise, vendorsPromise])
 })
 </script>
+
+<style scoped>
+.items-header {
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #efeff5;
+  font-size: 13px;
+  color: #888;
+}
+</style>
