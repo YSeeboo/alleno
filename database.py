@@ -73,6 +73,20 @@ def ensure_schema_compat(target_engine=None):
                     "WHERE id IN (SELECT DISTINCT parent_part_id FROM part_bom)"
                 ))
                 logger.warning("Added missing part.is_composite column (backfilled from part_bom)")
+            if "size_tier" not in columns:
+                conn.execute(text("ALTER TABLE part ADD COLUMN size_tier VARCHAR NULL"))
+                # LIKE 'PJ-DZ-%' / 'PJ-LT-%' also matches variant IDs like
+                # PJ-DZ-00001-G-45cm — by design, so root and its variants
+                # backfill to the same tier (matching create_part_variant
+                # behaviour, which inherits size_tier from the donor).
+                conn.execute(text(
+                    "UPDATE part SET size_tier = CASE "
+                    "WHEN id LIKE 'PJ-DZ-%' THEN 'medium' "
+                    "WHEN id LIKE 'PJ-LT-%' THEN 'medium' "
+                    "ELSE 'small' END"
+                ))
+                conn.execute(text("ALTER TABLE part ALTER COLUMN size_tier SET NOT NULL"))
+                logger.warning("Added missing part.size_tier column (backfilled by category prefix)")
 
         if inspector.has_table("plating_order_item"):
             columns = {col["name"] for col in inspector.get_columns("plating_order_item")}

@@ -17,6 +17,8 @@ from schemas.handcraft import (
     HandcraftPartIn,
     HandcraftPartItemResponse,
     HandcraftResponse,
+    HandcraftSuggestPartItem,
+    HandcraftSuggestRequest,
     HandcraftUpdate,
 )
 from schemas.production_loss import ConfirmLossHandcraftRequest, ProductionLossResponse
@@ -40,6 +42,7 @@ from services.handcraft import (
     list_handcraft_orders,
     list_handcraft_pending_receive_items,
     send_handcraft_order,
+    suggest_handcraft_parts,
     update_handcraft_delivery_images,
     update_handcraft_jewelry,
     update_handcraft_order,
@@ -96,6 +99,15 @@ def api_list_handcraft_orders(status: Optional[str] = None, supplier_name: Optio
 @router.get("/suppliers", response_model=list[str])
 def api_get_handcraft_supplier_names(db: Session = Depends(get_db)):
     return get_handcraft_supplier_names(db)
+
+
+@router.post("/suggest-parts", response_model=list[HandcraftSuggestPartItem])
+def api_suggest_handcraft_parts(body: HandcraftSuggestRequest, db: Session = Depends(get_db)):
+    with service_errors():
+        return suggest_handcraft_parts(
+            db,
+            jewelry_items=[item.model_dump() for item in body.jewelry_items],
+        )
 
 
 @router.get("/items/pending-receive")

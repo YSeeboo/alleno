@@ -23,6 +23,7 @@ class Part(Base):
     spec = Column(String, nullable=True)
     parent_part_id = Column(String, ForeignKey("part.id"), nullable=True)
     is_composite = Column(Boolean, nullable=False, server_default="false")
+    size_tier = Column(String, nullable=False, server_default="small")
 
 
 class PartCostLog(Base):

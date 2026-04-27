@@ -1,6 +1,9 @@
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
+
+
+SizeTier = Literal["small", "medium"]
 
 
 class PartCreate(BaseModel):
@@ -13,6 +16,7 @@ class PartCreate(BaseModel):
     plating_process: Optional[str] = None
     parent_part_id: Optional[str] = None
     wholesale_price: Optional[float] = None
+    size_tier: Optional[SizeTier] = None
 
 
 class PartUpdate(BaseModel):
@@ -26,6 +30,7 @@ class PartUpdate(BaseModel):
     parent_part_id: Optional[str] = None
     assembly_cost: Optional[float] = None
     wholesale_price: Optional[float] = None
+    size_tier: Optional[SizeTier] = None
 
 
 class PartResponse(BaseModel):
@@ -47,6 +52,7 @@ class PartResponse(BaseModel):
     wholesale_price: Optional[float] = None
     parent_part_id: Optional[str] = None
     is_composite: bool = False
+    size_tier: SizeTier = "small"
 
 
 class PartVariantCreate(BaseModel):

@@ -1,15 +1,28 @@
+import math
 from datetime import datetime, date as date_type
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import Date, func, or_
 from sqlalchemy.orm import Session
 
+from models.bom import Bom
 from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
 from models.jewelry import Jewelry
 from models.part import Part
 from services._helpers import _next_id, keyword_filter
 from services.inventory import add_stock, batch_get_stock, deduct_stock
 from time_utils import now_beijing
+
+
+# Per-tier buffer rule for suggesting handcraft part allocation:
+#   suggested = ceil(theoretical) + ceil(max(floor, theoretical * ratio))
+# ratio kept as Decimal so qty_per_unit (Numeric) × ratio stays exact —
+# float would corrupt theoretical_qty for fractional BOM (e.g. 0.3m chain × 1000).
+HANDCRAFT_BUFFER_RULES = {
+    "small":  {"ratio": Decimal("0.02"), "floor": 50},
+    "medium": {"ratio": Decimal("0.01"), "floor": 15},
+}
 
 
 def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
@@ -29,6 +42,85 @@ def _replace_date(existing: Optional[datetime], new_date: date_type) -> datetime
 def _require_part(db: Session, part_id: str) -> None:
     if db.get(Part, part_id) is None:
         raise ValueError(f"Part not found: {part_id}")
+
+
+def _category_prefix(part_id: str) -> str:
+    parts = part_id.split("-")
+    return "-".join(parts[:2]) if len(parts) >= 2 else part_id
+
+
+def suggest_handcraft_parts(db: Session, jewelry_items: list[dict]) -> list[dict]:
+    """Compute suggested handcraft allocation for a set of jewelry orders.
+
+    For each part used by any of the requested jewelries, aggregate the
+    theoretical demand across jewelries (BOM qty_per_unit × jewelry qty),
+    then apply the buffer rule for that part's size_tier.
+
+    jewelry_items: [{"jewelry_id": str, "qty": int}, ...]
+    """
+    seen_ids = set()
+    for item in jewelry_items:
+        jid = item["jewelry_id"]
+        if jid in seen_ids:
+            raise ValueError(f"重复的饰品 ID: {jid}")
+        seen_ids.add(jid)
+
+    if not seen_ids:
+        return []
+
+    jewelries = {
+        j.id: j
+        for j in db.query(Jewelry).filter(Jewelry.id.in_(seen_ids)).all()
+    }
+    missing = seen_ids - jewelries.keys()
+    if missing:
+        raise ValueError(f"饰品不存在: {sorted(missing)}")
+
+    boms = (
+        db.query(Bom)
+        .filter(Bom.jewelry_id.in_(seen_ids))
+        .all()
+    )
+    qty_by_jewelry = {item["jewelry_id"]: item["qty"] for item in jewelry_items}
+    totals: dict[str, Decimal] = {}
+    for bom in boms:
+        # qty_per_unit is Numeric → Decimal; staying in Decimal avoids
+        # float drift like 0.3 * 1000 == 300.00000000000006.
+        contribution = bom.qty_per_unit * qty_by_jewelry[bom.jewelry_id]
+        totals[bom.part_id] = totals.get(bom.part_id, Decimal(0)) + contribution
+
+    if not totals:
+        return []
+
+    parts_by_id = {
+        p.id: p
+        for p in db.query(Part).filter(Part.id.in_(totals.keys())).all()
+    }
+
+    results = []
+    for part_id, theo in totals.items():
+        if theo <= 0:
+            continue
+        part = parts_by_id.get(part_id)
+        if part is None:
+            continue
+        # Direct lookup (no fallback): size_tier is constrained by Pydantic
+        # Literal + DB NOT NULL; an unknown value is data corruption and
+        # should fail loud rather than silently apply a default rule.
+        rule = HANDCRAFT_BUFFER_RULES[part.size_tier]
+        buffer = math.ceil(max(Decimal(rule["floor"]), theo * rule["ratio"]))
+        suggested = math.ceil(theo) + buffer
+        results.append({
+            "part_id": part_id,
+            "part_name": part.name,
+            "size_tier": part.size_tier,
+            "theoretical_qty": float(theo),
+            "buffer": buffer,
+            "suggested_qty": suggested,
+        })
+
+    results.sort(key=lambda r: (_category_prefix(r["part_id"]), r["part_id"]))
+    return results
 
 
 def _require_jewelry(db: Session, jewelry_id: str) -> None:

@@ -2,6 +2,8 @@ from typing import Optional, List
 from datetime import datetime, date
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from schemas.part import SizeTier
+
 
 class HandcraftPartIn(BaseModel):
     part_id: str
@@ -102,3 +104,21 @@ class HandcraftResponse(BaseModel):
 
 class HandcraftDeliveryImagesUpdate(BaseModel):
     delivery_images: List[str] = Field(default_factory=list, max_length=10)
+
+
+class HandcraftSuggestJewelryItem(BaseModel):
+    jewelry_id: str
+    qty: int = Field(gt=0)
+
+
+class HandcraftSuggestRequest(BaseModel):
+    jewelry_items: List[HandcraftSuggestJewelryItem] = Field(min_length=1)
+
+
+class HandcraftSuggestPartItem(BaseModel):
+    part_id: str
+    part_name: str
+    size_tier: SizeTier
+    theoretical_qty: float
+    buffer: int
+    suggested_qty: int

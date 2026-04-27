@@ -48,6 +48,14 @@ PART_CATEGORIES = {
     "小配件": "PJ-X",
 }
 
+# Default size_tier inferred from category prefix when caller omits size_tier.
+# Used in create_part and the schema-compat backfill for existing rows.
+DEFAULT_SIZE_TIER_BY_PREFIX = {
+    "PJ-DZ": "medium",
+    "PJ-LT": "medium",
+    "PJ-X": "small",
+}
+
 
 def create_part(db: Session, data: dict) -> Part:
     category = data.get("category")
@@ -66,6 +74,8 @@ def create_part(db: Session, data: dict) -> Part:
     if "spec" in data:
         data["spec"] = (data["spec"].strip() if data["spec"] else None) or None
     prefix = PART_CATEGORIES[category]
+    if data.get("size_tier") is None:
+        data["size_tier"] = DEFAULT_SIZE_TIER_BY_PREFIX.get(prefix, "small")
     part = Part(id=_next_id_by_category(db, Part, prefix), **data)
     db.add(part)
     db.flush()
@@ -99,6 +109,10 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
         raise ValueError(
             "Category cannot be changed after creation — the part ID encodes the category."
         )
+    # Frontend "clear selection" UX often sends null; size_tier is NOT NULL
+    # so treat explicit None as omission rather than letting the DB raise.
+    if "size_tier" in data and data["size_tier"] is None:
+        data.pop("size_tier")
     if (_is_color_variant(part.name) or part.parent_part_id is not None):
         if "color" in data:
             new_color = data["color"]
@@ -126,6 +140,7 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
             raise ValueError("不支持多层嵌套：当前配件已有子配件，不能再挂到其他配件下")
     data.pop("unit_cost", None)
     assembly_cost_changed = "assembly_cost" in data
+    size_tier_changed = "size_tier" in data
     if "spec" in data:
         data["spec"] = (data["spec"].strip() if data["spec"] else None) or None
     for key, value in data.items():
@@ -134,6 +149,15 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
     if assembly_cost_changed:
         from services.part_bom import recalc_part_unit_cost
         recalc_part_unit_cost(db, part_id)
+    # When a root part's size_tier changes, propagate to all variants —
+    # BOMs commonly reference variant IDs and the buffer rule reads
+    # part.size_tier directly, so divergent tiers between root and variant
+    # would silently apply different buffer rules to the same product line.
+    if size_tier_changed and part.parent_part_id is None:
+        db.query(Part).filter(Part.parent_part_id == part_id).update(
+            {"size_tier": part.size_tier}, synchronize_session=False
+        )
+        db.flush()
     return part
 
 
@@ -289,6 +313,7 @@ def create_part_variant(db: Session, part_id: str, color_code: Optional[str] = N
         color=color,
         spec=spec,
         parent_part_id=root.id,
+        size_tier=donor.size_tier,
     )
     _recalc_unit_cost(variant)
     db.add(variant)

@@ -998,3 +998,65 @@ def test_part_wholesale_price_round_trip(client):
     # Get it
     r = client.get(f"/api/parts/{part_id}")
     assert r.json()["wholesale_price"] == 18.5
+
+
+def test_create_part_default_size_tier_by_category(client):
+    r_dz = client.post("/api/parts/", json={"name": "P吊坠", "category": "吊坠"})
+    r_lt = client.post("/api/parts/", json={"name": "P链条", "category": "链条"})
+    r_x = client.post("/api/parts/", json={"name": "P小件", "category": "小配件"})
+    assert r_dz.json()["size_tier"] == "medium"
+    assert r_lt.json()["size_tier"] == "medium"
+    assert r_x.json()["size_tier"] == "small"
+
+
+def test_create_part_explicit_size_tier(client):
+    r = client.post(
+        "/api/parts/",
+        json={"name": "大号小件", "category": "小配件", "size_tier": "medium"},
+    )
+    assert r.status_code == 201
+    assert r.json()["size_tier"] == "medium"
+
+
+def test_create_part_invalid_size_tier_rejected(client):
+    r = client.post(
+        "/api/parts/",
+        json={"name": "X", "category": "小配件", "size_tier": "huge"},
+    )
+    assert r.status_code == 422
+
+
+def test_update_part_size_tier(client):
+    created = client.post("/api/parts/", json={"name": "P", "category": "小配件"}).json()
+    assert created["size_tier"] == "small"
+    r = client.patch(f"/api/parts/{created['id']}", json={"size_tier": "medium"})
+    assert r.status_code == 200
+    assert r.json()["size_tier"] == "medium"
+
+
+def test_update_part_size_tier_null_treated_as_omitted(client):
+    """Frontend "clear selection" UX may send null; should not violate NOT NULL."""
+    created = client.post("/api/parts/", json={"name": "P", "category": "小配件"}).json()
+    assert created["size_tier"] == "small"
+    r = client.patch(f"/api/parts/{created['id']}", json={"size_tier": None})
+    assert r.status_code == 200
+    assert r.json()["size_tier"] == "small"
+
+
+def test_update_root_size_tier_propagates_to_variants(client, db):
+    """Changing a root's size_tier must sync to all child variants —
+    BOMs reference variant IDs and divergent tiers would silently apply
+    different buffer rules to the same product line."""
+    from services.part import create_part_variant
+    from models.part import Part
+    root = client.post("/api/parts/", json={"name": "吊坠 X", "category": "吊坠"}).json()
+    variant = create_part_variant(db, root["id"], color_code="G")
+    db.flush()
+    assert variant.size_tier == "medium"  # inherited at creation
+
+    r = client.patch(f"/api/parts/{root['id']}", json={"size_tier": "small"})
+    assert r.status_code == 200
+
+    refreshed = db.get(Part, variant.id)
+    db.refresh(refreshed)
+    assert refreshed.size_tier == "small"
