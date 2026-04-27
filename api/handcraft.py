@@ -16,6 +16,7 @@ from schemas.handcraft import (
     HandcraftJewelryItemResponse,
     HandcraftPartIn,
     HandcraftPartItemResponse,
+    HandcraftPickingResponse,
     HandcraftResponse,
     HandcraftSuggestPartItem,
     HandcraftSuggestRequest,
@@ -49,6 +50,7 @@ from services.handcraft import (
     update_handcraft_order_status,
     update_handcraft_part,
 )
+from services.handcraft_picking import get_handcraft_picking_simulation
 
 
 class HandcraftPartUpdate(BaseModel):
@@ -393,13 +395,6 @@ def api_delete_handcraft_jewelry_order_link(order_id: str, item_id: int, link_id
 
 
 # --- Picking simulation (配货模拟) ---
-
-from schemas.handcraft import (  # noqa: E402
-    HandcraftPickingMarkRequest,
-    HandcraftPickingResponse,
-)
-from services.handcraft_picking import get_handcraft_picking_simulation  # noqa: E402
-
 
 @router.get("/{order_id}/picking", response_model=HandcraftPickingResponse)
 def api_get_handcraft_picking(order_id: str, db: Session = Depends(get_db)):

@@ -80,3 +80,19 @@ def test_get_picking_atomic_single_item(client, db):
     assert row["current_stock"] == 50.0
     assert row["picked"] is False
     assert body["progress"] == {"total": 1, "picked": 0}
+
+
+def test_get_picking_atomic_zero_stock(client, db):
+    """Part with no inventory_log entries shows current_stock=0."""
+    _add_atomic_part(db, "PJ-X-NOSTOCK", "无库存件", "small")
+    db.add(HandcraftOrder(id="HC-NOSTOCK", supplier_name="商家", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(
+        handcraft_order_id="HC-NOSTOCK",
+        part_id="PJ-X-NOSTOCK",
+        qty=Decimal("3"),
+        bom_qty=None,
+    ))
+    db.flush()
+    body = client.get("/api/handcraft/HC-NOSTOCK/picking").json()
+    assert body["groups"][0]["rows"][0]["current_stock"] == 0.0
