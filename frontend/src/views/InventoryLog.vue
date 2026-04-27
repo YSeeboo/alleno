@@ -13,6 +13,7 @@
         @update:value="resetAndLoad"
       />
       <n-input v-model:value="filters.item_id" placeholder="编号" :style="{ width: isMobile ? '100%' : '160px' }" clearable @clear="resetAndLoad" @keyup.enter="resetAndLoad" />
+      <n-input v-model:value="filters.name" placeholder="配件名称" :style="{ width: isMobile ? '100%' : '200px' }" clearable @clear="resetAndLoad" @keyup.enter="resetAndLoad" @update:value="debouncedLoad" />
       <n-input v-model:value="filters.reason" placeholder="原因" :style="{ width: isMobile ? '100%' : '140px' }" clearable @clear="resetAndLoad" @keyup.enter="resetAndLoad" />
       <n-button type="primary" :loading="loading" @click="resetAndLoad">查询</n-button>
     </n-space>
@@ -28,6 +29,7 @@ import { ref, reactive, onMounted, h } from 'vue'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { NSpace, NButton, NSelect, NInput, NDataTable, NSpin } from 'naive-ui'
 import { listStockLogs } from '@/api/inventory'
+import { renderNamedImage } from '@/utils/ui'
 
 const { isMobile } = useIsMobile()
 const PAGE_SIZE = 50
@@ -35,6 +37,7 @@ const PAGE_SIZE = 50
 const filters = reactive({
   item_type: null,
   item_id: '',
+  name: '',
   reason: '',
 })
 
@@ -50,7 +53,10 @@ const pagination = reactive({
   itemCount: 0,
 })
 
+let _searchTimer = null
+
 const load = async () => {
+  clearTimeout(_searchTimer)
   loading.value = true
   try {
     const params = {
@@ -59,6 +65,7 @@ const load = async () => {
     }
     if (filters.item_type) params.item_type = filters.item_type
     if (filters.item_id) params.item_id = filters.item_id
+    if (filters.name) params.name = filters.name
     if (filters.reason) params.reason = filters.reason
     const res = await listStockLogs(params)
     logs.value = res.data.items
@@ -76,6 +83,11 @@ const resetAndLoad = () => {
   load()
 }
 
+const debouncedLoad = () => {
+  clearTimeout(_searchTimer)
+  _searchTimer = setTimeout(resetAndLoad, 300)
+}
+
 const onPageChange = (page) => {
   currentPage.value = page
   load()
@@ -86,7 +98,13 @@ onMounted(load)
 const columns = [
   { title: '时间', key: 'created_at', width: 170, render: (r) => new Date(r.created_at).toLocaleString('zh-CN') },
   { title: '品类', key: 'item_type', width: 60, render: (r) => r.item_type === 'part' ? '配件' : '饰品' },
-  { title: '编号', key: 'item_id', width: 120 },
+  { title: '编号', key: 'item_id', width: 160 },
+  {
+    title: '配件',
+    key: 'item_name',
+    minWidth: 200,
+    render: (r) => renderNamedImage(r.item_name, r.item_image, r.item_name || '-', 40),
+  },
   {
     title: '变动数量',
     key: 'change_qty',

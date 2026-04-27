@@ -95,3 +95,61 @@ def test_list_logs_pagination(client, db):
     data2 = resp2.json()
     assert len(data2["items"]) == 1
     assert data2["items"][0]["reason"] == "r0"
+
+
+def test_list_logs_filter_name_matches_part(client, db):
+    """name filter hits parts by name (fuzzy, multi-keyword AND)."""
+    p1 = create_part(db, {"name": "红色圆珠吊坠", "category": "吊坠"})
+    p2 = create_part(db, {"name": "蓝色方块", "category": "小配件"})
+    client.post(f"/api/inventory/part/{p1.id}/add", json={"qty": 5, "reason": "入库"})
+    client.post(f"/api/inventory/part/{p2.id}/add", json={"qty": 3, "reason": "入库"})
+    # Single keyword
+    resp = client.get("/api/inventory/logs", params={"name": "红色"})
+    assert resp.json()["total"] == 1
+    assert resp.json()["items"][0]["item_id"] == p1.id
+    # Multi-keyword AND: both "红色" and "圆珠" must match
+    resp2 = client.get("/api/inventory/logs", params={"name": "红色 圆珠"})
+    assert resp2.json()["total"] == 1
+    assert resp2.json()["items"][0]["item_id"] == p1.id
+    # Multi-keyword AND with no match
+    resp3 = client.get("/api/inventory/logs", params={"name": "红色 方块"})
+    assert resp3.json()["total"] == 0
+
+
+def test_list_logs_filter_name_also_matches_part_id(client, db):
+    """name filter reuses list_parts logic — matches both Part.name and Part.id."""
+    part = create_part(db, {"name": "项链", "category": "链条"})
+    client.post(f"/api/inventory/part/{part.id}/add", json={"qty": 5, "reason": "入库"})
+    # Partial match against generated part id (PJ-LT-00001 contains "LT")
+    resp = client.get("/api/inventory/logs", params={"name": "LT"})
+    assert resp.json()["total"] == 1
+    assert resp.json()["items"][0]["item_id"] == part.id
+
+
+def test_list_logs_filter_name_excludes_jewelry(client, db):
+    """name filter is scoped to parts — jewelry logs with matching names are excluded."""
+    from services.jewelry import create_jewelry
+    part = create_part(db, {"name": "红色配件", "category": "小配件"})
+    jew = create_jewelry(db, {"name": "红色饰品", "category": "单件"})
+    client.post(f"/api/inventory/part/{part.id}/add", json={"qty": 5, "reason": "入库"})
+    client.post(f"/api/inventory/jewelry/{jew.id}/add", json={"qty": 2, "reason": "入库"})
+    resp = client.get("/api/inventory/logs", params={"name": "红色"})
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["items"][0]["item_type"] == "part"
+    assert data["items"][0]["item_id"] == part.id
+
+
+def test_list_logs_enriches_item_name_and_image(client, db):
+    """Response includes item_name / item_image for both part and jewelry rows."""
+    from services.jewelry import create_jewelry
+    part = create_part(db, {"name": "金色链条", "category": "链条", "image": "http://img/part.jpg"})
+    jew = create_jewelry(db, {"name": "珍珠项链", "category": "单件", "image": "http://img/jew.jpg"})
+    client.post(f"/api/inventory/part/{part.id}/add", json={"qty": 5, "reason": "入库"})
+    client.post(f"/api/inventory/jewelry/{jew.id}/add", json={"qty": 2, "reason": "入库"})
+    resp = client.get("/api/inventory/logs")
+    items = {it["item_id"]: it for it in resp.json()["items"]}
+    assert items[part.id]["item_name"] == "金色链条"
+    assert items[part.id]["item_image"] == "http://img/part.jpg"
+    assert items[jew.id]["item_name"] == "珍珠项链"
+    assert items[jew.id]["item_image"] == "http://img/jew.jpg"

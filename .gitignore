@@ -63,3 +63,13 @@ htmlcov/
 
 # Local deploy helpers
 deploy_aliyun_update.sh
+
+# Ad-hoc DB audit / heal output (one-off, not source)
+audit_result.txt
+dangling.txt
+heal_preview.txt
+heal_dryrun.txt
+heal_commit.txt
+
+# Frontend UX mockups (decision archive — keep local, not source)
+frontend/mockups/

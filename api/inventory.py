@@ -23,12 +23,13 @@ def api_list_stock_logs(
     item_type: Optional[str] = Query(None),
     item_id: Optional[str] = Query(None),
     reason: Optional[str] = Query(None),
+    name: Optional[str] = Query(None),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     with service_errors():
-        return list_stock_logs(db, item_type=item_type, item_id=item_id, reason=reason, limit=limit, offset=offset)
+        return list_stock_logs(db, item_type=item_type, item_id=item_id, reason=reason, name=name, limit=limit, offset=offset)
 
 
 @router.post("/{item_type}/{item_id}/add", response_model=StockResponse)

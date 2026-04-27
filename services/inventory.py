@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from models.inventory_log import InventoryLog
@@ -67,6 +67,7 @@ def list_stock_logs(
     item_type: str | None = None,
     item_id: str | None = None,
     reason: str | None = None,
+    name: str | None = None,
     limit: int = 200,
     offset: int = 0,
 ) -> dict:
@@ -77,8 +78,30 @@ def list_stock_logs(
         q = q.filter(InventoryLog.item_id.ilike(f"%{item_id}%"))
     if reason:
         q = q.filter(InventoryLog.reason.ilike(f"%{reason}%"))
+    if name:
+        clause = keyword_filter(name, Part.name, Part.id)
+        if clause is not None:
+            part_ids_sq = select(Part.id).where(clause)
+            q = q.filter(
+                InventoryLog.item_type == "part",
+                InventoryLog.item_id.in_(part_ids_sq),
+            )
     total = q.count()
     rows = q.order_by(InventoryLog.created_at.desc(), InventoryLog.id.desc()).offset(offset).limit(limit).all()
+
+    # Enrich rows with item_name / item_image
+    part_ids = {r.item_id for r in rows if r.item_type == "part"}
+    jewelry_ids = {r.item_id for r in rows if r.item_type == "jewelry"}
+    parts = {p.id: p for p in db.query(Part).filter(Part.id.in_(part_ids)).all()} if part_ids else {}
+    jewelries = {j.id: j for j in db.query(Jewelry).filter(Jewelry.id.in_(jewelry_ids)).all()} if jewelry_ids else {}
+    for r in rows:
+        if r.item_type == "part":
+            obj = parts.get(r.item_id)
+        else:
+            obj = jewelries.get(r.item_id)
+        r.item_name = obj.name if obj else None
+        r.item_image = obj.image if obj else None
+
     return {"total": total, "items": rows}
 
 

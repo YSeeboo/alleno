@@ -34,6 +34,8 @@ class LogEntryResponse(BaseModel):
     id: int
     item_type: str
     item_id: str
+    item_name: Optional[str] = None
+    item_image: Optional[str] = None
     change_qty: float
     reason: str
     note: Optional[str] = None
