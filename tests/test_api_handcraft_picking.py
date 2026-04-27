@@ -296,3 +296,125 @@ def test_compute_suggested_qty_unit_none_tier_falls_back_to_small():
     assert _compute_suggested_qty(0, "small") is None
     # theoretical=-1 → None (negative guarded)
     assert _compute_suggested_qty(-1, "small") is None
+
+
+# --- Task 5: mark / unmark / reset picking ---
+
+
+def test_mark_picked_persists_and_shows_in_get(client, db):
+    _setup_atomic(db)
+    body_before = client.get("/api/handcraft/HC-TEST-1/picking").json()
+    pi_id = body_before["groups"][0]["part_item_id"]
+
+    resp = client.post(
+        "/api/handcraft/HC-TEST-1/picking/mark",
+        json={"part_item_id": pi_id, "part_id": "PJ-X-00001"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["picked"] is True
+
+    body_after = client.get("/api/handcraft/HC-TEST-1/picking").json()
+    assert body_after["groups"][0]["rows"][0]["picked"] is True
+    assert body_after["progress"] == {"total": 1, "picked": 1}
+
+
+def test_mark_idempotent(client, db):
+    _setup_atomic(db)
+    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["part_item_id"]
+    for _ in range(3):
+        r = client.post(
+            "/api/handcraft/HC-TEST-1/picking/mark",
+            json={"part_item_id": pi_id, "part_id": "PJ-X-00001"},
+        )
+        assert r.status_code == 200
+    count = (
+        db.query(HandcraftPickingRecord)
+        .filter_by(handcraft_order_id="HC-TEST-1").count()
+    )
+    assert count == 1
+
+
+def test_mark_invalid_part_id_rejected(client, db):
+    _setup_atomic(db)
+    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["part_item_id"]
+    resp = client.post(
+        "/api/handcraft/HC-TEST-1/picking/mark",
+        json={"part_item_id": pi_id, "part_id": "PJ-X-NOTREAL"},
+    )
+    assert resp.status_code == 400
+    assert "配货范围" in resp.json()["detail"]
+
+
+def test_mark_blocked_when_status_not_pending(client, db):
+    _setup_atomic(db)
+    db.query(HandcraftOrder).filter_by(id="HC-TEST-1").update({"status": "processing"})
+    db.flush()
+    pi_id = (
+        db.query(HandcraftPartItem)
+        .filter_by(handcraft_order_id="HC-TEST-1").first().id
+    )
+    resp = client.post(
+        "/api/handcraft/HC-TEST-1/picking/mark",
+        json={"part_item_id": pi_id, "part_id": "PJ-X-00001"},
+    )
+    assert resp.status_code == 400
+    assert "只读" in resp.json()["detail"]
+
+
+def test_unmark_removes_record(client, db):
+    _setup_atomic(db)
+    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["part_item_id"]
+    client.post(
+        "/api/handcraft/HC-TEST-1/picking/mark",
+        json={"part_item_id": pi_id, "part_id": "PJ-X-00001"},
+    )
+    resp = client.post(
+        "/api/handcraft/HC-TEST-1/picking/unmark",
+        json={"part_item_id": pi_id, "part_id": "PJ-X-00001"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["picked"] is False
+    assert (
+        db.query(HandcraftPickingRecord)
+        .filter_by(handcraft_order_id="HC-TEST-1").count() == 0
+    )
+
+
+def test_unmark_idempotent_for_nonexistent(client, db):
+    _setup_atomic(db)
+    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["part_item_id"]
+    resp = client.post(
+        "/api/handcraft/HC-TEST-1/picking/unmark",
+        json={"part_item_id": pi_id, "part_id": "PJ-X-00001"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["picked"] is False
+
+
+def test_reset_deletes_all_records(client, db):
+    _setup_composite(db)
+    pi_id = client.get("/api/handcraft/HC-COMP/picking").json()["groups"][0]["part_item_id"]
+    client.post(
+        "/api/handcraft/HC-COMP/picking/mark",
+        json={"part_item_id": pi_id, "part_id": "PJ-X-00001"},
+    )
+    client.post(
+        "/api/handcraft/HC-COMP/picking/mark",
+        json={"part_item_id": pi_id, "part_id": "PJ-X-00002"},
+    )
+    resp = client.delete("/api/handcraft/HC-COMP/picking/reset")
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 2
+    assert (
+        db.query(HandcraftPickingRecord)
+        .filter_by(handcraft_order_id="HC-COMP").count() == 0
+    )
+
+
+def test_reset_blocked_when_not_pending(client, db):
+    _setup_atomic(db)
+    db.query(HandcraftOrder).filter_by(id="HC-TEST-1").update({"status": "completed"})
+    db.flush()
+    resp = client.delete("/api/handcraft/HC-TEST-1/picking/reset")
+    assert resp.status_code == 400
+    assert "只读" in resp.json()["detail"]

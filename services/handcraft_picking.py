@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
@@ -202,3 +204,117 @@ def _load_picked_keys(
         .all()
     )
     return {(r.handcraft_part_item_id, r.part_id) for r in rows}
+
+
+# --- State mutations ---
+
+
+@dataclass
+class HandcraftPickingMarkResult:
+    picked: bool
+    picked_at: Optional[datetime] = None
+
+
+def _check_writable(order: HandcraftOrder) -> None:
+    if order.status != "pending":
+        raise ValueError("手工单已发出，配货模拟为只读")
+
+
+def _validate_pair_in_order(
+    db: Session, handcraft_order_id: str, part_item_id: int, part_id: str
+) -> HandcraftOrder:
+    """Verify the (part_item_id, part_id) pair is part of this handcraft order's
+    picking aggregation. Returns the order for caller to use. Does NOT check
+    writable status — that's a separate gate."""
+    order = (
+        db.query(HandcraftOrder)
+        .filter_by(id=handcraft_order_id)
+        .one_or_none()
+    )
+    if order is None:
+        raise ValueError(f"手工单 {handcraft_order_id} 不存在")
+
+    part_item = (
+        db.query(HandcraftPartItem)
+        .filter_by(id=part_item_id, handcraft_order_id=handcraft_order_id)
+        .one_or_none()
+    )
+    if part_item is None:
+        raise ValueError("该配件/变体不在此手工单配货范围内")
+
+    expanded = _expand_part_items(db, [part_item])
+    valid_atoms = {atom_id for atom_id, _, _ in expanded[part_item.id]}
+    if part_id not in valid_atoms:
+        raise ValueError("该配件/变体不在此手工单配货范围内")
+
+    return order
+
+
+def mark_picked(
+    db: Session, handcraft_order_id: str, part_item_id: int, part_id: str
+) -> HandcraftPickingMarkResult:
+    """Mark a (part_item, atom) pair as picked. Idempotent."""
+    order = _validate_pair_in_order(db, handcraft_order_id, part_item_id, part_id)
+    _check_writable(order)
+
+    existing = (
+        db.query(HandcraftPickingRecord)
+        .filter_by(handcraft_part_item_id=part_item_id, part_id=part_id)
+        .one_or_none()
+    )
+    if existing is not None:
+        return HandcraftPickingMarkResult(picked=True, picked_at=existing.picked_at)
+
+    rec = HandcraftPickingRecord(
+        handcraft_order_id=handcraft_order_id,
+        handcraft_part_item_id=part_item_id,
+        part_id=part_id,
+    )
+    db.add(rec)
+    db.flush()
+    return HandcraftPickingMarkResult(picked=True, picked_at=rec.picked_at)
+
+
+def unmark_picked(
+    db: Session, handcraft_order_id: str, part_item_id: int, part_id: str
+) -> HandcraftPickingMarkResult:
+    """Unmark a (part_item, atom) pair. Idempotent — silent if no record exists.
+    Validates that the order exists and is writable, but does NOT validate that
+    the pair is still in the aggregation (allows cleanup of stale records)."""
+    order = (
+        db.query(HandcraftOrder)
+        .filter_by(id=handcraft_order_id)
+        .one_or_none()
+    )
+    if order is None:
+        raise ValueError(f"手工单 {handcraft_order_id} 不存在")
+    _check_writable(order)
+
+    (
+        db.query(HandcraftPickingRecord)
+        .filter_by(handcraft_part_item_id=part_item_id, part_id=part_id)
+        .delete(synchronize_session=False)
+    )
+    db.flush()
+    return HandcraftPickingMarkResult(picked=False)
+
+
+def reset_picking(db: Session, handcraft_order_id: str) -> int:
+    """Delete all picking records for the order. Returns delete count.
+    Raises ValueError if order does not exist or is not writable."""
+    order = (
+        db.query(HandcraftOrder)
+        .filter_by(id=handcraft_order_id)
+        .one_or_none()
+    )
+    if order is None:
+        raise ValueError(f"手工单 {handcraft_order_id} 不存在")
+    _check_writable(order)
+
+    deleted = (
+        db.query(HandcraftPickingRecord)
+        .filter_by(handcraft_order_id=handcraft_order_id)
+        .delete(synchronize_session=False)
+    )
+    db.flush()
+    return deleted
