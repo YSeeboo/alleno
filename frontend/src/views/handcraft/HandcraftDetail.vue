@@ -1414,6 +1414,38 @@ const renderJewelryOrderLinkCell = (row) => {
 const partStatusLabel = { '未送出': '未送出', '制作中': '制作中', '已收回': '已收回' }
 const partStatusBadge = { '未送出': 'badge-gray', '制作中': 'badge-blue', '已收回': 'badge-green' }
 
+// Buffer rule mirrors backend services/handcraft.py::HANDCRAFT_BUFFER_RULES.
+// Keep in sync if the backend rule changes.
+const BUFFER_RULES = {
+  small:  { ratio: 0.02, floor: 50 },
+  medium: { ratio: 0.01, floor: 15 },
+}
+
+const computeSuggestedQty = (row) => {
+  const theo = row?.bom_qty
+  if (!theo || theo <= 0 || !row?.part_id) return null
+  const tier = partMap.value[row.part_id]?.size_tier || 'small'
+  const rule = BUFFER_RULES[tier] || BUFFER_RULES.small
+  // Round to 4 decimals (matches backend Numeric(10,4)) before ceil.
+  const t = Math.round(theo * 10000) / 10000
+  const buffer = Math.ceil(Math.max(rule.floor, t * rule.ratio))
+  return Math.ceil(t) + buffer
+}
+
+const buildSuggestedTooltip = (row) => {
+  const theo = row?.bom_qty
+  if (!theo || theo <= 0 || !row?.part_id) return ''
+  const tier = partMap.value[row.part_id]?.size_tier || 'small'
+  const rule = BUFFER_RULES[tier]
+  const t = Math.round(theo * 10000) / 10000
+  const buffer = Math.ceil(Math.max(rule.floor, t * rule.ratio))
+  const ratioCalc = (t * rule.ratio).toFixed(2)
+  const winner = rule.floor >= t * rule.ratio ? 'floor 兜底' : '百分比放大'
+  const tierLabel = tier === 'small' ? '小件' : '中件'
+  const suggested = computeSuggestedQty(row)
+  return `${tierLabel}规则: max(${rule.floor}, 理论×${rule.ratio * 100}%) | 计算: max(${rule.floor}, ${ratioCalc}) = ${buffer} (${winner}) | 建议: ceil(${t}) + ${buffer} = ${suggested}`
+}
+
 const itemColumns = [
   { title: '配件编号', key: 'part_id', width: 160 },
   {
@@ -1428,7 +1460,23 @@ const itemColumns = [
     minWidth: 140,
     render: (row) => renderEditableCell('color', row, '添加颜色'),
   },
-  { title: '发出数量', key: 'qty' },
+  {
+    title: '发出数量',
+    key: 'qty',
+    render: (row) => {
+      const suggested = computeSuggestedQty(row)
+      const actual = row.qty
+      if (suggested == null) return actual ?? '-'
+      return h(NTooltip, { trigger: 'hover' }, {
+        trigger: () => h('span', { style: 'white-space: nowrap; cursor: help; font-variant-numeric: tabular-nums;' }, [
+          h('span', null, actual ?? '-'),
+          h('span', { style: 'color: #cccccc; margin: 0 2px;' }, '/'),
+          h('span', { style: 'color: #1890ff; font-weight: 700; font-size: 14px;' }, suggested),
+        ]),
+        default: () => buildSuggestedTooltip(row),
+      })
+    },
+  },
   { title: '已回收', key: 'received_qty', width: 80, render: (r) => (r.received_qty ?? 0) - (r.loss_qty ?? 0) },
   {
     title: '损耗',

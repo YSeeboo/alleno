@@ -138,6 +138,11 @@
                   @update:value="(val) => onPartSelect(item, val)"
                 />
                 <n-input-number v-model:value="item.qty" :min="0.001" :step="1" placeholder="实际发出" style="width: 80px;" @update:value="() => { item._qty_per_unit = null }" />
+                <span
+                  v-if="getSuggestedQty(item) != null"
+                  class="suggested-qty"
+                  :title="getSuggestedTooltip(item)"
+                ><span class="slash">/</span>{{ getSuggestedQty(item) }}</span>
                 <n-select v-model:value="item.unit" :options="partUnitOptions" style="width: 70px;" />
                 <n-input-number v-model:value="item.bom_qty" :min="0" :step="1" placeholder="BOM" style="width: 80px;" @update:value="() => { item._qty_per_unit = null }" />
                 <n-button type="error" size="small" @click="group.parts.splice(idx, 1)">删</n-button>
@@ -234,6 +239,40 @@ const getPartImage = (partId) => {
   if (!partId) return null
   const found = partOptions.value.find((p) => p.value === partId)
   return found?.image || null
+}
+
+// Buffer rule mirrors backend services/handcraft.py::HANDCRAFT_BUFFER_RULES.
+// Keep in sync if the backend rule changes.
+const BUFFER_RULES = {
+  small:  { ratio: 0.02, floor: 50 },
+  medium: { ratio: 0.01, floor: 15 },
+}
+
+const getSuggestedQty = (item) => {
+  const theo = item?.bom_qty
+  if (!theo || theo <= 0 || !item?.part_id) return null
+  const found = partOptions.value.find((p) => p.value === item.part_id)
+  const tier = found?.size_tier || 'small'
+  const rule = BUFFER_RULES[tier] || BUFFER_RULES.small
+  // Round to 4 decimals (matches backend Numeric(10,4)) before ceil
+  // to avoid 0.3 × 1000 = 300.00000000000006 type drift.
+  const t = Math.round(theo * 10000) / 10000
+  const buffer = Math.ceil(Math.max(rule.floor, t * rule.ratio))
+  return Math.ceil(t) + buffer
+}
+
+const getSuggestedTooltip = (item) => {
+  const theo = item?.bom_qty
+  if (!theo || theo <= 0 || !item?.part_id) return ''
+  const found = partOptions.value.find((p) => p.value === item.part_id)
+  const tier = found?.size_tier || 'small'
+  const rule = BUFFER_RULES[tier]
+  const t = Math.round(theo * 10000) / 10000
+  const buffer = Math.ceil(Math.max(rule.floor, t * rule.ratio))
+  const ratioCalc = (t * rule.ratio).toFixed(2)
+  const winner = rule.floor >= t * rule.ratio ? 'floor 兜底' : '百分比放大'
+  const tierLabel = tier === 'small' ? '小件' : '中件'
+  return `${tierLabel}规则: max(${rule.floor}, 理论×${rule.ratio * 100}%)\n计算: max(${rule.floor}, ${ratioCalc}) = ${buffer} (${winner})\n建议: ceil(${t}) + ${buffer} = ${getSuggestedQty(item)}`
 }
 
 const onPartSelect = (item, val) => {
@@ -400,6 +439,7 @@ onMounted(async () => {
       image: p.image,
       unit: p.unit,
       is_composite: p.is_composite,
+      size_tier: p.size_tier,
     }))
     compositePartOptions.value = partOptions.value.filter((p) => p.is_composite)
     jewelryOptions.value = jRes.data.map((j) => ({
@@ -504,5 +544,20 @@ onMounted(async () => {
   justify-content: center;
   align-items: center;
   cursor: pointer;
+}
+
+.suggested-qty {
+  color: #1890ff;
+  font-weight: 700;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding: 0 2px;
+  cursor: help;
+}
+.suggested-qty .slash {
+  color: #cccccc;
+  font-weight: normal;
+  margin-right: 2px;
 }
 </style>
