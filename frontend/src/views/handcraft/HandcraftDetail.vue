@@ -206,6 +206,14 @@
             <n-button
               v-if="items.length > 0"
               size="small"
+              :type="order?.status === 'pending' ? 'primary' : 'default'"
+              @click="openPickingSimulation"
+            >
+              配货模拟
+            </n-button>
+            <n-button
+              v-if="items.length > 0"
+              size="small"
               @click="openBatchLinkModal"
             >
               批量关联订单
@@ -432,6 +440,12 @@
       </template>
     </n-modal>
 
+    <HandcraftPickingSimulationModal
+      v-model:show="pickingModalShow"
+      :order-id="String(route.params.id)"
+      :status="order?.status || 'pending'"
+    />
+
   </div>
 </template>
 
@@ -465,6 +479,7 @@ import { listJewelries } from '@/api/jewelries'
 import { listOrders, getTodo, createLink, batchLink } from '@/api/orders'
 import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
+import HandcraftPickingSimulationModal from '@/components/picking/HandcraftPickingSimulationModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -758,6 +773,12 @@ const formatShortDate = (value) => {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}${month}${day}`
+}
+
+// --- Picking simulation ---
+const pickingModalShow = ref(false)
+function openPickingSimulation() {
+  pickingModalShow.value = true
 }
 
 // --- Cutting stats ---
