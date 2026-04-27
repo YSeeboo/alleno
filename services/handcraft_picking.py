@@ -12,8 +12,10 @@ order status — purely a UI helper.
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from decimal import Decimal
+from typing import Optional
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -31,6 +33,27 @@ from schemas.handcraft import (
     HandcraftPickingResponse,
     HandcraftPickingVariant,
 )
+
+
+# --- Suggested qty rule (mirror of frontend HandcraftDetail.computeSuggestedQty) ---
+
+_BUFFER_RULES: dict[str, dict[str, float]] = {
+    "small":  {"ratio": 0.02, "floor": 50},
+    "medium": {"ratio": 0.01, "floor": 15},
+}
+
+
+def _compute_suggested_qty(theoretical: Optional[float], size_tier: Optional[str]) -> Optional[int]:
+    """Apply: suggested = ceil(theoretical) + ceil(max(floor, theoretical * ratio)).
+    Returns None when theoretical is missing or non-positive (no suggestion).
+    Unknown size_tier falls back to 'small' (matches the frontend default)."""
+    if theoretical is None or theoretical <= 0:
+        return None
+    rule = _BUFFER_RULES.get(size_tier or "small", _BUFFER_RULES["small"])
+    # Round to 4 decimals (matches DB Numeric(10,4)) before ceil — same as frontend.
+    t = round(theoretical, 4)
+    buffer = math.ceil(max(rule["floor"], t * rule["ratio"]))
+    return math.ceil(t) + buffer
 
 
 def get_handcraft_picking_simulation(
@@ -59,7 +82,7 @@ def get_handcraft_picking_simulation(
 
     expanded = _expand_part_items(db, part_items)
 
-    atom_ids = sorted({atom_id for rows in expanded.values() for atom_id, _ in rows})
+    atom_ids = sorted({atom_id for rows in expanded.values() for atom_id, _, _ratio in rows})
     parts_by_id = _load_parts(db, atom_ids + [pi.part_id for pi in part_items])
     stock_by_part = _load_stock(db, atom_ids)
     picked_keys = _load_picked_keys(db, handcraft_order_id)
@@ -69,15 +92,21 @@ def get_handcraft_picking_simulation(
     picked_count = 0
     for pi in part_items:
         rows: list[HandcraftPickingVariant] = []
-        for atom_id, needed_qty in expanded[pi.id]:
+        for atom_id, needed_qty, atom_ratio in expanded[pi.id]:
             atom_part = parts_by_id[atom_id]
             is_picked = (pi.id, atom_id) in picked_keys
+            theoretical = (
+                float(pi.bom_qty) * atom_ratio
+                if pi.bom_qty is not None and atom_ratio is not None
+                else None
+            )
+            suggested = _compute_suggested_qty(theoretical, atom_part.size_tier)
             rows.append(HandcraftPickingVariant(
                 part_id=atom_id,
                 part_name=atom_part.name,
                 part_image=atom_part.image,
                 needed_qty=needed_qty,
-                suggested_qty=None,  # filled in Task 4
+                suggested_qty=suggested,
                 current_stock=stock_by_part.get(atom_id, 0.0),
                 picked=is_picked,
             ))
@@ -107,10 +136,15 @@ def get_handcraft_picking_simulation(
 
 def _expand_part_items(
     db: Session, part_items: list[HandcraftPartItem]
-) -> dict[int, list[tuple[str, float]]]:
-    """For each HandcraftPartItem, return a list of (atom_part_id, needed_qty)
-    tuples. Atomic part_items return a single tuple; composite items expand
-    via BOM. Multiple paths arriving at the same atom are summed."""
+) -> dict[int, list[tuple[str, float, Optional[float]]]]:
+    """For each HandcraftPartItem, return a list of
+    (atom_part_id, needed_qty, atom_ratio_per_composite_unit) tuples.
+
+    - Atomic part_items: (part_id, qty, 1.0). atom_ratio=1.0 means
+      theoretical_for_atom = parent.bom_qty × 1.0 = parent.bom_qty.
+    - Composite items: each expanded atom carries its BOM ratio
+      (atom_qty_per_composite_unit). theoretical_for_atom = parent.bom_qty × ratio.
+    """
     if not part_items:
         return {}
 
@@ -118,18 +152,23 @@ def _expand_part_items(
     parent_parts = db.query(Part).filter(Part.id.in_(parent_part_ids)).all()
     is_composite = {p.id: bool(p.is_composite) for p in parent_parts}
 
-    out: dict[int, list[tuple[str, float]]] = {}
+    out: dict[int, list[tuple[str, float, Optional[float]]]] = {}
     for pi in part_items:
         if is_composite.get(pi.part_id, False):
             from services.picking import _expand_to_atoms
-
-            atoms = _expand_to_atoms(db, pi.part_id, Decimal(str(pi.qty)))
-            agg: dict[str, float] = defaultdict(float)
-            for atom_id, atom_qty in atoms:
-                agg[atom_id] += atom_qty
-            out[pi.id] = [(aid, round(q, 4)) for aid, q in agg.items()]
+            # Get per-unit ratios first, then scale by pi.qty for needed_qty.
+            # Two-pass keeps the math clear.
+            atoms_per_unit = _expand_to_atoms(db, pi.part_id, Decimal("1.0"))
+            agg_ratio: dict[str, float] = defaultdict(float)
+            for atom_id, ratio in atoms_per_unit:
+                agg_ratio[atom_id] += ratio
+            qty = float(pi.qty)
+            out[pi.id] = [
+                (aid, round(r * qty, 4), round(r, 4))
+                for aid, r in agg_ratio.items()
+            ]
         else:
-            out[pi.id] = [(pi.part_id, float(pi.qty))]
+            out[pi.id] = [(pi.part_id, float(pi.qty), 1.0)]
     return out
 
 

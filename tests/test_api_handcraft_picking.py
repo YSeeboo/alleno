@@ -198,3 +198,60 @@ def test_get_picking_composite_multipath_sums(db, client):
     assert len(g["rows"]) == 1
     assert g["rows"][0]["part_id"] == "PJ-X-00001"
     assert g["rows"][0]["needed_qty"] == 50.0  # 5 × (2×3 + 1×4) = 50
+
+
+def test_suggested_qty_atomic_small(client, db):
+    """small tier: max(50, theo*2%); suggested = ceil(theo) + ceil(buffer).
+    theo=8, ratio_calc=0.16, floor=50 wins. suggested = 8 + 50 = 58."""
+    _setup_atomic(db)
+    body = client.get("/api/handcraft/HC-TEST-1/picking").json()
+    row = body["groups"][0]["rows"][0]
+    assert row["suggested_qty"] == 58
+
+
+def test_suggested_qty_atomic_medium(client, db):
+    """medium tier: max(15, theo*1%); suggested = ceil(theo) + ceil(buffer).
+    theo=2000, ratio_calc=20.0, ratio wins. suggested = 2000 + 20 = 2020."""
+    db.add(Part(id="PJ-X-MED", name="珠子M", category="吊坠", size_tier="medium"))
+    db.flush()
+    db.add(HandcraftOrder(id="HC-M", supplier_name="商家", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(
+        handcraft_order_id="HC-M",
+        part_id="PJ-X-MED",
+        qty=Decimal("1500"),
+        bom_qty=Decimal("2000"),
+    ))
+    db.flush()
+    body = client.get("/api/handcraft/HC-M/picking").json()
+    row = body["groups"][0]["rows"][0]
+    assert row["suggested_qty"] == 2020
+
+
+def test_suggested_qty_none_when_bom_qty_missing(client, db):
+    """If part_item.bom_qty is None or 0, suggested_qty is None."""
+    _add_atomic_part(db, "PJ-X-NA", "无理论", "small")
+    db.add(HandcraftOrder(id="HC-NA", supplier_name="商家", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(
+        handcraft_order_id="HC-NA",
+        part_id="PJ-X-NA",
+        qty=Decimal("5"),
+        bom_qty=None,
+    ))
+    db.flush()
+    body = client.get("/api/handcraft/HC-NA/picking").json()
+    assert body["groups"][0]["rows"][0]["suggested_qty"] is None
+
+
+def test_suggested_qty_composite_uses_atom_tier(client, db):
+    """Composite parent has bom_qty=5; expansion gives atom A theoretical
+    = 5×2 = 10. A is small-tier → max(50, 10*2%) = 50 → suggested = 10 + 50 = 60.
+    Atom B theoretical = 5×3 = 15, medium-tier → max(15, 15*1%) = 15 → 15 + 15 = 30."""
+    _setup_composite(db)
+    body = client.get("/api/handcraft/HC-COMP/picking").json()
+    rows = sorted(body["groups"][0]["rows"], key=lambda r: r["part_id"])
+    assert rows[0]["part_id"] == "PJ-X-00001"
+    assert rows[0]["suggested_qty"] == 60
+    assert rows[1]["part_id"] == "PJ-X-00002"
+    assert rows[1]["suggested_qty"] == 30
