@@ -460,10 +460,11 @@ def test_delete_part_item_cleans_picking_records(client, db):
     )
 
     # Mark the target as picked.
-    client.post(
+    resp_mark = client.post(
         "/api/handcraft/HC-TEST-1/picking/mark",
         json={"part_item_id": target_id, "part_id": "PJ-X-00001"},
     )
+    assert resp_mark.status_code == 200
     assert (
         db.query(HandcraftPickingRecord)
         .filter_by(handcraft_part_item_id=target_id).count() == 1
@@ -478,3 +479,29 @@ def test_delete_part_item_cleans_picking_records(client, db):
         db.query(HandcraftPickingRecord)
         .filter_by(handcraft_part_item_id=target_id).count() == 0
     )
+
+
+def test_delete_handcraft_order_cleans_picking_records(client, db):
+    """Deleting a handcraft order must purge picking records to avoid FK
+    violation on the bulk part_item delete inside delete_handcraft_order."""
+    _setup_atomic(db)
+    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["part_item_id"]
+    resp_mark = client.post(
+        "/api/handcraft/HC-TEST-1/picking/mark",
+        json={"part_item_id": pi_id, "part_id": "PJ-X-00001"},
+    )
+    assert resp_mark.status_code == 200
+    assert (
+        db.query(HandcraftPickingRecord)
+        .filter_by(handcraft_order_id="HC-TEST-1").count() == 1
+    )
+
+    resp = client.delete("/api/handcraft/HC-TEST-1")
+    assert resp.status_code in (200, 204)
+
+    # Picking records and the order itself should all be gone.
+    assert (
+        db.query(HandcraftPickingRecord)
+        .filter_by(handcraft_order_id="HC-TEST-1").count() == 0
+    )
+    assert db.query(HandcraftOrder).filter_by(id="HC-TEST-1").one_or_none() is None
