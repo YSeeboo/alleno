@@ -437,3 +437,44 @@ def test_reset_blocked_when_not_pending(client, db):
     resp = client.delete("/api/handcraft/HC-TEST-1/picking/reset")
     assert resp.status_code == 400
     assert "只读" in resp.json()["detail"]
+
+
+def test_delete_part_item_cleans_picking_records(client, db):
+    """Deleting a HandcraftPartItem must purge its picking records to avoid
+    FK violations and stale rows."""
+    _setup_atomic(db)
+    # Add a second part_item so delete_handcraft_part doesn't reject the last one.
+    db.add(Part(id="PJ-X-EXTRA", name="额外", category="吊坠", size_tier="small"))
+    db.flush()
+    db.add(HandcraftPartItem(
+        handcraft_order_id="HC-TEST-1",
+        part_id="PJ-X-EXTRA",
+        qty=Decimal("1"),
+        bom_qty=Decimal("1"),
+    ))
+    db.flush()
+    target_id = (
+        db.query(HandcraftPartItem)
+        .filter_by(handcraft_order_id="HC-TEST-1", part_id="PJ-X-00001")
+        .one().id
+    )
+
+    # Mark the target as picked.
+    client.post(
+        "/api/handcraft/HC-TEST-1/picking/mark",
+        json={"part_item_id": target_id, "part_id": "PJ-X-00001"},
+    )
+    assert (
+        db.query(HandcraftPickingRecord)
+        .filter_by(handcraft_part_item_id=target_id).count() == 1
+    )
+
+    # Delete the part_item via the API.
+    resp = client.delete(f"/api/handcraft/HC-TEST-1/parts/{target_id}")
+    assert resp.status_code in (200, 204)
+
+    # Picking record must be gone too.
+    assert (
+        db.query(HandcraftPickingRecord)
+        .filter_by(handcraft_part_item_id=target_id).count() == 0
+    )

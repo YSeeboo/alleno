@@ -7,7 +7,7 @@ from sqlalchemy import Date, func, or_
 from sqlalchemy.orm import Session
 
 from models.bom import Bom
-from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
+from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem, HandcraftPickingRecord
 from models.jewelry import Jewelry
 from models.part import Part
 from services._helpers import _next_id, keyword_filter
@@ -432,6 +432,11 @@ def delete_handcraft_part(db: Session, order_id: str, item_id: int) -> None:
     ).count()
     if remaining == 0:
         raise ValueError(f"Cannot delete the last part from order {order_id}; an order must have at least one part item")
+    # Clean up any picking records for this part item before deleting.
+    db.query(HandcraftPickingRecord).filter_by(
+        handcraft_part_item_id=item_id
+    ).delete(synchronize_session=False)
+    db.flush()
     db.delete(item)
     db.flush()
 
