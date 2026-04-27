@@ -390,3 +390,19 @@ def api_delete_handcraft_jewelry_order_link(order_id: str, item_id: int, link_id
         raise HTTPException(status_code=404, detail="Link not found for this item")
     with service_errors():
         delete_link(db, link_id)
+
+
+# --- Picking simulation (配货模拟) ---
+
+from schemas.handcraft import (  # noqa: E402
+    HandcraftPickingMarkRequest,
+    HandcraftPickingResponse,
+)
+from services.handcraft_picking import get_handcraft_picking_simulation  # noqa: E402
+
+
+@router.get("/{order_id}/picking", response_model=HandcraftPickingResponse)
+def api_get_handcraft_picking(order_id: str, db: Session = Depends(get_db)):
+    """Aggregate handcraft order parts into a picking-oriented grouped structure."""
+    with service_errors():
+        return get_handcraft_picking_simulation(db, order_id)
