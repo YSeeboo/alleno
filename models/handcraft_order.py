@@ -77,7 +77,7 @@ class HandcraftPickingRecord(Base):
         String, ForeignKey("handcraft_order.id"), nullable=False, index=True
     )
     handcraft_part_item_id = Column(
-        Integer, ForeignKey("handcraft_part_item.id"), nullable=False
+        Integer, ForeignKey("handcraft_part_item.id"), nullable=False, index=True
     )
     part_id = Column(String, ForeignKey("part.id"), nullable=False)
     picked_at = Column(DateTime, default=now_beijing, nullable=False)

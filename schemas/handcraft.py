@@ -140,6 +140,7 @@ class HandcraftPickingVariant(BaseModel):
 
 
 class HandcraftPickingGroup(BaseModel):
+    """One HandcraftPartItem with its expanded atom picking rows."""
     part_item_id: int
     parent_part_id: str
     parent_part_name: str
@@ -158,7 +159,7 @@ class HandcraftPickingProgress(BaseModel):
 class HandcraftPickingResponse(BaseModel):
     handcraft_order_id: str
     supplier_name: str
-    status: str
+    status: str  # 让前端决定只读/可编辑
     groups: List[HandcraftPickingGroup]
     progress: HandcraftPickingProgress
 
