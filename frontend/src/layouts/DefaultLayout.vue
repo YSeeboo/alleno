@@ -47,7 +47,7 @@ import { NLayout, NLayoutHeader, NLayoutSider, NLayoutContent, NMenu, NButton } 
 import { useIsMobile } from '@/composables/useIsMobile'
 import {
   HomeOutline, ExtensionPuzzleOutline, DiamondOutline,
-  CartOutline, ListOutline, GridOutline, ArchiveOutline,
+  CartOutline, GridOutline, ArchiveOutline,
   PeopleOutline, StorefrontOutline,
   PaperPlaneOutline, DownloadOutline,
 } from '@vicons/ionicons5'
@@ -56,6 +56,7 @@ import HandcraftIcon from '@/components/icons/HandcraftIcon.vue'
 import JewelryTemplateIcon from '@/components/icons/JewelryTemplateIcon.vue'
 import OrderIcon from '@/components/icons/OrderIcon.vue'
 import PlatingSummaryIcon from '@/components/icons/PlatingSummaryIcon.vue'
+import InventoryLogIcon from '@/components/icons/InventoryLogIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -86,7 +87,7 @@ const allFlatItems = [
   { label: '手工发出', key: 'handcraft', icon: icon(PaperPlaneOutline), perm: 'handcraft' },
   { label: '手工回收', key: 'handcraft-receipts', icon: icon(DownloadOutline), perm: 'handcraft' },
   { label: '库存总表', key: 'inventory', icon: icon(ArchiveOutline), perm: 'inventory' },
-  { label: '库存流水', key: 'inventory-log', icon: icon(ListOutline), perm: 'inventory' },
+  { label: '库存流水', key: 'inventory-log', icon: icon(InventoryLogIcon), perm: 'inventory' },
   { label: '商家管理', key: 'suppliers', icon: icon(StorefrontOutline), perm: 'users' },
   { label: '用户管理', key: 'users', icon: icon(PeopleOutline), perm: 'users' },
 ]
@@ -138,7 +139,7 @@ const allGroupedItems = [
     type: 'group', label: '库存', key: 'group-inventory',
     children: [
       { label: '库存总表', key: 'inventory', icon: icon(ArchiveOutline), perm: 'inventory' },
-      { label: '库存流水', key: 'inventory-log', icon: icon(ListOutline), perm: 'inventory' },
+      { label: '库存流水', key: 'inventory-log', icon: icon(InventoryLogIcon), perm: 'inventory' },
     ],
   },
   {
