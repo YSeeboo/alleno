@@ -12,6 +12,9 @@ order status — purely a UI helper.
 
 from __future__ import annotations
 
+from collections import defaultdict
+from decimal import Decimal
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -118,8 +121,13 @@ def _expand_part_items(
     out: dict[int, list[tuple[str, float]]] = {}
     for pi in part_items:
         if is_composite.get(pi.part_id, False):
-            # Composite — leave to Task 3.
-            out[pi.id] = []
+            from services.picking import _expand_to_atoms
+
+            atoms = _expand_to_atoms(db, pi.part_id, Decimal(str(pi.qty)))
+            agg: dict[str, float] = defaultdict(float)
+            for atom_id, atom_qty in atoms:
+                agg[atom_id] += atom_qty
+            out[pi.id] = [(aid, round(q, 4)) for aid, q in agg.items()]
         else:
             out[pi.id] = [(pi.part_id, float(pi.qty))]
     return out

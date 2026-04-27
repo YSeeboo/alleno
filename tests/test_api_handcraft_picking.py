@@ -96,3 +96,105 @@ def test_get_picking_atomic_zero_stock(client, db):
     db.flush()
     body = client.get("/api/handcraft/HC-NOSTOCK/picking").json()
     assert body["groups"][0]["rows"][0]["current_stock"] == 0.0
+
+
+def _setup_composite(db):
+    """1 composite part C with two atom children A(qty=2) and B(qty=3),
+    1 handcraft order with 1 part_item of C (qty=5)."""
+    db.add(Part(id="PJ-X-00001", name="珠子A", category="吊坠", size_tier="small"))
+    db.add(Part(id="PJ-X-00002", name="珠子B", category="吊坠", size_tier="medium"))
+    db.add(Part(id="PJ-X-00003", name="组合件C", category="吊坠",
+                size_tier="small", is_composite=True))
+    db.flush()
+    db.add(PartBom(id="PB-1", parent_part_id="PJ-X-00003",
+                   child_part_id="PJ-X-00001", qty_per_unit=Decimal("2")))
+    db.add(PartBom(id="PB-2", parent_part_id="PJ-X-00003",
+                   child_part_id="PJ-X-00002", qty_per_unit=Decimal("3")))
+    db.flush()
+    _add_inventory(db, "PJ-X-00001", 50)
+    _add_inventory(db, "PJ-X-00002", 30)
+    db.add(HandcraftOrder(id="HC-COMP", supplier_name="商家", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(
+        handcraft_order_id="HC-COMP",
+        part_id="PJ-X-00003",
+        qty=Decimal("5"),
+        bom_qty=Decimal("5"),
+    ))
+    db.flush()
+
+
+def test_get_picking_composite_expands_to_atoms(client, db):
+    _setup_composite(db)
+    resp = client.get("/api/handcraft/HC-COMP/picking")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["groups"]) == 1
+    g = body["groups"][0]
+    assert g["parent_is_composite"] is True
+    assert g["parent_part_id"] == "PJ-X-00003"
+    rows = sorted(g["rows"], key=lambda r: r["part_id"])
+    assert len(rows) == 2
+    assert rows[0]["part_id"] == "PJ-X-00001"
+    assert rows[0]["needed_qty"] == 10.0  # 5 × 2
+    assert rows[1]["part_id"] == "PJ-X-00002"
+    assert rows[1]["needed_qty"] == 15.0  # 5 × 3
+    assert body["progress"] == {"total": 2, "picked": 0}
+
+
+def test_get_picking_mixed_atomic_and_composite(client, db):
+    """Two part_items: one composite, one atomic referencing the same atom.
+    Each part_item gets its own group (rule A: 每行独立)."""
+    _setup_composite(db)
+    db.add(HandcraftPartItem(
+        handcraft_order_id="HC-COMP",
+        part_id="PJ-X-00001",
+        qty=Decimal("8"),
+        bom_qty=Decimal("7.5"),
+    ))
+    db.flush()
+    body = client.get("/api/handcraft/HC-COMP/picking").json()
+    assert len(body["groups"]) == 2
+    atomic_groups = [g for g in body["groups"] if not g["parent_is_composite"]]
+    assert len(atomic_groups) == 1
+    assert atomic_groups[0]["rows"][0]["part_id"] == "PJ-X-00001"
+    assert atomic_groups[0]["rows"][0]["needed_qty"] == 8.0
+
+
+def test_get_picking_composite_multipath_sums(db, client):
+    """If composite C contains atom A twice via different sub-children, the
+    expansion sums those contributions into one row."""
+    db.add(Part(id="PJ-X-00001", name="A", category="吊坠", size_tier="small"))
+    db.add(Part(id="PJ-X-MID1", name="组合件D", category="吊坠",
+                size_tier="small", is_composite=True))
+    db.add(Part(id="PJ-X-MID2", name="组合件E", category="吊坠",
+                size_tier="small", is_composite=True))
+    db.add(Part(id="PJ-X-ROOT", name="组合件 F", category="吊坠",
+                size_tier="small", is_composite=True))
+    db.flush()
+    # F → D (×2), F → E (×1)
+    db.add(PartBom(id="PB-1", parent_part_id="PJ-X-ROOT",
+                   child_part_id="PJ-X-MID1", qty_per_unit=Decimal("2")))
+    db.add(PartBom(id="PB-2", parent_part_id="PJ-X-ROOT",
+                   child_part_id="PJ-X-MID2", qty_per_unit=Decimal("1")))
+    # D → A (×3), E → A (×4)  → expanding F: A = 2×3 + 1×4 = 10 per unit
+    db.add(PartBom(id="PB-3", parent_part_id="PJ-X-MID1",
+                   child_part_id="PJ-X-00001", qty_per_unit=Decimal("3")))
+    db.add(PartBom(id="PB-4", parent_part_id="PJ-X-MID2",
+                   child_part_id="PJ-X-00001", qty_per_unit=Decimal("4")))
+    db.flush()
+    db.add(HandcraftOrder(id="HC-MP", supplier_name="商家", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(
+        handcraft_order_id="HC-MP",
+        part_id="PJ-X-ROOT",
+        qty=Decimal("5"),
+        bom_qty=Decimal("5"),
+    ))
+    db.flush()
+    body = client.get("/api/handcraft/HC-MP/picking").json()
+    assert len(body["groups"]) == 1
+    g = body["groups"][0]
+    assert len(g["rows"]) == 1
+    assert g["rows"][0]["part_id"] == "PJ-X-00001"
+    assert g["rows"][0]["needed_qty"] == 50.0  # 5 × (2×3 + 1×4) = 50
