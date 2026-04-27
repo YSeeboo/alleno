@@ -57,6 +57,7 @@ from services.handcraft_picking import (
     unmark_picked,
     reset_picking,
 )
+from services.handcraft_picking_list_pdf import build_handcraft_picking_list_pdf
 
 
 class HandcraftPartUpdate(BaseModel):
@@ -439,3 +440,22 @@ def api_handcraft_picking_reset(order_id: str, db: Session = Depends(get_db)):
     with service_errors():
         deleted = reset_picking(db, order_id)
     return {"deleted": deleted}
+
+
+@router.post("/{order_id}/picking/pdf")
+def api_handcraft_picking_pdf(order_id: str, db: Session = Depends(get_db)):
+    """Export the handcraft picking list PDF (unpicked rows only by default)."""
+    with service_errors():
+        file_bytes, filename = build_handcraft_picking_list_pdf(
+            db, order_id, include_picked=False,
+        )
+    return Response(
+        content=file_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="handcraft-picking-{order_id}.pdf"; '
+                f"filename*=UTF-8''{quote(filename)}"
+            )
+        },
+    )

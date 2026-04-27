@@ -505,3 +505,23 @@ def test_delete_handcraft_order_cleans_picking_records(client, db):
         .filter_by(handcraft_order_id="HC-TEST-1").count() == 0
     )
     assert db.query(HandcraftOrder).filter_by(id="HC-TEST-1").one_or_none() is None
+
+
+# --- Task 7: PDF export ---
+
+
+def test_pdf_export_returns_pdf(client, db):
+    _setup_atomic(db)
+    resp = client.post("/api/handcraft/HC-TEST-1/picking/pdf")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content.startswith(b"%PDF")
+    assert len(resp.content) > 500
+
+
+def test_pdf_export_empty_order_400(client, db):
+    db.add(HandcraftOrder(id="HC-PDFEMPTY", supplier_name="商家", status="pending"))
+    db.flush()
+    resp = client.post("/api/handcraft/HC-PDFEMPTY/picking/pdf")
+    assert resp.status_code == 400
+    assert "无可导出" in resp.json()["detail"]
