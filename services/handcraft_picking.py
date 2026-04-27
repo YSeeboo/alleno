@@ -292,7 +292,11 @@ def unmark_picked(
 
     (
         db.query(HandcraftPickingRecord)
-        .filter_by(handcraft_part_item_id=part_item_id, part_id=part_id)
+        .filter_by(
+            handcraft_order_id=handcraft_order_id,
+            handcraft_part_item_id=part_item_id,
+            part_id=part_id,
+        )
         .delete(synchronize_session=False)
     )
     db.flush()

@@ -391,6 +391,25 @@ def test_unmark_idempotent_for_nonexistent(client, db):
     assert resp.json()["picked"] is False
 
 
+def test_unmark_blocked_when_status_not_pending(client, db):
+    _setup_atomic(db)
+    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["part_item_id"]
+    # mark first while still pending
+    client.post(
+        "/api/handcraft/HC-TEST-1/picking/mark",
+        json={"part_item_id": pi_id, "part_id": "PJ-X-00001"},
+    )
+    # transition to processing
+    db.query(HandcraftOrder).filter_by(id="HC-TEST-1").update({"status": "processing"})
+    db.flush()
+    resp = client.post(
+        "/api/handcraft/HC-TEST-1/picking/unmark",
+        json={"part_item_id": pi_id, "part_id": "PJ-X-00001"},
+    )
+    assert resp.status_code == 400
+    assert "只读" in resp.json()["detail"]
+
+
 def test_reset_deletes_all_records(client, db):
     _setup_composite(db)
     pi_id = client.get("/api/handcraft/HC-COMP/picking").json()["groups"][0]["part_item_id"]
