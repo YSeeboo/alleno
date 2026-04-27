@@ -228,9 +228,10 @@ def test_suggested_qty_atomic_medium(client, db):
     assert row["suggested_qty"] == 2020
 
 
-def test_suggested_qty_none_when_bom_qty_missing(client, db):
+def test_suggested_qty_none_when_bom_qty_missing_or_zero(client, db):
     """If part_item.bom_qty is None or 0, suggested_qty is None."""
     _add_atomic_part(db, "PJ-X-NA", "无理论", "small")
+    _add_atomic_part(db, "PJ-X-ZERO", "零理论", "small")
     db.add(HandcraftOrder(id="HC-NA", supplier_name="商家", status="pending"))
     db.flush()
     db.add(HandcraftPartItem(
@@ -239,9 +240,34 @@ def test_suggested_qty_none_when_bom_qty_missing(client, db):
         qty=Decimal("5"),
         bom_qty=None,
     ))
+    db.add(HandcraftPartItem(
+        handcraft_order_id="HC-NA",
+        part_id="PJ-X-ZERO",
+        qty=Decimal("3"),
+        bom_qty=Decimal("0"),
+    ))
     db.flush()
     body = client.get("/api/handcraft/HC-NA/picking").json()
-    assert body["groups"][0]["rows"][0]["suggested_qty"] is None
+    groups_by_part = {g["parent_part_id"]: g for g in body["groups"]}
+    assert groups_by_part["PJ-X-NA"]["rows"][0]["suggested_qty"] is None
+    assert groups_by_part["PJ-X-ZERO"]["rows"][0]["suggested_qty"] is None
+
+
+def test_suggested_qty_atomic_small_ratio_wins(client, db):
+    """small tier with theoretical large enough that ratio>floor.
+    bom_qty=3000, ratio=0.02 → 60 > 50, ratio wins. suggested = 3000 + 60 = 3060."""
+    _add_atomic_part(db, "PJ-X-BIG", "大件S", "small")
+    db.add(HandcraftOrder(id="HC-BIG", supplier_name="商家", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(
+        handcraft_order_id="HC-BIG",
+        part_id="PJ-X-BIG",
+        qty=Decimal("100"),
+        bom_qty=Decimal("3000"),
+    ))
+    db.flush()
+    body = client.get("/api/handcraft/HC-BIG/picking").json()
+    assert body["groups"][0]["rows"][0]["suggested_qty"] == 3060
 
 
 def test_suggested_qty_composite_uses_atom_tier(client, db):
@@ -255,3 +281,18 @@ def test_suggested_qty_composite_uses_atom_tier(client, db):
     assert rows[0]["suggested_qty"] == 60
     assert rows[1]["part_id"] == "PJ-X-00002"
     assert rows[1]["suggested_qty"] == 30
+
+
+def test_compute_suggested_qty_unit_none_tier_falls_back_to_small():
+    """Unit test: _compute_suggested_qty(t=8, tier=None) should fall back to small."""
+    from services.handcraft_picking import _compute_suggested_qty
+    # tier=None → small rules: max(50, 8*0.02)=50, suggested = 8 + 50 = 58
+    assert _compute_suggested_qty(8.0, None) == 58
+    # tier="bogus" → also falls back to small
+    assert _compute_suggested_qty(8.0, "bogus") == 58
+    # theoretical=None → None
+    assert _compute_suggested_qty(None, "small") is None
+    # theoretical=0 → None
+    assert _compute_suggested_qty(0, "small") is None
+    # theoretical=-1 → None (negative guarded)
+    assert _compute_suggested_qty(-1, "small") is None
