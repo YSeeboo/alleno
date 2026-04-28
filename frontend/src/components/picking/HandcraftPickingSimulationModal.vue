@@ -127,11 +127,7 @@ const SUGGESTED_TOOLTIP_RULES = {
 
 function suggestedTooltip(row, group) {
   if (row.suggested_qty == null) return ''
-  // tier is not in the response; fall back to small if absent
-  const tier = row._tier || 'small'
-  const rule = SUGGESTED_TOOLTIP_RULES[tier] || SUGGESTED_TOOLTIP_RULES.small
-  // theoretical = parent.bom_qty × atom_ratio for composite, else part_item.bom_qty
-  // Since we don't have ratio in response, just describe the rule.
+  const rule = SUGGESTED_TOOLTIP_RULES[row.size_tier] || SUGGESTED_TOOLTIP_RULES.small
   return `${rule.label}规则: max(${rule.floor}, 理论×${rule.ratio * 100}%) | 建议数量为 ceil(理论) + ceil(buffer)`
 }
 </script>

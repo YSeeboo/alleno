@@ -133,6 +133,7 @@ class HandcraftPickingVariant(BaseModel):
     part_id: str
     part_name: str
     part_image: Optional[str] = None
+    size_tier: SizeTier  # 让前端 tooltip 显示正确的 buffer 规则
     needed_qty: float
     suggested_qty: Optional[int] = None
     current_stock: float

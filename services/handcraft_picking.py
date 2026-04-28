@@ -107,6 +107,7 @@ def get_handcraft_picking_simulation(
                 part_id=atom_id,
                 part_name=atom_part.name,
                 part_image=atom_part.image,
+                size_tier=atom_part.size_tier or "small",
                 needed_qty=needed_qty,
                 suggested_qty=suggested,
                 current_stock=stock_by_part.get(atom_id, 0.0),

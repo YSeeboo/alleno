@@ -177,7 +177,7 @@ def build_handcraft_picking_list_pdf(
         c.setFillColor(colors.black)
         c.setFont(_FONT, 9)
         composite_tag = " [组合]" if g.parent_is_composite else ""
-        bom_tag = f"  理论 {_fmt_qty(g.parent_bom_qty)}" if g.parent_bom_qty else ""
+        bom_tag = f"  理论 {_fmt_qty(g.parent_bom_qty)}" if g.parent_bom_qty is not None else ""
         text = (
             f"{g.parent_part_id}  {g.parent_part_name}{composite_tag}"
             f"  × {_fmt_qty(g.parent_qty)}{bom_tag}"

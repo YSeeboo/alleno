@@ -76,6 +76,7 @@ def test_get_picking_atomic_single_item(client, db):
     row = g["rows"][0]
     assert row["part_id"] == "PJ-X-00001"
     assert row["part_name"] == "珠子A"
+    assert row["size_tier"] == "small"
     assert row["needed_qty"] == 10.0
     assert row["current_stock"] == 50.0
     assert row["picked"] is False
@@ -278,8 +279,10 @@ def test_suggested_qty_composite_uses_atom_tier(client, db):
     body = client.get("/api/handcraft/HC-COMP/picking").json()
     rows = sorted(body["groups"][0]["rows"], key=lambda r: r["part_id"])
     assert rows[0]["part_id"] == "PJ-X-00001"
+    assert rows[0]["size_tier"] == "small"
     assert rows[0]["suggested_qty"] == 60
     assert rows[1]["part_id"] == "PJ-X-00002"
+    assert rows[1]["size_tier"] == "medium"
     assert rows[1]["suggested_qty"] == 30
 
 
