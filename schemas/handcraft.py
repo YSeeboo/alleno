@@ -166,5 +166,5 @@ class HandcraftPickingResponse(BaseModel):
 
 
 class HandcraftPickingMarkRequest(BaseModel):
-    part_item_id: int
-    part_id: str
+    part_item_id: int = Field(gt=0)
+    part_id: str = Field(min_length=1)

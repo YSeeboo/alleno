@@ -28,12 +28,19 @@ const data = ref(null)
 const onlyUnpicked = ref(false)
 const exporting = ref(false)
 
-const readonly = computed(() => props.status !== 'pending')
+// Prefer the just-loaded status over props.status — covers the case where
+// another tab transitioned the order out of pending while this modal was open.
+const readonly = computed(
+  () => (data.value?.status ?? props.status) !== 'pending',
+)
 
 const displayGroups = computed(() => {
   if (!data.value) return []
-  if (!onlyUnpicked.value) return data.value.groups
-  return data.value.groups
+  // Drop empty groups (composite parts with no BOM) so the user never sees a
+  // header row with nothing under it. PDF export already does this.
+  const groups = data.value.groups.filter((g) => g.rows.length > 0)
+  if (!onlyUnpicked.value) return groups
+  return groups
     .map((g) => ({ ...g, rows: g.rows.filter((r) => !r.picked) }))
     .filter((g) => g.rows.length > 0)
 })
@@ -315,7 +322,7 @@ function suggestedTooltip(row, group) {
   color: #999;
   font-size: 12px;
 }
-.picking-table .row-picked td:not(.group-header td) {
+.picking-table .row-picked td {
   opacity: 0.5;
   text-decoration: line-through;
 }

@@ -528,3 +528,47 @@ def test_pdf_export_empty_order_400(client, db):
     resp = client.post("/api/handcraft/HC-PDFEMPTY/picking/pdf")
     assert resp.status_code == 400
     assert "无可导出" in resp.json()["detail"]
+
+
+def test_get_picking_composite_with_no_bom_returns_empty_rows(client, db):
+    """A composite part_item with no PartBom rows produces a group with rows=[].
+    Frontend's displayGroups filters those out so the user never sees a header
+    with nothing under it; PDF's _filter_groups does the same. Lock the
+    backend contract: the group is still returned (so frontend knows it
+    exists), but rows is empty."""
+    db.add(Part(id="PJ-X-EMPTY", name="空组合", category="吊坠",
+                size_tier="small", is_composite=True))
+    db.flush()
+    db.add(HandcraftOrder(id="HC-EMPTYC", supplier_name="商家", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(
+        handcraft_order_id="HC-EMPTYC",
+        part_id="PJ-X-EMPTY",
+        qty=Decimal("3"),
+        bom_qty=Decimal("3"),
+    ))
+    db.flush()
+    body = client.get("/api/handcraft/HC-EMPTYC/picking").json()
+    assert len(body["groups"]) == 1
+    assert body["groups"][0]["parent_part_id"] == "PJ-X-EMPTY"
+    assert body["groups"][0]["rows"] == []
+    assert body["progress"] == {"total": 0, "picked": 0}
+
+
+def test_mark_request_rejects_invalid_field_values(client, db):
+    """Pydantic Field constraints reject zero/negative part_item_id and empty
+    part_id at the schema layer (defense-in-depth before service validation)."""
+    _setup_atomic(db)
+    # part_item_id must be > 0
+    resp = client.post(
+        "/api/handcraft/HC-TEST-1/picking/mark",
+        json={"part_item_id": 0, "part_id": "PJ-X-00001"},
+    )
+    assert resp.status_code == 422
+    # part_id must be non-empty
+    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["part_item_id"]
+    resp = client.post(
+        "/api/handcraft/HC-TEST-1/picking/mark",
+        json={"part_item_id": pi_id, "part_id": ""},
+    )
+    assert resp.status_code == 422

@@ -266,6 +266,12 @@ def mark_picked(
     if existing is not None:
         return HandcraftPickingMarkResult(picked=True, picked_at=existing.picked_at)
 
+    # Note: under concurrent requests, two racing marks could both pass the
+    # existing check and both INSERT. The unique constraint on
+    # (handcraft_part_item_id, part_id) catches this at commit time (one
+    # succeeds, the other raises IntegrityError). For this feature's
+    # single-user intent that is acceptable; upgrade to INSERT ... ON CONFLICT
+    # if multi-writer support is needed. Mirrors services/picking.mark_picked.
     rec = HandcraftPickingRecord(
         handcraft_order_id=handcraft_order_id,
         handcraft_part_item_id=part_item_id,
