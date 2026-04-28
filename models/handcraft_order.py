@@ -1,6 +1,6 @@
 import json
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 
 from database import Base
 from time_utils import now_beijing
@@ -63,3 +63,28 @@ class HandcraftJewelryItem(Base):
     status = Column(String, nullable=False, default="未送出")
     unit = Column(String, nullable=True, default="套")
     note = Column(Text, nullable=True)
+
+
+class HandcraftPickingRecord(Base):
+    """Per-row picking state for handcraft orders' 配货模拟.
+    Row exists = picked; no row = not picked. UI-only helper, does not affect
+    inventory or order status."""
+
+    __tablename__ = "handcraft_picking_record"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    handcraft_order_id = Column(
+        String, ForeignKey("handcraft_order.id"), nullable=False, index=True
+    )
+    handcraft_part_item_id = Column(
+        Integer, ForeignKey("handcraft_part_item.id"), nullable=False, index=True
+    )
+    part_id = Column(String, ForeignKey("part.id"), nullable=False)
+    picked_at = Column(DateTime, default=now_beijing, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "handcraft_part_item_id", "part_id",
+            name="uq_handcraft_picking_record_item_part",
+        ),
+    )

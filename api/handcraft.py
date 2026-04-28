@@ -16,6 +16,8 @@ from schemas.handcraft import (
     HandcraftJewelryItemResponse,
     HandcraftPartIn,
     HandcraftPartItemResponse,
+    HandcraftPickingMarkRequest,
+    HandcraftPickingResponse,
     HandcraftResponse,
     HandcraftSuggestPartItem,
     HandcraftSuggestRequest,
@@ -49,6 +51,13 @@ from services.handcraft import (
     update_handcraft_order_status,
     update_handcraft_part,
 )
+from services.handcraft_picking import (
+    get_handcraft_picking_simulation,
+    mark_picked,
+    unmark_picked,
+    reset_picking,
+)
+from services.handcraft_picking_list_pdf import build_handcraft_picking_list_pdf
 
 
 class HandcraftPartUpdate(BaseModel):
@@ -390,3 +399,63 @@ def api_delete_handcraft_jewelry_order_link(order_id: str, item_id: int, link_id
         raise HTTPException(status_code=404, detail="Link not found for this item")
     with service_errors():
         delete_link(db, link_id)
+
+
+# --- Picking simulation (配货模拟) ---
+
+@router.get("/{order_id}/picking", response_model=HandcraftPickingResponse)
+def api_get_handcraft_picking(order_id: str, db: Session = Depends(get_db)):
+    """Aggregate handcraft order parts into a picking-oriented grouped structure."""
+    with service_errors():
+        return get_handcraft_picking_simulation(db, order_id)
+
+
+@router.post("/{order_id}/picking/mark")
+def api_handcraft_picking_mark(
+    order_id: str,
+    body: HandcraftPickingMarkRequest,
+    db: Session = Depends(get_db),
+):
+    """Mark a (part_item, atom) pair as picked. Idempotent. Pending only."""
+    with service_errors():
+        result = mark_picked(db, order_id, body.part_item_id, body.part_id)
+    return {"picked": result.picked, "picked_at": result.picked_at}
+
+
+@router.post("/{order_id}/picking/unmark")
+def api_handcraft_picking_unmark(
+    order_id: str,
+    body: HandcraftPickingMarkRequest,
+    db: Session = Depends(get_db),
+):
+    """Unmark a (part_item, atom) pair. Idempotent. Pending only."""
+    with service_errors():
+        result = unmark_picked(db, order_id, body.part_item_id, body.part_id)
+    return {"picked": result.picked}
+
+
+@router.delete("/{order_id}/picking/reset")
+def api_handcraft_picking_reset(order_id: str, db: Session = Depends(get_db)):
+    """Clear all picking records for this handcraft order. Pending only."""
+    with service_errors():
+        deleted = reset_picking(db, order_id)
+    return {"deleted": deleted}
+
+
+@router.post("/{order_id}/picking/pdf")
+def api_handcraft_picking_pdf(order_id: str, db: Session = Depends(get_db)):
+    """Export the handcraft picking list PDF (unpicked rows only by default)."""
+    with service_errors():
+        file_bytes, filename = build_handcraft_picking_list_pdf(
+            db, order_id, include_picked=False,
+        )
+    return Response(
+        content=file_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="handcraft-picking-{order_id}.pdf"; '
+                f"filename*=UTF-8''{quote(filename)}"
+            )
+        },
+    )
