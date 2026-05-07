@@ -394,6 +394,10 @@ def ensure_schema_compat(target_engine=None):
                 if result.rowcount:
                     logger.warning("Trimmed %d rows in %s.%s", result.rowcount, table, col)
 
+        if not inspector.has_table("handcraft_picking_weight"):
+            Base.metadata.tables["handcraft_picking_weight"].create(bind=conn)
+            logger.warning("Created missing handcraft_picking_weight table")
+
         _ensure_indexes(conn, inspector)
 
 

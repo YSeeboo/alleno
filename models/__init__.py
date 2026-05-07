@@ -10,6 +10,7 @@ from .handcraft_order import (
     HandcraftPartItem,
     HandcraftJewelryItem,
     HandcraftPickingRecord,
+    HandcraftPickingWeight,
 )
 from .vendor_receipt import VendorReceipt
 from .purchase_order import PurchaseOrder, PurchaseOrderItem, PurchaseOrderItemAddon
@@ -40,6 +41,7 @@ __all__ = [
     "HandcraftPartItem",
     "HandcraftJewelryItem",
     "HandcraftPickingRecord",
+    "HandcraftPickingWeight",
     "VendorReceipt",
     "PurchaseOrder",
     "PurchaseOrderItem",
