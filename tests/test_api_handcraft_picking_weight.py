@@ -201,3 +201,34 @@ def test_patch_non_weight_fields_unchanged_for_both(client, db):
     assert r.status_code == 200
     db.refresh(pi)
     assert pi.note == "hello"
+
+
+def test_ensure_schema_compat_backfills_existing_weights(db):
+    """Existing HandcraftPartItem.weight values get migrated to handcraft_picking_weight."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftPickingWeight
+    from database import ensure_schema_compat
+    from sqlalchemy import text
+
+    db.add(PartModel(id="PJ-X-MG1", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-MGR1", supplier_name="S", status="pending"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-MGR1", part_id="PJ-X-MG1", qty=200, bom_qty=200,
+                           weight=0.5, weight_unit="g")
+    db.add(pi); db.flush()
+    pi_id = pi.id
+
+    db.execute(text("DELETE FROM handcraft_picking_weight WHERE part_item_id = :pi"), {"pi": pi_id})
+    db.commit()
+
+    ensure_schema_compat(target_engine=db.bind)
+
+    rows = db.query(HandcraftPickingWeight).filter_by(part_item_id=pi_id).all()
+    assert len(rows) == 1
+    assert float(rows[0].weight) == 0.5
+    assert rows[0].weight_unit == "g"
+
+    # Idempotent: run again should not duplicate
+    ensure_schema_compat(target_engine=db.bind)
+    rows = db.query(HandcraftPickingWeight).filter_by(part_item_id=pi_id).all()
+    assert len(rows) == 1

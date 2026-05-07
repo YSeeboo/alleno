@@ -398,6 +398,22 @@ def ensure_schema_compat(target_engine=None):
             Base.metadata.tables["handcraft_picking_weight"].create(bind=conn)
             logger.warning("Created missing handcraft_picking_weight table")
 
+        # Backfill existing HandcraftPartItem.weight into handcraft_picking_weight (idempotent).
+        # Each part_item with a non-null weight gets one row keyed by (part_item.id, part_item.part_id).
+        # Composite part_items: the migrated row treats the weight as the parent's atomic-self weight,
+        # preserving display continuity. Users can split per-atom going forward.
+        conn.execute(text("""
+            INSERT INTO handcraft_picking_weight
+                (handcraft_order_id, part_item_id, atom_part_id, weight, weight_unit, recorded_at)
+            SELECT
+                hpi.handcraft_order_id, hpi.id, hpi.part_id,
+                hpi.weight, COALESCE(hpi.weight_unit, 'g'),
+                CURRENT_TIMESTAMP
+            FROM handcraft_part_item hpi
+            WHERE hpi.weight IS NOT NULL
+            ON CONFLICT (part_item_id, atom_part_id) DO NOTHING
+        """))
+
         _ensure_indexes(conn, inspector)
 
 
