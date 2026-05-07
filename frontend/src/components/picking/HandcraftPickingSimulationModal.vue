@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import {
   NModal, NButton, NCheckbox, NSwitch, NTag, NSpace, NPopconfirm,
-  NSpin, NTooltip, useMessage,
+  NSpin, NTooltip, NInputNumber, NSelect, useMessage,
 } from 'naive-ui'
 import {
   getHandcraftPicking,
@@ -10,6 +10,8 @@ import {
   unmarkHandcraftPicked,
   resetHandcraftPicking,
   downloadHandcraftPickingPdf,
+  upsertHandcraftPickingWeight,
+  deleteHandcraftPickingWeight,
 } from '@/api/handcraft'
 import { useIsMobile } from '@/composables/useIsMobile'
 
@@ -50,6 +52,12 @@ async function load() {
   try {
     const resp = await getHandcraftPicking(props.orderId)
     data.value = resp.data
+    // Ensure each row has a stable weight_unit fallback for the unit selector
+    for (const g of data.value.groups) {
+      for (const r of g.rows) {
+        if (!r.weight_unit) r.weight_unit = 'kg'
+      }
+    }
   } catch (err) {
     message.error(err.response?.data?.detail || '加载配货数据失败')
     emit('update:show', false)
@@ -66,18 +74,65 @@ watch(() => props.show, (v) => {
   }
 })
 
-async function toggleRow(group, row) {
+async function toggleRow(row) {
   if (readonly.value) return
   const prev = row.picked
   row.picked = !prev
   data.value.progress.picked += row.picked ? 1 : -1
   try {
     const fn = row.picked ? markHandcraftPicked : unmarkHandcraftPicked
-    await fn(props.orderId, group.part_item_id, row.part_id)
+    await fn(props.orderId, row.part_item_id, row.atom_part_id)
   } catch (err) {
     row.picked = prev
     data.value.progress.picked += prev ? 1 : -1
     message.error(err.response?.data?.detail || '操作失败')
+  }
+}
+
+async function onWeightBlur(row) {
+  if (readonly.value) return
+  const w = row.weight
+  try {
+    if (w == null || Number(w) <= 0) {
+      // Clearing the weight: only call delete if there is something on the server.
+      // We use null/0 from the row as the "delete" sentinel.
+      await deleteHandcraftPickingWeight(
+        props.orderId,
+        row.part_item_id,
+        row.atom_part_id,
+      )
+      row.weight = null
+    } else {
+      const unit = row.weight_unit || 'kg'
+      await upsertHandcraftPickingWeight(
+        props.orderId,
+        row.part_item_id,
+        row.atom_part_id,
+        Number(w),
+        unit,
+      )
+      row.weight_unit = unit
+    }
+  } catch (err) {
+    message.error(err.response?.data?.detail || '保存重量失败')
+  }
+}
+
+async function onWeightUnitChange(row, unit) {
+  row.weight_unit = unit
+  if (readonly.value) return
+  if (row.weight != null && Number(row.weight) > 0) {
+    try {
+      await upsertHandcraftPickingWeight(
+        props.orderId,
+        row.part_item_id,
+        row.atom_part_id,
+        Number(row.weight),
+        unit,
+      )
+    } catch (err) {
+      message.error(err.response?.data?.detail || '保存重量单位失败')
+    }
   }
 }
 
@@ -132,11 +187,24 @@ const SUGGESTED_TOOLTIP_RULES = {
   medium: { ratio: 0.01, floor: 15, label: '中件' },
 }
 
-function suggestedTooltip(row, group) {
-  if (row.suggested_qty == null) return ''
-  const rule = SUGGESTED_TOOLTIP_RULES[row.size_tier] || SUGGESTED_TOOLTIP_RULES.small
+const SIZE_TIER_LABEL = {
+  small: '小件',
+  medium: '中件',
+}
+
+function suggestedTooltip(group) {
+  const rule = SUGGESTED_TOOLTIP_RULES[group.size_tier] || SUGGESTED_TOOLTIP_RULES.small
   return `${rule.label}规则: max(${rule.floor}, 理论×${rule.ratio * 100}%) | 建议数量为 ceil(理论) + ceil(buffer)`
 }
+
+function groupAllPicked(g) {
+  return g.rows.length > 0 && g.rows.every((r) => r.picked)
+}
+
+const WEIGHT_UNIT_OPTIONS = [
+  { label: 'kg', value: 'kg' },
+  { label: 'g',  value: 'g' },
+]
 </script>
 
 <template>
@@ -144,7 +212,7 @@ function suggestedTooltip(row, group) {
     :show="show"
     @update:show="(v) => emit('update:show', v)"
     preset="card"
-    :style="{ width: isMobile ? '95vw' : '960px', maxWidth: '95vw' }"
+    :style="{ width: isMobile ? '95vw' : '1040px', maxWidth: '95vw' }"
     :title="`配货模拟 · 手工单 ${orderId}`"
   >
     <n-spin :show="loading">
@@ -174,7 +242,7 @@ function suggestedTooltip(row, group) {
             </n-button>
             <n-popconfirm v-if="!readonly" @positive-click="doReset">
               <template #trigger>
-                <n-button>重置勾选</n-button>
+                <n-button :disabled="readonly">重置勾选</n-button>
               </template>
               确认清空本手工单的所有勾选记录？
             </n-popconfirm>
@@ -185,63 +253,118 @@ function suggestedTooltip(row, group) {
           <table class="picking-table">
             <thead>
               <tr>
-                <th>配件编号</th>
-                <th>配件</th>
-                <th>需要</th>
-                <th>建议</th>
-                <th>库存</th>
-                <th>完成</th>
+                <th class="col-source">配件 / 来源</th>
+                <th class="col-weight">重量</th>
+                <th class="col-num">理论</th>
+                <th class="col-num">建议</th>
+                <th class="col-num">库存</th>
+                <th class="col-num">已配</th>
               </tr>
             </thead>
             <tbody>
-              <template v-for="g in displayGroups" :key="g.part_item_id">
-                <tr class="group-header">
-                  <td colspan="6">
-                    <span class="group-id">{{ g.parent_part_id }}</span>
-                    <span class="group-name">{{ g.parent_part_name }}</span>
-                    <n-tag v-if="g.parent_is_composite" size="tiny" type="info" :bordered="false" style="margin-left: 6px;">
-                      组合
-                    </n-tag>
-                    <span class="group-qty">× {{ fmtQty(g.parent_qty) }}</span>
-                    <span v-if="g.parent_bom_qty != null" class="group-bom">
-                      理论 {{ fmtQty(g.parent_bom_qty) }}
-                    </span>
+              <template v-for="g in displayGroups" :key="g.atom_part_id">
+                <tr
+                  class="group-header"
+                  :class="{ 'group-all-picked': groupAllPicked(g) }"
+                >
+                  <td class="col-source">
+                    <div class="group-cell">
+                      <img v-if="g.atom_part_image" :src="g.atom_part_image" class="group-img" />
+                      <div v-else class="group-img placeholder" />
+                      <div class="group-meta">
+                        <div class="group-name-line">
+                          <span class="group-name">{{ g.atom_part_name }}</span>
+                          <n-tag size="tiny" type="default" :bordered="false" style="margin-left: 6px;">
+                            {{ SIZE_TIER_LABEL[g.size_tier] || '小件' }}
+                          </n-tag>
+                        </div>
+                        <div class="group-id">{{ g.atom_part_id }}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="col-weight"></td>
+                  <td class="col-num">合计 {{ fmtQty(g.total_needed_qty) }}</td>
+                  <td class="col-num suggested">
+                    <n-tooltip trigger="hover">
+                      <template #trigger>
+                        <span>{{ g.total_suggested_qty }}</span>
+                      </template>
+                      {{ suggestedTooltip(g) }}
+                    </n-tooltip>
+                  </td>
+                  <td
+                    class="col-num"
+                    :class="{ 'stock-low': g.current_stock < g.total_suggested_qty }"
+                  >
+                    {{ fmtQty(g.current_stock) }}
+                  </td>
+                  <td class="col-num group-progress">
+                    {{ g.rows.filter((r) => r.picked).length }}/{{ g.rows.length }} 已配
                   </td>
                 </tr>
                 <tr
                   v-for="r in g.rows"
-                  :key="`${g.part_item_id}-${r.part_id}`"
+                  :key="`${r.part_item_id}-${r.atom_part_id}`"
                   :class="{ 'row-picked': r.picked }"
                 >
-                  <td>{{ r.part_id }}</td>
-                  <td>
-                    <div class="part-cell">
-                      <img v-if="r.part_image" :src="r.part_image" class="part-img" />
-                      <div v-else class="part-img placeholder" />
-                      <div class="part-name">{{ r.part_name }}</div>
+                  <td class="col-source">
+                    <div class="source-cell">
+                      <span class="source-qty">
+                        qty {{ fmtQty(r.qty) }}
+                        <span v-if="r.bom_qty != null" class="source-bom">
+                          · bom {{ fmtQty(r.bom_qty) }}
+                        </span>
+                      </span>
+                      <n-tag
+                        v-if="r.is_composite_expansion && r.parent_composite_name"
+                        size="tiny"
+                        type="default"
+                        :bordered="false"
+                        class="composite-badge"
+                      >
+                        来自 {{ r.parent_composite_name }} atom
+                      </n-tag>
                     </div>
                   </td>
-                  <td class="num">{{ fmtQty(r.needed_qty) }}</td>
-                  <td class="num suggested">
+                  <td class="col-weight">
+                    <div class="weight-cell" @click.stop>
+                      <n-input-number
+                        v-model:value="r.weight"
+                        :precision="4"
+                        :min="0"
+                        :show-button="false"
+                        :disabled="readonly"
+                        size="small"
+                        placeholder="-"
+                        class="weight-input"
+                        @blur="onWeightBlur(r)"
+                      />
+                      <n-select
+                        :value="r.weight_unit || 'kg'"
+                        :options="WEIGHT_UNIT_OPTIONS"
+                        :disabled="readonly"
+                        size="small"
+                        class="weight-unit"
+                        @update:value="(v) => onWeightUnitChange(r, v)"
+                      />
+                    </div>
+                  </td>
+                  <td class="col-num">{{ fmtQty(r.qty) }}</td>
+                  <td class="col-num suggested">
                     <n-tooltip v-if="r.suggested_qty != null" trigger="hover">
                       <template #trigger>
                         <span>{{ r.suggested_qty }}</span>
                       </template>
-                      {{ suggestedTooltip(r, g) }}
+                      {{ suggestedTooltip(g) }}
                     </n-tooltip>
                     <span v-else class="dim">-</span>
                   </td>
-                  <td
-                    class="num"
-                    :class="{ 'stock-low': r.current_stock < r.needed_qty }"
-                  >
-                    {{ fmtQty(r.current_stock) }}
-                  </td>
-                  <td class="num">
+                  <td class="col-num"></td>
+                  <td class="col-num" @click.stop>
                     <n-checkbox
                       :checked="r.picked"
                       :disabled="readonly"
-                      @update:checked="toggleRow(g, r)"
+                      @update:checked="toggleRow(r)"
                     />
                   </td>
                 </tr>
@@ -251,6 +374,10 @@ function suggestedTooltip(row, group) {
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div class="footer-note">
+          多人同时操作时，最后一次保存会覆盖之前的勾选/重量记录。
         </div>
       </div>
     </n-spin>
@@ -279,7 +406,7 @@ function suggestedTooltip(row, group) {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  min-width: 580px;
+  min-width: 760px;
 }
 .picking-table th,
 .picking-table td {
@@ -291,9 +418,16 @@ function suggestedTooltip(row, group) {
   background: #fafbfc;
   font-weight: 600;
 }
-.picking-table .num {
+.picking-table .col-num {
   text-align: center;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.picking-table .col-weight {
+  width: 200px;
+}
+.picking-table .col-source {
+  min-width: 240px;
 }
 .picking-table .suggested {
   color: #1890ff;
@@ -303,49 +437,102 @@ function suggestedTooltip(row, group) {
   color: #d03050;
   font-weight: 600;
 }
+
+/* Group header (orange tint) */
 .picking-table .group-header td {
-  background: #eef3fb;
+  background: #fff4e6;
   font-weight: 500;
   font-size: 13px;
 }
-.picking-table .group-header .group-id {
-  color: #888;
-  margin-right: 6px;
-  font-variant-numeric: tabular-nums;
+.picking-table .group-header.group-all-picked td {
+  background: #f0fbf3;
 }
-.picking-table .group-header .group-qty {
-  margin-left: 8px;
-  color: #4361ee;
-}
-.picking-table .group-header .group-bom {
-  margin-left: 8px;
-  color: #999;
-  font-size: 12px;
-}
-.picking-table .row-picked td {
-  opacity: 0.5;
-  text-decoration: line-through;
-}
-.part-cell {
+.group-cell {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-.part-img {
-  width: 48px;
-  height: 48px;
+.group-img {
+  width: 40px;
+  height: 40px;
   object-fit: cover;
   border-radius: 4px;
   flex-shrink: 0;
+  background: #fff;
 }
-.part-img.placeholder {
+.group-img.placeholder {
   background: #f0f0f0;
 }
-.part-name {
+.group-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.group-name-line {
   display: flex;
   align-items: center;
-  gap: 6px;
   flex-wrap: wrap;
+}
+.group-name {
+  font-weight: 600;
+}
+.group-id {
+  color: #999;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.group-progress {
+  color: #555;
+  font-size: 12px;
+}
+
+/* Source row */
+.source-cell {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 50px;  /* indent under group image */
+  color: #555;
+}
+.source-qty {
+  font-variant-numeric: tabular-nums;
+}
+.source-bom {
+  color: #999;
+}
+.composite-badge {
+  background: #f5f5f5;
+  color: #888;
+}
+
+/* Weight cell */
+.weight-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.weight-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.weight-unit {
+  flex: 0 0 64px;
+  width: 64px;
+}
+
+/* Picked rows: muted text + line-through, but DO NOT strike through inputs/checkbox */
+.picking-table .row-picked td {
+  color: #999;
+}
+.picking-table .row-picked .source-cell,
+.picking-table .row-picked .col-num {
+  text-decoration: line-through;
+}
+.picking-table .row-picked .weight-cell,
+.picking-table .row-picked .weight-cell * {
+  text-decoration: none !important;
 }
 .dim {
   color: #bbb;
@@ -354,5 +541,11 @@ function suggestedTooltip(row, group) {
   text-align: center;
   color: #999;
   padding: 24px !important;
+}
+.footer-note {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #999;
+  text-align: right;
 }
 </style>
