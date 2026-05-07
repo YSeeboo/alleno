@@ -415,14 +415,30 @@ def update_handcraft_part(db: Session, order_id: str, item_id: int, data: dict) 
     ).first()
     if item is None:
         raise ValueError(f"HandcraftPartItem {item_id} not found in order {order_id}")
+
+    # Route weight to handcraft_picking_weight table; reject for composites.
+    weight_keys = {"weight", "weight_unit"}
+    if weight_keys & data.keys():
+        from services.handcraft_picking_weight import upsert_weight, delete_weight
+        part = db.query(Part).filter_by(id=item.part_id).one_or_none()
+        if part is None:
+            raise ValueError(f"配件 {item.part_id} 不存在")
+        if part.is_composite:
+            raise ValueError("组合配件不支持直接编辑重量；请在配货模拟中按 atom 输入")
+        weight_val = data.pop("weight", None)
+        unit_val = data.pop("weight_unit", "kg") or "kg"
+        if weight_val is None:
+            delete_weight(db, item.id, item.part_id)
+        else:
+            upsert_weight(db, order_id, item.id, item.part_id, float(weight_val), unit_val)
+
     for field in ("qty", "unit", "note"):
         if field in data and data[field] is not None:
             setattr(item, field, data[field])
     if "bom_qty" in data:
         item.bom_qty = data["bom_qty"]  # allow setting to None to clear
     for wf in ("weight", "weight_unit"):
-        if wf in data:
-            setattr(item, wf, data[wf])
+        data.pop(wf, None)  # safety: should already be popped above
     db.flush()
     return _attach_part_colors(db, [item])[0]
 

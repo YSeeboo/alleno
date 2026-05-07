@@ -139,3 +139,65 @@ def test_api_delete_weight(client, db):
                        json={"part_item_id": pi.id, "atom_part_id": "PJ-X-EP3"})
     assert r.status_code == 200
     assert r.json()["deleted"] is True
+
+
+def test_patch_atomic_part_weight_lands_in_new_table(client, db):
+    """PATCH /handcraft/{id}/parts/{item_id} with weight on atomic part_item
+    should write to handcraft_picking_weight, NOT handcraft_part_item.weight."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftPickingWeight
+
+    db.add(PartModel(id="PJ-X-PT1", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-PT1", supplier_name="S", status="pending"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-PT1", part_id="PJ-X-PT1", qty=200, bom_qty=200)
+    db.add(pi); db.flush()
+
+    r = client.put(f"/api/handcraft/HC-PT1/parts/{pi.id}",
+                     json={"weight": 0.5, "weight_unit": "kg"})
+    assert r.status_code == 200
+
+    db.refresh(pi)
+    assert pi.weight is None
+
+    rows = db.query(HandcraftPickingWeight).filter_by(part_item_id=pi.id).all()
+    assert len(rows) == 1
+    assert float(rows[0].weight) == 0.5
+
+
+def test_patch_composite_part_weight_rejected(client, db):
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+    from services.part_bom import set_part_bom
+
+    db.add(PartModel(id="PJ-X-A1", name="原A", category="小配件", size_tier="small"))
+    db.add(PartModel(id="PJ-X-B1", name="原B", category="小配件", size_tier="small"))
+    db.add(PartModel(id="PJ-X-CO1", name="组合", category="小配件", size_tier="small"))
+    db.flush()
+    set_part_bom(db, "PJ-X-CO1", "PJ-X-A1", 1)
+    set_part_bom(db, "PJ-X-CO1", "PJ-X-B1", 1)
+    db.add(HandcraftOrder(id="HC-PT2", supplier_name="S", status="pending"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-PT2", part_id="PJ-X-CO1", qty=10, bom_qty=10)
+    db.add(pi); db.flush()
+
+    r = client.put(f"/api/handcraft/HC-PT2/parts/{pi.id}",
+                     json={"weight": 0.5, "weight_unit": "kg"})
+    assert r.status_code == 400
+
+
+def test_patch_non_weight_fields_unchanged_for_both(client, db):
+    """Non-weight fields still update normally for atomic and composite alike."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+
+    db.add(PartModel(id="PJ-X-PT3", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-PT3", supplier_name="S", status="pending"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-PT3", part_id="PJ-X-PT3", qty=200, bom_qty=200)
+    db.add(pi); db.flush()
+
+    r = client.put(f"/api/handcraft/HC-PT3/parts/{pi.id}", json={"note": "hello"})
+    assert r.status_code == 200
+    db.refresh(pi)
+    assert pi.note == "hello"
