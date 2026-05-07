@@ -756,3 +756,18 @@ def test_mark_request_rejects_invalid_field_values(client, db):
         json={"part_item_id": pi_id, "part_id": ""},
     )
     assert resp.status_code == 422
+
+
+def test_pdf_endpoint_smoke(client, db):
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+
+    db.add(PartModel(id="PJ-X-PDF", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-PDF1", supplier_name="S", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-PDF1", part_id="PJ-X-PDF", qty=200, bom_qty=200))
+    db.flush()
+    r = client.post("/api/handcraft/HC-PDF1/picking/pdf")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/pdf")
+    assert len(r.content) > 1000  # PDF has some real bytes

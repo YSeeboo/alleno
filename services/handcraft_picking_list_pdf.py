@@ -37,9 +37,9 @@ _FOOTER_COLOR = colors.HexColor("#888888")
 _FOOTER_RIGHT_TEXT = "Allen Shop · 饰品店管理系统"
 
 # Column widths sum to 515pt:
-# 配件编号(70) 配件(195) 需要(60) 建议(60) 库存(60) 完成(70)
-_COL_W = [70, 195, 60, 60, 60, 70]
-_HEADERS = ["配件编号", "配件", "需要", "建议", "库存", "完成"]
+# 配件编号(60) 配件(175) 重量(60) 需要(55) 建议(55) 库存(55) 完成(55)
+_COL_W = [60, 175, 60, 55, 55, 55, 55]
+_HEADERS = ["配件编号", "配件", "重量", "需要", "建议", "库存", "完成"]
 
 
 class _NumberedCanvas(canvas.Canvas):
@@ -214,18 +214,26 @@ def build_handcraft_picking_list_pdf(
             c.drawString(x + 4 + _IMAGE_SIZE + 6, y - _ROW_H / 2 - 3, label)
             x += _COL_W[1]
 
-            # Col 2: 需要
-            c.drawString(x + 4, y - _ROW_H / 2 - 3, _fmt_qty(r.needed_qty))
+            # Col 2: 重量
+            if r.weight is None:
+                weight_text = "—"
+            else:
+                weight_text = f"{_fmt_qty(r.weight)} {r.weight_unit or ''}".strip()
+            c.drawString(x + 4, y - _ROW_H / 2 - 3, weight_text)
             x += _COL_W[2]
 
-            # Col 3: 建议 (blue)
+            # Col 3: 需要
+            c.drawString(x + 4, y - _ROW_H / 2 - 3, _fmt_qty(r.needed_qty))
+            x += _COL_W[3]
+
+            # Col 4: 建议 (blue)
             sug = "-" if r.suggested_qty is None else str(r.suggested_qty)
             c.setFillColor(colors.HexColor("#1890ff"))
             c.drawString(x + 4, y - _ROW_H / 2 - 3, sug)
             c.setFillColor(colors.black)
-            x += _COL_W[3]
+            x += _COL_W[4]
 
-            # Col 4: 库存 (red if insufficient — group-level vs row needed)
+            # Col 5: 库存 (red if insufficient — group-level vs row needed)
             stock_color = (
                 colors.HexColor("#d03050")
                 if g.current_stock < r.needed_qty
@@ -234,11 +242,11 @@ def build_handcraft_picking_list_pdf(
             c.setFillColor(stock_color)
             c.drawString(x + 4, y - _ROW_H / 2 - 3, _fmt_qty(g.current_stock))
             c.setFillColor(colors.black)
-            x += _COL_W[4]
+            x += _COL_W[5]
 
-            # Col 5: 完成 (checkbox, crossed if already picked)
+            # Col 6: 完成 (checkbox, crossed if already picked)
             box_size = 12
-            box_x = x + (_COL_W[5] - box_size) / 2
+            box_x = x + (_COL_W[6] - box_size) / 2
             box_y = y - _ROW_H / 2 - 6
             c.rect(box_x, box_y, box_size, box_size, fill=0, stroke=1)
             if r.picked:
