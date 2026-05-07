@@ -85,3 +85,57 @@ def test_bulk_load_returns_keyed_dict(db):
     assert (pi.id, "PJ-X-WT01") in loaded
     assert (pi.id, "PJ-X-WTB") in loaded
     assert float(loaded[(pi.id, "PJ-X-WT01")].weight) == 0.5
+
+
+def test_api_put_weight_upsert(client, db):
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+
+    db.add(PartModel(id="PJ-X-EP1", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-EP1", supplier_name="S", status="pending"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-EP1", part_id="PJ-X-EP1", qty=200, bom_qty=200)
+    db.add(pi); db.flush()
+    pi_id = pi.id
+
+    r = client.put(f"/api/handcraft/HC-EP1/picking/weight", json={
+        "part_item_id": pi_id, "atom_part_id": "PJ-X-EP1",
+        "weight": 0.5, "weight_unit": "kg",
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["weight"] == 0.5
+
+
+def test_api_put_weight_blocked_when_status_not_pending(client, db):
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+
+    db.add(PartModel(id="PJ-X-EP2", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-EP2", supplier_name="S", status="processing"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-EP2", part_id="PJ-X-EP2", qty=200, bom_qty=200)
+    db.add(pi); db.flush()
+    r = client.put(f"/api/handcraft/HC-EP2/picking/weight", json={
+        "part_item_id": pi.id, "atom_part_id": "PJ-X-EP2",
+        "weight": 0.5,
+    })
+    assert r.status_code == 400
+
+
+def test_api_delete_weight(client, db):
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+    from services.handcraft_picking_weight import upsert_weight
+
+    db.add(PartModel(id="PJ-X-EP3", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-EP3", supplier_name="S", status="pending"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-EP3", part_id="PJ-X-EP3", qty=200, bom_qty=200)
+    db.add(pi); db.flush()
+    upsert_weight(db, "HC-EP3", pi.id, "PJ-X-EP3", 0.5, "kg")
+
+    r = client.request("DELETE", f"/api/handcraft/HC-EP3/picking/weight",
+                       json={"part_item_id": pi.id, "atom_part_id": "PJ-X-EP3"})
+    assert r.status_code == 200
+    assert r.json()["deleted"] is True
