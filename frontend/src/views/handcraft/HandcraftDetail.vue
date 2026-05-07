@@ -469,6 +469,7 @@ import {
   getHandcraftPartOrders, deleteHandcraftPartOrderLink,
   getHandcraftJewelryOrders, deleteHandcraftJewelryOrderLink,
   getHandcraftCuttingStats, downloadHandcraftCuttingStatsPdf,
+  getHandcraftPicking,
 } from '@/api/handcraft'
 import { tsToDateStr, isoToTs } from '@/utils/date'
 import { confirmHandcraftLoss } from '@/api/productionLoss'
@@ -648,6 +649,32 @@ const loadParts = async () => {
   }))
 }
 
+// Picking-derived weights (handcraft_picking_weight table), keyed by part_item_id.
+// Each value is a list of rows: { part_item_id, atom_part_id, weight, weight_unit, ... }.
+const pickingPartsByItemId = ref({})
+
+const loadPickingWeights = async () => {
+  try {
+    const resp = await getHandcraftPicking(route.params.id)
+    const map = {}
+    for (const g of resp.data.groups || []) {
+      for (const r of g.rows || []) {
+        if (!map[r.part_item_id]) map[r.part_item_id] = []
+        map[r.part_item_id].push(r)
+      }
+    }
+    pickingPartsByItemId.value = map
+  } catch {
+    // non-fatal: weight column will fall back to dashes
+    pickingPartsByItemId.value = {}
+  }
+}
+
+const toKg = (w, unit) => {
+  if (w == null) return 0
+  return unit === 'g' ? Number(w) / 1000 : Number(w)
+}
+
 const loadData = async () => {
   const id = route.params.id
   const results = await Promise.all([loadParts(), getHandcraft(id), getHandcraftParts(id)])
@@ -664,6 +691,9 @@ const loadData = async () => {
   if (!isPending()) {
     stopEditingCell()
   }
+  // Refresh picking weights map so the parts table 重量 column reads from
+  // handcraft_picking_weight (the new system of record post-Task 7).
+  await loadPickingWeights()
 }
 
 const doSend = async () => {
@@ -1538,27 +1568,67 @@ const itemColumns = [
   {
     title: '重量',
     key: 'weight',
-    width: 140,
+    width: 160,
     render: (row) => {
-      if (!isPending()) {
-        return row.weight != null ? `${row.weight} ${row.weight_unit || 'g'}` : '—'
+      const pickRows = pickingPartsByItemId.value[row.id] ?? []
+      const isComposite = !!partMap.value[row.part_id]?.is_composite
+
+      if (isComposite) {
+        // Composite: SUM of all atom weights; read-only.
+        // Atomic weight inputs live in the picking simulation modal.
+        if (pickRows.length === 0) return '—'
+        const totalKg = pickRows.reduce((s, r) => s + toKg(r.weight, r.weight_unit), 0)
+        if (totalKg === 0) return '—'
+        return h(NTooltip, { trigger: 'hover' }, {
+          trigger: () => h('span', { style: 'color:#888;cursor:help' }, `${totalKg.toFixed(3)} kg（合计·只读）`),
+          default: () => '组合配件请在配货模拟中按 atom 输入',
+        })
       }
+
+      // Atomic: single picking row matches (part_item_id, atom_part_id == row.part_id).
+      const r = pickRows.find((x) => x.atom_part_id === row.part_id) ?? null
+      const currentWeight = r?.weight ?? null
+      const currentUnit = r?.weight_unit || 'kg'
+
+      if (!isPending()) {
+        return currentWeight != null ? `${currentWeight} ${currentUnit}` : '—'
+      }
+
+      // Editable atomic. Local state decouples the input from row.weight (legacy
+      // column, now always null). After save we reload pickingPartsByItemId
+      // which triggers a re-render with the persisted value.
+      const localState = { weight: currentWeight, weight_unit: currentUnit }
       return h('div', { style: 'display:flex;gap:4px;align-items:center' }, [
         h(NInputNumber, {
-          value: row.weight ?? null,
+          value: localState.weight,
           size: 'small',
           style: 'width:80px',
           min: 0,
+          precision: 4,
+          showButton: false,
           placeholder: '重量',
-          'onUpdate:value': (v) => { row.weight = v },
-          onBlur: () => { updateHandcraftPart(route.params.id, row.id, { weight: row.weight }) },
+          'onUpdate:value': (v) => { localState.weight = v },
+          onBlur: async () => {
+            await updateHandcraftPart(route.params.id, row.id, {
+              weight: localState.weight,
+              weight_unit: localState.weight_unit,
+            })
+            await loadPickingWeights()
+          },
         }),
         h(NSelect, {
-          value: row.weight_unit || 'g',
+          value: localState.weight_unit,
           size: 'small',
           style: 'width:55px',
-          options: [{ label: 'g', value: 'g' }, { label: 'kg', value: 'kg' }],
-          'onUpdate:value': (v) => { row.weight_unit = v; updateHandcraftPart(route.params.id, row.id, { weight_unit: v }) },
+          options: [{ label: 'kg', value: 'kg' }, { label: 'g', value: 'g' }],
+          'onUpdate:value': async (v) => {
+            localState.weight_unit = v
+            await updateHandcraftPart(route.params.id, row.id, {
+              weight_unit: v,
+              weight: localState.weight,
+            })
+            await loadPickingWeights()
+          },
         }),
       ])
     },
