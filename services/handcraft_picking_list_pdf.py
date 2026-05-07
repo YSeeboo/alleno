@@ -120,7 +120,7 @@ def build_handcraft_picking_list_pdf(
     if not groups:
         raise ValueError("无可导出内容")
 
-    image_urls = [r.part_image for g in groups for r in g.rows if r.part_image]
+    image_urls = [g.atom_part_image for g in groups if g.atom_part_image]
     image_cache = prefetch_images(image_urls)
 
     buf = BytesIO()
@@ -171,18 +171,18 @@ def build_handcraft_picking_list_pdf(
 
     for g in groups:
         _ensure_space(_GROUP_HEADER_H)
-        # Group header row (light blue background)
+        # Group header row (light blue background): atom-level summary.
         c.setFillColor(colors.HexColor("#eef3fb"))
         c.rect(_MARGIN_X, y - _GROUP_HEADER_H, _CONTENT_WIDTH, _GROUP_HEADER_H, fill=1, stroke=1)
         c.setFillColor(colors.black)
         c.setFont(_FONT, 9)
-        composite_tag = " [组合]" if g.parent_is_composite else ""
-        bom_tag = f"  理论 {_fmt_qty(g.parent_bom_qty)}" if g.parent_bom_qty is not None else ""
-        text = (
-            f"{g.parent_part_id}  {g.parent_part_name}{composite_tag}"
-            f"  × {_fmt_qty(g.parent_qty)}{bom_tag}"
+        header_text = (
+            f"{g.atom_part_id}  {g.atom_part_name}"
+            f"  合计需要 {_fmt_qty(g.total_needed_qty)}"
+            f"  建议 {g.total_suggested_qty}"
+            f"  库存 {_fmt_qty(g.current_stock)}"
         )
-        c.drawString(_MARGIN_X + 8, y - _GROUP_HEADER_H + 8, text)
+        c.drawString(_MARGIN_X + 8, y - _GROUP_HEADER_H + 8, header_text)
         y -= _GROUP_HEADER_H
 
         for r in g.rows:
@@ -192,15 +192,15 @@ def build_handcraft_picking_list_pdf(
             c.rect(_MARGIN_X, y - _ROW_H, _CONTENT_WIDTH, _ROW_H, fill=0, stroke=1)
             x = _MARGIN_X
 
-            # Col 0: 配件编号
+            # Col 0: 配件编号 (atom)
             c.setFillColor(colors.black)
             c.setFont(_FONT, 9)
-            c.drawString(x + 4, y - _ROW_H / 2 - 3, r.part_id)
+            c.drawString(x + 4, y - _ROW_H / 2 - 3, g.atom_part_id)
             x += _COL_W[0]
 
-            # Col 1: 配件 (image + name)
-            if r.part_image and r.part_image in image_cache and image_cache[r.part_image]:
-                placement = fit_image(image_cache[r.part_image], _IMAGE_SIZE, _IMAGE_SIZE)
+            # Col 1: 配件 (image + name; from group, with composite parent annotation)
+            if g.atom_part_image and g.atom_part_image in image_cache and image_cache[g.atom_part_image]:
+                placement = fit_image(image_cache[g.atom_part_image], _IMAGE_SIZE, _IMAGE_SIZE)
                 if placement is not None:
                     reader, draw_w, draw_h = placement
                     img_x = x + 4
@@ -208,7 +208,10 @@ def build_handcraft_picking_list_pdf(
                     c.drawImage(reader, img_x, img_y, width=draw_w, height=draw_h,
                                 preserveAspectRatio=True, mask="auto")
             c.setFillColor(colors.black)
-            c.drawString(x + 4 + _IMAGE_SIZE + 6, y - _ROW_H / 2 - 3, r.part_name)
+            label = g.atom_part_name
+            if r.is_composite_expansion and r.parent_composite_name:
+                label = f"{label}  ←{r.parent_composite_name}"
+            c.drawString(x + 4 + _IMAGE_SIZE + 6, y - _ROW_H / 2 - 3, label)
             x += _COL_W[1]
 
             # Col 2: 需要
@@ -222,14 +225,14 @@ def build_handcraft_picking_list_pdf(
             c.setFillColor(colors.black)
             x += _COL_W[3]
 
-            # Col 4: 库存 (red if insufficient)
+            # Col 4: 库存 (red if insufficient — group-level vs row needed)
             stock_color = (
                 colors.HexColor("#d03050")
-                if r.current_stock < r.needed_qty
+                if g.current_stock < r.needed_qty
                 else colors.black
             )
             c.setFillColor(stock_color)
-            c.drawString(x + 4, y - _ROW_H / 2 - 3, _fmt_qty(r.current_stock))
+            c.drawString(x + 4, y - _ROW_H / 2 - 3, _fmt_qty(g.current_stock))
             c.setFillColor(colors.black)
             x += _COL_W[4]
 

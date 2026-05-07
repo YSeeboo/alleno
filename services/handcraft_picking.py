@@ -1,12 +1,13 @@
 """Handcraft picking simulation (手工单配货模拟) service.
 
 Aggregates a handcraft order's part items into a picker-friendly grouped
-structure: each HandcraftPartItem becomes one group with one or more rows.
-Atomic part_items produce a single row; composite part_items expand to
-multiple atom rows (via services.picking._expand_to_atoms).
+structure: each ATOMIC PART_ID becomes one group with one or more rows.
+Atomic part_items contribute one row; composite part_items expand to multiple
+rows that land in different atom groups.
 
-Picked state persists per (handcraft_part_item_id, part_id) in
-handcraft_picking_record. This module does NOT touch inventory_log or
+Picked state persists per (handcraft_part_item_id, atom_part_id) in
+handcraft_picking_record. Per-atom weight persists in
+handcraft_picking_weight. This module does NOT touch inventory_log or
 order status — purely a UI helper.
 """
 
@@ -29,12 +30,13 @@ from models.handcraft_order import (
 from models.inventory_log import InventoryLog
 from models.part import Part
 from schemas.handcraft import (
-    HandcraftPickingGroup,
     HandcraftPickingProgress,
     HandcraftPickingResponse,
-    HandcraftPickingVariant,
+    PickingGroup,
+    PickingSourceRow,
 )
 from services.handcraft import compute_suggested_qty
+from services.handcraft_picking_weight import bulk_load_for_picking
 
 
 def _compute_suggested_qty(theoretical: Optional[float], part: Optional[Part]) -> Optional[int]:
@@ -59,7 +61,7 @@ def get_handcraft_picking_simulation(
     db: Session, handcraft_order_id: str
 ) -> HandcraftPickingResponse:
     """Aggregate all parts needed for the handcraft order into a picking-oriented
-    structure. Raises ValueError if the order does not exist."""
+    structure grouped by atom_part_id. Raises ValueError if the order does not exist."""
     order = db.query(HandcraftOrder).filter_by(id=handcraft_order_id).one_or_none()
     if order is None:
         raise ValueError(f"手工单 {handcraft_order_id} 不存在")
@@ -81,47 +83,62 @@ def get_handcraft_picking_simulation(
 
     expanded = _expand_part_items(db, part_items)
 
-    atom_ids = sorted({atom_id for rows in expanded.values() for atom_id, _, _ratio in rows})
-    parts_by_id = _load_parts(db, atom_ids + [pi.part_id for pi in part_items])
+    atom_ids = sorted({atom_id for rows in expanded.values() for atom_id, _, _ in rows})
+    parent_part_ids = list({pi.part_id for pi in part_items})
+    parts_by_id = _load_parts(db, atom_ids + parent_part_ids)
     stock_by_part = _load_stock(db, atom_ids)
     picked_keys = _load_picked_keys(db, handcraft_order_id)
+    weights_by_key = bulk_load_for_picking(db, handcraft_order_id)
 
-    groups: list[HandcraftPickingGroup] = []
+    atom_first_seen: dict[str, int] = {}
+    rows_by_atom: dict[str, list[PickingSourceRow]] = defaultdict(list)
     total = 0
     picked_count = 0
     for pi in part_items:
-        rows: list[HandcraftPickingVariant] = []
-        for atom_id, needed_qty, atom_ratio in expanded[pi.id]:
+        parent_part = parts_by_id.get(pi.part_id)
+        is_composite = bool(parent_part and parent_part.is_composite)
+        for atom_id, qty_for_row, atom_ratio in expanded[pi.id]:
             atom_part = parts_by_id[atom_id]
-            is_picked = (pi.id, atom_id) in picked_keys
-            theoretical = (
-                float(pi.bom_qty) * atom_ratio
-                if pi.bom_qty is not None and atom_ratio is not None
-                else None
+            ratio = atom_ratio if atom_ratio is not None else 1.0
+            bom_qty_for_row = (
+                float(pi.bom_qty) * ratio if pi.bom_qty is not None else None
             )
-            suggested = _compute_suggested_qty(theoretical, atom_part)
-            rows.append(HandcraftPickingVariant(
-                part_id=atom_id,
-                part_name=atom_part.name,
-                part_image=atom_part.image,
-                size_tier=atom_part.size_tier or "small",
+            needed_qty = bom_qty_for_row if bom_qty_for_row is not None else qty_for_row
+            suggested = _compute_suggested_qty(needed_qty, atom_part)
+            is_picked = (pi.id, atom_id) in picked_keys
+            weight_row = weights_by_key.get((pi.id, atom_id))
+            row = PickingSourceRow(
+                part_item_id=pi.id,
+                atom_part_id=atom_id,
+                qty=qty_for_row,
+                bom_qty=bom_qty_for_row,
+                is_composite_expansion=is_composite,
+                parent_composite_name=(parent_part.name if (is_composite and parent_part) else None),
                 needed_qty=needed_qty,
                 suggested_qty=suggested,
-                current_stock=stock_by_part.get(atom_id, 0.0),
+                weight=(float(weight_row.weight) if weight_row else None),
+                weight_unit=(weight_row.weight_unit if weight_row else None),
                 picked=is_picked,
-            ))
+            )
+            rows_by_atom[atom_id].append(row)
+            atom_first_seen.setdefault(atom_id, pi.id)
             total += 1
             if is_picked:
                 picked_count += 1
-        parent_part = parts_by_id[pi.part_id]
-        groups.append(HandcraftPickingGroup(
-            part_item_id=pi.id,
-            parent_part_id=pi.part_id,
-            parent_part_name=parent_part.name,
-            parent_part_image=parent_part.image,
-            parent_is_composite=bool(parent_part.is_composite),
-            parent_qty=float(pi.qty),
-            parent_bom_qty=float(pi.bom_qty) if pi.bom_qty is not None else None,
+
+    ordered_atom_ids = sorted(rows_by_atom.keys(), key=lambda a: atom_first_seen[a])
+    groups: list[PickingGroup] = []
+    for atom_id in ordered_atom_ids:
+        atom_part = parts_by_id[atom_id]
+        rows = rows_by_atom[atom_id]
+        groups.append(PickingGroup(
+            atom_part_id=atom_id,
+            atom_part_name=atom_part.name,
+            atom_part_image=atom_part.image,
+            size_tier=atom_part.size_tier or "small",
+            current_stock=stock_by_part.get(atom_id, 0.0),
+            total_needed_qty=sum(r.needed_qty for r in rows),
+            total_suggested_qty=sum((r.suggested_qty or 0) for r in rows),
             rows=rows,
         ))
 
@@ -137,13 +154,12 @@ def get_handcraft_picking_simulation(
 def _expand_part_items(
     db: Session, part_items: list[HandcraftPartItem]
 ) -> dict[int, list[tuple[str, float, Optional[float]]]]:
-    """For each HandcraftPartItem, return a list of
-    (atom_part_id, needed_qty, atom_ratio_per_composite_unit) tuples.
+    """For each HandcraftPartItem, return list of (atom_part_id, needed_qty, atom_ratio).
 
-    - Atomic part_items: (part_id, qty, 1.0). atom_ratio=1.0 means
+    - Atomic part_items: (part_id, pi.qty, 1.0). atom_ratio=1.0 means
       theoretical_for_atom = parent.bom_qty × 1.0 = parent.bom_qty.
     - Composite items: each expanded atom carries its BOM ratio
-      (atom_qty_per_composite_unit). theoretical_for_atom = parent.bom_qty × ratio.
+      (atom_qty_per_composite_unit). needed_qty = pi.qty × ratio.
     """
     if not part_items:
         return {}
@@ -179,14 +195,14 @@ def _load_parts(db: Session, part_ids: list[str]) -> dict[str, Part]:
     return {p.id: p for p in rows}
 
 
-def _load_stock(db: Session, part_ids: list[str]) -> dict[str, float]:
-    if not part_ids:
+def _load_stock(db: Session, atom_ids: list[str]) -> dict[str, float]:
+    if not atom_ids:
         return {}
     rows = (
         db.query(InventoryLog.item_id,
                  func.coalesce(func.sum(InventoryLog.change_qty), 0))
         .filter(InventoryLog.item_type == "part",
-                InventoryLog.item_id.in_(part_ids))
+                InventoryLog.item_id.in_(set(atom_ids)))
         .group_by(InventoryLog.item_id)
         .all()
     )
@@ -196,12 +212,13 @@ def _load_stock(db: Session, part_ids: list[str]) -> dict[str, float]:
 def _load_picked_keys(
     db: Session, handcraft_order_id: str
 ) -> set[tuple[int, str]]:
+    """Existing PickingRecord uses `part_id` column (atom's id)."""
     rows = (
-        db.query(HandcraftPickingRecord)
-        .filter(HandcraftPickingRecord.handcraft_order_id == handcraft_order_id)
+        db.query(HandcraftPickingRecord.handcraft_part_item_id, HandcraftPickingRecord.part_id)
+        .filter_by(handcraft_order_id=handcraft_order_id)
         .all()
     )
-    return {(r.handcraft_part_item_id, r.part_id) for r in rows}
+    return {(pi_id, atom_id) for pi_id, atom_id in rows}
 
 
 # --- State mutations ---

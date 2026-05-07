@@ -16,6 +16,120 @@ from models.part import Part
 from models.part_bom import PartBom
 
 
+# --- Task 5: atom-grouped picking shape ---
+
+
+def test_merge_same_atom_across_part_items_into_one_group(client, db):
+    """Two part_items with the same part_id should produce ONE group with two rows."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+
+    db.add(PartModel(id="PJ-X-LK", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-MG1", supplier_name="S", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-MG1", part_id="PJ-X-LK", qty=200, bom_qty=200))
+    db.add(HandcraftPartItem(handcraft_order_id="HC-MG1", part_id="PJ-X-LK", qty=100, bom_qty=100))
+    db.flush()
+
+    resp = client.get("/api/handcraft/HC-MG1/picking")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["groups"]) == 1
+    g = body["groups"][0]
+    assert g["atom_part_id"] == "PJ-X-LK"
+    assert g["total_needed_qty"] == 300
+    assert len(g["rows"]) == 2
+    assert g["rows"][0]["qty"] == 200
+    assert g["rows"][1]["qty"] == 100
+
+
+def test_total_suggested_is_sum_of_per_row_suggested(client, db):
+    """Group total_suggested = sum(row.suggested), each row applies floor independently.
+    Small tier: 200 → 250 (200+50); 100 → 150 (100+50). Sum = 400, NOT 350."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+
+    db.add(PartModel(id="PJ-X-SM", name="链头小", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-MG2", supplier_name="S", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-MG2", part_id="PJ-X-SM", qty=200, bom_qty=200))
+    db.add(HandcraftPartItem(handcraft_order_id="HC-MG2", part_id="PJ-X-SM", qty=100, bom_qty=100))
+    db.flush()
+
+    body = client.get("/api/handcraft/HC-MG2/picking").json()
+    g = body["groups"][0]
+    assert g["rows"][0]["suggested_qty"] == 250
+    assert g["rows"][1]["suggested_qty"] == 150
+    assert g["total_suggested_qty"] == 400
+
+
+def test_composite_expansion_marks_is_composite_expansion(client, db):
+    """A composite part_item expands into atoms; those rows should be flagged."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+    from services.part_bom import set_part_bom
+
+    db.add(PartModel(id="PJ-X-LK2", name="链头", category="小配件", size_tier="small"))
+    db.add(PartModel(id="PJ-X-CL", name="扣环", category="小配件", size_tier="small"))
+    db.add(PartModel(id="PJ-X-SET", name="套链", category="小配件", size_tier="small", is_composite=True))
+    db.flush()
+    set_part_bom(db, "PJ-X-SET", "PJ-X-LK2", 1)
+    set_part_bom(db, "PJ-X-SET", "PJ-X-CL", 1)
+    db.add(HandcraftOrder(id="HC-MG3", supplier_name="S", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-MG3", part_id="PJ-X-SET", qty=10, bom_qty=10))
+    db.flush()
+
+    body = client.get("/api/handcraft/HC-MG3/picking").json()
+    atom_ids = sorted(g["atom_part_id"] for g in body["groups"])
+    assert atom_ids == ["PJ-X-CL", "PJ-X-LK2"]
+    for g in body["groups"]:
+        assert len(g["rows"]) == 1
+        row = g["rows"][0]
+        assert row["is_composite_expansion"] is True
+        assert row["parent_composite_name"] == "套链"
+
+
+def test_groups_ordered_by_first_seen(client, db):
+    """Group order = first appearance of each atom_part_id in part_items.id ASC."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+
+    db.add(PartModel(id="PJ-X-A", name="A", category="小配件", size_tier="small"))
+    db.add(PartModel(id="PJ-X-B", name="B", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-MG4", supplier_name="S", status="pending"))
+    db.flush()
+    # First B (id=1), then A (id=2), then B again (id=3): expected group order [B, A]
+    db.add(HandcraftPartItem(handcraft_order_id="HC-MG4", part_id="PJ-X-B", qty=1, bom_qty=1))
+    db.add(HandcraftPartItem(handcraft_order_id="HC-MG4", part_id="PJ-X-A", qty=1, bom_qty=1))
+    db.add(HandcraftPartItem(handcraft_order_id="HC-MG4", part_id="PJ-X-B", qty=2, bom_qty=2))
+    db.flush()
+
+    body = client.get("/api/handcraft/HC-MG4/picking").json()
+    assert [g["atom_part_id"] for g in body["groups"]] == ["PJ-X-B", "PJ-X-A"]
+    g_b = body["groups"][0]
+    assert [r["qty"] for r in g_b["rows"]] == [1, 2]
+
+
+def test_picking_includes_weight_when_recorded(client, db):
+    """Recorded weight surfaces in the picking response."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+    from services.handcraft_picking_weight import upsert_weight
+
+    db.add(PartModel(id="PJ-X-WT", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-MG5", supplier_name="S", status="pending"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-MG5", part_id="PJ-X-WT", qty=200, bom_qty=200)
+    db.add(pi); db.flush()
+    upsert_weight(db, "HC-MG5", pi.id, "PJ-X-WT", 0.5, "kg")
+
+    body = client.get("/api/handcraft/HC-MG5/picking").json()
+    row = body["groups"][0]["rows"][0]
+    assert row["weight"] == 0.5
+    assert row["weight_unit"] == "kg"
+
+
 def _add_atomic_part(db, pid="PJ-X-00001", name="珠子", tier="small"):
     db.add(Part(id=pid, name=name, category="吊坠", size_tier=tier))
 
@@ -68,17 +182,17 @@ def test_get_picking_atomic_single_item(client, db):
     assert body["status"] == "pending"
     assert len(body["groups"]) == 1
     g = body["groups"][0]
-    assert g["parent_part_id"] == "PJ-X-00001"
-    assert g["parent_is_composite"] is False
-    assert g["parent_qty"] == 10.0
-    assert g["parent_bom_qty"] == 8.0
+    assert g["atom_part_id"] == "PJ-X-00001"
+    assert g["atom_part_name"] == "珠子A"
+    assert g["size_tier"] == "small"
+    assert g["current_stock"] == 50.0
     assert len(g["rows"]) == 1
     row = g["rows"][0]
-    assert row["part_id"] == "PJ-X-00001"
-    assert row["part_name"] == "珠子A"
-    assert row["size_tier"] == "small"
-    assert row["needed_qty"] == 10.0
-    assert row["current_stock"] == 50.0
+    assert row["atom_part_id"] == "PJ-X-00001"
+    assert row["qty"] == 10.0
+    assert row["bom_qty"] == 8.0
+    assert row["is_composite_expansion"] is False
+    assert row["needed_qty"] == 8.0  # bom_qty drives suggested calc
     assert row["picked"] is False
     assert body["progress"] == {"total": 1, "picked": 0}
 
@@ -96,7 +210,7 @@ def test_get_picking_atomic_zero_stock(client, db):
     ))
     db.flush()
     body = client.get("/api/handcraft/HC-NOSTOCK/picking").json()
-    assert body["groups"][0]["rows"][0]["current_stock"] == 0.0
+    assert body["groups"][0]["current_stock"] == 0.0
 
 
 def _setup_composite(db):
@@ -130,22 +244,23 @@ def test_get_picking_composite_expands_to_atoms(client, db):
     resp = client.get("/api/handcraft/HC-COMP/picking")
     assert resp.status_code == 200
     body = resp.json()
-    assert len(body["groups"]) == 1
-    g = body["groups"][0]
-    assert g["parent_is_composite"] is True
-    assert g["parent_part_id"] == "PJ-X-00003"
-    rows = sorted(g["rows"], key=lambda r: r["part_id"])
-    assert len(rows) == 2
-    assert rows[0]["part_id"] == "PJ-X-00001"
-    assert rows[0]["needed_qty"] == 10.0  # 5 × 2
-    assert rows[1]["part_id"] == "PJ-X-00002"
-    assert rows[1]["needed_qty"] == 15.0  # 5 × 3
+    # Composite expands to 2 atom groups (one per atom_part_id).
+    assert len(body["groups"]) == 2
+    groups_by_atom = {g["atom_part_id"]: g for g in body["groups"]}
+    g_a = groups_by_atom["PJ-X-00001"]
+    g_b = groups_by_atom["PJ-X-00002"]
+    assert len(g_a["rows"]) == 1
+    assert len(g_b["rows"]) == 1
+    assert g_a["rows"][0]["is_composite_expansion"] is True
+    assert g_a["rows"][0]["parent_composite_name"] == "组合件C"
+    assert g_a["rows"][0]["needed_qty"] == 10.0  # bom_qty 5 × ratio 2
+    assert g_b["rows"][0]["needed_qty"] == 15.0  # bom_qty 5 × ratio 3
     assert body["progress"] == {"total": 2, "picked": 0}
 
 
 def test_get_picking_mixed_atomic_and_composite(client, db):
-    """Two part_items: one composite, one atomic referencing the same atom.
-    Each part_item gets its own group (rule A: 每行独立)."""
+    """Two part_items: one composite (C → A,B), one atomic referencing A.
+    Atom A appears in both — must merge into a single group with two rows."""
     _setup_composite(db)
     db.add(HandcraftPartItem(
         handcraft_order_id="HC-COMP",
@@ -155,11 +270,22 @@ def test_get_picking_mixed_atomic_and_composite(client, db):
     ))
     db.flush()
     body = client.get("/api/handcraft/HC-COMP/picking").json()
+    # Atoms: A (from composite + atomic), B (from composite). Two groups total.
     assert len(body["groups"]) == 2
-    atomic_groups = [g for g in body["groups"] if not g["parent_is_composite"]]
-    assert len(atomic_groups) == 1
-    assert atomic_groups[0]["rows"][0]["part_id"] == "PJ-X-00001"
-    assert atomic_groups[0]["rows"][0]["needed_qty"] == 8.0
+    groups_by_atom = {g["atom_part_id"]: g for g in body["groups"]}
+    g_a = groups_by_atom["PJ-X-00001"]
+    # Group A has two rows: one from composite expansion, one from the
+    # atomic part_item referencing A directly.
+    assert len(g_a["rows"]) == 2
+    rows_by_flag = sorted(g_a["rows"], key=lambda r: r["is_composite_expansion"])
+    # Atomic row first (False < True under sort).
+    atomic_row = rows_by_flag[0]
+    composite_row = rows_by_flag[1]
+    assert atomic_row["is_composite_expansion"] is False
+    assert atomic_row["qty"] == 8.0
+    assert atomic_row["needed_qty"] == 7.5  # uses bom_qty
+    assert composite_row["is_composite_expansion"] is True
+    assert composite_row["parent_composite_name"] == "组合件C"
 
 
 def test_get_picking_composite_multipath_sums(db, client):
@@ -196,9 +322,10 @@ def test_get_picking_composite_multipath_sums(db, client):
     body = client.get("/api/handcraft/HC-MP/picking").json()
     assert len(body["groups"]) == 1
     g = body["groups"][0]
+    assert g["atom_part_id"] == "PJ-X-00001"
     assert len(g["rows"]) == 1
-    assert g["rows"][0]["part_id"] == "PJ-X-00001"
-    assert g["rows"][0]["needed_qty"] == 50.0  # 5 × (2×3 + 1×4) = 50
+    assert g["rows"][0]["atom_part_id"] == "PJ-X-00001"
+    assert g["rows"][0]["needed_qty"] == 50.0  # bom_qty 5 × (2×3 + 1×4) = 50
 
 
 def test_suggested_qty_atomic_small(client, db):
@@ -229,8 +356,9 @@ def test_suggested_qty_atomic_medium(client, db):
     assert row["suggested_qty"] == 2020
 
 
-def test_suggested_qty_none_when_bom_qty_missing_or_zero(client, db):
-    """If part_item.bom_qty is None or 0, suggested_qty is None."""
+def test_suggested_qty_with_bom_qty_missing_or_zero(client, db):
+    """bom_qty=None: needed_qty falls back to qty (positive) → suggested computed.
+    bom_qty=0: needed_qty=0 → suggested is None (zero theoretical can't be sized)."""
     _add_atomic_part(db, "PJ-X-NA", "无理论", "small")
     _add_atomic_part(db, "PJ-X-ZERO", "零理论", "small")
     db.add(HandcraftOrder(id="HC-NA", supplier_name="商家", status="pending"))
@@ -249,9 +377,11 @@ def test_suggested_qty_none_when_bom_qty_missing_or_zero(client, db):
     ))
     db.flush()
     body = client.get("/api/handcraft/HC-NA/picking").json()
-    groups_by_part = {g["parent_part_id"]: g for g in body["groups"]}
-    assert groups_by_part["PJ-X-NA"]["rows"][0]["suggested_qty"] is None
-    assert groups_by_part["PJ-X-ZERO"]["rows"][0]["suggested_qty"] is None
+    groups_by_atom = {g["atom_part_id"]: g for g in body["groups"]}
+    # bom_qty=None: fallback to qty=5; small tier → 5 + max(50, 5*2%) = 5 + 50 = 55
+    assert groups_by_atom["PJ-X-NA"]["rows"][0]["suggested_qty"] == 55
+    # bom_qty=0: needed_qty=0 → suggested None
+    assert groups_by_atom["PJ-X-ZERO"]["rows"][0]["suggested_qty"] is None
 
 
 def test_suggested_qty_atomic_small_ratio_wins(client, db):
@@ -277,13 +407,13 @@ def test_suggested_qty_composite_uses_atom_tier(client, db):
     Atom B theoretical = 5×3 = 15, medium-tier → max(15, 15*1%) = 15 → 15 + 15 = 30."""
     _setup_composite(db)
     body = client.get("/api/handcraft/HC-COMP/picking").json()
-    rows = sorted(body["groups"][0]["rows"], key=lambda r: r["part_id"])
-    assert rows[0]["part_id"] == "PJ-X-00001"
-    assert rows[0]["size_tier"] == "small"
-    assert rows[0]["suggested_qty"] == 60
-    assert rows[1]["part_id"] == "PJ-X-00002"
-    assert rows[1]["size_tier"] == "medium"
-    assert rows[1]["suggested_qty"] == 30
+    groups_by_atom = {g["atom_part_id"]: g for g in body["groups"]}
+    g_a = groups_by_atom["PJ-X-00001"]
+    g_b = groups_by_atom["PJ-X-00002"]
+    assert g_a["size_tier"] == "small"
+    assert g_a["rows"][0]["suggested_qty"] == 60
+    assert g_b["size_tier"] == "medium"
+    assert g_b["rows"][0]["suggested_qty"] == 30
 
 
 def test_compute_suggested_qty_unit_guards_and_delegation(db):
@@ -365,7 +495,7 @@ def test_picking_respects_buffer_floor_override(client, db):
 def test_mark_picked_persists_and_shows_in_get(client, db):
     _setup_atomic(db)
     body_before = client.get("/api/handcraft/HC-TEST-1/picking").json()
-    pi_id = body_before["groups"][0]["part_item_id"]
+    pi_id = body_before["groups"][0]["rows"][0]["part_item_id"]
 
     resp = client.post(
         "/api/handcraft/HC-TEST-1/picking/mark",
@@ -381,7 +511,7 @@ def test_mark_picked_persists_and_shows_in_get(client, db):
 
 def test_mark_idempotent(client, db):
     _setup_atomic(db)
-    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["part_item_id"]
+    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["rows"][0]["part_item_id"]
     for _ in range(3):
         r = client.post(
             "/api/handcraft/HC-TEST-1/picking/mark",
@@ -397,7 +527,7 @@ def test_mark_idempotent(client, db):
 
 def test_mark_invalid_part_id_rejected(client, db):
     _setup_atomic(db)
-    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["part_item_id"]
+    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["rows"][0]["part_item_id"]
     resp = client.post(
         "/api/handcraft/HC-TEST-1/picking/mark",
         json={"part_item_id": pi_id, "part_id": "PJ-X-NOTREAL"},
@@ -424,7 +554,7 @@ def test_mark_blocked_when_status_not_pending(client, db):
 
 def test_unmark_removes_record(client, db):
     _setup_atomic(db)
-    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["part_item_id"]
+    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["rows"][0]["part_item_id"]
     client.post(
         "/api/handcraft/HC-TEST-1/picking/mark",
         json={"part_item_id": pi_id, "part_id": "PJ-X-00001"},
@@ -443,7 +573,7 @@ def test_unmark_removes_record(client, db):
 
 def test_unmark_idempotent_for_nonexistent(client, db):
     _setup_atomic(db)
-    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["part_item_id"]
+    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["rows"][0]["part_item_id"]
     resp = client.post(
         "/api/handcraft/HC-TEST-1/picking/unmark",
         json={"part_item_id": pi_id, "part_id": "PJ-X-00001"},
@@ -454,7 +584,7 @@ def test_unmark_idempotent_for_nonexistent(client, db):
 
 def test_unmark_blocked_when_status_not_pending(client, db):
     _setup_atomic(db)
-    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["part_item_id"]
+    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["rows"][0]["part_item_id"]
     # mark first while still pending
     client.post(
         "/api/handcraft/HC-TEST-1/picking/mark",
@@ -473,7 +603,7 @@ def test_unmark_blocked_when_status_not_pending(client, db):
 
 def test_reset_deletes_all_records(client, db):
     _setup_composite(db)
-    pi_id = client.get("/api/handcraft/HC-COMP/picking").json()["groups"][0]["part_item_id"]
+    pi_id = client.get("/api/handcraft/HC-COMP/picking").json()["groups"][0]["rows"][0]["part_item_id"]
     client.post(
         "/api/handcraft/HC-COMP/picking/mark",
         json={"part_item_id": pi_id, "part_id": "PJ-X-00001"},
@@ -546,7 +676,7 @@ def test_delete_handcraft_order_cleans_picking_records(client, db):
     """Deleting a handcraft order must purge picking records to avoid FK
     violation on the bulk part_item delete inside delete_handcraft_order."""
     _setup_atomic(db)
-    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["part_item_id"]
+    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["rows"][0]["part_item_id"]
     resp_mark = client.post(
         "/api/handcraft/HC-TEST-1/picking/mark",
         json={"part_item_id": pi_id, "part_id": "PJ-X-00001"},
@@ -588,12 +718,10 @@ def test_pdf_export_empty_order_400(client, db):
     assert "无可导出" in resp.json()["detail"]
 
 
-def test_get_picking_composite_with_no_bom_returns_empty_rows(client, db):
-    """A composite part_item with no PartBom rows produces a group with rows=[].
-    Frontend's displayGroups filters those out so the user never sees a header
-    with nothing under it; PDF's _filter_groups does the same. Lock the
-    backend contract: the group is still returned (so frontend knows it
-    exists), but rows is empty."""
+def test_get_picking_composite_with_no_bom_returns_no_groups(client, db):
+    """A composite part_item with no PartBom rows produces no atom groups.
+    With atom-grouping, no atoms means no groups at all (the parent
+    composite is never a group key). progress total = 0."""
     db.add(Part(id="PJ-X-EMPTY", name="空组合", category="吊坠",
                 size_tier="small", is_composite=True))
     db.flush()
@@ -607,9 +735,7 @@ def test_get_picking_composite_with_no_bom_returns_empty_rows(client, db):
     ))
     db.flush()
     body = client.get("/api/handcraft/HC-EMPTYC/picking").json()
-    assert len(body["groups"]) == 1
-    assert body["groups"][0]["parent_part_id"] == "PJ-X-EMPTY"
-    assert body["groups"][0]["rows"] == []
+    assert body["groups"] == []
     assert body["progress"] == {"total": 0, "picked": 0}
 
 
@@ -624,7 +750,7 @@ def test_mark_request_rejects_invalid_field_values(client, db):
     )
     assert resp.status_code == 422
     # part_id must be non-empty
-    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["part_item_id"]
+    pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["rows"][0]["part_item_id"]
     resp = client.post(
         "/api/handcraft/HC-TEST-1/picking/mark",
         json={"part_item_id": pi_id, "part_id": ""},
