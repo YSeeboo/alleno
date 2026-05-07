@@ -43,3 +43,24 @@ export const deleteHandcraftJewelryOrderLink = (orderId, itemId, linkId) =>
 export const getHandcraftCuttingStats = (id) => api.get(`/handcraft/${id}/cutting-stats`)
 export const downloadHandcraftCuttingStatsPdf = (id) =>
   api.post(`/handcraft/${id}/cutting-stats/pdf`, {}, { responseType: 'blob' })
+
+// --- Picking simulation (配货模拟) ---
+export const getHandcraftPicking = (id) => api.get(`/handcraft/${id}/picking`)
+
+export const markHandcraftPicked = (id, partItemId, partId) =>
+  api.post(`/handcraft/${id}/picking/mark`, {
+    part_item_id: partItemId,
+    part_id: partId,
+  })
+
+export const unmarkHandcraftPicked = (id, partItemId, partId) =>
+  api.post(`/handcraft/${id}/picking/unmark`, {
+    part_item_id: partItemId,
+    part_id: partId,
+  })
+
+export const resetHandcraftPicking = (id) =>
+  api.delete(`/handcraft/${id}/picking/reset`)
+
+export const downloadHandcraftPickingPdf = (id) =>
+  api.post(`/handcraft/${id}/picking/pdf`, {}, { responseType: 'blob' })

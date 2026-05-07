@@ -85,6 +85,51 @@
         <n-form-item label="规格">
           <n-input v-model:value="form.spec" placeholder="如 45cm" />
         </n-form-item>
+
+        <n-collapse style="margin: 8px 0 12px 0;">
+          <n-collapse-item name="buffer-rules">
+            <template #header>
+              <span style="font-size: 13px; font-weight: 500; margin-right: 12px;">手工加量规则</span>
+              <span style="color: #888; font-size: 12px; font-variant-numeric: tabular-nums;">{{ effectiveRulePreview }}</span>
+            </template>
+            <template #header-extra>
+              <n-tag :type="bufferIsCustom ? 'warning' : 'success'" size="small" round>
+                {{ bufferIsCustom ? '自定义' : '默认' }}
+              </n-tag>
+            </template>
+            <n-form-item label="配件大小">
+              <n-select
+                v-model:value="form.size_tier"
+                :options="sizeTierOptions"
+                placeholder="未选择则按类目自动"
+                clearable
+                style="width: 160px;"
+              />
+              <span style="color: #999; font-size: 12px; margin-left: 8px;">决定加量规则的默认值</span>
+            </n-form-item>
+            <n-form-item label="自定义比例">
+              <n-input-number
+                v-model:value="form.buffer_ratio_override"
+                :min="0" :max="0.9999" :step="0.005" :precision="4"
+                placeholder="留空使用默认"
+                clearable
+                style="width: 100%;"
+              />
+              <span style="color: #999; font-size: 12px; margin-left: 8px;">小数，如 0.025 = 2.5%</span>
+            </n-form-item>
+            <n-form-item label="自定义最低">
+              <n-input-number
+                v-model:value="form.buffer_floor_override"
+                :min="0" :precision="0"
+                placeholder="留空使用默认"
+                clearable
+                style="width: 100%;"
+              />
+              <span style="color: #999; font-size: 12px; margin-left: 8px;">最少要发的件数</span>
+            </n-form-item>
+          </n-collapse-item>
+        </n-collapse>
+
         <n-form-item v-if="editingId" label="创建颜色变体">
           <n-space>
             <n-button
@@ -209,6 +254,7 @@ import { useIsMobile } from '@/composables/useIsMobile'
 import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
   NModal, NDataTable, NSpin, NEmpty, NDropdown, NImage,
+  NCollapse, NCollapseItem, NTag,
 } from 'naive-ui'
 import { listParts, createPart, updatePart, deletePart, importPartsExcel, downloadPartsImportTemplate, getPartVariants, createPartVariant } from '@/api/parts'
 import { batchGetStock, addStock } from '@/api/inventory'
@@ -304,7 +350,41 @@ const editingId = ref(null)
 const editingIsVariant = ref(false)
 const saving = ref(false)
 const formRef = ref(null)
-const form = reactive({ name: '', image: '', category: null, color: '', spec: '', unit: '个', unit_cost: null, plating_process: '', parent_part_id: null })
+const form = reactive({ name: '', image: '', category: null, color: '', spec: '', unit: '个', unit_cost: null, plating_process: '', parent_part_id: null, size_tier: null, buffer_ratio_override: null, buffer_floor_override: null })
+
+const sizeTierOptions = [
+  { label: '小件', value: 'small' },
+  { label: '中件', value: 'medium' },
+]
+
+// Mirror backend services/handcraft.py::HANDCRAFT_BUFFER_RULES.
+const TIER_DEFAULTS = {
+  small:  { ratio: 0.02, floor: 50 },
+  medium: { ratio: 0.01, floor: 15 },
+}
+
+const effectiveTier = computed(() => {
+  if (form.size_tier) return form.size_tier
+  // Mirror backend default: 小配件 → small, 吊坠/链条 → medium
+  if (form.category === '小配件') return 'small'
+  if (form.category === '吊坠' || form.category === '链条') return 'medium'
+  return null
+})
+
+const bufferIsCustom = computed(() =>
+  form.buffer_ratio_override != null || form.buffer_floor_override != null
+)
+
+const effectiveRulePreview = computed(() => {
+  const tier = effectiveTier.value
+  if (!tier) return '（请先选类目）'
+  const def = TIER_DEFAULTS[tier]
+  const ratio = form.buffer_ratio_override != null ? form.buffer_ratio_override : def.ratio
+  const floor = form.buffer_floor_override != null ? form.buffer_floor_override : def.floor
+  const ratioPct = (ratio * 100).toFixed(2).replace(/\.?0+$/, '')
+  const tierLabel = tier === 'small' ? '小件' : '中件'
+  return `${tierLabel}：max(${floor}, 数量 × ${ratioPct}%)`
+})
 
 // Image upload modal state
 const showImageModal = ref(false)
@@ -388,7 +468,7 @@ const openCreate = () => {
   existingVariantColors.value = []
   specVariantInput.value = ''
   specVariantColor.value = null
-  Object.assign(form, { name: '', image: '', category: null, color: '', spec: '', unit: '个', unit_cost: null, plating_process: '', parent_part_id: null })
+  Object.assign(form, { name: '', image: '', category: null, color: '', spec: '', unit: '个', unit_cost: null, plating_process: '', parent_part_id: null, size_tier: null, buffer_ratio_override: null, buffer_floor_override: null })
   showModal.value = true
 }
 
@@ -422,6 +502,9 @@ const openEdit = async (row) => {
     unit_cost: row.unit_cost ?? null,
     plating_process: row.plating_process || '',
     parent_part_id: row.parent_part_id || null,
+    size_tier: row.size_tier || null,
+    buffer_ratio_override: row.buffer_ratio_override ?? null,
+    buffer_floor_override: row.buffer_floor_override ?? null,
   })
   showModal.value = true
   // Load existing variants (non-blocking, buttons disabled until done)

@@ -5,7 +5,12 @@ from .part_bom import PartBom
 from .order import Order, OrderItem, OrderTodoItem, OrderItemLink, OrderPickingRecord
 from .inventory_log import InventoryLog
 from .plating_order import PlatingOrder, PlatingOrderItem
-from .handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
+from .handcraft_order import (
+    HandcraftOrder,
+    HandcraftPartItem,
+    HandcraftJewelryItem,
+    HandcraftPickingRecord,
+)
 from .vendor_receipt import VendorReceipt
 from .purchase_order import PurchaseOrder, PurchaseOrderItem, PurchaseOrderItemAddon
 from .plating_receipt import PlatingReceipt, PlatingReceiptItem
@@ -34,6 +39,7 @@ __all__ = [
     "HandcraftOrder",
     "HandcraftPartItem",
     "HandcraftJewelryItem",
+    "HandcraftPickingRecord",
     "VendorReceipt",
     "PurchaseOrder",
     "PurchaseOrderItem",

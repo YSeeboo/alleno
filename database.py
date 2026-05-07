@@ -87,6 +87,12 @@ def ensure_schema_compat(target_engine=None):
                 ))
                 conn.execute(text("ALTER TABLE part ALTER COLUMN size_tier SET NOT NULL"))
                 logger.warning("Added missing part.size_tier column (backfilled by category prefix)")
+            if "buffer_ratio_override" not in columns:
+                conn.execute(text("ALTER TABLE part ADD COLUMN buffer_ratio_override NUMERIC(5,4) NULL"))
+                logger.warning("Added missing part.buffer_ratio_override column")
+            if "buffer_floor_override" not in columns:
+                conn.execute(text("ALTER TABLE part ADD COLUMN buffer_floor_override INTEGER NULL"))
+                logger.warning("Added missing part.buffer_floor_override column")
 
         if inspector.has_table("plating_order_item"):
             columns = {col["name"] for col in inspector.get_columns("plating_order_item")}

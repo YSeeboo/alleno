@@ -24,6 +24,9 @@ class Part(Base):
     parent_part_id = Column(String, ForeignKey("part.id"), nullable=True)
     is_composite = Column(Boolean, nullable=False, server_default="false")
     size_tier = Column(String, nullable=False, server_default="small")
+    # Per-part overrides for the size_tier default buffer rule. NULL = use tier default.
+    buffer_ratio_override = Column(Numeric(5, 4), nullable=True)
+    buffer_floor_override = Column(Integer, nullable=True)
 
 
 class PartCostLog(Base):

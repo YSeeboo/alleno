@@ -7,7 +7,7 @@ from sqlalchemy import Date, func, or_
 from sqlalchemy.orm import Session
 
 from models.bom import Bom
-from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
+from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem, HandcraftPickingRecord
 from models.jewelry import Jewelry
 from models.part import Part
 from services._helpers import _next_id, keyword_filter
@@ -23,6 +23,23 @@ HANDCRAFT_BUFFER_RULES = {
     "small":  {"ratio": Decimal("0.02"), "floor": 50},
     "medium": {"ratio": Decimal("0.01"), "floor": 15},
 }
+
+
+def compute_suggested_qty(part: Part, theoretical: Decimal) -> int:
+    """Apply the per-tier buffer rule (with per-part override) to theoretical
+    demand. Returns ceil(theoretical) + buffer.
+
+    Direct dict lookup (not .get()): size_tier is constrained by Pydantic
+    Literal + DB NOT NULL. An unknown value is data corruption and should
+    fail loud rather than silently apply a default rule.
+
+    Caller must ensure theoretical is a positive Decimal.
+    """
+    tier_rule = HANDCRAFT_BUFFER_RULES[part.size_tier]
+    ratio = part.buffer_ratio_override if part.buffer_ratio_override is not None else tier_rule["ratio"]
+    floor = part.buffer_floor_override if part.buffer_floor_override is not None else tier_rule["floor"]
+    buffer = math.ceil(max(Decimal(floor), theoretical * Decimal(ratio)))
+    return math.ceil(theoretical) + buffer
 
 
 def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
@@ -104,12 +121,8 @@ def suggest_handcraft_parts(db: Session, jewelry_items: list[dict]) -> list[dict
         part = parts_by_id.get(part_id)
         if part is None:
             continue
-        # Direct lookup (no fallback): size_tier is constrained by Pydantic
-        # Literal + DB NOT NULL; an unknown value is data corruption and
-        # should fail loud rather than silently apply a default rule.
-        rule = HANDCRAFT_BUFFER_RULES[part.size_tier]
-        buffer = math.ceil(max(Decimal(rule["floor"]), theo * rule["ratio"]))
-        suggested = math.ceil(theo) + buffer
+        suggested = compute_suggested_qty(part, theo)
+        buffer = suggested - math.ceil(theo)
         results.append({
             "part_id": part_id,
             "part_name": part.name,
@@ -432,6 +445,11 @@ def delete_handcraft_part(db: Session, order_id: str, item_id: int) -> None:
     ).count()
     if remaining == 0:
         raise ValueError(f"Cannot delete the last part from order {order_id}; an order must have at least one part item")
+    # Clean up any picking records for this part item before deleting.
+    db.query(HandcraftPickingRecord).filter_by(
+        handcraft_part_item_id=item_id
+    ).delete(synchronize_session=False)
+    db.flush()
     db.delete(item)
     db.flush()
 
@@ -588,6 +606,10 @@ def delete_handcraft_order(db: Session, order_id: str) -> None:
         for part_id, total_sent in part_totals.items():
             add_stock(db, "part", part_id, total_sent, "手工发出撤回")
 
+    db.query(HandcraftPickingRecord).filter(
+        HandcraftPickingRecord.handcraft_order_id == order_id
+    ).delete(synchronize_session=False)
+    db.flush()
     db.query(HandcraftPartItem).filter(HandcraftPartItem.handcraft_order_id == order_id).delete(synchronize_session=False)
     db.query(HandcraftJewelryItem).filter(HandcraftJewelryItem.handcraft_order_id == order_id).delete(synchronize_session=False)
     db.flush()

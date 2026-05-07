@@ -73,6 +73,10 @@ def create_part(db: Session, data: dict) -> Part:
     data.pop("unit_cost", None)
     if "spec" in data:
         data["spec"] = (data["spec"].strip() if data["spec"] else None) or None
+    # Convert override float → Decimal via str to avoid IEEE 754 drift
+    # surviving into the DB (e.g. 0.05 → 0.05000000000000000277...).
+    if data.get("buffer_ratio_override") is not None:
+        data["buffer_ratio_override"] = Decimal(str(data["buffer_ratio_override"]))
     prefix = PART_CATEGORIES[category]
     if data.get("size_tier") is None:
         data["size_tier"] = DEFAULT_SIZE_TIER_BY_PREFIX.get(prefix, "small")
@@ -140,22 +144,30 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
             raise ValueError("不支持多层嵌套：当前配件已有子配件，不能再挂到其他配件下")
     data.pop("unit_cost", None)
     assembly_cost_changed = "assembly_cost" in data
-    size_tier_changed = "size_tier" in data
+    # Track which buffer-related fields the caller explicitly set, so we can
+    # propagate them to variants (same root cause as size_tier propagation:
+    # BOMs commonly reference variant IDs and the buffer rule reads each
+    # variant's own fields, so root↔variant divergence silently splits rules).
+    propagated_fields = {
+        "size_tier",
+        "buffer_ratio_override",
+        "buffer_floor_override",
+    } & data.keys()
     if "spec" in data:
         data["spec"] = (data["spec"].strip() if data["spec"] else None) or None
+    # See create_part: avoid float → Decimal IEEE 754 drift.
+    if data.get("buffer_ratio_override") is not None:
+        data["buffer_ratio_override"] = Decimal(str(data["buffer_ratio_override"]))
     for key, value in data.items():
         setattr(part, key, value)
     db.flush()
     if assembly_cost_changed:
         from services.part_bom import recalc_part_unit_cost
         recalc_part_unit_cost(db, part_id)
-    # When a root part's size_tier changes, propagate to all variants —
-    # BOMs commonly reference variant IDs and the buffer rule reads
-    # part.size_tier directly, so divergent tiers between root and variant
-    # would silently apply different buffer rules to the same product line.
-    if size_tier_changed and part.parent_part_id is None:
+    if propagated_fields and part.parent_part_id is None:
         db.query(Part).filter(Part.parent_part_id == part_id).update(
-            {"size_tier": part.size_tier}, synchronize_session=False
+            {field: getattr(part, field) for field in propagated_fields},
+            synchronize_session=False,
         )
         db.flush()
     return part
@@ -314,6 +326,8 @@ def create_part_variant(db: Session, part_id: str, color_code: Optional[str] = N
         spec=spec,
         parent_part_id=root.id,
         size_tier=donor.size_tier,
+        buffer_ratio_override=donor.buffer_ratio_override,
+        buffer_floor_override=donor.buffer_floor_override,
     )
     _recalc_unit_cost(variant)
     db.add(variant)

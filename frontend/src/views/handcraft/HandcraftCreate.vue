@@ -142,7 +142,7 @@
                   v-if="getSuggestedQty(item) != null"
                   class="suggested-qty"
                   :title="getSuggestedTooltip(item)"
-                ><span class="slash">/</span>{{ getSuggestedQty(item) }}</span>
+                >（建议 <span class="num">{{ getSuggestedQty(item) }}</span>）</span>
                 <n-select v-model:value="item.unit" :options="partUnitOptions" style="width: 70px;" />
                 <n-input-number v-model:value="item.bom_qty" :min="0" :step="1" placeholder="BOM" style="width: 80px;" @update:value="() => { item._qty_per_unit = null }" />
                 <n-button type="error" size="small" @click="group.parts.splice(idx, 1)">删</n-button>
@@ -248,31 +248,48 @@ const BUFFER_RULES = {
   medium: { ratio: 0.01, floor: 15 },
 }
 
+// Resolve effective ratio/floor for a part, applying per-part override over tier default.
+const resolveBufferRule = (part) => {
+  const tier = part?.size_tier || 'small'
+  const tierRule = BUFFER_RULES[tier] || BUFFER_RULES.small
+  const ratio = part?.buffer_ratio_override != null
+    ? Number(part.buffer_ratio_override)
+    : tierRule.ratio
+  const floor = part?.buffer_floor_override != null
+    ? Number(part.buffer_floor_override)
+    : tierRule.floor
+  const isOverridden = part?.buffer_ratio_override != null || part?.buffer_floor_override != null
+  return { tier, ratio, floor, isOverridden }
+}
+
+// Quantize float to 4 decimals — matches backend Numeric(10,4) precision.
+// Used both on the input (theoretical) and on intermediate t * ratio,
+// since `100 * 0.01 = 1.0000000000000002` would otherwise drift past `ceil`.
+const quantize4 = (n) => Math.round(n * 10000) / 10000
+
 const getSuggestedQty = (item) => {
   const theo = item?.bom_qty
   if (!theo || theo <= 0 || !item?.part_id) return null
-  const found = partOptions.value.find((p) => p.value === item.part_id)
-  const tier = found?.size_tier || 'small'
-  const rule = BUFFER_RULES[tier] || BUFFER_RULES.small
-  // Round to 4 decimals (matches backend Numeric(10,4)) before ceil
-  // to avoid 0.3 × 1000 = 300.00000000000006 type drift.
-  const t = Math.round(theo * 10000) / 10000
-  const buffer = Math.ceil(Math.max(rule.floor, t * rule.ratio))
+  const part = partOptions.value.find((p) => p.value === item.part_id)
+  const { ratio, floor } = resolveBufferRule(part)
+  const t = quantize4(theo)
+  const buffer = Math.ceil(Math.max(floor, quantize4(t * ratio)))
   return Math.ceil(t) + buffer
 }
 
 const getSuggestedTooltip = (item) => {
   const theo = item?.bom_qty
   if (!theo || theo <= 0 || !item?.part_id) return ''
-  const found = partOptions.value.find((p) => p.value === item.part_id)
-  const tier = found?.size_tier || 'small'
-  const rule = BUFFER_RULES[tier]
-  const t = Math.round(theo * 10000) / 10000
-  const buffer = Math.ceil(Math.max(rule.floor, t * rule.ratio))
-  const ratioCalc = (t * rule.ratio).toFixed(2)
-  const winner = rule.floor >= t * rule.ratio ? 'floor 兜底' : '百分比放大'
+  const part = partOptions.value.find((p) => p.value === item.part_id)
+  const { tier, ratio, floor, isOverridden } = resolveBufferRule(part)
+  const t = quantize4(theo)
+  const tr = quantize4(t * ratio)
+  const buffer = Math.ceil(Math.max(floor, tr))
+  const ratioCalc = tr.toFixed(2)
+  const winner = floor >= tr ? 'floor 兜底' : '百分比放大'
   const tierLabel = tier === 'small' ? '小件' : '中件'
-  return `${tierLabel}规则: max(${rule.floor}, 理论×${rule.ratio * 100}%)\n计算: max(${rule.floor}, ${ratioCalc}) = ${buffer} (${winner})\n建议: ceil(${t}) + ${buffer} = ${getSuggestedQty(item)}`
+  const sourceLabel = isOverridden ? `${tierLabel}（自定义）` : `${tierLabel}规则`
+  return `${sourceLabel}: max(${floor}, 理论×${(ratio * 100).toFixed(2).replace(/\.?0+$/, '')}%)\n计算: max(${floor}, ${ratioCalc}) = ${buffer} (${winner})\n建议: ceil(${t}) + ${buffer} = ${getSuggestedQty(item)}`
 }
 
 const onPartSelect = (item, val) => {
@@ -440,6 +457,8 @@ onMounted(async () => {
       unit: p.unit,
       is_composite: p.is_composite,
       size_tier: p.size_tier,
+      buffer_ratio_override: p.buffer_ratio_override,
+      buffer_floor_override: p.buffer_floor_override,
     }))
     compositePartOptions.value = partOptions.value.filter((p) => p.is_composite)
     jewelryOptions.value = jRes.data.map((j) => ({
@@ -548,16 +567,14 @@ onMounted(async () => {
 
 .suggested-qty {
   color: #1890ff;
-  font-weight: 700;
-  font-size: 14px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   padding: 0 2px;
   cursor: help;
 }
-.suggested-qty .slash {
-  color: #cccccc;
-  font-weight: normal;
-  margin-right: 2px;
+.suggested-qty .num {
+  font-weight: 700;
+  font-size: 14px;
 }
 </style>
