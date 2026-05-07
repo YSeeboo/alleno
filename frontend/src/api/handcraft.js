@@ -64,3 +64,16 @@ export const resetHandcraftPicking = (id) =>
 
 export const downloadHandcraftPickingPdf = (id) =>
   api.post(`/handcraft/${id}/picking/pdf`, {}, { responseType: 'blob' })
+
+export const upsertHandcraftPickingWeight = (id, partItemId, atomPartId, weight, weightUnit = 'kg') =>
+  api.put(`/handcraft/${id}/picking/weight`, {
+    part_item_id: partItemId,
+    atom_part_id: atomPartId,
+    weight,
+    weight_unit: weightUnit,
+  })
+
+export const deleteHandcraftPickingWeight = (id, partItemId, atomPartId) =>
+  api.delete(`/handcraft/${id}/picking/weight`, {
+    data: { part_item_id: partItemId, atom_part_id: atomPartId },
+  })
