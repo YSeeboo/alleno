@@ -1060,3 +1060,90 @@ def test_update_root_size_tier_propagates_to_variants(client, db):
     refreshed = db.get(Part, variant.id)
     db.refresh(refreshed)
     assert refreshed.size_tier == "small"
+
+
+def test_create_part_with_buffer_overrides(client):
+    r = client.post("/api/parts/", json={
+        "name": "高损耗", "category": "小配件",
+        "buffer_ratio_override": 0.05,
+        "buffer_floor_override": 100,
+    })
+    assert r.status_code == 201
+    data = r.json()
+    assert data["buffer_ratio_override"] == 0.05
+    assert data["buffer_floor_override"] == 100
+
+
+def test_create_part_no_overrides_returns_null(client):
+    r = client.post("/api/parts/", json={"name": "P", "category": "小配件"})
+    data = r.json()
+    assert data["buffer_ratio_override"] is None
+    assert data["buffer_floor_override"] is None
+
+
+def test_update_part_set_and_clear_overrides(client):
+    p = client.post("/api/parts/", json={"name": "P", "category": "小配件"}).json()
+    # Set
+    r = client.patch(f"/api/parts/{p['id']}", json={
+        "buffer_ratio_override": 0.04,
+        "buffer_floor_override": 80,
+    })
+    assert r.status_code == 200
+    assert r.json()["buffer_ratio_override"] == 0.04
+    assert r.json()["buffer_floor_override"] == 80
+    # Clear (explicit null)
+    r = client.patch(f"/api/parts/{p['id']}", json={
+        "buffer_ratio_override": None,
+        "buffer_floor_override": None,
+    })
+    assert r.status_code == 200
+    assert r.json()["buffer_ratio_override"] is None
+    assert r.json()["buffer_floor_override"] is None
+
+
+def test_create_part_invalid_override_rejected(client):
+    # ratio must be in [0, 1)
+    r = client.post("/api/parts/", json={
+        "name": "X", "category": "小配件", "buffer_ratio_override": 1.5,
+    })
+    assert r.status_code == 422
+    # floor must be >= 0
+    r = client.post("/api/parts/", json={
+        "name": "X", "category": "小配件", "buffer_floor_override": -10,
+    })
+    assert r.status_code == 422
+
+
+def test_update_root_buffer_overrides_propagate_to_variants(client, db):
+    """Same root cause as size_tier propagation: BOMs reference variant IDs
+    and the buffer rule reads each variant's own override fields, so a root
+    update that doesn't propagate would leave variants on tier defaults."""
+    from services.part import create_part_variant
+    from models.part import Part
+    root = client.post("/api/parts/", json={"name": "P", "category": "吊坠"}).json()
+    variant = create_part_variant(db, root["id"], color_code="G")
+    db.flush()
+    assert variant.buffer_ratio_override is None
+    assert variant.buffer_floor_override is None
+
+    # Set both overrides on root
+    r = client.patch(f"/api/parts/{root['id']}", json={
+        "buffer_ratio_override": 0.04,
+        "buffer_floor_override": 100,
+    })
+    assert r.status_code == 200
+
+    # Variant should reflect both overrides now
+    db.refresh(variant)
+    assert float(variant.buffer_ratio_override) == 0.04
+    assert variant.buffer_floor_override == 100
+
+    # Clearing on root should also propagate (None → variant becomes None)
+    r = client.patch(f"/api/parts/{root['id']}", json={
+        "buffer_ratio_override": None,
+        "buffer_floor_override": None,
+    })
+    assert r.status_code == 200
+    db.refresh(variant)
+    assert variant.buffer_ratio_override is None
+    assert variant.buffer_floor_override is None

@@ -286,19 +286,77 @@ def test_suggested_qty_composite_uses_atom_tier(client, db):
     assert rows[1]["suggested_qty"] == 30
 
 
-def test_compute_suggested_qty_unit_none_tier_falls_back_to_small():
-    """Unit test: _compute_suggested_qty(t=8, tier=None) should fall back to small."""
+def test_compute_suggested_qty_unit_guards_and_delegation(db):
+    """Unit test: picking adapter guards (theo missing / non-positive / part missing)
+    and delegates to services.handcraft.compute_suggested_qty for the real math."""
     from services.handcraft_picking import _compute_suggested_qty
-    # tier=None → small rules: max(50, 8*0.02)=50, suggested = 8 + 50 = 58
-    assert _compute_suggested_qty(8.0, None) == 58
-    # tier="bogus" → also falls back to small
-    assert _compute_suggested_qty(8.0, "bogus") == 58
-    # theoretical=None → None
-    assert _compute_suggested_qty(None, "small") is None
-    # theoretical=0 → None
-    assert _compute_suggested_qty(0, "small") is None
-    # theoretical=-1 → None (negative guarded)
-    assert _compute_suggested_qty(-1, "small") is None
+    from models.part import Part as PartModel
+
+    p_small = PartModel(id="PJ-X-UNIT", name="U", category="小配件", size_tier="small")
+    db.add(p_small); db.flush()
+
+    # Happy path: small tier rules: max(50, 8*0.02=0.16)=50, suggested = 8 + 50 = 58
+    assert _compute_suggested_qty(8.0, p_small) == 58
+    # part is None → None
+    assert _compute_suggested_qty(8.0, None) is None
+    # theoretical None → None
+    assert _compute_suggested_qty(None, p_small) is None
+    # theoretical 0 → None
+    assert _compute_suggested_qty(0, p_small) is None
+    # theoretical negative → None (guarded)
+    assert _compute_suggested_qty(-1, p_small) is None
+
+
+def test_picking_respects_buffer_ratio_override(client, db):
+    """Picking suggested_qty must honour part.buffer_ratio_override —
+    not just tier default. Regression for the bug where picking duplicated
+    BUFFER_RULES locally and ignored override fields."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+    from decimal import Decimal as Dec
+
+    db.add(PartModel(
+        id="PJ-X-OV1", name="高损耗",
+        category="小配件", size_tier="small",
+        buffer_ratio_override=Dec("0.05"),
+    ))
+    db.add(HandcraftOrder(id="HC-OV1", supplier_name="S", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(
+        handcraft_order_id="HC-OV1", part_id="PJ-X-OV1",
+        qty=5000, bom_qty=5000,
+    ))
+    db.flush()
+
+    resp = client.get("/api/handcraft/HC-OV1/picking")
+    assert resp.status_code == 200
+    row = resp.json()["groups"][0]["rows"][0]
+    # 5000 × 5% = 250 (override beats floor 50) → suggested = 5000 + 250 = 5250
+    assert row["suggested_qty"] == 5250
+
+
+def test_picking_respects_buffer_floor_override(client, db):
+    """Same as above but for floor override."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+
+    db.add(PartModel(
+        id="PJ-X-OV2", name="宽兜底",
+        category="小配件", size_tier="small",
+        buffer_floor_override=200,
+    ))
+    db.add(HandcraftOrder(id="HC-OV2", supplier_name="S", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(
+        handcraft_order_id="HC-OV2", part_id="PJ-X-OV2",
+        qty=1000, bom_qty=1000,
+    ))
+    db.flush()
+
+    resp = client.get("/api/handcraft/HC-OV2/picking")
+    row = resp.json()["groups"][0]["rows"][0]
+    # 1000 × 2% = 20 vs floor 200 (override) → buffer = 200 → suggested = 1200
+    assert row["suggested_qty"] == 1200
 
 
 # --- Task 5: mark / unmark / reset picking ---

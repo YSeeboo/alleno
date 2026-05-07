@@ -1442,29 +1442,49 @@ const BUFFER_RULES = {
   medium: { ratio: 0.01, floor: 15 },
 }
 
+const resolveBufferRule = (part) => {
+  const tier = part?.size_tier || 'small'
+  const tierRule = BUFFER_RULES[tier] || BUFFER_RULES.small
+  const ratio = part?.buffer_ratio_override != null
+    ? Number(part.buffer_ratio_override)
+    : tierRule.ratio
+  const floor = part?.buffer_floor_override != null
+    ? Number(part.buffer_floor_override)
+    : tierRule.floor
+  const isOverridden = part?.buffer_ratio_override != null || part?.buffer_floor_override != null
+  return { tier, ratio, floor, isOverridden }
+}
+
+// Quantize float to 4 decimals — matches backend Numeric(10,4) precision.
+// Used on theoretical AND t * ratio, since `100 * 0.01 = 1.0000000000000002`
+// would otherwise drift past `ceil`.
+const quantize4 = (n) => Math.round(n * 10000) / 10000
+
 const computeSuggestedQty = (row) => {
   const theo = row?.bom_qty
   if (!theo || theo <= 0 || !row?.part_id) return null
-  const tier = partMap.value[row.part_id]?.size_tier || 'small'
-  const rule = BUFFER_RULES[tier] || BUFFER_RULES.small
-  // Round to 4 decimals (matches backend Numeric(10,4)) before ceil.
-  const t = Math.round(theo * 10000) / 10000
-  const buffer = Math.ceil(Math.max(rule.floor, t * rule.ratio))
+  const part = partMap.value[row.part_id]
+  const { ratio, floor } = resolveBufferRule(part)
+  const t = quantize4(theo)
+  const buffer = Math.ceil(Math.max(floor, quantize4(t * ratio)))
   return Math.ceil(t) + buffer
 }
 
 const buildSuggestedTooltip = (row) => {
   const theo = row?.bom_qty
   if (!theo || theo <= 0 || !row?.part_id) return ''
-  const tier = partMap.value[row.part_id]?.size_tier || 'small'
-  const rule = BUFFER_RULES[tier]
-  const t = Math.round(theo * 10000) / 10000
-  const buffer = Math.ceil(Math.max(rule.floor, t * rule.ratio))
-  const ratioCalc = (t * rule.ratio).toFixed(2)
-  const winner = rule.floor >= t * rule.ratio ? 'floor 兜底' : '百分比放大'
+  const part = partMap.value[row.part_id]
+  const { tier, ratio, floor, isOverridden } = resolveBufferRule(part)
+  const t = quantize4(theo)
+  const tr = quantize4(t * ratio)
+  const buffer = Math.ceil(Math.max(floor, tr))
+  const ratioCalc = tr.toFixed(2)
+  const winner = floor >= tr ? 'floor 兜底' : '百分比放大'
   const tierLabel = tier === 'small' ? '小件' : '中件'
+  const sourceLabel = isOverridden ? `${tierLabel}（自定义）` : `${tierLabel}规则`
   const suggested = computeSuggestedQty(row)
-  return `${tierLabel}规则: max(${rule.floor}, 理论×${rule.ratio * 100}%) | 计算: max(${rule.floor}, ${ratioCalc}) = ${buffer} (${winner}) | 建议: ceil(${t}) + ${buffer} = ${suggested}`
+  const ratioDisplay = (ratio * 100).toFixed(2).replace(/\.?0+$/, '')
+  return `${sourceLabel}: max(${floor}, 理论×${ratioDisplay}%) | 计算: max(${floor}, ${ratioCalc}) = ${buffer} (${winner}) | 建议: ceil(${t}) + ${buffer} = ${suggested}`
 }
 
 const itemColumns = [
@@ -1491,8 +1511,11 @@ const itemColumns = [
       return h(NTooltip, { trigger: 'hover' }, {
         trigger: () => h('span', { style: 'white-space: nowrap; cursor: help; font-variant-numeric: tabular-nums;' }, [
           h('span', null, actual ?? '-'),
-          h('span', { style: 'color: #cccccc; margin: 0 2px;' }, '/'),
-          h('span', { style: 'color: #1890ff; font-weight: 700; font-size: 14px;' }, suggested),
+          h('span', { style: 'color: #1890ff; margin-left: 4px; font-size: 13px;' }, [
+            '（建议 ',
+            h('span', { style: 'font-weight: 700; font-size: 14px;' }, suggested),
+            '）',
+          ]),
         ]),
         default: () => buildSuggestedTooltip(row),
       })

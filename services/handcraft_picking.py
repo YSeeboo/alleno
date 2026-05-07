@@ -12,7 +12,6 @@ order status — purely a UI helper.
 
 from __future__ import annotations
 
-import math
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -35,27 +34,25 @@ from schemas.handcraft import (
     HandcraftPickingResponse,
     HandcraftPickingVariant,
 )
+from services.handcraft import compute_suggested_qty
 
 
-# --- Suggested qty rule (mirror of frontend HandcraftDetail.computeSuggestedQty) ---
+def _compute_suggested_qty(theoretical: Optional[float], part: Optional[Part]) -> Optional[int]:
+    """Picking-side adapter: convert float theoretical → quantized Decimal,
+    then delegate to services.handcraft.compute_suggested_qty so override
+    fields and Decimal precision are respected (a single source of truth
+    for the buffer rule across suggest-parts and picking).
 
-_BUFFER_RULES: dict[str, dict[str, float]] = {
-    "small":  {"ratio": 0.02, "floor": 50},
-    "medium": {"ratio": 0.01, "floor": 15},
-}
-
-
-def _compute_suggested_qty(theoretical: Optional[float], size_tier: Optional[str]) -> Optional[int]:
-    """Apply: suggested = ceil(theoretical) + ceil(max(floor, theoretical * ratio)).
-    Returns None when theoretical is missing or non-positive (no suggestion).
-    Unknown size_tier falls back to 'small' (matches the frontend default)."""
-    if theoretical is None or theoretical <= 0:
+    Returns None when theoretical is missing/non-positive or part is missing.
+    """
+    if theoretical is None or theoretical <= 0 or part is None:
         return None
-    rule = _BUFFER_RULES.get(size_tier or "small", _BUFFER_RULES["small"])
-    # Round to 4 decimals (matches DB Numeric(10,4)) before ceil — same as frontend.
-    t = round(theoretical, 4)
-    buffer = math.ceil(max(rule["floor"], t * rule["ratio"]))
-    return math.ceil(t) + buffer
+    # Quantize to 4 decimals (matches DB Numeric(10,4)) via str() to avoid
+    # carrying float IEEE 754 noise into the Decimal computation.
+    theo = Decimal(str(theoretical)).quantize(Decimal("0.0001"))
+    if theo <= 0:
+        return None
+    return compute_suggested_qty(part, theo)
 
 
 def get_handcraft_picking_simulation(
@@ -102,7 +99,7 @@ def get_handcraft_picking_simulation(
                 if pi.bom_qty is not None and atom_ratio is not None
                 else None
             )
-            suggested = _compute_suggested_qty(theoretical, atom_part.size_tier)
+            suggested = _compute_suggested_qty(theoretical, atom_part)
             rows.append(HandcraftPickingVariant(
                 part_id=atom_id,
                 part_name=atom_part.name,

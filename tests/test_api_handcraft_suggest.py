@@ -183,3 +183,96 @@ def test_suggest_parts_variant_in_bom_inherits_root_size_tier(client, db):
     row = resp.json()[0]
     assert row["part_id"] == variant.id
     assert row["size_tier"] == "medium"  # inherited from PJ-LT root
+
+
+def test_suggest_parts_buffer_ratio_override_applied(client, db):
+    """Per-part ratio override should win over tier default."""
+    j = create_jewelry(db, {"name": "J", "category": "单件"})
+    p = create_part(db, {
+        "name": "高损耗小件", "category": "小配件",
+        "buffer_ratio_override": 0.05,  # 5% instead of tier default 2%
+    })
+    set_bom(db, j.id, p.id, qty_per_unit=1)
+    db.flush()
+    resp = client.post(
+        "/api/handcraft/suggest-parts",
+        json={"jewelry_items": [{"jewelry_id": j.id, "qty": 5000}]},
+    )
+    assert resp.status_code == 200
+    row = resp.json()[0]
+    # 5000 × 5% = 250 (override) vs floor 50 → buffer = 250
+    assert row["buffer"] == 250
+    assert row["suggested_qty"] == 5250
+
+
+def test_suggest_parts_buffer_floor_override_applied(client, db):
+    """Per-part floor override should win over tier default."""
+    j = create_jewelry(db, {"name": "J", "category": "单件"})
+    p = create_part(db, {
+        "name": "宽兜底配件", "category": "小配件",
+        "buffer_floor_override": 200,  # floor 200 instead of tier default 50
+    })
+    set_bom(db, j.id, p.id, qty_per_unit=1)
+    db.flush()
+    resp = client.post(
+        "/api/handcraft/suggest-parts",
+        json={"jewelry_items": [{"jewelry_id": j.id, "qty": 1000}]},
+    )
+    assert resp.status_code == 200
+    row = resp.json()[0]
+    # 1000 × 2% = 20 vs floor 200 (override) → buffer = 200
+    assert row["buffer"] == 200
+    assert row["suggested_qty"] == 1200
+
+
+def test_suggest_parts_both_overrides_applied(client, db):
+    """Both ratio and floor override → tier completely bypassed."""
+    j = create_jewelry(db, {"name": "J", "category": "单件"})
+    p = create_part(db, {
+        "name": "全自定义", "category": "小配件",
+        "buffer_ratio_override": 0.03,
+        "buffer_floor_override": 100,
+    })
+    set_bom(db, j.id, p.id, qty_per_unit=1)
+    db.flush()
+    resp = client.post(
+        "/api/handcraft/suggest-parts",
+        json={"jewelry_items": [{"jewelry_id": j.id, "qty": 5000}]},
+    )
+    assert resp.status_code == 200
+    row = resp.json()[0]
+    # 5000 × 3% = 150 vs floor 100 → buffer = 150
+    assert row["buffer"] == 150
+    assert row["suggested_qty"] == 5150
+
+
+def test_suggest_parts_no_override_uses_tier_default(client, db):
+    """NULL override should fall back to tier rule (regression for fallback path)."""
+    j = create_jewelry(db, {"name": "J", "category": "单件"})
+    p = create_part(db, {"name": "普通小件", "category": "小配件"})
+    # Verify no override at creation
+    assert p.buffer_ratio_override is None
+    assert p.buffer_floor_override is None
+    set_bom(db, j.id, p.id, qty_per_unit=1)
+    db.flush()
+    resp = client.post(
+        "/api/handcraft/suggest-parts",
+        json={"jewelry_items": [{"jewelry_id": j.id, "qty": 5000}]},
+    )
+    row = resp.json()[0]
+    # tier=small → 5000 × 2% = 100 vs floor 50 → buffer = 100
+    assert row["buffer"] == 100
+    assert row["suggested_qty"] == 5100
+
+
+def test_variant_inherits_buffer_overrides_from_root(client, db):
+    """Variants should inherit override fields, just like size_tier."""
+    root = create_part(db, {
+        "name": "特殊吊坠", "category": "吊坠",
+        "buffer_ratio_override": 0.04,
+        "buffer_floor_override": 100,
+    })
+    variant = create_part_variant(db, root.id, color_code="G")
+    db.flush()
+    assert float(variant.buffer_ratio_override) == 0.04
+    assert variant.buffer_floor_override == 100

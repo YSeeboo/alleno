@@ -25,6 +25,23 @@ HANDCRAFT_BUFFER_RULES = {
 }
 
 
+def compute_suggested_qty(part: Part, theoretical: Decimal) -> int:
+    """Apply the per-tier buffer rule (with per-part override) to theoretical
+    demand. Returns ceil(theoretical) + buffer.
+
+    Direct dict lookup (not .get()): size_tier is constrained by Pydantic
+    Literal + DB NOT NULL. An unknown value is data corruption and should
+    fail loud rather than silently apply a default rule.
+
+    Caller must ensure theoretical is a positive Decimal.
+    """
+    tier_rule = HANDCRAFT_BUFFER_RULES[part.size_tier]
+    ratio = part.buffer_ratio_override if part.buffer_ratio_override is not None else tier_rule["ratio"]
+    floor = part.buffer_floor_override if part.buffer_floor_override is not None else tier_rule["floor"]
+    buffer = math.ceil(max(Decimal(floor), theoretical * Decimal(ratio)))
+    return math.ceil(theoretical) + buffer
+
+
 def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
     """Store a user-supplied date as midnight. Same-day ordering is handled by
     an `id DESC` tie-breaker in list queries, not by fabricating a time-of-day."""
@@ -104,12 +121,8 @@ def suggest_handcraft_parts(db: Session, jewelry_items: list[dict]) -> list[dict
         part = parts_by_id.get(part_id)
         if part is None:
             continue
-        # Direct lookup (no fallback): size_tier is constrained by Pydantic
-        # Literal + DB NOT NULL; an unknown value is data corruption and
-        # should fail loud rather than silently apply a default rule.
-        rule = HANDCRAFT_BUFFER_RULES[part.size_tier]
-        buffer = math.ceil(max(Decimal(rule["floor"]), theo * rule["ratio"]))
-        suggested = math.ceil(theo) + buffer
+        suggested = compute_suggested_qty(part, theo)
+        buffer = suggested - math.ceil(theo)
         results.append({
             "part_id": part_id,
             "part_name": part.name,

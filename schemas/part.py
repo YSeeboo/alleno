@@ -17,6 +17,8 @@ class PartCreate(BaseModel):
     parent_part_id: Optional[str] = None
     wholesale_price: Optional[float] = None
     size_tier: Optional[SizeTier] = None
+    buffer_ratio_override: Optional[float] = Field(None, ge=0, lt=1)
+    buffer_floor_override: Optional[int] = Field(None, ge=0)
 
 
 class PartUpdate(BaseModel):
@@ -31,6 +33,8 @@ class PartUpdate(BaseModel):
     assembly_cost: Optional[float] = None
     wholesale_price: Optional[float] = None
     size_tier: Optional[SizeTier] = None
+    buffer_ratio_override: Optional[float] = Field(None, ge=0, lt=1)
+    buffer_floor_override: Optional[int] = Field(None, ge=0)
 
 
 class PartResponse(BaseModel):
@@ -53,6 +57,8 @@ class PartResponse(BaseModel):
     parent_part_id: Optional[str] = None
     is_composite: bool = False
     size_tier: SizeTier = "small"
+    buffer_ratio_override: Optional[float] = None
+    buffer_floor_override: Optional[int] = None
 
 
 class PartVariantCreate(BaseModel):
