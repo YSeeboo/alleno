@@ -58,3 +58,30 @@ def test_delete_weight(db):
     upsert_weight(db, order_id, pi.id, "PJ-X-WT01", 0.5, "kg")
     assert delete_weight(db, pi.id, "PJ-X-WT01") is True
     assert delete_weight(db, pi.id, "PJ-X-WT01") is False
+
+
+def test_sum_weight_handles_mixed_units(db):
+    order_id, pi = _seed_atomic(db, order_id="HC-WT05")
+    db.add(PartModel(id="PJ-X-WTB", name="扣环", category="小配件", size_tier="small"))
+    db.flush()
+    upsert_weight(db, order_id, pi.id, "PJ-X-WT01", 0.5, "kg")     # 500 g
+    upsert_weight(db, order_id, pi.id, "PJ-X-WTB", 300, "g")       # 300 g
+    total_kg = sum_weight_by_part_item(db, pi.id, target_unit="kg")
+    assert abs(total_kg - 0.8) < 1e-6
+
+
+def test_sum_weight_returns_none_when_no_rows(db):
+    _, pi = _seed_atomic(db, order_id="HC-WT06")
+    assert sum_weight_by_part_item(db, pi.id) is None
+
+
+def test_bulk_load_returns_keyed_dict(db):
+    order_id, pi = _seed_atomic(db, order_id="HC-WT07")
+    db.add(PartModel(id="PJ-X-WTB", name="扣环", category="小配件", size_tier="small"))
+    db.flush()
+    upsert_weight(db, order_id, pi.id, "PJ-X-WT01", 0.5, "kg")
+    upsert_weight(db, order_id, pi.id, "PJ-X-WTB", 0.3, "kg")
+    loaded = bulk_load_for_picking(db, order_id)
+    assert (pi.id, "PJ-X-WT01") in loaded
+    assert (pi.id, "PJ-X-WTB") in loaded
+    assert float(loaded[(pi.id, "PJ-X-WT01")].weight) == 0.5
