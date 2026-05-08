@@ -18,6 +18,8 @@ from schemas.handcraft import (
     HandcraftPartItemResponse,
     HandcraftPickingMarkRequest,
     HandcraftPickingResponse,
+    HandcraftPickingWeightDeleteRequest,
+    HandcraftPickingWeightUpsertRequest,
     HandcraftResponse,
     HandcraftSuggestPartItem,
     HandcraftSuggestRequest,
@@ -57,7 +59,12 @@ from services.handcraft_picking import (
     unmark_picked,
     reset_picking,
 )
+from services.handcraft_picking_weight import (
+    upsert_weight as upsert_picking_weight,
+    delete_weight as delete_picking_weight,
+)
 from services.handcraft_picking_list_pdf import build_handcraft_picking_list_pdf
+from models.handcraft_order import HandcraftOrder
 
 
 class HandcraftPartUpdate(BaseModel):
@@ -439,6 +446,48 @@ def api_handcraft_picking_reset(order_id: str, db: Session = Depends(get_db)):
     """Clear all picking records for this handcraft order. Pending only."""
     with service_errors():
         deleted = reset_picking(db, order_id)
+    return {"deleted": deleted}
+
+
+@router.put("/{order_id}/picking/weight")
+def api_handcraft_picking_weight_upsert(
+    order_id: str,
+    body: HandcraftPickingWeightUpsertRequest,
+    db: Session = Depends(get_db),
+):
+    """Upsert per-atom weight. Pending status only."""
+    order = db.query(HandcraftOrder).filter_by(id=order_id).one_or_none()
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"手工单 {order_id} 不存在")
+    if order.status != "pending":
+        raise HTTPException(status_code=400, detail=f"手工单状态为 {order.status}，无法编辑重量")
+    with service_errors():
+        row = upsert_picking_weight(
+            db, order_id, body.part_item_id, body.atom_part_id,
+            body.weight, body.weight_unit,
+        )
+    return {
+        "part_item_id": row.part_item_id,
+        "atom_part_id": row.atom_part_id,
+        "weight": float(row.weight),
+        "weight_unit": row.weight_unit,
+    }
+
+
+@router.delete("/{order_id}/picking/weight")
+def api_handcraft_picking_weight_delete(
+    order_id: str,
+    body: HandcraftPickingWeightDeleteRequest,
+    db: Session = Depends(get_db),
+):
+    """Delete per-atom weight. Pending status only."""
+    order = db.query(HandcraftOrder).filter_by(id=order_id).one_or_none()
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"手工单 {order_id} 不存在")
+    if order.status != "pending":
+        raise HTTPException(status_code=400, detail=f"手工单状态为 {order.status}，无法删除重量")
+    with service_errors():
+        deleted = delete_picking_weight(db, order_id, body.part_item_id, body.atom_part_id)
     return {"deleted": deleted}
 
 

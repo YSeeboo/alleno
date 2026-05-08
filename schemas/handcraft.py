@@ -127,29 +127,31 @@ class HandcraftSuggestPartItem(BaseModel):
 # --- Picking simulation (配货模拟) ---
 
 
-class HandcraftPickingVariant(BaseModel):
-    """One picking row inside a part_item group. For atomic items this is the
-    only row; for composites this is one expanded atom."""
-    part_id: str
-    part_name: str
-    part_image: Optional[str] = None
-    size_tier: SizeTier  # 让前端 tooltip 显示正确的 buffer 规则
-    needed_qty: float
+class PickingSourceRow(BaseModel):
+    """One (part_item × atom_part_id) slice in the merged picking view."""
+    part_item_id: int
+    atom_part_id: str
+    qty: float                          # atomic: pi.qty; composite: pi.qty × atom_ratio
+    bom_qty: Optional[float] = None     # atomic: pi.bom_qty; composite: pi.bom_qty × atom_ratio
+    is_composite_expansion: bool = False
+    parent_composite_name: Optional[str] = None  # set when is_composite_expansion is True
+    needed_qty: float                   # bom_qty (or qty fallback) used to compute suggested
     suggested_qty: Optional[int] = None
-    current_stock: float
+    weight: Optional[float] = None
+    weight_unit: Optional[str] = None
     picked: bool
 
 
-class HandcraftPickingGroup(BaseModel):
-    """One HandcraftPartItem with its expanded atom picking rows."""
-    part_item_id: int
-    parent_part_id: str
-    parent_part_name: str
-    parent_part_image: Optional[str] = None
-    parent_is_composite: bool
-    parent_qty: float
-    parent_bom_qty: Optional[float] = None
-    rows: List[HandcraftPickingVariant]
+class PickingGroup(BaseModel):
+    """All sub-rows for a single atomic part_id, across all part_items in the order."""
+    atom_part_id: str
+    atom_part_name: str
+    atom_part_image: Optional[str] = None
+    size_tier: SizeTier
+    current_stock: float
+    total_needed_qty: float
+    total_suggested_qty: int
+    rows: List[PickingSourceRow]
 
 
 class HandcraftPickingProgress(BaseModel):
@@ -160,11 +162,23 @@ class HandcraftPickingProgress(BaseModel):
 class HandcraftPickingResponse(BaseModel):
     handcraft_order_id: str
     supplier_name: str
-    status: str  # 让前端决定只读/可编辑
-    groups: List[HandcraftPickingGroup]
+    status: str
+    groups: List[PickingGroup]
     progress: HandcraftPickingProgress
 
 
 class HandcraftPickingMarkRequest(BaseModel):
     part_item_id: int = Field(gt=0)
     part_id: str = Field(min_length=1)
+
+
+class HandcraftPickingWeightUpsertRequest(BaseModel):
+    part_item_id: int = Field(gt=0)
+    atom_part_id: str = Field(min_length=1)
+    weight: float = Field(gt=0)
+    weight_unit: str = Field(default="kg", pattern="^(kg|g)$")
+
+
+class HandcraftPickingWeightDeleteRequest(BaseModel):
+    part_item_id: int = Field(gt=0)
+    atom_part_id: str = Field(min_length=1)

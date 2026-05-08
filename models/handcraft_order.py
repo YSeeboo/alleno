@@ -88,3 +88,33 @@ class HandcraftPickingRecord(Base):
             name="uq_handcraft_picking_record_item_part",
         ),
     )
+
+
+class HandcraftPickingWeight(Base):
+    """Per (part_item × atom_part_id) actual weight measured at picking time.
+
+    For atomic part_items: one row, atom_part_id == part_item.part_id.
+    For composite part_items: one row per atom expanded from the composite.
+    """
+    __tablename__ = "handcraft_picking_weight"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    handcraft_order_id = Column(
+        String,
+        ForeignKey("handcraft_order.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    part_item_id = Column(
+        Integer,
+        ForeignKey("handcraft_part_item.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    atom_part_id = Column(String, ForeignKey("part.id"), nullable=False)
+    weight = Column(Numeric(10, 4), nullable=False)
+    weight_unit = Column(String, nullable=False, default="kg")
+    recorded_at = Column(DateTime, nullable=False, default=now_beijing)
+
+    __table_args__ = (
+        UniqueConstraint("part_item_id", "atom_part_id", name="uq_picking_weight_pa"),
+    )
