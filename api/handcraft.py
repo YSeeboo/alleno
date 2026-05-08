@@ -26,6 +26,8 @@ from schemas.handcraft import (
     HandcraftUpdate,
 )
 from schemas.production_loss import ConfirmLossHandcraftRequest, ProductionLossResponse
+from schemas.restock import RestockRequestRead
+from services.restock import list_for_handcraft
 from services.production_loss import confirm_handcraft_loss
 from services.order_todo import get_links_for_production_item, delete_link
 from services.handcraft_excel import build_handcraft_order_excel
@@ -150,6 +152,11 @@ def api_get_handcraft_order(order_id: str, db: Session = Depends(get_db)):
     if order is None:
         raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
     return order
+
+
+@router.get("/{order_id}/restock-requests", response_model=list[RestockRequestRead])
+def api_list_handcraft_restock_requests(order_id: str, db: Session = Depends(get_db)):
+    return list_for_handcraft(db, order_id)
 
 
 @router.delete("/{order_id}", status_code=204)

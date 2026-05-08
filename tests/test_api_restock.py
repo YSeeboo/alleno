@@ -154,3 +154,26 @@ def test_history_endpoint_lists_done(client, db):
     assert len(body) == 1
     assert body[0]["id"] == rec["id"]
     assert body[0]["completed_at"] is not None
+
+
+def test_list_restock_for_handcraft_endpoint(client, db):
+    _seed_part(db, "PJ-X-00001")
+    _seed_part(db, "PJ-X-00002")
+    _seed_handcraft(db, "HC-0001")
+    _seed_handcraft(db, "HC-0002")
+
+    client.post("/api/restock-requests", json={
+        "part_id": "PJ-X-00001", "handcraft_order_id": "HC-0001", "source": "picking",
+    })
+    client.post("/api/restock-requests", json={
+        "part_id": "PJ-X-00002", "handcraft_order_id": "HC-0001", "source": "manual", "note": "x",
+    })
+    client.post("/api/restock-requests", json={
+        "part_id": "PJ-X-00001", "handcraft_order_id": "HC-0002", "source": "picking",
+    })
+
+    body = client.get("/api/handcraft/HC-0001/restock-requests").json()
+    assert len(body) == 2
+    assert {r["part_id"] for r in body} == {"PJ-X-00001", "PJ-X-00002"}
+    for row in body:
+        assert row["handcraft_order_id"] == "HC-0001"
