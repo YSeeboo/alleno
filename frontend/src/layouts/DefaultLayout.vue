@@ -120,6 +120,7 @@ const allGroupedItems = [
     children: [
       { label: '订单管理', key: 'orders', icon: icon(OrderIcon), perm: 'orders' },
       { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
+      { label: '待补货清单', key: 'restock', icon: icon(AlertCircleOutline), perm: 'handcraft' },
       {
         label: '电镀', key: 'plating-group', icon: icon(PlatingIcon), perm: 'plating',
         children: [
@@ -133,7 +134,6 @@ const allGroupedItems = [
         children: [
           { label: '手工发出', key: 'handcraft', icon: icon(PaperPlaneOutline), perm: 'handcraft' },
           { label: '手工回收', key: 'handcraft-receipts', icon: icon(DownloadOutline), perm: 'handcraft' },
-          { label: '待补货清单', key: 'restock', icon: icon(AlertCircleOutline), perm: 'handcraft' },
         ],
       },
     ],
