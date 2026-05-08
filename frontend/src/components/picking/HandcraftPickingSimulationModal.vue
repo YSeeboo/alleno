@@ -13,6 +13,7 @@ import {
   upsertHandcraftPickingWeight,
   deleteHandcraftPickingWeight,
 } from '@/api/handcraft'
+import { createRestock, deleteRestock } from '@/api/restock'
 import { useIsMobile } from '@/composables/useIsMobile'
 
 const { isMobile } = useIsMobile()
@@ -215,6 +216,63 @@ function groupAllPicked(g) {
   return g.rows.length > 0 && g.rows.every((r) => r.picked)
 }
 
+function groupRestockStatus(g) {
+  // All rows in a group share the same (part_id, handcraft_order_id) pair,
+  // so the restock state is identical on every row. Read from row[0].
+  return g.rows[0]?.restock_status || null
+}
+
+function groupRestockRequestId(g) {
+  return g.rows[0]?.restock_request_id || null
+}
+
+function groupRestockDisabled(g) {
+  // Hide/disable the toggle when stock is sufficient — user shouldn't need to
+  // mark a part for restock if it's not actually short.
+  return g.current_stock >= g.total_suggested_qty && groupRestockStatus(g) !== 'pending'
+}
+
+function restockCellClass(g) {
+  const s = groupRestockStatus(g)
+  return {
+    'restock-done': s === 'done',
+    'restock-pending': s === 'pending',
+    'restock-low': s == null && g.current_stock < g.total_suggested_qty,
+  }
+}
+
+async function toggleRestock(g, value) {
+  if (readonly.value) return
+  if (value) {
+    try {
+      const { data: rec } = await createRestock({
+        part_id: g.atom_part_id,
+        handcraft_order_id: props.orderId,
+        source: 'picking',
+      })
+      // Mirror state onto every row in the group
+      for (const r of g.rows) {
+        r.restock_status = rec.status
+        r.restock_request_id = rec.id
+      }
+    } catch (err) {
+      message.error(err.response?.data?.detail || '标记需补货失败')
+    }
+  } else {
+    const id = groupRestockRequestId(g)
+    if (!id) return
+    try {
+      await deleteRestock(id)
+      for (const r of g.rows) {
+        r.restock_status = null
+        r.restock_request_id = null
+      }
+    } catch (err) {
+      message.error(err.response?.data?.detail || '取消标记失败')
+    }
+  }
+}
+
 const WEIGHT_UNIT_OPTIONS = [
   { label: 'kg', value: 'kg' },
   { label: 'g',  value: 'g' },
@@ -273,6 +331,7 @@ const WEIGHT_UNIT_OPTIONS = [
                 <th class="col-num">建议</th>
                 <th class="col-num">库存</th>
                 <th class="col-num">已配</th>
+                <th class="col-restock">需补货</th>
               </tr>
             </thead>
             <tbody>
@@ -314,6 +373,21 @@ const WEIGHT_UNIT_OPTIONS = [
                   </td>
                   <td class="col-num group-progress">
                     {{ g.rows.filter((r) => r.picked).length }}/{{ g.rows.length }} 已配
+                  </td>
+                  <td class="col-restock" :class="restockCellClass(g)" @click.stop>
+                    <template v-if="groupRestockStatus(g) === 'done'">
+                      <n-tag size="small" type="success" :bordered="false">✓ 已补过</n-tag>
+                    </template>
+                    <template v-else>
+                      <n-checkbox
+                        :checked="groupRestockStatus(g) === 'pending'"
+                        :disabled="readonly || groupRestockDisabled(g)"
+                        @update:checked="(v) => toggleRestock(g, v)"
+                      />
+                      <div v-if="groupRestockStatus(g) === 'pending'" class="restock-hint pending">⏳ 待补货</div>
+                      <div v-else-if="groupRestockDisabled(g)" class="restock-hint dim">库存充足</div>
+                      <div v-else class="restock-hint">未标记</div>
+                    </template>
                   </td>
                 </tr>
                 <tr
@@ -382,10 +456,11 @@ const WEIGHT_UNIT_OPTIONS = [
                       @update:checked="toggleRow(r)"
                     />
                   </td>
+                  <td class="col-restock"></td>
                 </tr>
               </template>
               <tr v-if="displayGroups.length === 0">
-                <td colspan="6" class="empty">没有数据</td>
+                <td colspan="7" class="empty">没有数据</td>
               </tr>
             </tbody>
           </table>
@@ -562,5 +637,28 @@ const WEIGHT_UNIT_OPTIONS = [
   font-size: 12px;
   color: #999;
   text-align: right;
+}
+.col-restock {
+  width: 110px;
+  text-align: center;
+  background: #fff8e1;
+}
+.restock-hint {
+  font-size: 11px;
+  color: #999;
+  margin-top: 2px;
+}
+.restock-hint.pending {
+  color: #f57c00;
+  font-weight: 500;
+}
+.restock-hint.dim {
+  color: #bbb;
+}
+.restock-pending {
+  background: #ffe0b2;
+}
+.restock-done {
+  background: #e8f5e9;
 }
 </style>
