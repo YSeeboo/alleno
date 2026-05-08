@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from models.handcraft_order import HandcraftPartItem
 from models.part import Part
 from services.handcraft import get_handcraft_order
+from services.handcraft_picking_weight import sum_weight_by_part_item
 from services.plating_export import (
     build_export_filename,
     download_image_bytes,
@@ -35,8 +36,10 @@ def get_handcraft_export_payload(db: Session, order_id: str) -> dict:
     for item in items:
         part = parts.get(item.part_id)
         qty = float(item.qty) if item.qty is not None else None
-        weight = float(item.weight) if item.weight is not None else None
-        weight_unit = item.weight_unit or "g"
+        # Weight now lives in handcraft_picking_weight (per atom). SUM normalizes
+        # to kg across mixed units, so the display unit is always kg.
+        weight = sum_weight_by_part_item(db, item.id, target_unit="kg")
+        weight_unit = "kg"
         weight_text = f"{format_qty_text(weight)} {weight_unit}" if weight is not None else ""
         detail_rows.append(
             {

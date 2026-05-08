@@ -203,6 +203,34 @@ def test_patch_non_weight_fields_unchanged_for_both(client, db):
     assert pi.note == "hello"
 
 
+def test_delete_part_item_cascades_picking_weight(client, db):
+    """Deleting a HandcraftPartItem must cascade-delete its picking_weight rows."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftPickingWeight
+
+    db.add(PartModel(id="PJ-X-CD1", name="链头", category="小配件", size_tier="small"))
+    db.add(PartModel(id="PJ-X-CD2", name="扣环", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-CD1", supplier_name="S", status="pending"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-CD1", part_id="PJ-X-CD1", qty=200, bom_qty=200)
+    # Add a second part_item so delete_handcraft_part doesn't reject the
+    # request for being "the last part item".
+    pi_keep = HandcraftPartItem(handcraft_order_id="HC-CD1", part_id="PJ-X-CD2", qty=100, bom_qty=100)
+    db.add(pi); db.add(pi_keep); db.flush()
+    pi_id = pi.id
+
+    upsert_weight(db, "HC-CD1", pi_id, "PJ-X-CD1", 0.5, "kg")
+    assert db.query(HandcraftPickingWeight).filter_by(part_item_id=pi_id).count() == 1
+
+    # Delete the part_item via the API endpoint
+    r = client.delete(f"/api/handcraft/HC-CD1/parts/{pi_id}")
+    assert r.status_code in (200, 204)
+
+    # Picking weight rows should be gone (FK ondelete=CASCADE)
+    db.expire_all()
+    assert db.query(HandcraftPickingWeight).filter_by(part_item_id=pi_id).count() == 0
+
+
 def test_ensure_schema_compat_backfills_existing_weights(db):
     """Existing HandcraftPartItem.weight values get migrated to handcraft_picking_weight."""
     from models.part import Part as PartModel

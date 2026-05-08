@@ -388,18 +388,35 @@ def add_handcraft_part(db: Session, order_id: str, item: dict) -> HandcraftPartI
     if order.status != "pending":
         raise ValueError(f"Cannot add part: order {order_id} status is '{order.status}', must be 'pending'")
     _require_part(db, item["part_id"])
+    # Weight is no longer stored on the legacy part_item columns — it goes to
+    # handcraft_picking_weight. The columns remain for back-compat (read by
+    # ensure_schema_compat backfill) but new writes always go through the
+    # picking_weight table.
     new_item = HandcraftPartItem(
         handcraft_order_id=order_id,
         part_id=item["part_id"],
         qty=item["qty"],
-        weight=item.get("weight"),
-        weight_unit=item.get("weight_unit"),
+        weight=None,
+        weight_unit=None,
         bom_qty=item.get("bom_qty"),
         unit=item.get("unit", "个"),
         note=item.get("note"),
     )
     db.add(new_item)
     db.flush()
+
+    # If the caller supplied a weight, route it to handcraft_picking_weight —
+    # but only for atomic parts. Composite parts can't be weighed at the
+    # part_item level (weights are per-atom after expansion); silently drop
+    # rather than raise, since the legacy add-modal doesn't know about this.
+    incoming_weight = item.get("weight")
+    if incoming_weight is not None:
+        part = db.query(Part).filter_by(id=item["part_id"]).one_or_none()
+        if part is not None and not part.is_composite:
+            from services.handcraft_picking_weight import upsert_weight
+            unit_val = item.get("weight_unit") or "kg"
+            upsert_weight(db, order_id, new_item.id, item["part_id"], float(incoming_weight), unit_val)
+
     return _attach_part_colors(db, [new_item])[0]
 
 
@@ -417,20 +434,42 @@ def update_handcraft_part(db: Session, order_id: str, item_id: int, data: dict) 
         raise ValueError(f"HandcraftPartItem {item_id} not found in order {order_id}")
 
     # Route weight to handcraft_picking_weight table; reject for composites.
-    weight_keys = {"weight", "weight_unit"}
-    if weight_keys & data.keys():
+    # Distinguish "field present in payload" (caller intends to change it) from
+    # "field absent" (preserve existing). A unit-only PATCH must NOT delete the
+    # existing weight row — only an explicit `weight: null` clears it.
+    weight_present = "weight" in data
+    unit_present = "weight_unit" in data
+    if weight_present or unit_present:
         from services.handcraft_picking_weight import upsert_weight, delete_weight
+        from models.handcraft_order import HandcraftPickingWeight
         part = db.query(Part).filter_by(id=item.part_id).one_or_none()
         if part is None:
             raise ValueError(f"配件 {item.part_id} 不存在")
         if part.is_composite:
             raise ValueError("组合配件不支持直接编辑重量；请在配货模拟中按 atom 输入")
-        weight_val = data.pop("weight", None)
-        unit_val = data.pop("weight_unit", "kg") or "kg"
-        if weight_val is None:
+        weight_val = data.pop("weight", None) if weight_present else None
+        unit_val = data.pop("weight_unit", None) if unit_present else None
+
+        if weight_present and weight_val is None:
+            # Explicit clear
             delete_weight(db, item.id, item.part_id)
         else:
-            upsert_weight(db, order_id, item.id, item.part_id, float(weight_val), unit_val)
+            existing = (
+                db.query(HandcraftPickingWeight)
+                .filter_by(part_item_id=item.id, atom_part_id=item.part_id)
+                .one_or_none()
+            )
+            new_weight = weight_val if weight_present else (
+                float(existing.weight) if existing is not None else None
+            )
+            new_unit = unit_val if unit_present else (
+                existing.weight_unit if existing is not None else "kg"
+            )
+            if new_weight is None:
+                # Unit-only PATCH with no prior weight — nothing to write.
+                pass
+            else:
+                upsert_weight(db, order_id, item.id, item.part_id, float(new_weight), new_unit or "kg")
 
     for field in ("qty", "unit", "note"):
         if field in data and data[field] is not None:

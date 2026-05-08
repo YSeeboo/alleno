@@ -349,7 +349,7 @@ const WEIGHT_UNIT_OPTIONS = [
                       />
                     </div>
                   </td>
-                  <td class="col-num">{{ fmtQty(r.qty) }}</td>
+                  <td class="col-num">{{ fmtQty(r.needed_qty) }}</td>
                   <td class="col-num suggested">
                     <n-tooltip v-if="r.suggested_qty != null" trigger="hover">
                       <template #trigger>
