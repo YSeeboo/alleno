@@ -30,7 +30,7 @@ class RestockRequestRead(BaseModel):
 
 class RestockSourceItem(BaseModel):
     request_id: int
-    handcraft_order_id: str
+    handcraft_order_id: Optional[str]
     supplier_name: str
     created_at: datetime
 
