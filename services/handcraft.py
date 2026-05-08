@@ -690,6 +690,11 @@ def delete_handcraft_order(db: Session, order_id: str) -> None:
         for part_id, total_sent in part_totals.items():
             add_stock(db, "part", part_id, total_sent, "手工发出撤回")
 
+    from models.restock_request import RestockRequest
+    db.query(RestockRequest).filter(
+        RestockRequest.handcraft_order_id == order_id
+    ).delete(synchronize_session=False)
+    db.flush()
     db.query(HandcraftPickingRecord).filter(
         HandcraftPickingRecord.handcraft_order_id == order_id
     ).delete(synchronize_session=False)

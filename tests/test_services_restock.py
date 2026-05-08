@@ -308,3 +308,25 @@ def test_list_history_filter_by_part_and_handcraft(db):
 
     rows = list_history(db, handcraft_order_id="HC-0001")
     assert {r["id"] for r in rows} == {a.id, b.id}
+
+
+# ---------------------------------------------------------------------------
+# delete_handcraft_order cascade
+# ---------------------------------------------------------------------------
+from services.handcraft import delete_handcraft_order
+
+
+def test_delete_handcraft_order_cascades_restock_requests(db):
+    _seed_part(db, "PJ-X-00001")
+    _seed_handcraft(db, "HC-0001")
+    rec_pending = create_from_picking(db, "PJ-X-00001", "HC-0001")
+
+    _seed_part(db, "PJ-X-00002")
+    rec_done = create_manual(db, "PJ-X-00002", "HC-0001")
+    mark_done(db, rec_done.id)
+
+    delete_handcraft_order(db, "HC-0001")
+
+    from models.restock_request import RestockRequest as R
+    remaining = db.query(R).filter_by(handcraft_order_id="HC-0001").all()
+    assert remaining == []
