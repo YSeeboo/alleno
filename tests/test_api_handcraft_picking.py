@@ -784,3 +784,32 @@ def test_pdf_endpoint_smoke(client, db):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/pdf")
     assert len(r.content) > 1000  # PDF has some real bytes
+
+
+# --- Task 7: expose restock_status on picking rows ---
+
+
+def test_picking_simulation_exposes_restock_status_on_each_row(client, db):
+    from models.part import Part
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+    from models.restock_request import RestockRequest
+
+    db.add(Part(id="PJ-X-00001", name="小圆环", category="小配件"))
+    db.add(HandcraftOrder(id="HC-0001", supplier_name="王", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-0001", part_id="PJ-X-00001", qty=1))
+    db.flush()
+
+    body = client.get("/api/handcraft/HC-0001/picking").json()
+    row = body["groups"][0]["rows"][0]
+    assert row["restock_status"] is None
+    assert row["restock_request_id"] is None
+
+    db.add(RestockRequest(part_id="PJ-X-00001", handcraft_order_id="HC-0001",
+                          source="picking", status="pending"))
+    db.flush()
+
+    body = client.get("/api/handcraft/HC-0001/picking").json()
+    row = body["groups"][0]["rows"][0]
+    assert row["restock_status"] == "pending"
+    assert row["restock_request_id"] is not None
