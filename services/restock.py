@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from models.handcraft_order import HandcraftOrder
+from time_utils import now_beijing
 from models.part import Part
 from models.restock_request import RestockRequest
 
@@ -79,3 +80,42 @@ def create_manual(db: Session, part_id: str, handcraft_order_id: str, note: Opti
     already-pending pair the existing note is NOT overwritten."""
     return _create(db, part_id=part_id, handcraft_order_id=handcraft_order_id,
                    source="manual", note=note)
+
+
+def mark_done(db: Session, request_id: int) -> RestockRequest:
+    """pending -> done. Raises ValueError if record does not exist or
+    is already done. Single-direction transition."""
+    rec = db.get(RestockRequest, request_id)
+    if rec is None:
+        raise ValueError("补货记录不存在")
+    if rec.status == "done":
+        raise ValueError("补货记录已完成，不可重置")
+    rec.status = "done"
+    rec.completed_at = now_beijing()
+    db.flush()
+    return rec
+
+
+def mark_part_done(db: Session, part_id: str) -> int:
+    """Bulk-transition all pending restock requests for `part_id` to done.
+    Returns the number of rows updated. No-op if no pending exists."""
+    now = now_beijing()
+    count = (
+        db.query(RestockRequest)
+        .filter(RestockRequest.part_id == part_id, RestockRequest.status == "pending")
+        .update({"status": "done", "completed_at": now}, synchronize_session=False)
+    )
+    db.flush()
+    return count
+
+
+def delete_pending(db: Session, request_id: int) -> None:
+    """Cancel a pending restock request. Done records cannot be deleted
+    via this path (they are kept as history). Raises ValueError otherwise."""
+    rec = db.get(RestockRequest, request_id)
+    if rec is None:
+        raise ValueError("补货记录不存在")
+    if rec.status == "done":
+        raise ValueError("已补货的记录不可删除")
+    db.delete(rec)
+    db.flush()

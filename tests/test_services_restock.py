@@ -85,3 +85,107 @@ def test_create_manual_does_not_overwrite_existing_note(db):
     rec = create_manual(db, "PJ-X-00001", "HC-0001", note="第二次")
 
     assert rec.note == "第一次"
+
+
+# ---------------------------------------------------------------------------
+# mark_done
+# ---------------------------------------------------------------------------
+from services.restock import mark_done
+
+
+def test_mark_done_transitions_pending_to_done(db):
+    _seed_part(db)
+    _seed_handcraft(db)
+    rec = create_from_picking(db, "PJ-X-00001", "HC-0001")
+
+    updated = mark_done(db, rec.id)
+
+    assert updated.status == "done"
+    assert updated.completed_at is not None
+
+
+def test_mark_done_raises_when_already_done(db):
+    _seed_part(db)
+    _seed_handcraft(db)
+    rec = create_from_picking(db, "PJ-X-00001", "HC-0001")
+    mark_done(db, rec.id)
+
+    with pytest.raises(ValueError, match="已完成"):
+        mark_done(db, rec.id)
+
+
+def test_mark_done_raises_for_unknown_id(db):
+    with pytest.raises(ValueError, match="补货记录不存在"):
+        mark_done(db, 99999)
+
+
+# ---------------------------------------------------------------------------
+# mark_part_done
+# ---------------------------------------------------------------------------
+from services.restock import mark_part_done
+
+
+def test_mark_part_done_updates_only_pending_for_that_part(db):
+    _seed_part(db, "PJ-X-00001")
+    _seed_part(db, "PJ-X-00002")
+    _seed_handcraft(db, "HC-0001")
+    _seed_handcraft(db, "HC-0002")
+
+    a = create_from_picking(db, "PJ-X-00001", "HC-0001")
+    b = create_from_picking(db, "PJ-X-00001", "HC-0002")
+    other = create_from_picking(db, "PJ-X-00002", "HC-0001")
+    # mark `other` done so it is excluded from the update
+    mark_done(db, other.id)
+    # also pre-mark one of the same-part records done — should NOT be touched
+    pre_done = create_from_picking(db, "PJ-X-00001", "HC-0001")  # idempotent, returns a
+    assert pre_done.id == a.id
+
+    count = mark_part_done(db, "PJ-X-00001")
+    db.refresh(a)
+    db.refresh(b)
+    db.refresh(other)
+
+    assert count == 2
+    assert a.status == "done" and a.completed_at is not None
+    assert b.status == "done" and b.completed_at is not None
+    assert other.status == "done"  # was already done, untouched but still done
+
+
+def test_mark_part_done_returns_zero_when_no_pending(db):
+    _seed_part(db, "PJ-X-00001")
+
+    count = mark_part_done(db, "PJ-X-00001")
+
+    assert count == 0
+
+
+# ---------------------------------------------------------------------------
+# delete_pending
+# ---------------------------------------------------------------------------
+from services.restock import delete_pending
+
+
+def test_delete_pending_removes_pending_record(db):
+    _seed_part(db)
+    _seed_handcraft(db)
+    rec = create_from_picking(db, "PJ-X-00001", "HC-0001")
+
+    delete_pending(db, rec.id)
+
+    from models.restock_request import RestockRequest as R
+    assert db.query(R).filter_by(id=rec.id).one_or_none() is None
+
+
+def test_delete_pending_raises_when_done(db):
+    _seed_part(db)
+    _seed_handcraft(db)
+    rec = create_from_picking(db, "PJ-X-00001", "HC-0001")
+    mark_done(db, rec.id)
+
+    with pytest.raises(ValueError, match="已补货的记录不可删除"):
+        delete_pending(db, rec.id)
+
+
+def test_delete_pending_raises_for_unknown_id(db):
+    with pytest.raises(ValueError, match="补货记录不存在"):
+        delete_pending(db, 99999)
