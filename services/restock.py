@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from models.handcraft_order import HandcraftOrder
 from models.part import Part
 from models.restock_request import RestockRequest
-from time_utils import now_beijing
 
 
 def _get_existing(db: Session, part_id: str, handcraft_order_id: Optional[str]) -> Optional[RestockRequest]:
@@ -24,14 +23,14 @@ def _get_existing(db: Session, part_id: str, handcraft_order_id: Optional[str]) 
 
 
 def _validate_part(db: Session, part_id: str) -> None:
-    if db.query(Part).filter_by(id=part_id).one_or_none() is None:
+    if db.get(Part, part_id) is None:
         raise ValueError("配件不存在")
 
 
 def _validate_handcraft(db: Session, hc_id: Optional[str]) -> None:
     if hc_id is None:
         return
-    if db.query(HandcraftOrder).filter_by(id=hc_id).one_or_none() is None:
+    if db.get(HandcraftOrder, hc_id) is None:
         raise ValueError("手工单不存在")
 
 
@@ -52,11 +51,11 @@ def _create(db: Session, *, part_id: str, handcraft_order_id: Optional[str], sou
         status="pending",
         note=note,
     )
-    db.add(rec)
     try:
-        db.flush()
+        with db.begin_nested():
+            db.add(rec)
+            db.flush()
     except IntegrityError:
-        db.rollback()
         existing = _get_existing(db, part_id, handcraft_order_id)
         if existing is None:
             raise
