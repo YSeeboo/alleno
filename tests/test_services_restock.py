@@ -189,3 +189,122 @@ def test_delete_pending_raises_when_done(db):
 def test_delete_pending_raises_for_unknown_id(db):
     with pytest.raises(ValueError, match="补货记录不存在"):
         delete_pending(db, 99999)
+
+
+# ---------------------------------------------------------------------------
+# list_for_handcraft
+# ---------------------------------------------------------------------------
+from services.restock import list_for_handcraft
+
+
+def test_list_for_handcraft_returns_pending_and_done_newest_first(db):
+    _seed_part(db, "PJ-X-00001")
+    _seed_part(db, "PJ-X-00002")
+    _seed_handcraft(db)
+
+    rec1 = create_from_picking(db, "PJ-X-00001", "HC-0001")
+    rec2 = create_manual(db, "PJ-X-00002", "HC-0001", note="实物找不到")
+    mark_done(db, rec1.id)
+
+    rows = list_for_handcraft(db, "HC-0001")
+
+    assert len(rows) == 2
+    assert {r.id for r in rows} == {rec1.id, rec2.id}
+
+
+def test_list_for_handcraft_excludes_other_orders(db):
+    _seed_part(db)
+    _seed_handcraft(db, "HC-0001")
+    _seed_handcraft(db, "HC-0002")
+    create_from_picking(db, "PJ-X-00001", "HC-0001")
+    create_from_picking(db, "PJ-X-00001", "HC-0002")
+
+    rows = list_for_handcraft(db, "HC-0001")
+    assert len(rows) == 1
+    assert rows[0].handcraft_order_id == "HC-0001"
+
+
+# ---------------------------------------------------------------------------
+# list_pending_summary
+# ---------------------------------------------------------------------------
+from services.restock import list_pending_summary
+from services.inventory import add_stock
+
+
+def test_list_pending_summary_aggregates_by_part(db):
+    _seed_part(db, "PJ-X-00001", name="小圆环")
+    _seed_part(db, "PJ-X-00002", name="银扣头")
+    _seed_handcraft(db, "HC-0001", supplier="王师傅")
+    _seed_handcraft(db, "HC-0002", supplier="李姐")
+
+    add_stock(db, "part", "PJ-X-00001", 5.0, "测试入库")
+
+    create_from_picking(db, "PJ-X-00001", "HC-0001")
+    create_from_picking(db, "PJ-X-00001", "HC-0002")
+    create_from_picking(db, "PJ-X-00002", "HC-0001")
+
+    summary = list_pending_summary(db)
+    summary_by_part = {row["part_id"]: row for row in summary}
+
+    assert set(summary_by_part) == {"PJ-X-00001", "PJ-X-00002"}
+    a = summary_by_part["PJ-X-00001"]
+    assert a["part_name"] == "小圆环"
+    assert a["current_stock"] == 5.0
+    assert a["source_count"] == 2
+    assert {s["handcraft_order_id"] for s in a["sources"]} == {"HC-0001", "HC-0002"}
+    assert {s["supplier_name"] for s in a["sources"]} == {"王师傅", "李姐"}
+
+
+def test_list_pending_summary_excludes_done(db):
+    _seed_part(db, "PJ-X-00001")
+    _seed_handcraft(db, "HC-0001")
+    rec = create_from_picking(db, "PJ-X-00001", "HC-0001")
+    mark_done(db, rec.id)
+
+    summary = list_pending_summary(db)
+    assert summary == []
+
+
+# ---------------------------------------------------------------------------
+# list_history
+# ---------------------------------------------------------------------------
+from services.restock import list_history
+
+
+def test_list_history_returns_done_records_with_part_and_supplier(db):
+    _seed_part(db, "PJ-X-00001", name="小圆环")
+    _seed_part(db, "PJ-X-00002")
+    _seed_handcraft(db, "HC-0001", supplier="王师傅")
+
+    rec = create_from_picking(db, "PJ-X-00001", "HC-0001")
+    mark_done(db, rec.id)
+    # an unrelated pending record — should NOT appear in history
+    create_from_picking(db, "PJ-X-00002", "HC-0001")
+
+    rows = list_history(db)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["id"] == rec.id
+    assert row["part_id"] == "PJ-X-00001"
+    assert row["part_name"] == "小圆环"
+    assert row["handcraft_order_id"] == "HC-0001"
+    assert row["supplier_name"] == "王师傅"
+    assert row["completed_at"] is not None
+
+
+def test_list_history_filter_by_part_and_handcraft(db):
+    _seed_part(db, "PJ-X-00001")
+    _seed_part(db, "PJ-X-00002")
+    _seed_handcraft(db, "HC-0001")
+    _seed_handcraft(db, "HC-0002")
+
+    a = create_from_picking(db, "PJ-X-00001", "HC-0001"); mark_done(db, a.id)
+    b = create_from_picking(db, "PJ-X-00002", "HC-0001"); mark_done(db, b.id)
+    c = create_from_picking(db, "PJ-X-00001", "HC-0002"); mark_done(db, c.id)
+
+    rows = list_history(db, part_id="PJ-X-00001")
+    assert {r["id"] for r in rows} == {a.id, c.id}
+
+    rows = list_history(db, handcraft_order_id="HC-0001")
+    assert {r["id"] for r in rows} == {a.id, b.id}

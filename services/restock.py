@@ -6,13 +6,15 @@ from __future__ import annotations
 
 from typing import Optional
 
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from models.handcraft_order import HandcraftOrder
-from time_utils import now_beijing
+from models.inventory_log import InventoryLog
 from models.part import Part
 from models.restock_request import RestockRequest
+from time_utils import now_beijing
 
 
 def _get_existing(db: Session, part_id: str, handcraft_order_id: Optional[str]) -> Optional[RestockRequest]:
@@ -119,3 +121,115 @@ def delete_pending(db: Session, request_id: int) -> None:
         raise ValueError("已补货的记录不可删除")
     db.delete(rec)
     db.flush()
+
+
+def list_for_handcraft(db: Session, handcraft_order_id: str) -> list[RestockRequest]:
+    """All restock requests (pending + done) for a single handcraft order,
+    newest first."""
+    return (
+        db.query(RestockRequest)
+        .filter_by(handcraft_order_id=handcraft_order_id)
+        .order_by(RestockRequest.created_at.desc(), RestockRequest.id.desc())
+        .all()
+    )
+
+
+def list_pending_summary(db: Session) -> list[dict]:
+    """Aggregate pending restock requests by part. Each row carries
+    the part metadata, current stock, source handcraft orders, and count."""
+    rows = (
+        db.query(
+            RestockRequest.id,
+            RestockRequest.part_id,
+            RestockRequest.handcraft_order_id,
+            RestockRequest.created_at,
+            Part.name,
+            Part.image,
+            HandcraftOrder.supplier_name,
+        )
+        .join(Part, Part.id == RestockRequest.part_id)
+        .outerjoin(HandcraftOrder, HandcraftOrder.id == RestockRequest.handcraft_order_id)
+        .filter(RestockRequest.status == "pending")
+        .order_by(RestockRequest.created_at.asc())
+        .all()
+    )
+    if not rows:
+        return []
+
+    part_ids = sorted({r.part_id for r in rows})
+    stock_rows = (
+        db.query(InventoryLog.item_id, func.coalesce(func.sum(InventoryLog.change_qty), 0))
+        .filter(InventoryLog.item_type == "part", InventoryLog.item_id.in_(part_ids))
+        .group_by(InventoryLog.item_id)
+        .all()
+    )
+    stock_by_part = {pid: float(qty) for pid, qty in stock_rows}
+
+    by_part: dict[str, dict] = {}
+    for r in rows:
+        bucket = by_part.setdefault(r.part_id, {
+            "part_id": r.part_id,
+            "part_name": r.name,
+            "part_image": r.image,
+            "current_stock": stock_by_part.get(r.part_id, 0.0),
+            "sources": [],
+        })
+        bucket["sources"].append({
+            "request_id": r.id,
+            "handcraft_order_id": r.handcraft_order_id,
+            "supplier_name": r.supplier_name or "",
+            "created_at": r.created_at,
+        })
+
+    out = []
+    for part_id in part_ids:
+        bucket = by_part[part_id]
+        bucket["source_count"] = len(bucket["sources"])
+        out.append(bucket)
+    return out
+
+
+def list_history(
+    db: Session,
+    part_id: Optional[str] = None,
+    handcraft_order_id: Optional[str] = None,
+    limit: int = 200,
+) -> list[dict]:
+    """List done restock requests, newest completion first. Optional filters
+    by part / handcraft order. limit caps result size."""
+    q = (
+        db.query(
+            RestockRequest.id,
+            RestockRequest.part_id,
+            RestockRequest.handcraft_order_id,
+            RestockRequest.source,
+            RestockRequest.note,
+            RestockRequest.created_at,
+            RestockRequest.completed_at,
+            Part.name.label("part_name"),
+            HandcraftOrder.supplier_name,
+        )
+        .join(Part, Part.id == RestockRequest.part_id)
+        .outerjoin(HandcraftOrder, HandcraftOrder.id == RestockRequest.handcraft_order_id)
+        .filter(RestockRequest.status == "done")
+    )
+    if part_id:
+        q = q.filter(RestockRequest.part_id == part_id)
+    if handcraft_order_id:
+        q = q.filter(RestockRequest.handcraft_order_id == handcraft_order_id)
+    q = q.order_by(RestockRequest.completed_at.desc(), RestockRequest.id.desc()).limit(limit)
+
+    return [
+        {
+            "id": r.id,
+            "part_id": r.part_id,
+            "part_name": r.part_name,
+            "handcraft_order_id": r.handcraft_order_id,
+            "supplier_name": r.supplier_name,
+            "source": r.source,
+            "note": r.note,
+            "created_at": r.created_at,
+            "completed_at": r.completed_at,
+        }
+        for r in q.all()
+    ]
