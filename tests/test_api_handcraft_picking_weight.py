@@ -260,3 +260,54 @@ def test_ensure_schema_compat_backfills_existing_weights(db):
     ensure_schema_compat(target_engine=db.bind)
     rows = db.query(HandcraftPickingWeight).filter_by(part_item_id=pi_id).all()
     assert len(rows) == 1
+
+
+def test_create_handcraft_order_routes_atomic_weight_to_new_table(client, db):
+    """POST /api/handcraft/ with weight on an atomic part should land in
+    handcraft_picking_weight, not the legacy HandcraftPartItem.weight column."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    db.add(PartModel(id="PJ-X-CHO1", name="链头", category="小配件", size_tier="small"))
+    db.commit()
+
+    r = client.post("/api/handcraft/", json={
+        "supplier_name": "S-CHO1",
+        "parts": [{"part_id": "PJ-X-CHO1", "qty": 200, "bom_qty": 200, "weight": 0.5, "weight_unit": "kg"}],
+    })
+    assert r.status_code in (200, 201), r.text
+    order_id = r.json()["id"]
+
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id, part_id="PJ-X-CHO1").one()
+    assert pi.weight is None  # legacy column not written
+    rows = db.query(HandcraftPickingWeight).filter_by(part_item_id=pi.id).all()
+    assert len(rows) == 1
+    assert float(rows[0].weight) == 0.5
+    assert rows[0].weight_unit == "kg"
+
+
+def test_create_handcraft_order_drops_composite_weight(client, db):
+    """POST /api/handcraft/ with weight on a composite part should silently
+    drop the weight (composite weights are per-atom after expansion)."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from services.part_bom import set_part_bom
+
+    db.add(PartModel(id="PJ-X-CHO2A", name="原A", category="小配件", size_tier="small"))
+    db.add(PartModel(id="PJ-X-CHO2B", name="原B", category="小配件", size_tier="small"))
+    db.add(PartModel(id="PJ-X-CHO2", name="组合", category="小配件", size_tier="small"))
+    db.flush()
+    set_part_bom(db, "PJ-X-CHO2", "PJ-X-CHO2A", 1)
+    set_part_bom(db, "PJ-X-CHO2", "PJ-X-CHO2B", 1)
+    db.commit()
+
+    r = client.post("/api/handcraft/", json={
+        "supplier_name": "S-CHO2",
+        "parts": [{"part_id": "PJ-X-CHO2", "qty": 10, "bom_qty": 10, "weight": 0.8, "weight_unit": "kg"}],
+    })
+    assert r.status_code in (200, 201), r.text
+    order_id = r.json()["id"]
+
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id, part_id="PJ-X-CHO2").one()
+    assert pi.weight is None
+    assert db.query(HandcraftPickingWeight).filter_by(part_item_id=pi.id).count() == 0

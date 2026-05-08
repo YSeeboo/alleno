@@ -216,17 +216,26 @@ def create_handcraft_order(
         db.add(order)
         db.flush()
 
+    pending_weights: list[tuple[HandcraftPartItem, float, str]] = []
     for p in parts:
-        db.add(HandcraftPartItem(
+        # Mirror add_handcraft_part: weight goes to handcraft_picking_weight,
+        # not the legacy part_item columns. Atomic only — composite weights
+        # are per-atom after expansion, so silently drop here.
+        new_item = HandcraftPartItem(
             handcraft_order_id=order.id,
             part_id=p["part_id"],
             qty=p["qty"],
-            weight=p.get("weight"),
-            weight_unit=p.get("weight_unit"),
+            weight=None,
+            weight_unit=None,
             bom_qty=p.get("bom_qty"),
             unit=p.get("unit", "个"),
             note=p.get("note"),
-        ))
+        )
+        db.add(new_item)
+        incoming_weight = p.get("weight")
+        if incoming_weight is not None:
+            unit_val = p.get("weight_unit") or "kg"
+            pending_weights.append((new_item, float(incoming_weight), unit_val))
     for j in jewelries or []:
         jewelry_id = j.get("jewelry_id")
         part_id = j.get("part_id")
@@ -244,6 +253,20 @@ def create_handcraft_order(
             note=j.get("note"),
         ))
     db.flush()
+
+    if pending_weights:
+        from services.handcraft_picking_weight import upsert_weight
+        composite_ids = {
+            p.id for p in db.query(Part).filter(
+                Part.id.in_({pi.part_id for pi, _, _ in pending_weights})
+            ).all()
+            if p.is_composite
+        }
+        for pi, weight, unit_val in pending_weights:
+            if pi.part_id in composite_ids:
+                continue  # composite weights not supported on the part_item level
+            upsert_weight(db, order.id, pi.id, pi.part_id, weight, unit_val)
+
     order.merged = merged
     return order
 

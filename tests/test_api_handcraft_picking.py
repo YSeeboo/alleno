@@ -673,8 +673,12 @@ def test_delete_part_item_cleans_picking_records(client, db):
 
 
 def test_delete_handcraft_order_cleans_picking_records(client, db):
-    """Deleting a handcraft order must purge picking records to avoid FK
-    violation on the bulk part_item delete inside delete_handcraft_order."""
+    """Deleting a handcraft order must purge picking records AND picking weights
+    to avoid FK violation on the bulk part_item delete inside
+    delete_handcraft_order, and so weight rows don't outlive their order."""
+    from models.handcraft_order import HandcraftPickingWeight
+    from services.handcraft_picking_weight import upsert_weight
+
     _setup_atomic(db)
     pi_id = client.get("/api/handcraft/HC-TEST-1/picking").json()["groups"][0]["rows"][0]["part_item_id"]
     resp_mark = client.post(
@@ -682,17 +686,26 @@ def test_delete_handcraft_order_cleans_picking_records(client, db):
         json={"part_item_id": pi_id, "part_id": "PJ-X-00001"},
     )
     assert resp_mark.status_code == 200
+    upsert_weight(db, "HC-TEST-1", pi_id, "PJ-X-00001", 0.5, "kg")
     assert (
         db.query(HandcraftPickingRecord)
+        .filter_by(handcraft_order_id="HC-TEST-1").count() == 1
+    )
+    assert (
+        db.query(HandcraftPickingWeight)
         .filter_by(handcraft_order_id="HC-TEST-1").count() == 1
     )
 
     resp = client.delete("/api/handcraft/HC-TEST-1")
     assert resp.status_code in (200, 204)
 
-    # Picking records and the order itself should all be gone.
+    # Picking records, weights, and the order itself should all be gone.
     assert (
         db.query(HandcraftPickingRecord)
+        .filter_by(handcraft_order_id="HC-TEST-1").count() == 0
+    )
+    assert (
+        db.query(HandcraftPickingWeight)
         .filter_by(handcraft_order_id="HC-TEST-1").count() == 0
     )
     assert db.query(HandcraftOrder).filter_by(id="HC-TEST-1").one_or_none() is None
