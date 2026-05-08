@@ -62,21 +62,29 @@
       </n-tab-pane>
 
       <n-tab-pane name="history" tab="历史">
-        <p style="color:#888;">历史记录将在 Task 13 中实现。</p>
+        <n-data-table
+          :columns="historyColumns"
+          :data="historyRows"
+          :loading="historyLoading"
+          :bordered="false"
+          size="small"
+          :pagination="{ pageSize: 50 }"
+        />
       </n-tab-pane>
     </n-tabs>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NTabs, NTabPane, NInput, NCheckbox, NSpin, NEmpty,
-  NCollapse, NCollapseItem, NButton, useDialog, useMessage,
+  NCollapse, NCollapseItem, NButton, NDataTable, useDialog, useMessage,
 } from 'naive-ui'
 import {
   listRestockSummary,
+  listRestockHistory,
   markRestockDone,
   markPartRestockDone,
 } from '@/api/restock'
@@ -109,6 +117,19 @@ const totalSourceCount = computed(() =>
   filteredRows.value.reduce((acc, r) => acc + r.source_count, 0),
 )
 
+const historyRows = ref([])
+const historyLoading = ref(false)
+
+const historyColumns = [
+  { title: '配件', key: 'part_id', render: (row) => `${row.part_id} · ${row.part_name}` },
+  { title: '手工单', key: 'handcraft_order_id', render: (row) => row.handcraft_order_id || '—' },
+  { title: '手工商家', key: 'supplier_name', render: (row) => row.supplier_name || '—' },
+  { title: '来源', key: 'source', render: (row) => row.source === 'picking' ? '配货模拟' : '手动添加' },
+  { title: '备注', key: 'note', render: (row) => row.note || '—' },
+  { title: '标记时间', key: 'created_at', render: (row) => formatDate(row.created_at) },
+  { title: '完成时间', key: 'completed_at', render: (row) => formatDate(row.completed_at) },
+]
+
 async function loadSummary() {
   summaryLoading.value = true
   try {
@@ -116,6 +137,16 @@ async function loadSummary() {
     summaryRows.value = data
   } finally {
     summaryLoading.value = false
+  }
+}
+
+async function loadHistory() {
+  historyLoading.value = true
+  try {
+    const { data } = await listRestockHistory({ limit: 200 })
+    historyRows.value = data
+  } finally {
+    historyLoading.value = false
   }
 }
 
@@ -152,6 +183,10 @@ function markPartDone(row) {
     },
   })
 }
+
+watch(activeTab, (val) => {
+  if (val === 'history') loadHistory()
+})
 
 onMounted(loadSummary)
 </script>
