@@ -53,8 +53,6 @@ class RestockMarkPartDoneResponse(BaseModel):
 
 
 class RestockHistoryItem(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     part_id: str
     part_name: str
