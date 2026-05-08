@@ -89,13 +89,27 @@ async function toggleRow(row) {
   }
 }
 
+function onWeightFocus(row) {
+  // Snapshot the value at focus time so onWeightBlur can decide whether a
+  // DELETE is even necessary. Without this, blurring an empty input on a
+  // never-set row would fire a no-op DELETE on every focus cycle.
+  row._weightAtFocus = row.weight
+}
+
 async function onWeightBlur(row) {
   if (readonly.value) return
   const w = row.weight
+  const prior = row._weightAtFocus
+  row._weightAtFocus = undefined
   try {
     if (w == null || Number(w) <= 0) {
-      // Clearing the weight: only call delete if there is something on the server.
-      // We use null/0 from the row as the "delete" sentinel.
+      // Only DELETE when the row actually had a weight before this edit.
+      // Empty-blur on a never-set row is a no-op (avoid spurious traffic).
+      const hadPrior = prior != null && Number(prior) > 0
+      if (!hadPrior) {
+        row.weight = null
+        return
+      }
       await deleteHandcraftPickingWeight(
         props.orderId,
         row.part_item_id,
@@ -337,6 +351,7 @@ const WEIGHT_UNIT_OPTIONS = [
                         size="small"
                         placeholder="-"
                         class="weight-input"
+                        @focus="onWeightFocus(r)"
                         @blur="onWeightBlur(r)"
                       />
                       <n-select

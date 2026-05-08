@@ -77,9 +77,14 @@ def upsert_weight(
     return row
 
 
-def delete_weight(db: Session, part_item_id: int, atom_part_id: str) -> bool:
+def delete_weight(db: Session, order_id: str, part_item_id: int, atom_part_id: str) -> bool:
     """Delete the (part_item, atom_part) weight record. Returns True if a row
-    was deleted, False if no record existed."""
+    was deleted, False if no record existed.
+
+    Validates that ``part_item_id`` belongs to ``order_id`` to prevent
+    cross-order deletion via guessable auto-increment IDs.
+    """
+    _validate_part_item_in_order(db, order_id, part_item_id)
     row = (
         db.query(HandcraftPickingWeight)
         .filter_by(part_item_id=part_item_id, atom_part_id=atom_part_id)

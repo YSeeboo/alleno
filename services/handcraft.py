@@ -473,9 +473,15 @@ def update_handcraft_part(db: Session, order_id: str, item_id: int, data: dict) 
         weight_val = data.pop("weight", None) if weight_present else None
         unit_val = data.pop("weight_unit", None) if unit_present else None
 
-        if weight_present and weight_val is None:
+        # Treat weight==0 the same as null/absent so behavior matches both
+        # the picking endpoint schema (gt=0) and the modal's blur-on-empty
+        # semantics ("clear input → DELETE the row").
+        is_clear = weight_present and (
+            weight_val is None or float(weight_val) == 0
+        )
+        if is_clear:
             # Explicit clear
-            delete_weight(db, item.id, item.part_id)
+            delete_weight(db, order_id, item.id, item.part_id)
         else:
             existing = (
                 db.query(HandcraftPickingWeight)

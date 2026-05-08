@@ -233,10 +233,11 @@ def build_handcraft_picking_list_pdf(
             c.setFillColor(colors.black)
             x += _COL_W[4]
 
-            # Col 5: 库存 (red if insufficient — group-level vs row needed)
+            # Col 5: 库存 (red if insufficient — group-level threshold to
+            # match the picking modal's stock-low coloring)
             stock_color = (
                 colors.HexColor("#d03050")
-                if g.current_stock < r.needed_qty
+                if g.current_stock < g.total_suggested_qty
                 else colors.black
             )
             c.setFillColor(stock_color)

@@ -56,8 +56,8 @@ def test_upsert_weight_rejects_bad_atom_part_id(db):
 def test_delete_weight(db):
     order_id, pi = _seed_atomic(db, order_id="HC-WT04")
     upsert_weight(db, order_id, pi.id, "PJ-X-WT01", 0.5, "kg")
-    assert delete_weight(db, pi.id, "PJ-X-WT01") is True
-    assert delete_weight(db, pi.id, "PJ-X-WT01") is False
+    assert delete_weight(db, order_id, pi.id, "PJ-X-WT01") is True
+    assert delete_weight(db, order_id, pi.id, "PJ-X-WT01") is False
 
 
 def test_sum_weight_handles_mixed_units(db):
@@ -284,6 +284,62 @@ def test_create_handcraft_order_routes_atomic_weight_to_new_table(client, db):
     assert len(rows) == 1
     assert float(rows[0].weight) == 0.5
     assert rows[0].weight_unit == "kg"
+
+
+def test_delete_picking_weight_rejects_cross_order(client, db):
+    """A pending order's DELETE endpoint must NOT touch a part_item that
+    belongs to another order, even if the caller guesses the auto-increment
+    part_item_id."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftPickingWeight
+
+    db.add(PartModel(id="PJ-X-XOA", name="链头A", category="小配件", size_tier="small"))
+    db.add(PartModel(id="PJ-X-XOB", name="链头B", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-XOA", supplier_name="S", status="pending"))
+    db.add(HandcraftOrder(id="HC-XOB", supplier_name="S", status="pending"))
+    db.flush()
+    pa = HandcraftPartItem(handcraft_order_id="HC-XOA", part_id="PJ-X-XOA", qty=200, bom_qty=200)
+    pb = HandcraftPartItem(handcraft_order_id="HC-XOB", part_id="PJ-X-XOB", qty=200, bom_qty=200)
+    db.add(pa); db.add(pb); db.flush()
+    upsert_weight(db, "HC-XOA", pa.id, "PJ-X-XOA", 0.5, "kg")
+    upsert_weight(db, "HC-XOB", pb.id, "PJ-X-XOB", 0.7, "kg")
+    db.commit()
+
+    # Try to delete order B's weight via order A's URL
+    r = client.request(
+        "DELETE", "/api/handcraft/HC-XOA/picking/weight",
+        json={"part_item_id": pb.id, "atom_part_id": "PJ-X-XOB"},
+    )
+    assert r.status_code >= 400 and r.status_code < 500, r.text
+
+    # Order B's weight row must still be intact
+    db.expire_all()
+    rows = db.query(HandcraftPickingWeight).filter_by(part_item_id=pb.id).all()
+    assert len(rows) == 1
+    assert float(rows[0].weight) == 0.7
+
+
+def test_patch_atomic_part_weight_zero_clears_record(client, db):
+    """PATCH /handcraft/{id}/parts/{item_id} with weight=0 should clear the
+    picking_weight row (treated the same as null), matching the picking
+    endpoint's gt=0 schema and the modal's clear-on-blur semantics."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftPickingWeight
+
+    db.add(PartModel(id="PJ-X-PZ1", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-PZ1", supplier_name="S", status="pending"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-PZ1", part_id="PJ-X-PZ1", qty=200, bom_qty=200)
+    db.add(pi); db.flush()
+    upsert_weight(db, "HC-PZ1", pi.id, "PJ-X-PZ1", 0.5, "kg")
+    assert db.query(HandcraftPickingWeight).filter_by(part_item_id=pi.id).count() == 1
+    db.commit()
+
+    r = client.put(f"/api/handcraft/HC-PZ1/parts/{pi.id}", json={"weight": 0})
+    assert r.status_code == 200, r.text
+
+    db.expire_all()
+    assert db.query(HandcraftPickingWeight).filter_by(part_item_id=pi.id).count() == 0
 
 
 def test_create_handcraft_order_drops_composite_weight(client, db):

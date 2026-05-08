@@ -487,7 +487,7 @@ def api_handcraft_picking_weight_delete(
     if order.status != "pending":
         raise HTTPException(status_code=400, detail=f"手工单状态为 {order.status}，无法删除重量")
     with service_errors():
-        deleted = delete_picking_weight(db, body.part_item_id, body.atom_part_id)
+        deleted = delete_picking_weight(db, order_id, body.part_item_id, body.atom_part_id)
     return {"deleted": deleted}
 
 
