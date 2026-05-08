@@ -50,6 +50,7 @@ import {
   CartOutline, GridOutline, ArchiveOutline,
   PeopleOutline, StorefrontOutline,
   PaperPlaneOutline, DownloadOutline,
+  AlertCircleOutline,
 } from '@vicons/ionicons5'
 import PlatingIcon from '@/components/icons/PlatingIcon.vue'
 import HandcraftIcon from '@/components/icons/HandcraftIcon.vue'
@@ -86,6 +87,7 @@ const allFlatItems = [
   { label: '电镀回收', key: 'plating-receipts', icon: icon(DownloadOutline), perm: 'plating' },
   { label: '手工发出', key: 'handcraft', icon: icon(PaperPlaneOutline), perm: 'handcraft' },
   { label: '手工回收', key: 'handcraft-receipts', icon: icon(DownloadOutline), perm: 'handcraft' },
+  { label: '待补货清单', key: 'restock', icon: icon(AlertCircleOutline), perm: 'handcraft' },
   { label: '库存总表', key: 'inventory', icon: icon(ArchiveOutline), perm: 'inventory' },
   { label: '库存流水', key: 'inventory-log', icon: icon(InventoryLogIcon), perm: 'inventory' },
   { label: '商家管理', key: 'suppliers', icon: icon(StorefrontOutline), perm: 'users' },
@@ -131,6 +133,7 @@ const allGroupedItems = [
         children: [
           { label: '手工发出', key: 'handcraft', icon: icon(PaperPlaneOutline), perm: 'handcraft' },
           { label: '手工回收', key: 'handcraft-receipts', icon: icon(DownloadOutline), perm: 'handcraft' },
+          { label: '待补货清单', key: 'restock', icon: icon(AlertCircleOutline), perm: 'handcraft' },
         ],
       },
     ],
