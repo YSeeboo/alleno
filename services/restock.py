@@ -156,7 +156,7 @@ def list_pending_summary(db: Session) -> list[dict]:
     if not rows:
         return []
 
-    part_ids = sorted({r.part_id for r in rows})
+    part_ids = list({r.part_id for r in rows})
     stock_rows = (
         db.query(InventoryLog.item_id, func.coalesce(func.sum(InventoryLog.change_qty), 0))
         .filter(InventoryLog.item_type == "part", InventoryLog.item_id.in_(part_ids))
@@ -165,6 +165,8 @@ def list_pending_summary(db: Session) -> list[dict]:
     )
     stock_by_part = {pid: float(qty) for pid, qty in stock_rows}
 
+    # by_part preserves insertion order, which matches `rows` ordering
+    # (created_at asc) — earliest-marked parts surface first.
     by_part: dict[str, dict] = {}
     for r in rows:
         bucket = by_part.setdefault(r.part_id, {
@@ -182,8 +184,7 @@ def list_pending_summary(db: Session) -> list[dict]:
         })
 
     out = []
-    for part_id in part_ids:
-        bucket = by_part[part_id]
+    for bucket in by_part.values():
         bucket["source_count"] = len(bucket["sources"])
         out.append(bucket)
     return out

@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from api._errors import service_errors
@@ -69,7 +69,7 @@ def api_list_summary(db: Session = Depends(get_db)):
 def api_list_history(
     part_id: Optional[str] = None,
     handcraft_order_id: Optional[str] = None,
-    limit: int = 200,
+    limit: int = Query(200, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     return list_history(db, part_id=part_id, handcraft_order_id=handcraft_order_id, limit=limit)
