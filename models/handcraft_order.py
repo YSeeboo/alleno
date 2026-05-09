@@ -91,11 +91,9 @@ class HandcraftPickingRecord(Base):
 
 
 class HandcraftPickingWeight(Base):
-    """Per (part_item × atom_part_id) actual weight measured at picking time.
-
-    For atomic part_items: one row, atom_part_id == part_item.part_id.
-    For composite part_items: one row per atom expanded from the composite.
-    """
+    """Per (part_item × atom_part_id) measurements at picking time:
+    actual weight and/or actual picked qty. Either may be null; uniqueness
+    is on (part_item_id, atom_part_id)."""
     __tablename__ = "handcraft_picking_weight"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -111,8 +109,9 @@ class HandcraftPickingWeight(Base):
         nullable=False,
     )
     atom_part_id = Column(String, ForeignKey("part.id"), nullable=False)
-    weight = Column(Numeric(10, 4), nullable=False)
-    weight_unit = Column(String, nullable=False, default="kg")
+    weight = Column(Numeric(10, 4), nullable=True)
+    weight_unit = Column(String, nullable=True, default="kg")
+    actual_qty = Column(Numeric(10, 4), nullable=True)
     recorded_at = Column(DateTime, nullable=False, default=now_beijing)
 
     __table_args__ = (
