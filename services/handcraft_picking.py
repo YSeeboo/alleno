@@ -116,8 +116,9 @@ def get_handcraft_picking_simulation(
                 parent_composite_name=(parent_part.name if (is_composite and parent_part) else None),
                 needed_qty=needed_qty,
                 suggested_qty=suggested,
-                weight=(float(weight_row.weight) if weight_row else None),
-                weight_unit=(weight_row.weight_unit if weight_row else None),
+                weight=(float(weight_row.weight) if weight_row and weight_row.weight is not None else None),
+                weight_unit=(weight_row.weight_unit if weight_row and weight_row.weight is not None else None),
+                actual_qty=(float(weight_row.actual_qty) if weight_row and weight_row.actual_qty is not None else None),
                 picked=is_picked,
             )
             rows_by_atom[atom_id].append(row)
@@ -137,7 +138,10 @@ def get_handcraft_picking_simulation(
             atom_part_image=atom_part.image,
             size_tier=atom_part.size_tier or "small",
             current_stock=stock_by_part.get(atom_id, 0.0),
-            total_needed_qty=sum(r.needed_qty for r in rows),
+            total_needed_qty=sum(
+                (r.actual_qty if r.actual_qty is not None else r.needed_qty)
+                for r in rows
+            ),
             total_suggested_qty=sum((r.suggested_qty or 0) for r in rows),
             rows=rows,
         ))

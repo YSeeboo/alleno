@@ -139,6 +139,7 @@ class PickingSourceRow(BaseModel):
     suggested_qty: Optional[int] = None
     weight: Optional[float] = None
     weight_unit: Optional[str] = None
+    actual_qty: Optional[float] = None
     picked: bool
 
 

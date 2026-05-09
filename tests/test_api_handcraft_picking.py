@@ -784,3 +784,29 @@ def test_pdf_endpoint_smoke(client, db):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/pdf")
     assert len(r.content) > 1000  # PDF has some real bytes
+
+
+def test_picking_includes_actual_qty_when_recorded(client, db):
+    """Recorded actual_qty surfaces in the picking response and the group
+    total_needed_qty reflects (actual_qty ?? needed_qty) per row."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+    from services.handcraft_picking_weight import upsert_actual_qty
+
+    db.add(PartModel(id="PJ-X-AQ", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-AQ-T1", supplier_name="S", status="pending"))
+    db.flush()
+    pi1 = HandcraftPartItem(handcraft_order_id="HC-AQ-T1", part_id="PJ-X-AQ", qty=200, bom_qty=200)
+    pi2 = HandcraftPartItem(handcraft_order_id="HC-AQ-T1", part_id="PJ-X-AQ", qty=100, bom_qty=100)
+    db.add(pi1); db.add(pi2); db.flush()
+    upsert_actual_qty(db, "HC-AQ-T1", pi1.id, "PJ-X-AQ", 210)
+    # pi2 left without actual_qty, so it falls back to needed_qty = 100
+
+    body = client.get("/api/handcraft/HC-AQ-T1/picking").json()
+    g = body["groups"][0]
+    rows = sorted(g["rows"], key=lambda r: r["part_item_id"])
+    assert rows[0]["actual_qty"] == 210
+    assert rows[1]["actual_qty"] is None
+    assert g["total_needed_qty"] == 310  # 210 + 100 (actual ?? needed)
+    # 建议 unchanged: still computed from needed_qty (200 → 250) + (100 → 150) = 400
+    assert g["total_suggested_qty"] == 400
