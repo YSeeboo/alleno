@@ -369,3 +369,45 @@ def test_update_shortfall_raises_when_done(db):
 def test_update_shortfall_raises_for_unknown(db):
     with pytest.raises(ValueError, match="补货记录不存在"):
         update_shortfall(db, 99999, 1)
+
+
+def test_summary_qty_reads_from_shortfall_not_handcraft_part_item(db):
+    """The qty surfaced on the summary view comes from the user-entered
+    shortfall_qty (差额), NOT from handcraft_part_item.qty."""
+    from models.handcraft_order import HandcraftPartItem
+
+    _seed_part(db, "PJ-X-00001")
+    _seed_handcraft(db, "HC-0001", supplier="王师傅")
+    # Seed a handcraft_part_item with a different qty — should be IGNORED
+    db.add(HandcraftPartItem(handcraft_order_id="HC-0001", part_id="PJ-X-00001", qty=999))
+    db.flush()
+
+    rec = create_from_picking(db, "PJ-X-00001", "HC-0001")
+    update_shortfall(db, rec.id, 800)
+
+    summary = list_pending_summary(db)
+    a = summary[0]
+    assert a["total_qty"] == 800
+    assert a["sources"][0]["qty"] == 800
+
+
+def test_summary_qty_is_none_when_shortfall_unset(db):
+    _seed_part(db, "PJ-X-00001")
+    _seed_handcraft(db, "HC-0001")
+    create_from_picking(db, "PJ-X-00001", "HC-0001")
+
+    summary = list_pending_summary(db)
+    a = summary[0]
+    assert a["total_qty"] is None
+    assert a["sources"][0]["qty"] is None
+
+
+def test_history_qty_reads_from_shortfall(db):
+    _seed_part(db, "PJ-X-00001")
+    _seed_handcraft(db, "HC-0001")
+    rec = create_from_picking(db, "PJ-X-00001", "HC-0001")
+    update_shortfall(db, rec.id, 250)
+    mark_done(db, rec.id)
+
+    rows = list_history(db)
+    assert rows[0]["qty"] == 250
