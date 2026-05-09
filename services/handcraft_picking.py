@@ -88,6 +88,7 @@ def get_handcraft_picking_simulation(
     parts_by_id = _load_parts(db, atom_ids + parent_part_ids)
     stock_by_part = _load_stock(db, atom_ids)
     picked_keys = _load_picked_keys(db, handcraft_order_id)
+    restock_by_part = _load_restock_by_part(db, handcraft_order_id, atom_ids)
     weights_by_key = bulk_load_for_picking(db, handcraft_order_id)
 
     atom_first_seen: dict[str, int] = {}
@@ -107,6 +108,7 @@ def get_handcraft_picking_simulation(
             suggested = _compute_suggested_qty(needed_qty, atom_part)
             is_picked = (pi.id, atom_id) in picked_keys
             weight_row = weights_by_key.get((pi.id, atom_id))
+            restock = restock_by_part.get(atom_id)
             row = PickingSourceRow(
                 part_item_id=pi.id,
                 atom_part_id=atom_id,
@@ -119,6 +121,8 @@ def get_handcraft_picking_simulation(
                 weight=(float(weight_row.weight) if weight_row else None),
                 weight_unit=(weight_row.weight_unit if weight_row else None),
                 picked=is_picked,
+                restock_status=restock[0] if restock else None,
+                restock_request_id=restock[1] if restock else None,
             )
             rows_by_atom[atom_id].append(row)
             atom_first_seen.setdefault(atom_id, pi.id)
@@ -219,6 +223,25 @@ def _load_picked_keys(
         .all()
     )
     return {(pi_id, atom_id) for pi_id, atom_id in rows}
+
+
+def _load_restock_by_part(
+    db: Session, handcraft_order_id: str, part_ids: list[str]
+) -> dict[str, tuple[str, int]]:
+    """Map part_id -> (status, request_id) for any restock_request rows that
+    reference this handcraft order. None entries are simply absent from the dict."""
+    if not part_ids:
+        return {}
+    from models.restock_request import RestockRequest
+    rows = (
+        db.query(RestockRequest.part_id, RestockRequest.status, RestockRequest.id)
+        .filter(
+            RestockRequest.handcraft_order_id == handcraft_order_id,
+            RestockRequest.part_id.in_(part_ids),
+        )
+        .all()
+    )
+    return {pid: (status, rid) for pid, status, rid in rows}
 
 
 # --- State mutations ---

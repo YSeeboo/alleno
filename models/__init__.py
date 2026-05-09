@@ -22,6 +22,7 @@ from .order_cost_snapshot import OrderCostSnapshot, OrderCostSnapshotItem
 from .jewelry_template import JewelryTemplate, JewelryTemplateItem
 from .id_counter import IdCounter
 from .production_loss import ProductionLoss
+from .restock_request import RestockRequest
 
 __all__ = [
     "Part",
@@ -58,4 +59,5 @@ __all__ = [
     "JewelryTemplateItem",
     "IdCounter",
     "ProductionLoss",
+    "RestockRequest",
 ]

@@ -140,6 +140,8 @@ class PickingSourceRow(BaseModel):
     weight: Optional[float] = None
     weight_unit: Optional[str] = None
     picked: bool
+    restock_status: Optional[str] = None  # None | "pending" | "done"
+    restock_request_id: Optional[int] = None
 
 
 class PickingGroup(BaseModel):

@@ -440,6 +440,50 @@
       </template>
     </n-modal>
 
+    <n-card v-if="order" title="补货清单" style="margin-top: 16px;">
+      <template #header-extra>
+        <n-space size="small">
+          <n-tag size="small" type="warning" :bordered="false">
+            待补 {{ pendingRestockCount }}
+          </n-tag>
+          <n-tag size="small" type="default" :bordered="false">
+            已补 {{ doneRestockCount }}
+          </n-tag>
+          <n-button size="small" type="primary" @click="openManualRestockModal">+ 手动添加</n-button>
+        </n-space>
+      </template>
+      <n-data-table
+        :columns="restockColumns"
+        :data="restockRows"
+        :loading="restockLoading"
+        :bordered="false"
+        size="small"
+        :row-class-name="restockRowClass"
+      />
+    </n-card>
+
+    <n-modal v-model:show="manualRestockShow" preset="card" title="手动添加补货项" style="max-width: 480px;">
+      <n-form>
+        <n-form-item label="配件" required>
+          <n-select
+            v-model:value="manualRestockPartId"
+            :options="partOptions"
+            filterable
+            placeholder="选择配件"
+          />
+        </n-form-item>
+        <n-form-item label="备注">
+          <n-input v-model:value="manualRestockNote" type="textarea" :rows="2" placeholder="选填" />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="manualRestockShow = false">取消</n-button>
+          <n-button type="primary" :loading="manualRestockSaving" @click="saveManualRestock">提交</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
     <HandcraftPickingSimulationModal
       v-model:show="pickingModalShow"
       :order-id="String(route.params.id)"
@@ -475,6 +519,12 @@ import { tsToDateStr, isoToTs } from '@/utils/date'
 import { confirmHandcraftLoss } from '@/api/productionLoss'
 import { changeOrderStatus } from '@/api/kanban'
 import { listParts, updatePart } from '@/api/parts'
+import {
+  listHandcraftRestock,
+  createRestock,
+  markRestockDone,
+  deleteRestock,
+} from '@/api/restock'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { listJewelries } from '@/api/jewelries'
 import { listOrders, getTodo, createLink, batchLink } from '@/api/orders'
@@ -675,6 +725,125 @@ const toKg = (w, unit) => {
   return unit === 'g' ? Number(w) / 1000 : Number(w)
 }
 
+// --- Restock records ---
+const restockRows = ref([])
+const restockLoading = ref(false)
+
+async function loadRestock() {
+  if (!order.value?.id) return
+  restockLoading.value = true
+  try {
+    const { data } = await listHandcraftRestock(order.value.id)
+    restockRows.value = data
+  } finally {
+    restockLoading.value = false
+  }
+}
+
+const pendingRestockCount = computed(() =>
+  restockRows.value.filter((r) => r.status === 'pending').length
+)
+const doneRestockCount = computed(() =>
+  restockRows.value.filter((r) => r.status === 'done').length
+)
+
+function restockRowClass(row) {
+  return row.status === 'done' ? 'restock-row-done' : ''
+}
+
+const restockColumns = computed(() => [
+  {
+    title: '配件',
+    key: 'part_id',
+    render: (row) => {
+      const p = partMap.value[row.part_id]
+      return p ? `${row.part_id} · ${p.name}` : row.part_id
+    },
+  },
+  {
+    title: '来源',
+    key: 'source',
+    render: (row) => {
+      const label = row.source === 'picking' ? '配货模拟' : '手动添加'
+      const date = new Date(row.created_at).toLocaleDateString()
+      return `${label} · ${date}`
+    },
+  },
+  {
+    title: '状态',
+    key: 'status',
+    render: (row) => h(NTag, {
+      size: 'small',
+      type: row.status === 'done' ? 'success' : 'warning',
+      bordered: false,
+    }, { default: () => row.status === 'done' ? '✓ 已补过' : '⏳ 待补货' }),
+  },
+  { title: '备注', key: 'note', render: (row) => row.note || '—' },
+  {
+    title: '操作',
+    key: 'actions',
+    render: (row) => row.status === 'done'
+      ? `${new Date(row.completed_at).toLocaleDateString()} 完成`
+      : h(NSpace, { size: 'small' }, {
+        default: () => [
+          h(NButton, { size: 'tiny', onClick: () => markDoneRow(row) }, { default: () => '已补货' }),
+          h(NButton, { size: 'tiny', text: true, onClick: () => cancelRow(row) }, { default: () => '取消' }),
+        ],
+      }),
+  },
+])
+
+async function markDoneRow(row) {
+  try {
+    await markRestockDone(row.id)
+    await loadRestock()
+  } catch (err) {
+    message.error(err.response?.data?.detail || '操作失败')
+  }
+}
+
+async function cancelRow(row) {
+  try {
+    await deleteRestock(row.id)
+    await loadRestock()
+  } catch (err) {
+    message.error(err.response?.data?.detail || '操作失败')
+  }
+}
+
+const manualRestockShow = ref(false)
+const manualRestockPartId = ref(null)
+const manualRestockNote = ref('')
+const manualRestockSaving = ref(false)
+
+function openManualRestockModal() {
+  manualRestockPartId.value = null
+  manualRestockNote.value = ''
+  manualRestockShow.value = true
+}
+
+async function saveManualRestock() {
+  if (!manualRestockPartId.value) {
+    message.warning('请选择配件')
+    return
+  }
+  manualRestockSaving.value = true
+  try {
+    await createRestock({
+      part_id: manualRestockPartId.value,
+      handcraft_order_id: order.value.id,
+      source: 'manual',
+      note: manualRestockNote.value || null,
+    })
+    manualRestockShow.value = false
+    await loadRestock()
+  } catch (err) {
+    message.error(err.response?.data?.detail || '添加失败')
+  } finally {
+    manualRestockSaving.value = false
+  }
+}
+
 const loadData = async () => {
   const id = route.params.id
   const results = await Promise.all([loadParts(), getHandcraft(id), getHandcraftParts(id)])
@@ -694,6 +863,7 @@ const loadData = async () => {
   // Refresh picking weights map so the parts table 重量 column reads from
   // handcraft_picking_weight (the new system of record post-Task 7).
   await loadPickingWeights()
+  await loadRestock()
 }
 
 const doSend = async () => {
@@ -1933,5 +2103,10 @@ onMounted(async () => {
   background: #bf3a3b;
   color: #fff;
   border-color: #bf3a3b;
+}
+
+:deep(.restock-row-done) {
+  opacity: 0.6;
+  background: #fafafa;
 }
 </style>
