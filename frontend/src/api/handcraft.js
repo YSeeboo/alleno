@@ -77,3 +77,15 @@ export const deleteHandcraftPickingWeight = (id, partItemId, atomPartId) =>
   api.delete(`/handcraft/${id}/picking/weight`, {
     data: { part_item_id: partItemId, atom_part_id: atomPartId },
   })
+
+export const upsertHandcraftPickingActualQty = (id, partItemId, atomPartId, qty) =>
+  api.put(`/handcraft/${id}/picking/actual_qty`, {
+    part_item_id: partItemId,
+    atom_part_id: atomPartId,
+    qty,
+  })
+
+export const deleteHandcraftPickingActualQty = (id, partItemId, atomPartId) =>
+  api.delete(`/handcraft/${id}/picking/actual_qty`, {
+    data: { part_item_id: partItemId, atom_part_id: atomPartId },
+  })
