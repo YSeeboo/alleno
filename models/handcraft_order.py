@@ -110,7 +110,7 @@ class HandcraftPickingWeight(Base):
     )
     atom_part_id = Column(String, ForeignKey("part.id"), nullable=False)
     weight = Column(Numeric(10, 4), nullable=True)
-    weight_unit = Column(String, nullable=True, default="kg")
+    weight_unit = Column(String, nullable=True)
     actual_qty = Column(Numeric(10, 4), nullable=True)
     recorded_at = Column(DateTime, nullable=False, default=now_beijing)
 

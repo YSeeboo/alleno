@@ -112,6 +112,64 @@ def bulk_load_for_picking(
     return {(r.part_item_id, r.atom_part_id): r for r in rows}
 
 
+def upsert_actual_qty(
+    db: Session,
+    order_id: str,
+    part_item_id: int,
+    atom_part_id: str,
+    qty: float,
+) -> HandcraftPickingWeight:
+    """Set the actual picked quantity for a (part_item × atom) slice. Creates
+    a row if none exists; updates only `actual_qty` on existing rows
+    (preserves weight)."""
+    _validate_part_item_in_order(db, order_id, part_item_id)
+    _validate_atom_part_id(db, atom_part_id)
+    qty_dec = Decimal(str(qty)).quantize(Decimal("0.0001"))
+    row = (
+        db.query(HandcraftPickingWeight)
+        .filter_by(part_item_id=part_item_id, atom_part_id=atom_part_id)
+        .one_or_none()
+    )
+    if row is None:
+        row = HandcraftPickingWeight(
+            handcraft_order_id=order_id,
+            part_item_id=part_item_id,
+            atom_part_id=atom_part_id,
+            weight=None,
+            weight_unit=None,
+            actual_qty=qty_dec,
+        )
+        db.add(row)
+    else:
+        row.actual_qty = qty_dec
+    db.flush()
+    return row
+
+
+def clear_actual_qty(
+    db: Session,
+    order_id: str,
+    part_item_id: int,
+    atom_part_id: str,
+) -> bool:
+    """Clear `actual_qty` on a (part_item × atom) row. If the row has no
+    weight either, the row is deleted. Returns True if a row was found."""
+    _validate_part_item_in_order(db, order_id, part_item_id)
+    row = (
+        db.query(HandcraftPickingWeight)
+        .filter_by(part_item_id=part_item_id, atom_part_id=atom_part_id)
+        .one_or_none()
+    )
+    if row is None:
+        return False
+    if row.weight is None:
+        db.delete(row)
+    else:
+        row.actual_qty = None
+    db.flush()
+    return True
+
+
 def sum_weight_by_part_item(
     db: Session, part_item_id: int, target_unit: str = "kg"
 ) -> Optional[float]:
