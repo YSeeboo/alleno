@@ -218,7 +218,7 @@ onMounted(loadSummary)
   align-items: center;
   gap: 16px;
   flex: 1;
-  padding-right: 12px;
+  padding-right: 32px;
 }
 .part-img {
   width: 48px;
