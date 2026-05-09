@@ -25,7 +25,7 @@ const props = defineProps({
   orderId: { type: String, required: true },
   status: { type: String, required: true },  // pending / processing / completed
 })
-const emit = defineEmits(['update:show'])
+const emit = defineEmits(['update:show', 'restock-changed'])
 
 const message = useMessage()
 const loading = ref(false)
@@ -304,6 +304,7 @@ async function toggleRestock(g, value) {
         r.restock_status = rec.status
         r.restock_request_id = rec.id
       }
+      emit('restock-changed')
     } catch (err) {
       message.error(err.response?.data?.detail || '标记需补货失败')
     }
@@ -316,6 +317,7 @@ async function toggleRestock(g, value) {
         r.restock_status = null
         r.restock_request_id = null
       }
+      emit('restock-changed')
     } catch (err) {
       message.error(err.response?.data?.detail || '取消标记失败')
     }

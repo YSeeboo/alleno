@@ -488,6 +488,7 @@
       v-model:show="pickingModalShow"
       :order-id="String(route.params.id)"
       :status="order?.status || 'pending'"
+      @restock-changed="loadRestock"
     />
 
   </div>
