@@ -12,6 +12,8 @@ import {
   downloadHandcraftPickingPdf,
   upsertHandcraftPickingWeight,
   deleteHandcraftPickingWeight,
+  upsertHandcraftPickingActualQty,
+  deleteHandcraftPickingActualQty,
 } from '@/api/handcraft'
 import { useIsMobile } from '@/composables/useIsMobile'
 
@@ -150,6 +152,52 @@ async function onWeightUnitChange(row, unit) {
   }
 }
 
+function onActualQtyFocus(row) {
+  row._actualAtFocus = row.actual_qty
+}
+
+async function onActualQtyBlur(group, row) {
+  if (readonly.value) return
+  const fresh = row._localActualQty
+  const prev = row._actualAtFocus
+  const isClear =
+    fresh == null ||
+    fresh === '' ||
+    Number(fresh) <= 0 ||
+    Number(fresh) === Number(row.needed_qty)
+
+  try {
+    if (isClear) {
+      if (prev != null) {
+        await deleteHandcraftPickingActualQty(
+          props.orderId,
+          row.part_item_id,
+          row.atom_part_id,
+        )
+      }
+      row.actual_qty = null
+    } else {
+      const resp = await upsertHandcraftPickingActualQty(
+        props.orderId,
+        row.part_item_id,
+        row.atom_part_id,
+        Number(fresh),
+      )
+      row.actual_qty = resp.data.actual_qty
+    }
+    // Recompute group total locally to mirror server (server-sent value
+    // becomes stale after the per-row mutation)
+    group.total_needed_qty = group.rows.reduce(
+      (s, x) => s + (x.actual_qty != null ? Number(x.actual_qty) : Number(x.needed_qty)),
+      0,
+    )
+  } catch (err) {
+    message.error(err.response?.data?.detail || '保存失败')
+  } finally {
+    row._localActualQty = undefined
+  }
+}
+
 async function doReset() {
   try {
     await resetHandcraftPicking(props.orderId)
@@ -269,7 +317,7 @@ const WEIGHT_UNIT_OPTIONS = [
               <tr>
                 <th class="col-source">配件 / 来源</th>
                 <th class="col-weight">重量</th>
-                <th class="col-num">理论</th>
+                <th class="col-num">实际</th>
                 <th class="col-num">建议</th>
                 <th class="col-num">库存</th>
                 <th class="col-num">已配</th>
@@ -364,7 +412,20 @@ const WEIGHT_UNIT_OPTIONS = [
                       />
                     </div>
                   </td>
-                  <td class="col-num">{{ fmtQty(r.needed_qty) }}</td>
+                  <td class="col-num" @click.stop>
+                    <n-input-number
+                      :value="r.actual_qty ?? r.needed_qty"
+                      :precision="4"
+                      :show-button="false"
+                      :min="0"
+                      :disabled="readonly"
+                      size="small"
+                      class="actual-qty-input"
+                      @focus="onActualQtyFocus(r)"
+                      @blur="onActualQtyBlur(g, r, $event)"
+                      @update:value="(v) => { r._localActualQty = v }"
+                    />
+                  </td>
                   <td class="col-num suggested">
                     <n-tooltip v-if="r.suggested_qty != null" trigger="hover">
                       <template #trigger>
@@ -535,6 +596,11 @@ const WEIGHT_UNIT_OPTIONS = [
 .weight-unit {
   flex: 0 0 64px;
   width: 64px;
+}
+
+/* Actual qty input — compact, fits in num column */
+.actual-qty-input {
+  width: 80px;
 }
 
 /* Picked rows: muted text + line-through, but DO NOT strike through inputs/checkbox */
