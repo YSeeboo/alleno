@@ -185,11 +185,12 @@ def sum_weight_by_part_item(
         .filter_by(part_item_id=part_item_id)
         .all()
     )
-    if not rows:
+    weight_rows = [r for r in rows if r.weight is not None]
+    if not weight_rows:
         return None
     target_factor = _UNIT_TO_KG[target_unit]
     total_kg = sum(
         Decimal(str(r.weight)) * _UNIT_TO_KG[r.weight_unit]
-        for r in rows
+        for r in weight_rows
     )
     return float(total_kg / target_factor)

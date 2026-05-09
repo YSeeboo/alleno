@@ -518,6 +518,28 @@ def test_api_delete_actual_qty(client, db):
     assert r.json()["deleted"] is True
 
 
+def test_sum_weight_skips_actual_qty_only_rows(db):
+    """actual_qty-only rows have weight=None and must not crash the sum;
+    they're invisible to the weight summation."""
+    from services.handcraft_picking_weight import upsert_actual_qty
+    order_id, pi = _seed_atomic(db, order_id="HC-AQ-SUM1")
+    upsert_actual_qty(db, order_id, pi.id, "PJ-X-WT01", 250)
+    # No upsert_weight call → row has weight=None
+    assert sum_weight_by_part_item(db, pi.id) is None
+
+
+def test_sum_weight_handles_mixed_actual_only_and_weighed(db):
+    """Mixing actual_qty-only and weighed rows: SUM only counts the weighed ones."""
+    from services.handcraft_picking_weight import upsert_actual_qty
+    order_id, pi = _seed_atomic(db, order_id="HC-AQ-SUM2")
+    db.add(PartModel(id="PJ-X-WTC", name="C", category="小配件", size_tier="small"))
+    db.flush()
+    upsert_weight(db, order_id, pi.id, "PJ-X-WT01", 0.5, "kg")     # weighed
+    upsert_actual_qty(db, order_id, pi.id, "PJ-X-WTC", 250)        # actual-only
+    total = sum_weight_by_part_item(db, pi.id, target_unit="kg")
+    assert abs(total - 0.5) < 1e-6
+
+
 def test_api_delete_actual_qty_rejects_cross_order(client, db):
     """Issue #8 mirror: cross-order DELETE must be rejected (4xx), not silently
     delete another order's row."""

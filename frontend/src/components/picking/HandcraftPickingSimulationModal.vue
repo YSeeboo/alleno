@@ -158,6 +158,7 @@ function onActualQtyFocus(row) {
 
 async function onActualQtyBlur(group, row) {
   if (readonly.value) return
+  if (row._localActualQty === undefined) return   // user didn't touch the input
   const fresh = row._localActualQty
   const prev = row._actualAtFocus
   const isClear =
