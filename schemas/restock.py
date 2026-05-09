@@ -33,6 +33,7 @@ class RestockSourceItem(BaseModel):
     handcraft_order_id: Optional[str]
     supplier_name: str
     created_at: datetime
+    qty: Optional[float] = None
 
 
 class RestockSummaryItem(BaseModel):
@@ -41,6 +42,7 @@ class RestockSummaryItem(BaseModel):
     part_image: Optional[str] = None
     current_stock: float
     source_count: int
+    total_qty: Optional[float] = None
     sources: List[RestockSourceItem]
 
 
@@ -59,6 +61,7 @@ class RestockHistoryItem(BaseModel):
     handcraft_order_id: Optional[str]
     supplier_name: Optional[str]
     source: str
+    qty: Optional[float] = None
     note: Optional[str]
     created_at: datetime
     completed_at: Optional[datetime]

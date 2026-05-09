@@ -6,15 +6,39 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import func
+from sqlalchemy import func, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from models.handcraft_order import HandcraftOrder
+from models.handcraft_order import HandcraftOrder, HandcraftPartItem
 from models.inventory_log import InventoryLog
 from models.part import Part
 from models.restock_request import RestockRequest
 from time_utils import now_beijing
+
+
+def _qty_by_pair(
+    db: Session, pairs: set[tuple[str, str]]
+) -> dict[tuple[str, str], float]:
+    """For each (handcraft_order_id, part_id) pair, sum the qty across all
+    matching rows in handcraft_part_item. Used to surface the requested
+    quantity on restock list views. Pairs with no matching part_item are
+    simply absent from the result (caller treats as None)."""
+    if not pairs:
+        return {}
+    rows = (
+        db.query(
+            HandcraftPartItem.handcraft_order_id,
+            HandcraftPartItem.part_id,
+            func.sum(HandcraftPartItem.qty),
+        )
+        .filter(
+            tuple_(HandcraftPartItem.handcraft_order_id, HandcraftPartItem.part_id).in_(pairs)
+        )
+        .group_by(HandcraftPartItem.handcraft_order_id, HandcraftPartItem.part_id)
+        .all()
+    )
+    return {(hc, pid): float(q) for hc, pid, q in rows}
 
 
 def _get_existing(db: Session, part_id: str, handcraft_order_id: Optional[str]) -> Optional[RestockRequest]:
@@ -165,6 +189,10 @@ def list_pending_summary(db: Session) -> list[dict]:
     )
     stock_by_part = {pid: float(qty) for pid, qty in stock_rows}
 
+    qty_by_pair = _qty_by_pair(
+        db, {(r.handcraft_order_id, r.part_id) for r in rows if r.handcraft_order_id}
+    )
+
     # by_part preserves insertion order, which matches `rows` ordering
     # (created_at asc) — earliest-marked parts surface first.
     by_part: dict[str, dict] = {}
@@ -181,11 +209,14 @@ def list_pending_summary(db: Session) -> list[dict]:
             "handcraft_order_id": r.handcraft_order_id,
             "supplier_name": r.supplier_name or "",
             "created_at": r.created_at,
+            "qty": qty_by_pair.get((r.handcraft_order_id, r.part_id)),
         })
 
     out = []
     for bucket in by_part.values():
         bucket["source_count"] = len(bucket["sources"])
+        qtys = [s["qty"] for s in bucket["sources"] if s["qty"] is not None]
+        bucket["total_qty"] = sum(qtys) if qtys else None
         out.append(bucket)
     return out
 
@@ -220,6 +251,11 @@ def list_history(
         q = q.filter(RestockRequest.handcraft_order_id == handcraft_order_id)
     q = q.order_by(RestockRequest.completed_at.desc(), RestockRequest.id.desc()).limit(limit)
 
+    history_rows = q.all()
+    qty_by_pair = _qty_by_pair(
+        db, {(r.handcraft_order_id, r.part_id) for r in history_rows if r.handcraft_order_id}
+    )
+
     return [
         {
             "id": r.id,
@@ -228,9 +264,10 @@ def list_history(
             "handcraft_order_id": r.handcraft_order_id,
             "supplier_name": r.supplier_name,
             "source": r.source,
+            "qty": qty_by_pair.get((r.handcraft_order_id, r.part_id)),
             "note": r.note,
             "created_at": r.created_at,
             "completed_at": r.completed_at,
         }
-        for r in q.all()
+        for r in history_rows
     ]

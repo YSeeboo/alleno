@@ -21,19 +21,23 @@
               :name="row.part_id"
             >
               <template #header>
-                <div style="display:flex;align-items:center;gap:12px;flex:1;">
+                <div class="row-header">
                   <img v-if="row.part_image" :src="row.part_image" class="part-img" />
                   <div v-else class="part-img placeholder" />
-                  <div style="flex:1;">
-                    <div style="font-weight:500;">{{ row.part_id }} · {{ row.part_name }}</div>
+                  <div class="part-meta">
+                    <div class="part-name">{{ row.part_id }} · {{ row.part_name }}</div>
                   </div>
-                  <div :class="{ 'stock-low': row.current_stock < row.source_count }" style="text-align:right;">
-                    <div style="font-size:11px;color:#888;">当前库存</div>
-                    <div style="font-size:16px;font-weight:500;">{{ row.current_stock }}</div>
+                  <div class="metric">
+                    <div class="metric-label">需求量</div>
+                    <div class="metric-value">{{ formatQty(row.total_qty) }}</div>
                   </div>
-                  <div style="text-align:right;min-width:60px;">
-                    <div style="font-size:11px;color:#888;">来源</div>
-                    <div style="font-size:16px;font-weight:500;">{{ row.source_count }} 单</div>
+                  <div class="metric" :class="{ 'stock-low': isStockLow(row) }">
+                    <div class="metric-label">当前库存</div>
+                    <div class="metric-value">{{ row.current_stock }}</div>
+                  </div>
+                  <div class="metric">
+                    <div class="metric-label">来源</div>
+                    <div class="metric-value">{{ row.source_count }} 单</div>
                   </div>
                 </div>
               </template>
@@ -52,6 +56,7 @@
                     {{ src.handcraft_order_id }}
                   </a>
                   <span class="supplier">{{ src.supplier_name }}</span>
+                  <span class="qty">需求 {{ formatQty(src.qty) }}</span>
                   <span class="ts">{{ formatDate(src.created_at) }} 标记</span>
                   <n-button size="tiny" @click="markOneDone(src)">已补货</n-button>
                 </div>
@@ -124,6 +129,7 @@ const historyColumns = [
   { title: '配件', key: 'part_id', render: (row) => `${row.part_id} · ${row.part_name}` },
   { title: '手工单', key: 'handcraft_order_id', render: (row) => row.handcraft_order_id || '—' },
   { title: '手工商家', key: 'supplier_name', render: (row) => row.supplier_name || '—' },
+  { title: '数量', key: 'qty', render: (row) => formatQty(row.qty) },
   { title: '来源', key: 'source', render: (row) => row.source === 'picking' ? '配货模拟' : '手动添加' },
   { title: '备注', key: 'note', render: (row) => row.note || '—' },
   { title: '标记时间', key: 'created_at', render: (row) => formatDate(row.created_at) },
@@ -152,6 +158,21 @@ async function loadHistory() {
 
 function formatDate(ts) {
   return new Date(ts).toLocaleDateString()
+}
+
+function formatQty(v) {
+  if (v == null) return '—'
+  const f = Number(v)
+  if (Number.isNaN(f)) return String(v)
+  const r = parseFloat(f.toPrecision(12))
+  return r === Math.trunc(r) ? String(Math.trunc(r)) : r.toString()
+}
+
+function isStockLow(row) {
+  // Prefer comparing against the actual demand when known; fall back to
+  // source count as a heuristic (one source ≈ one unit of demand).
+  const threshold = row.total_qty != null ? row.total_qty : row.source_count
+  return row.current_stock < threshold
 }
 
 function goToHandcraft(hcId) {
@@ -192,18 +213,52 @@ onMounted(loadSummary)
 </script>
 
 <style scoped>
+.row-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  padding-right: 12px;
+}
 .part-img {
   width: 48px;
   height: 48px;
   border-radius: 4px;
   background: #eee;
   object-fit: cover;
+  flex-shrink: 0;
 }
 .part-img.placeholder { background: #fafafa; }
-.stock-low > div:last-child { color: #d32f2f; }
+.part-meta {
+  flex: 1;
+  min-width: 140px;
+  overflow: hidden;
+}
+.part-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.metric {
+  text-align: right;
+  min-width: 80px;
+  flex-shrink: 0;
+}
+.metric-label {
+  font-size: 11px;
+  color: #888;
+  line-height: 1.2;
+}
+.metric-value {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.metric.stock-low .metric-value { color: #d32f2f; }
 .source-row {
   display: grid;
-  grid-template-columns: 120px 1fr 140px 80px;
+  grid-template-columns: 120px 1fr 110px 140px 80px;
   align-items: center;
   padding: 8px 12px;
   border-top: 1px solid #f5f5f5;
@@ -211,5 +266,6 @@ onMounted(loadSummary)
 }
 .hc-link { color: #4361ee; cursor: pointer; }
 .supplier { color: #666; }
+.qty { color: #555; }
 .ts { color: #888; font-size: 12px; }
 </style>
