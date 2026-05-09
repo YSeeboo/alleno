@@ -524,6 +524,7 @@ import {
   createRestock,
   markRestockDone,
   deleteRestock,
+  updateRestockShortfall,
 } from '@/api/restock'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { listJewelries } from '@/api/jewelries'
@@ -770,6 +771,22 @@ const restockColumns = computed(() => [
     },
   },
   {
+    title: '差额',
+    key: 'shortfall_qty',
+    width: 120,
+    render: (row) => row.status === 'done'
+      ? (row.shortfall_qty != null ? String(row.shortfall_qty) : '—')
+      : h(NInputNumber, {
+          value: row.shortfall_qty != null ? Number(row.shortfall_qty) : null,
+          size: 'small',
+          min: 0,
+          showButton: false,
+          placeholder: '—',
+          style: 'width: 90px;',
+          onUpdateValue: (v) => onShortfallChange(row, v),
+        }),
+  },
+  {
     title: '状态',
     key: 'status',
     render: (row) => h(NTag, {
@@ -799,6 +816,18 @@ async function markDoneRow(row) {
     await loadRestock()
   } catch (err) {
     message.error(err.response?.data?.detail || '操作失败')
+  }
+}
+
+async function onShortfallChange(row, v) {
+  const prev = row.shortfall_qty
+  // Optimistic local update so the input keeps the typed value during the round-trip.
+  row.shortfall_qty = v
+  try {
+    await updateRestockShortfall(row.id, v)
+  } catch (err) {
+    row.shortfall_qty = prev
+    message.error(err.response?.data?.detail || '保存差额失败')
   }
 }
 

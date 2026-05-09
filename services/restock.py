@@ -135,6 +135,21 @@ def mark_part_done(db: Session, part_id: str) -> int:
     return count
 
 
+def update_shortfall(
+    db: Session, request_id: int, shortfall_qty: Optional[float]
+) -> RestockRequest:
+    """Set or clear the user-entered shortfall on a pending restock record.
+    Pass None to clear. Done records reject updates (they're locked history)."""
+    rec = db.get(RestockRequest, request_id)
+    if rec is None:
+        raise ValueError("补货记录不存在")
+    if rec.status == "done":
+        raise ValueError("已补货的记录不可修改差额")
+    rec.shortfall_qty = shortfall_qty
+    db.flush()
+    return rec
+
+
 def delete_pending(db: Session, request_id: int) -> None:
     """Cancel a pending restock request. Done records cannot be deleted
     via this path (they are kept as history). Raises ValueError otherwise."""

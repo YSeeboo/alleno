@@ -330,3 +330,42 @@ def test_delete_handcraft_order_cascades_restock_requests(db):
     from models.restock_request import RestockRequest as R
     remaining = db.query(R).filter_by(handcraft_order_id="HC-0001").all()
     assert remaining == []
+
+
+from services.restock import update_shortfall
+
+
+def test_update_shortfall_sets_value(db):
+    _seed_part(db)
+    _seed_handcraft(db)
+    rec = create_from_picking(db, "PJ-X-00001", "HC-0001")
+
+    updated = update_shortfall(db, rec.id, 12.5)
+
+    assert float(updated.shortfall_qty) == 12.5
+
+
+def test_update_shortfall_clears_value(db):
+    _seed_part(db)
+    _seed_handcraft(db)
+    rec = create_from_picking(db, "PJ-X-00001", "HC-0001")
+    update_shortfall(db, rec.id, 5)
+
+    updated = update_shortfall(db, rec.id, None)
+
+    assert updated.shortfall_qty is None
+
+
+def test_update_shortfall_raises_when_done(db):
+    _seed_part(db)
+    _seed_handcraft(db)
+    rec = create_from_picking(db, "PJ-X-00001", "HC-0001")
+    mark_done(db, rec.id)
+
+    with pytest.raises(ValueError, match="不可修改差额"):
+        update_shortfall(db, rec.id, 10)
+
+
+def test_update_shortfall_raises_for_unknown(db):
+    with pytest.raises(ValueError, match="补货记录不存在"):
+        update_shortfall(db, 99999, 1)

@@ -23,9 +23,17 @@ class RestockRequestRead(BaseModel):
     handcraft_order_id: Optional[str]
     source: str
     status: str
+    shortfall_qty: Optional[float] = None
     note: Optional[str]
     created_at: datetime
     completed_at: Optional[datetime]
+
+
+class RestockShortfallUpdate(BaseModel):
+    # null clears the value; a positive number sets it. We accept any
+    # non-negative float (user might write 0 to mean "no need" without
+    # deleting the row).
+    shortfall_qty: Optional[float] = Field(None, ge=0)
 
 
 class RestockSourceItem(BaseModel):
@@ -62,6 +70,7 @@ class RestockHistoryItem(BaseModel):
     supplier_name: Optional[str]
     source: str
     qty: Optional[float] = None
+    shortfall_qty: Optional[float] = None
     note: Optional[str]
     created_at: datetime
     completed_at: Optional[datetime]

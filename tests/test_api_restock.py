@@ -177,3 +177,43 @@ def test_list_restock_for_handcraft_endpoint(client, db):
     assert {r["part_id"] for r in body} == {"PJ-X-00001", "PJ-X-00002"}
     for row in body:
         assert row["handcraft_order_id"] == "HC-0001"
+
+
+def test_put_shortfall_sets_and_clears(client, db):
+    _seed_part(db)
+    _seed_handcraft(db)
+    rec = client.post("/api/restock-requests", json={
+        "part_id": "PJ-X-00001", "handcraft_order_id": "HC-0001", "source": "picking",
+    }).json()
+
+    resp = client.put(f"/api/restock-requests/{rec['id']}/shortfall", json={"shortfall_qty": 7})
+    assert resp.status_code == 200
+    assert resp.json()["shortfall_qty"] == 7
+
+    resp = client.put(f"/api/restock-requests/{rec['id']}/shortfall", json={"shortfall_qty": None})
+    assert resp.status_code == 200
+    assert resp.json()["shortfall_qty"] is None
+
+
+def test_put_shortfall_400_when_done(client, db):
+    _seed_part(db)
+    _seed_handcraft(db)
+    rec = client.post("/api/restock-requests", json={
+        "part_id": "PJ-X-00001", "handcraft_order_id": "HC-0001", "source": "picking",
+    }).json()
+    client.patch(f"/api/restock-requests/{rec['id']}", json={"status": "done"})
+
+    resp = client.put(f"/api/restock-requests/{rec['id']}/shortfall", json={"shortfall_qty": 5})
+    assert resp.status_code == 400
+    assert "不可修改差额" in resp.json()["detail"]
+
+
+def test_put_shortfall_rejects_negative(client, db):
+    _seed_part(db)
+    _seed_handcraft(db)
+    rec = client.post("/api/restock-requests", json={
+        "part_id": "PJ-X-00001", "handcraft_order_id": "HC-0001", "source": "picking",
+    }).json()
+
+    resp = client.put(f"/api/restock-requests/{rec['id']}/shortfall", json={"shortfall_qty": -1})
+    assert resp.status_code == 422

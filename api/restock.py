@@ -12,6 +12,7 @@ from schemas.restock import (
     RestockRequestCreate,
     RestockRequestPatch,
     RestockRequestRead,
+    RestockShortfallUpdate,
     RestockSummaryItem,
 )
 from services.restock import (
@@ -22,6 +23,7 @@ from services.restock import (
     list_pending_summary,
     mark_done,
     mark_part_done,
+    update_shortfall,
 )
 
 router = APIRouter(prefix="/api/restock-requests", tags=["restock"])
@@ -45,6 +47,16 @@ def api_mark_done(request_id: int, payload: RestockRequestPatch, db: Session = D
     # The schema fixes status to literal "done" so we don't need to branch.
     with service_errors():
         return mark_done(db, request_id)
+
+
+@router.put("/{request_id}/shortfall", response_model=RestockRequestRead)
+def api_update_shortfall(
+    request_id: int,
+    payload: RestockShortfallUpdate,
+    db: Session = Depends(get_db),
+):
+    with service_errors():
+        return update_shortfall(db, request_id, payload.shortfall_qty)
 
 
 @router.delete("/{request_id}", status_code=204)

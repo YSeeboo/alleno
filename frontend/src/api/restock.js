@@ -20,3 +20,6 @@ export const deleteRestock = (id) =>
 
 export const markPartRestockDone = (partId) =>
   api.post('/restock-requests/mark-part-done', { part_id: partId })
+
+export const updateRestockShortfall = (id, qty) =>
+  api.put(`/restock-requests/${id}/shortfall`, { shortfall_qty: qty })

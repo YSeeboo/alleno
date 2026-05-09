@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 
 from database import Base
 from time_utils import now_beijing
@@ -18,6 +18,9 @@ class RestockRequest(Base):
     )
     source = Column(String, nullable=False)  # "picking" | "manual"
     status = Column(String, nullable=False, default="pending")  # "pending" | "done"
+    # User-entered shortfall (差额) — how many extra units the user judges
+    # are needed beyond current stock. Optional; null means "not yet decided".
+    shortfall_qty = Column(Numeric(10, 4), nullable=True)
     note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now_beijing, nullable=False)
     completed_at = Column(DateTime, nullable=True)

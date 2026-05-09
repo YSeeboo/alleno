@@ -398,6 +398,14 @@ def ensure_schema_compat(target_engine=None):
             Base.metadata.tables["handcraft_picking_weight"].create(bind=conn)
             logger.warning("Created missing handcraft_picking_weight table")
 
+        if inspector.has_table("restock_request"):
+            cols = {c["name"] for c in inspector.get_columns("restock_request")}
+            if "shortfall_qty" not in cols:
+                conn.execute(text(
+                    "ALTER TABLE restock_request ADD COLUMN shortfall_qty NUMERIC(10,4) NULL"
+                ))
+                logger.warning("Added missing restock_request.shortfall_qty column")
+
         if inspector.has_table("handcraft_picking_weight"):
             cols = {c["name"]: c for c in inspector.get_columns("handcraft_picking_weight")}
             if "actual_qty" not in cols:
