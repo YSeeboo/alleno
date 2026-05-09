@@ -465,3 +465,77 @@ def test_clear_actual_qty_returns_false_when_no_row(db):
     from services.handcraft_picking_weight import clear_actual_qty
     order_id, pi = _seed_atomic(db, order_id="HC-AQ06")
     assert clear_actual_qty(db, order_id, pi.id, "PJ-X-WT01") is False
+
+
+def test_api_put_actual_qty_upsert(client, db):
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+
+    db.add(PartModel(id="PJ-X-EAQ1", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-EAQ1", supplier_name="S", status="pending"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-EAQ1", part_id="PJ-X-EAQ1", qty=200, bom_qty=200)
+    db.add(pi); db.flush()
+    pi_id = pi.id
+
+    r = client.put(f"/api/handcraft/HC-EAQ1/picking/actual_qty", json={
+        "part_item_id": pi_id, "atom_part_id": "PJ-X-EAQ1", "qty": 250,
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["actual_qty"] == 250
+
+
+def test_api_put_actual_qty_blocked_when_status_not_pending(client, db):
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+
+    db.add(PartModel(id="PJ-X-EAQ2", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-EAQ2", supplier_name="S", status="processing"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-EAQ2", part_id="PJ-X-EAQ2", qty=200, bom_qty=200)
+    db.add(pi); db.flush()
+    r = client.put(f"/api/handcraft/HC-EAQ2/picking/actual_qty", json={
+        "part_item_id": pi.id, "atom_part_id": "PJ-X-EAQ2", "qty": 250,
+    })
+    assert r.status_code == 400
+
+
+def test_api_delete_actual_qty(client, db):
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+    from services.handcraft_picking_weight import upsert_actual_qty
+
+    db.add(PartModel(id="PJ-X-EAQ3", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-EAQ3", supplier_name="S", status="pending"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-EAQ3", part_id="PJ-X-EAQ3", qty=200, bom_qty=200)
+    db.add(pi); db.flush()
+    upsert_actual_qty(db, "HC-EAQ3", pi.id, "PJ-X-EAQ3", 250)
+
+    r = client.request("DELETE", f"/api/handcraft/HC-EAQ3/picking/actual_qty",
+                       json={"part_item_id": pi.id, "atom_part_id": "PJ-X-EAQ3"})
+    assert r.status_code == 200
+    assert r.json()["deleted"] is True
+
+
+def test_api_delete_actual_qty_rejects_cross_order(client, db):
+    """Issue #8 mirror: cross-order DELETE must be rejected (4xx), not silently
+    delete another order's row."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftPickingWeight
+    from services.handcraft_picking_weight import upsert_actual_qty
+
+    db.add(PartModel(id="PJ-X-EAQX", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-A-AQ", supplier_name="S", status="pending"))
+    db.add(HandcraftOrder(id="HC-B-AQ", supplier_name="S", status="pending"))
+    db.flush()
+    pi_b = HandcraftPartItem(handcraft_order_id="HC-B-AQ", part_id="PJ-X-EAQX", qty=200, bom_qty=200)
+    db.add(pi_b); db.flush()
+    upsert_actual_qty(db, "HC-B-AQ", pi_b.id, "PJ-X-EAQX", 250)
+
+    r = client.request("DELETE", f"/api/handcraft/HC-A-AQ/picking/actual_qty",
+                       json={"part_item_id": pi_b.id, "atom_part_id": "PJ-X-EAQX"})
+    assert r.status_code == 400
+    # Order B's actual_qty must still be present.
+    row = db.query(HandcraftPickingWeight).filter_by(part_item_id=pi_b.id).one()
+    assert row.actual_qty == Decimal("250.0000")

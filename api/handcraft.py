@@ -16,6 +16,8 @@ from schemas.handcraft import (
     HandcraftJewelryItemResponse,
     HandcraftPartIn,
     HandcraftPartItemResponse,
+    HandcraftPickingActualQtyDeleteRequest,
+    HandcraftPickingActualQtyUpsertRequest,
     HandcraftPickingMarkRequest,
     HandcraftPickingResponse,
     HandcraftPickingWeightDeleteRequest,
@@ -62,6 +64,8 @@ from services.handcraft_picking import (
 from services.handcraft_picking_weight import (
     upsert_weight as upsert_picking_weight,
     delete_weight as delete_picking_weight,
+    upsert_actual_qty as upsert_picking_actual_qty,
+    clear_actual_qty as clear_picking_actual_qty,
 )
 from services.handcraft_picking_list_pdf import build_handcraft_picking_list_pdf
 from models.handcraft_order import HandcraftOrder
@@ -488,6 +492,46 @@ def api_handcraft_picking_weight_delete(
         raise HTTPException(status_code=400, detail=f"手工单状态为 {order.status}，无法删除重量")
     with service_errors():
         deleted = delete_picking_weight(db, order_id, body.part_item_id, body.atom_part_id)
+    return {"deleted": deleted}
+
+
+@router.put("/{order_id}/picking/actual_qty")
+def api_handcraft_picking_actual_qty_upsert(
+    order_id: str,
+    body: HandcraftPickingActualQtyUpsertRequest,
+    db: Session = Depends(get_db),
+):
+    """Upsert per-atom actual picked qty. Pending status only."""
+    order = db.query(HandcraftOrder).filter_by(id=order_id).one_or_none()
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"手工单 {order_id} 不存在")
+    if order.status != "pending":
+        raise HTTPException(status_code=400, detail=f"手工单状态为 {order.status}，无法编辑实际数量")
+    with service_errors():
+        row = upsert_picking_actual_qty(
+            db, order_id, body.part_item_id, body.atom_part_id, body.qty,
+        )
+    return {
+        "part_item_id": row.part_item_id,
+        "atom_part_id": row.atom_part_id,
+        "actual_qty": float(row.actual_qty) if row.actual_qty is not None else None,
+    }
+
+
+@router.delete("/{order_id}/picking/actual_qty")
+def api_handcraft_picking_actual_qty_delete(
+    order_id: str,
+    body: HandcraftPickingActualQtyDeleteRequest,
+    db: Session = Depends(get_db),
+):
+    """Clear per-atom actual picked qty. Pending status only."""
+    order = db.query(HandcraftOrder).filter_by(id=order_id).one_or_none()
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"手工单 {order_id} 不存在")
+    if order.status != "pending":
+        raise HTTPException(status_code=400, detail=f"手工单状态为 {order.status}，无法删除实际数量")
+    with service_errors():
+        deleted = clear_picking_actual_qty(db, order_id, body.part_item_id, body.atom_part_id)
     return {"deleted": deleted}
 
 

@@ -183,3 +183,14 @@ class HandcraftPickingWeightUpsertRequest(BaseModel):
 class HandcraftPickingWeightDeleteRequest(BaseModel):
     part_item_id: int = Field(gt=0)
     atom_part_id: str = Field(min_length=1)
+
+
+class HandcraftPickingActualQtyUpsertRequest(BaseModel):
+    part_item_id: int = Field(gt=0)
+    atom_part_id: str = Field(min_length=1)
+    qty: float = Field(gt=0)
+
+
+class HandcraftPickingActualQtyDeleteRequest(BaseModel):
+    part_item_id: int = Field(gt=0)
+    atom_part_id: str = Field(min_length=1)
