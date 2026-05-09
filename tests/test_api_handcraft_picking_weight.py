@@ -367,3 +367,41 @@ def test_create_handcraft_order_drops_composite_weight(client, db):
     pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id, part_id="PJ-X-CHO2").one()
     assert pi.weight is None
     assert db.query(HandcraftPickingWeight).filter_by(part_item_id=pi.id).count() == 0
+
+
+def test_delete_weight_keeps_row_when_actual_qty_present(db):
+    """Clearing weight on a row that also holds actual_qty should NOT delete
+    the row. Only the weight fields are cleared."""
+    from sqlalchemy import update
+    order_id, pi = _seed_atomic(db, order_id="HC-WTKEEP")
+    upsert_weight(db, order_id, pi.id, "PJ-X-WT01", 0.5, "kg")
+    # Simulate actual_qty being set (we'll formally test upsert_actual_qty later).
+    db.execute(update(HandcraftPickingWeight)
+               .where(HandcraftPickingWeight.part_item_id == pi.id,
+                      HandcraftPickingWeight.atom_part_id == "PJ-X-WT01")
+               .values(actual_qty=Decimal("123.4567")))
+    db.flush()
+
+    deleted = delete_weight(db, order_id, pi.id, "PJ-X-WT01")
+    assert deleted is True
+
+    row = (db.query(HandcraftPickingWeight)
+           .filter_by(part_item_id=pi.id, atom_part_id="PJ-X-WT01")
+           .one_or_none())
+    assert row is not None, "row should remain because actual_qty is set"
+    assert row.weight is None
+    assert row.weight_unit is None
+    assert row.actual_qty == Decimal("123.4567")
+
+
+def test_delete_weight_removes_row_when_actual_qty_null(db):
+    """Existing behavior: when only weight is set (no actual_qty), clearing
+    weight deletes the entire row."""
+    order_id, pi = _seed_atomic(db, order_id="HC-WTDROP")
+    upsert_weight(db, order_id, pi.id, "PJ-X-WT01", 0.5, "kg")
+
+    deleted = delete_weight(db, order_id, pi.id, "PJ-X-WT01")
+    assert deleted is True
+    assert db.query(HandcraftPickingWeight).filter_by(
+        part_item_id=pi.id, atom_part_id="PJ-X-WT01"
+    ).count() == 0
