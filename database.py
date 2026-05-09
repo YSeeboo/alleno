@@ -398,6 +398,24 @@ def ensure_schema_compat(target_engine=None):
             Base.metadata.tables["handcraft_picking_weight"].create(bind=conn)
             logger.warning("Created missing handcraft_picking_weight table")
 
+        if inspector.has_table("handcraft_picking_weight"):
+            cols = {c["name"]: c for c in inspector.get_columns("handcraft_picking_weight")}
+            if "actual_qty" not in cols:
+                conn.execute(text(
+                    "ALTER TABLE handcraft_picking_weight ADD COLUMN actual_qty NUMERIC(10,4) NULL"
+                ))
+                logger.warning("Added missing handcraft_picking_weight.actual_qty column")
+            if cols.get("weight", {}).get("nullable") is False:
+                conn.execute(text(
+                    "ALTER TABLE handcraft_picking_weight ALTER COLUMN weight DROP NOT NULL"
+                ))
+                logger.warning("Relaxed handcraft_picking_weight.weight to NULLABLE")
+            if cols.get("weight_unit", {}).get("nullable") is False:
+                conn.execute(text(
+                    "ALTER TABLE handcraft_picking_weight ALTER COLUMN weight_unit DROP NOT NULL"
+                ))
+                logger.warning("Relaxed handcraft_picking_weight.weight_unit to NULLABLE")
+
         # Backfill existing HandcraftPartItem.weight into handcraft_picking_weight (idempotent).
         # Each part_item with a non-null weight gets one row keyed by (part_item.id, part_item.part_id).
         # Composite part_items: the migrated row treats the weight as the parent's atomic-self weight,

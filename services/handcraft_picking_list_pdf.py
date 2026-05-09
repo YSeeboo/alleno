@@ -37,9 +37,9 @@ _FOOTER_COLOR = colors.HexColor("#888888")
 _FOOTER_RIGHT_TEXT = "Allen Shop · 饰品店管理系统"
 
 # Column widths sum to 515pt:
-# 配件编号(60) 配件(175) 重量(60) 需要(55) 建议(55) 库存(55) 完成(55)
+# 配件编号(60) 配件(175) 重量(60) 实际(55) 建议(55) 库存(55) 完成(55)
 _COL_W = [60, 175, 60, 55, 55, 55, 55]
-_HEADERS = ["配件编号", "配件", "重量", "需要", "建议", "库存", "完成"]
+_HEADERS = ["配件编号", "配件", "重量", "实际", "建议", "库存", "完成"]
 
 
 class _NumberedCanvas(canvas.Canvas):
@@ -178,7 +178,7 @@ def build_handcraft_picking_list_pdf(
         c.setFont(_FONT, 9)
         header_text = (
             f"{g.atom_part_id}  {g.atom_part_name}"
-            f"  合计需要 {_fmt_qty(g.total_needed_qty)}"
+            f"  合计 {_fmt_qty(g.total_needed_qty)}"
             f"  建议 {g.total_suggested_qty}"
             f"  库存 {_fmt_qty(g.current_stock)}"
         )
@@ -222,8 +222,9 @@ def build_handcraft_picking_list_pdf(
             c.drawString(x + 4, y - _ROW_H / 2 - 3, weight_text)
             x += _COL_W[2]
 
-            # Col 3: 需要
-            c.drawString(x + 4, y - _ROW_H / 2 - 3, _fmt_qty(r.needed_qty))
+            # Col 3: 实际 — actual_qty if user overrode, else needed_qty
+            actual_or_needed = r.actual_qty if r.actual_qty is not None else r.needed_qty
+            c.drawString(x + 4, y - _ROW_H / 2 - 3, _fmt_qty(actual_or_needed))
             x += _COL_W[3]
 
             # Col 4: 建议 (blue)

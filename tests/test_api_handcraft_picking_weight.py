@@ -367,3 +367,197 @@ def test_create_handcraft_order_drops_composite_weight(client, db):
     pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id, part_id="PJ-X-CHO2").one()
     assert pi.weight is None
     assert db.query(HandcraftPickingWeight).filter_by(part_item_id=pi.id).count() == 0
+
+
+def test_delete_weight_keeps_row_when_actual_qty_present(db):
+    """Clearing weight on a row that also holds actual_qty should NOT delete
+    the row. Only the weight fields are cleared."""
+    from sqlalchemy import update
+    order_id, pi = _seed_atomic(db, order_id="HC-WTKEEP")
+    upsert_weight(db, order_id, pi.id, "PJ-X-WT01", 0.5, "kg")
+    # Simulate actual_qty being set (we'll formally test upsert_actual_qty later).
+    db.execute(update(HandcraftPickingWeight)
+               .where(HandcraftPickingWeight.part_item_id == pi.id,
+                      HandcraftPickingWeight.atom_part_id == "PJ-X-WT01")
+               .values(actual_qty=Decimal("123.4567")))
+    db.flush()
+
+    deleted = delete_weight(db, order_id, pi.id, "PJ-X-WT01")
+    assert deleted is True
+
+    row = (db.query(HandcraftPickingWeight)
+           .filter_by(part_item_id=pi.id, atom_part_id="PJ-X-WT01")
+           .one_or_none())
+    assert row is not None, "row should remain because actual_qty is set"
+    assert row.weight is None
+    assert row.weight_unit is None
+    assert row.actual_qty == Decimal("123.4567")
+
+
+def test_delete_weight_removes_row_when_actual_qty_null(db):
+    """Existing behavior: when only weight is set (no actual_qty), clearing
+    weight deletes the entire row."""
+    order_id, pi = _seed_atomic(db, order_id="HC-WTDROP")
+    upsert_weight(db, order_id, pi.id, "PJ-X-WT01", 0.5, "kg")
+
+    deleted = delete_weight(db, order_id, pi.id, "PJ-X-WT01")
+    assert deleted is True
+    assert db.query(HandcraftPickingWeight).filter_by(
+        part_item_id=pi.id, atom_part_id="PJ-X-WT01"
+    ).count() == 0
+
+
+def test_upsert_actual_qty_inserts_new_row(db):
+    from services.handcraft_picking_weight import upsert_actual_qty
+    order_id, pi = _seed_atomic(db, order_id="HC-AQ01")
+    row = upsert_actual_qty(db, order_id, pi.id, "PJ-X-WT01", 250.5)
+    assert row.actual_qty == Decimal("250.5000")
+    assert row.weight is None
+    assert row.weight_unit is None
+
+
+def test_upsert_actual_qty_updates_existing_weight_row(db):
+    """A row that has weight gets actual_qty appended without losing weight."""
+    from services.handcraft_picking_weight import upsert_actual_qty
+    order_id, pi = _seed_atomic(db, order_id="HC-AQ02")
+    upsert_weight(db, order_id, pi.id, "PJ-X-WT01", 0.5, "kg")
+    upsert_actual_qty(db, order_id, pi.id, "PJ-X-WT01", 250)
+
+    row = db.query(HandcraftPickingWeight).filter_by(part_item_id=pi.id).one()
+    assert row.weight == Decimal("0.5000")
+    assert row.weight_unit == "kg"
+    assert row.actual_qty == Decimal("250.0000")
+
+
+def test_upsert_actual_qty_rejects_part_item_outside_order(db):
+    from services.handcraft_picking_weight import upsert_actual_qty
+    import pytest
+    _, pi = _seed_atomic(db, order_id="HC-AQ03")
+    db.add(HandcraftOrder(id="HC-OTHER-AQ", supplier_name="S", status="pending"))
+    db.flush()
+    with pytest.raises(ValueError, match="不属于"):
+        upsert_actual_qty(db, "HC-OTHER-AQ", pi.id, "PJ-X-WT01", 100)
+
+
+def test_clear_actual_qty_removes_row_when_weight_null(db):
+    from services.handcraft_picking_weight import upsert_actual_qty, clear_actual_qty
+    order_id, pi = _seed_atomic(db, order_id="HC-AQ04")
+    upsert_actual_qty(db, order_id, pi.id, "PJ-X-WT01", 250)
+    deleted = clear_actual_qty(db, order_id, pi.id, "PJ-X-WT01")
+    assert deleted is True
+    assert db.query(HandcraftPickingWeight).filter_by(part_item_id=pi.id).count() == 0
+
+
+def test_clear_actual_qty_keeps_row_when_weight_present(db):
+    from services.handcraft_picking_weight import upsert_actual_qty, clear_actual_qty
+    order_id, pi = _seed_atomic(db, order_id="HC-AQ05")
+    upsert_weight(db, order_id, pi.id, "PJ-X-WT01", 0.5, "kg")
+    upsert_actual_qty(db, order_id, pi.id, "PJ-X-WT01", 250)
+
+    deleted = clear_actual_qty(db, order_id, pi.id, "PJ-X-WT01")
+    assert deleted is True
+    row = db.query(HandcraftPickingWeight).filter_by(part_item_id=pi.id).one()
+    assert row.actual_qty is None
+    assert row.weight == Decimal("0.5000")
+
+
+def test_clear_actual_qty_returns_false_when_no_row(db):
+    from services.handcraft_picking_weight import clear_actual_qty
+    order_id, pi = _seed_atomic(db, order_id="HC-AQ06")
+    assert clear_actual_qty(db, order_id, pi.id, "PJ-X-WT01") is False
+
+
+def test_api_put_actual_qty_upsert(client, db):
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+
+    db.add(PartModel(id="PJ-X-EAQ1", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-EAQ1", supplier_name="S", status="pending"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-EAQ1", part_id="PJ-X-EAQ1", qty=200, bom_qty=200)
+    db.add(pi); db.flush()
+    pi_id = pi.id
+
+    r = client.put(f"/api/handcraft/HC-EAQ1/picking/actual_qty", json={
+        "part_item_id": pi_id, "atom_part_id": "PJ-X-EAQ1", "qty": 250,
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["actual_qty"] == 250
+
+
+def test_api_put_actual_qty_blocked_when_status_not_pending(client, db):
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+
+    db.add(PartModel(id="PJ-X-EAQ2", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-EAQ2", supplier_name="S", status="processing"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-EAQ2", part_id="PJ-X-EAQ2", qty=200, bom_qty=200)
+    db.add(pi); db.flush()
+    r = client.put(f"/api/handcraft/HC-EAQ2/picking/actual_qty", json={
+        "part_item_id": pi.id, "atom_part_id": "PJ-X-EAQ2", "qty": 250,
+    })
+    assert r.status_code == 400
+
+
+def test_api_delete_actual_qty(client, db):
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+    from services.handcraft_picking_weight import upsert_actual_qty
+
+    db.add(PartModel(id="PJ-X-EAQ3", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-EAQ3", supplier_name="S", status="pending"))
+    db.flush()
+    pi = HandcraftPartItem(handcraft_order_id="HC-EAQ3", part_id="PJ-X-EAQ3", qty=200, bom_qty=200)
+    db.add(pi); db.flush()
+    upsert_actual_qty(db, "HC-EAQ3", pi.id, "PJ-X-EAQ3", 250)
+
+    r = client.request("DELETE", f"/api/handcraft/HC-EAQ3/picking/actual_qty",
+                       json={"part_item_id": pi.id, "atom_part_id": "PJ-X-EAQ3"})
+    assert r.status_code == 200
+    assert r.json()["deleted"] is True
+
+
+def test_sum_weight_skips_actual_qty_only_rows(db):
+    """actual_qty-only rows have weight=None and must not crash the sum;
+    they're invisible to the weight summation."""
+    from services.handcraft_picking_weight import upsert_actual_qty
+    order_id, pi = _seed_atomic(db, order_id="HC-AQ-SUM1")
+    upsert_actual_qty(db, order_id, pi.id, "PJ-X-WT01", 250)
+    # No upsert_weight call → row has weight=None
+    assert sum_weight_by_part_item(db, pi.id) is None
+
+
+def test_sum_weight_handles_mixed_actual_only_and_weighed(db):
+    """Mixing actual_qty-only and weighed rows: SUM only counts the weighed ones."""
+    from services.handcraft_picking_weight import upsert_actual_qty
+    order_id, pi = _seed_atomic(db, order_id="HC-AQ-SUM2")
+    db.add(PartModel(id="PJ-X-WTC", name="C", category="小配件", size_tier="small"))
+    db.flush()
+    upsert_weight(db, order_id, pi.id, "PJ-X-WT01", 0.5, "kg")     # weighed
+    upsert_actual_qty(db, order_id, pi.id, "PJ-X-WTC", 250)        # actual-only
+    total = sum_weight_by_part_item(db, pi.id, target_unit="kg")
+    assert abs(total - 0.5) < 1e-6
+
+
+def test_api_delete_actual_qty_rejects_cross_order(client, db):
+    """Issue #8 mirror: cross-order DELETE must be rejected (4xx), not silently
+    delete another order's row."""
+    from models.part import Part as PartModel
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftPickingWeight
+    from services.handcraft_picking_weight import upsert_actual_qty
+
+    db.add(PartModel(id="PJ-X-EAQX", name="链头", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-A-AQ", supplier_name="S", status="pending"))
+    db.add(HandcraftOrder(id="HC-B-AQ", supplier_name="S", status="pending"))
+    db.flush()
+    pi_b = HandcraftPartItem(handcraft_order_id="HC-B-AQ", part_id="PJ-X-EAQX", qty=200, bom_qty=200)
+    db.add(pi_b); db.flush()
+    upsert_actual_qty(db, "HC-B-AQ", pi_b.id, "PJ-X-EAQX", 250)
+
+    r = client.request("DELETE", f"/api/handcraft/HC-A-AQ/picking/actual_qty",
+                       json={"part_item_id": pi_b.id, "atom_part_id": "PJ-X-EAQX"})
+    assert r.status_code == 400
+    # Order B's actual_qty must still be present.
+    row = db.query(HandcraftPickingWeight).filter_by(part_item_id=pi_b.id).one()
+    assert row.actual_qty == Decimal("250.0000")

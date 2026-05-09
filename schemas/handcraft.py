@@ -139,6 +139,7 @@ class PickingSourceRow(BaseModel):
     suggested_qty: Optional[int] = None
     weight: Optional[float] = None
     weight_unit: Optional[str] = None
+    actual_qty: Optional[float] = None
     picked: bool
     restock_status: Optional[str] = None  # None | "pending" | "done"
     restock_request_id: Optional[int] = None
@@ -182,5 +183,16 @@ class HandcraftPickingWeightUpsertRequest(BaseModel):
 
 
 class HandcraftPickingWeightDeleteRequest(BaseModel):
+    part_item_id: int = Field(gt=0)
+    atom_part_id: str = Field(min_length=1)
+
+
+class HandcraftPickingActualQtyUpsertRequest(BaseModel):
+    part_item_id: int = Field(gt=0)
+    atom_part_id: str = Field(min_length=1)
+    qty: float = Field(gt=0)
+
+
+class HandcraftPickingActualQtyDeleteRequest(BaseModel):
     part_item_id: int = Field(gt=0)
     atom_part_id: str = Field(min_length=1)
