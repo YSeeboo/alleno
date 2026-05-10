@@ -71,6 +71,7 @@ import { NModal, NTable, NImage, NButton, NIcon, NSpin, NSpace, useMessage } fro
 import { CloseOutline } from '@vicons/ionicons5'
 import { uploadImageToOss } from '@/api/uploads'
 import { updatePart } from '@/api/parts'
+import { updateBatchPartImage } from '@/utils/recentImports'
 import { useIsMobile } from '@/composables/useIsMobile'
 
 const { isMobile } = useIsMobile()
@@ -78,6 +79,13 @@ const { isMobile } = useIsMobile()
 const props = defineProps({
   show: Boolean,
   parts: { type: Array, default: () => [] },  // [{ part_id, name }]
+  // When set, image upload/remove is mirrored into recentImports for the
+  // matching batch — keeps the batch's image URLs fresh for downstream
+  // handcraft attach flows.
+  batchId: { type: String, default: null },
+  // 'import' = triggered by PartList.doImport (enables the 'add to handcraft'
+  //            button in Task 8). 'manual' = standalone補图 (no extra button).
+  triggeredBy: { type: String, default: 'manual' },
 })
 
 const emit = defineEmits(['update:show', 'done'])
@@ -109,6 +117,7 @@ async function handlePaste(event, partId) {
     })
     await updatePart(partId, { image: url })
     uploadedImages.value[partId] = url
+    if (props.batchId) updateBatchPartImage(props.batchId, partId, url)
     message.success(`${partId} 图片上传成功`)
   } catch (err) {
     message.error(`${partId} 上传失败: ${err.message || '未知错误'}`)
@@ -121,6 +130,7 @@ async function removeImage(partId) {
   try {
     await updatePart(partId, { image: null })
     delete uploadedImages.value[partId]
+    if (props.batchId) updateBatchPartImage(props.batchId, partId, null)
   } catch (err) {
     message.error(`删除失败: ${err.message || '未知错误'}`)
   }
