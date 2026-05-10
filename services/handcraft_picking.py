@@ -124,6 +124,7 @@ def get_handcraft_picking_simulation(
                 picked=is_picked,
                 restock_status=restock[0] if restock else None,
                 restock_request_id=restock[1] if restock else None,
+                restock_shortfall_qty=restock[2] if restock else None,
             )
             rows_by_atom[atom_id].append(row)
             atom_first_seen.setdefault(atom_id, pi.id)
@@ -231,21 +232,30 @@ def _load_picked_keys(
 
 def _load_restock_by_part(
     db: Session, handcraft_order_id: str, part_ids: list[str]
-) -> dict[str, tuple[str, int]]:
-    """Map part_id -> (status, request_id) for any restock_request rows that
-    reference this handcraft order. None entries are simply absent from the dict."""
+) -> dict[str, tuple[str, int, Optional[float]]]:
+    """Map part_id -> (status, request_id, shortfall_qty) for any restock
+    requests against this handcraft order. shortfall_qty is exposed so the
+    picking modal can warn before discarding a non-null value on toggle-off."""
     if not part_ids:
         return {}
     from models.restock_request import RestockRequest
     rows = (
-        db.query(RestockRequest.part_id, RestockRequest.status, RestockRequest.id)
+        db.query(
+            RestockRequest.part_id,
+            RestockRequest.status,
+            RestockRequest.id,
+            RestockRequest.shortfall_qty,
+        )
         .filter(
             RestockRequest.handcraft_order_id == handcraft_order_id,
             RestockRequest.part_id.in_(part_ids),
         )
         .all()
     )
-    return {pid: (status, rid) for pid, status, rid in rows}
+    return {
+        pid: (status, rid, float(qty) if qty is not None else None)
+        for pid, status, rid, qty in rows
+    }
 
 
 # --- State mutations ---

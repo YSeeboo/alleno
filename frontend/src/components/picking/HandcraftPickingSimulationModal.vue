@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import {
   NModal, NButton, NCheckbox, NSwitch, NTag, NSpace, NPopconfirm,
-  NSpin, NTooltip, NInputNumber, NSelect, useMessage,
+  NSpin, NTooltip, NInputNumber, NSelect, useMessage, useDialog,
 } from 'naive-ui'
 import {
   getHandcraftPicking,
@@ -28,6 +28,7 @@ const props = defineProps({
 const emit = defineEmits(['update:show', 'restock-changed'])
 
 const message = useMessage()
+const dialog = useDialog()
 const loading = ref(false)
 const data = ref(null)
 const onlyUnpicked = ref(false)
@@ -275,6 +276,10 @@ function groupRestockRequestId(g) {
   return g.rows[0]?.restock_request_id || null
 }
 
+function groupRestockShortfall(g) {
+  return g.rows[0]?.restock_shortfall_qty ?? null
+}
+
 function groupRestockDisabled(g) {
   // Hide/disable the toggle when stock is sufficient — user shouldn't need to
   // mark a part for restock if it's not actually short.
@@ -311,11 +316,28 @@ async function toggleRestock(g, value) {
   } else {
     const id = groupRestockRequestId(g)
     if (!id) return
+    const shortfall = groupRestockShortfall(g)
+    if (shortfall != null && shortfall > 0) {
+      const ok = await new Promise((resolve) => {
+        dialog.warning({
+          title: '取消需补货',
+          content: `已填差额 ${shortfall}，取消后会一起清空。继续？`,
+          positiveText: '继续取消',
+          negativeText: '保留',
+          onPositiveClick: () => resolve(true),
+          onNegativeClick: () => resolve(false),
+          onClose: () => resolve(false),
+          onMaskClick: () => resolve(false),
+        })
+      })
+      if (!ok) return
+    }
     try {
       await deleteRestock(id)
       for (const r of g.rows) {
         r.restock_status = null
         r.restock_request_id = null
+        r.restock_shortfall_qty = null
       }
       emit('restock-changed')
     } catch (err) {

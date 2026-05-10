@@ -839,3 +839,26 @@ def test_picking_includes_actual_qty_when_recorded(client, db):
     assert g["total_needed_qty"] == 310  # 210 + 100 (actual ?? needed)
     # 建议 unchanged: still computed from needed_qty (200 → 250) + (100 → 150) = 400
     assert g["total_suggested_qty"] == 400
+
+
+def test_picking_simulation_exposes_restock_shortfall_qty(client, db):
+    """The picking response surfaces shortfall_qty so the modal can warn
+    before discarding it on toggle-off."""
+    from models.part import Part
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+    from models.restock_request import RestockRequest
+
+    db.add(Part(id="PJ-X-50001", name="差额件", category="小配件"))
+    db.add(HandcraftOrder(id="HC-50001", supplier_name="x", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-50001", part_id="PJ-X-50001", qty=1))
+    db.add(RestockRequest(
+        part_id="PJ-X-50001", handcraft_order_id="HC-50001",
+        source="picking", status="pending", shortfall_qty=800,
+    ))
+    db.flush()
+
+    body = client.get("/api/handcraft/HC-50001/picking").json()
+    row = body["groups"][0]["rows"][0]
+    assert row["restock_status"] == "pending"
+    assert row["restock_shortfall_qty"] == 800.0

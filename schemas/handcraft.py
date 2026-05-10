@@ -143,6 +143,7 @@ class PickingSourceRow(BaseModel):
     picked: bool
     restock_status: Optional[str] = None  # None | "pending" | "done"
     restock_request_id: Optional[int] = None
+    restock_shortfall_qty: Optional[float] = None  # surfaces 差额 so the modal can confirm before discarding it
 
 
 class PickingGroup(BaseModel):
