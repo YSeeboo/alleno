@@ -27,6 +27,18 @@ class JewelryUpdate(BaseModel):
     handcraft_cost: Optional[float] = None
 
 
+class JewelryCopyRequest(BaseModel):
+    name: str
+    image: Optional[str] = None
+    structure_image: Optional[str] = None
+    color: Optional[str] = None
+    unit: Optional[str] = None
+    retail_price: Optional[float] = None
+    wholesale_price: Optional[float] = None
+    handcraft_cost: Optional[float] = None
+    # Note: no `category` field — category is forced to source jewelry's.
+
+
 class StatusUpdate(BaseModel):
     status: str
 
