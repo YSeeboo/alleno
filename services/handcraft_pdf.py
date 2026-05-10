@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from functools import lru_cache
 from io import BytesIO
 
@@ -117,11 +118,12 @@ def build_handcraft_order_pdf(db, order_id: str) -> tuple[bytes, str]:
 
     if len(details) <= first_page_max:
         # All data + inline images fit on one page
-        _draw_detail_page(
+        last_y = _draw_detail_page(
             pdf, payload, template_text, details,
             include_static_header=True,
             page_images=inline_images,
         )
+        last_y = _draw_shortage_section(pdf, payload, last_y)
         if dedicated_images:
             pdf.showPage()
             _draw_images_page(pdf, payload, template_text, dedicated_images)
@@ -129,6 +131,7 @@ def build_handcraft_order_pdf(db, order_id: str) -> tuple[bytes, str]:
         remaining_details = list(details)
         page_index = 0
         last_page_images: list[str] = []
+        last_y = _PAGE_HEIGHT - _MARGIN_TOP
 
         while remaining_details:
             if page_index == 0:
@@ -153,7 +156,7 @@ def build_handcraft_order_pdf(db, order_id: str) -> tuple[bytes, str]:
                 if layout is not None:
                     page_images = inline_images
 
-            _draw_detail_page(
+            last_y = _draw_detail_page(
                 pdf, payload, template_text, chunk,
                 include_static_header=(page_index == 0),
                 page_images=page_images,
@@ -162,19 +165,201 @@ def build_handcraft_order_pdf(db, order_id: str) -> tuple[bytes, str]:
 
             if remaining_details or ((inline_images or dedicated_images) and not page_images and is_last_data_page):
                 pdf.showPage()
+                last_y = _PAGE_HEIGHT - _MARGIN_TOP
             page_index += 1
 
         # If last data page couldn't fit inline images, dedicate a page
         if inline_images and not last_page_images:
             _draw_images_page(pdf, payload, template_text, inline_images)
+            last_y = _PAGE_HEIGHT - _MARGIN_TOP
+        last_y = _draw_shortage_section(pdf, payload, last_y)
         # 5+ images always get dedicated pages
         if dedicated_images:
-            if last_page_images:
+            if last_page_images or last_y < _PAGE_HEIGHT - _MARGIN_TOP - 10:
                 pdf.showPage()
             _draw_images_page(pdf, payload, template_text, dedicated_images)
 
     pdf.save()
     return buffer.getvalue(), build_export_filename(payload["order"].supplier_name, payload["order"].created_at, "pdf")
+
+
+# ---------------------------------------------------------------------------
+# Shortage section (缺件清单 / 全部配齐文案)
+# ---------------------------------------------------------------------------
+
+
+_SHORTAGE_TITLE = "本单缺件清单"
+_SHORTAGE_SUBTITLE = "以下配件因库存不足暂未发出，待补货完成后会另行发送。"
+_NO_SHORTAGE_TEXT = "配件已经全部配齐，收到配件后请清点配件"
+_SHORTAGE_TITLE_HEIGHT = 26
+_SHORTAGE_SUBTITLE_HEIGHT = 18
+_SHORTAGE_ROW_HEIGHT = 32
+_SHORTAGE_TABLE_HEADER_HEIGHT = 28
+_NO_SHORTAGE_BLOCK_HEIGHT = 80
+
+
+def _draw_shortage_section(pdf, payload: dict, current_y: float) -> float:
+    """Draw the shortage section (or the all-clear notice) starting at current_y.
+    Flows inline if room, else starts a new page. Multi-page table chunks
+    continue without re-rendering the title/header (per design)."""
+    rows = payload.get("shortage_rows") or []
+    if not rows:
+        return _draw_no_shortage_notice(pdf, current_y)
+    return _draw_shortage_table(pdf, rows, current_y)
+
+
+def _draw_no_shortage_notice(pdf, current_y: float) -> float:
+    """Center-aligned star icon + bold 18px text. Always fits on a page."""
+    if current_y - _NO_SHORTAGE_BLOCK_HEIGHT < _MARGIN_BOTTOM:
+        pdf.showPage()
+        current_y = _PAGE_HEIGHT - _MARGIN_TOP
+
+    block_top = current_y - 16  # leading gap from previous content
+    block_bottom = block_top - _NO_SHORTAGE_BLOCK_HEIGHT
+    cy = (block_top + block_bottom) / 2
+
+    icon_size = 42
+    gap = 14
+    pdf.setFont(_LABEL_FONT, 18)
+    text_width = stringWidth(_NO_SHORTAGE_TEXT, _LABEL_FONT, 18)
+    total_width = icon_size + gap + text_width
+    start_x = (_PAGE_WIDTH - total_width) / 2
+
+    icon_y = cy - icon_size / 2
+    _draw_star_icon(pdf, start_x, icon_y, icon_size)
+
+    pdf.setFillColor(colors.black)
+    text_y = cy - 6  # baseline tweak so visual center matches icon
+    pdf.drawString(start_x + icon_size + gap, text_y, _NO_SHORTAGE_TEXT)
+
+    return block_bottom
+
+
+def _draw_shortage_table(pdf, rows: list[dict], current_y: float) -> float:
+    """Render the shortage table. Title + subtitle on the first page only;
+    subsequent pages just continue the body rows (per design)."""
+    widths = _shortage_column_widths()
+    headers = ["序号", "名称", "图片", "颜色", "数量", "备注"]
+    leading_gap = 12
+    title_block_height = leading_gap + _SHORTAGE_TITLE_HEIGHT + _SHORTAGE_SUBTITLE_HEIGHT + _SHORTAGE_TABLE_HEADER_HEIGHT
+
+    # If the title block alone won't fit, push to a new page first.
+    if current_y - title_block_height - _SHORTAGE_ROW_HEIGHT < _MARGIN_BOTTOM:
+        pdf.showPage()
+        current_y = _PAGE_HEIGHT - _MARGIN_TOP
+
+    # Title
+    y = current_y - leading_gap
+    pdf.setFont(_LABEL_FONT, 14)
+    pdf.setFillColor(colors.black)
+    title_width = stringWidth(_SHORTAGE_TITLE, _LABEL_FONT, 14)
+    pdf.drawString((_PAGE_WIDTH - title_width) / 2, y - 16, _SHORTAGE_TITLE)
+    y -= _SHORTAGE_TITLE_HEIGHT
+
+    # Subtitle
+    pdf.setFont(_LABEL_FONT, 9)
+    pdf.setFillColor(colors.HexColor("#666666"))
+    pdf.drawString(_MARGIN_X, y - 12, _SHORTAGE_SUBTITLE)
+    y -= _SHORTAGE_SUBTITLE_HEIGHT
+
+    # Table header
+    _draw_shortage_table_header(pdf, headers, y, widths)
+    y -= _SHORTAGE_TABLE_HEADER_HEIGHT
+
+    # Body rows; paginate without re-rendering header per user's choice
+    for row in rows:
+        if y - _SHORTAGE_ROW_HEIGHT < _MARGIN_BOTTOM:
+            pdf.showPage()
+            y = _PAGE_HEIGHT - _MARGIN_TOP
+        _draw_shortage_row(pdf, row, y, widths, _SHORTAGE_ROW_HEIGHT)
+        y -= _SHORTAGE_ROW_HEIGHT
+
+    return y
+
+
+def _shortage_column_widths() -> list[float]:
+    # 序号 / 名称 / 图片 / 颜色 / 数量 / 备注
+    raw = [7.0, 26.0, 16.0, 12.0, 12.0, 27.0]
+    total = sum(raw)
+    scaled = [_CONTENT_WIDTH * v / total for v in raw]
+    scaled[-1] = _CONTENT_WIDTH - sum(scaled[:-1])
+    return scaled
+
+
+def _draw_shortage_table_header(pdf, headers: list[str], top_y: float, widths: list[float]) -> None:
+    x = _MARGIN_X
+    pdf.setStrokeColor(colors.black)
+    pdf.setLineWidth(0.5)
+    for header, width in zip(headers, widths):
+        pdf.setFillColor(colors.HexColor("#d9d9d9"))
+        pdf.rect(x, top_y - _SHORTAGE_TABLE_HEADER_HEIGHT, width, _SHORTAGE_TABLE_HEADER_HEIGHT, stroke=1, fill=1)
+        pdf.setFillColor(colors.black)
+        pdf.setFont(_LABEL_FONT, 10)
+        text_width = stringWidth(header, _LABEL_FONT, 10)
+        pdf.drawString(
+            x + max(0, (width - text_width) / 2),
+            top_y - _SHORTAGE_TABLE_HEADER_HEIGHT + 9,
+            header,
+        )
+        x += width
+
+
+def _draw_shortage_row(pdf, row: dict, top_y: float, widths: list[float], row_height: float) -> None:
+    x = _MARGIN_X
+    pdf.setStrokeColor(colors.black)
+    pdf.setLineWidth(0.5)
+    pdf.setFillColor(colors.white)
+    for w in widths:
+        pdf.rect(x, top_y - row_height, w, row_height, stroke=1, fill=0)
+        x += w
+
+    cells = _cell_positions(widths, top_y, row_height)
+    pdf.setFillColor(colors.black)
+    _draw_centered_text(pdf, str(row.get("seq", "")), *cells[0], font_size=10)
+    name = row.get("name") or row.get("part_id") or ""
+    _draw_centered_paragraph(pdf, name, *cells[1], font_size=10, max_lines=2)
+    if row.get("part_image"):
+        _draw_image_in_box(pdf, row["part_image"], *cells[2])
+    _draw_centered_text(pdf, row.get("color") or "", *cells[3], font_size=10)
+    _draw_centered_text(pdf, _format_shortage_qty(row.get("qty")), *cells[4], font_size=10)
+    _draw_centered_paragraph(pdf, row.get("note") or "", *cells[5], font_size=10, max_lines=2)
+
+
+def _format_shortage_qty(v) -> str:
+    if v is None:
+        return "—"
+    f = float(v)
+    if f == int(f):
+        return str(int(f))
+    return f"{f:.4f}".rstrip("0").rstrip(".")
+
+
+def _draw_star_icon(pdf, x: float, y: float, size: float) -> None:
+    """Draw a 5-point yellow star inside an `size`-by-`size` box anchored at (x, y) bottom-left."""
+    cx = x + size / 2
+    cy = y + size / 2
+    r_outer = size / 2
+    # Inner radius ratio that matches a "classic" sharp star appearance.
+    r_inner = r_outer * 0.382
+
+    pdf.saveState()
+    pdf.setFillColor(colors.HexColor("#F3D958"))
+    pdf.setStrokeColor(colors.HexColor("#F3D958"))
+    pdf.setLineWidth(0.3)
+
+    path = pdf.beginPath()
+    for i in range(10):
+        angle = -math.pi / 2 + i * math.pi / 5  # start at the top, alternate outer/inner
+        r = r_outer if i % 2 == 0 else r_inner
+        px = cx + r * math.cos(angle)
+        py = cy + r * math.sin(angle)
+        if i == 0:
+            path.moveTo(px, py)
+        else:
+            path.lineTo(px, py)
+    path.close()
+    pdf.drawPath(path, stroke=1, fill=1)
+    pdf.restoreState()
 
 
 def _measure_first_page_available(pdf, payload: dict, template_text: dict) -> float:
@@ -199,7 +384,9 @@ def _measure_first_page_available(pdf, payload: dict, template_text: dict) -> fl
 
 
 def _draw_detail_page(pdf, payload: dict, template_text: dict, details: list[dict],
-                      include_static_header: bool, page_images: list[str]) -> None:
+                      include_static_header: bool, page_images: list[str]) -> float:
+    """Draw the parts table page. Returns final y position (after rows + any
+    inline images), so callers can place the shortage section right below."""
     y = _PAGE_HEIGHT - _MARGIN_TOP
 
     if include_static_header:
@@ -224,6 +411,10 @@ def _draw_detail_page(pdf, payload: dict, template_text: dict, details: list[dic
             cols, rows, image_height = layout
             y -= _IMAGE_GAP
             _draw_images_block(pdf, page_images, y, cols, rows, image_height)
+            # The image block consumes (rows * height + (rows-1) * gap)
+            y -= rows * image_height + (rows - 1) * _IMAGE_ROW_GAP
+
+    return y
 
 
 def _draw_images_page(pdf, payload: dict, template_text: dict, delivery_images: list[str]) -> None:

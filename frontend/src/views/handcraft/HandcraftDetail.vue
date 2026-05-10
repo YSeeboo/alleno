@@ -958,8 +958,19 @@ const downloadExportFile = async (extension, loadingRef, request, errorText) => 
     link.click()
     link.remove()
     window.URL.revokeObjectURL(url)
-  } catch (_) {
-    message.error(errorText)
+  } catch (err) {
+    let detail = errorText
+    // Server errors arrive as Blob (responseType="blob"); pull the JSON detail.
+    if (err?.response?.data instanceof Blob) {
+      try {
+        const text = await err.response.data.text()
+        const parsed = JSON.parse(text)
+        if (parsed?.detail) detail = parsed.detail
+      } catch { /* fall back to errorText */ }
+    } else if (err?.response?.data?.detail) {
+      detail = err.response.data.detail
+    }
+    message.error(detail)
   } finally {
     loadingRef.value = false
   }

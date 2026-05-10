@@ -155,3 +155,119 @@ def _color_for_source(source: str) -> tuple[int, int, int]:
         40 + (total * 3) % 150,
         40 + (total * 5) % 150,
     )
+
+
+def test_download_handcraft_pdf_blocks_when_shortfall_unfilled(client, db, monkeypatch):
+    """Pending RestockRequest with null shortfall_qty must abort PDF export."""
+    monkeypatch.setattr("services.handcraft_pdf.download_image_bytes", _fake_download_image_bytes)
+    from models.restock_request import RestockRequest
+
+    part = create_part(
+        db,
+        {"name": "缺件A", "category": "小配件", "unit": "个"},
+    )
+    add_stock(db, "part", part.id, 5.0, "initial")
+
+    create_resp = client.post(
+        "/api/handcraft/",
+        json={
+            "supplier_name": "缺件商家",
+            "parts": [{"part_id": part.id, "qty": 10, "unit": "个"}],
+        },
+    )
+    order_id = create_resp.json()["id"]
+
+    db.add(RestockRequest(
+        part_id=part.id, handcraft_order_id=order_id,
+        source="picking", status="pending", shortfall_qty=None,
+    ))
+    db.flush()
+
+    response = client.get(f"/api/handcraft/{order_id}/pdf")
+    assert response.status_code == 400
+    assert "未填写差额" in response.json()["detail"]
+    assert part.id in response.json()["detail"]
+
+
+def test_download_handcraft_pdf_includes_shortage_section(client, db, monkeypatch):
+    """When pending RestockRequest rows have shortfall_qty filled, the PDF
+    embeds them. The output is binary so we just assert success + page count."""
+    monkeypatch.setattr("services.handcraft_pdf.download_image_bytes", _fake_download_image_bytes)
+    from models.restock_request import RestockRequest
+
+    part = create_part(
+        db,
+        {"name": "缺件B", "category": "小配件", "unit": "个", "image": "https://img.example.com/p.png"},
+    )
+    add_stock(db, "part", part.id, 3.0, "initial")
+
+    create_resp = client.post(
+        "/api/handcraft/",
+        json={
+            "supplier_name": "齐全商家",
+            "parts": [{"part_id": part.id, "qty": 8, "unit": "个"}],
+        },
+    )
+    order_id = create_resp.json()["id"]
+
+    db.add(RestockRequest(
+        part_id=part.id, handcraft_order_id=order_id,
+        source="picking", status="pending", shortfall_qty=200,
+    ))
+    db.flush()
+
+    response = client.get(f"/api/handcraft/{order_id}/pdf")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/pdf")
+    # At least one page; can't easily assert text content of PDF binary.
+    assert len(PdfReader(BytesIO(response.content)).pages) >= 1
+
+
+def test_download_handcraft_pdf_no_shortage_notice_when_no_pending(client, db, monkeypatch):
+    """No pending records → PDF still produced; the section becomes the
+    'all complete' notice. Smoke test, just asserts success."""
+    monkeypatch.setattr("services.handcraft_pdf.download_image_bytes", _fake_download_image_bytes)
+
+    part = create_part(db, {"name": "正常A", "category": "小配件", "unit": "个"})
+    add_stock(db, "part", part.id, 50.0, "initial")
+    create_resp = client.post(
+        "/api/handcraft/",
+        json={
+            "supplier_name": "正常商家",
+            "parts": [{"part_id": part.id, "qty": 10, "unit": "个"}],
+        },
+    )
+    order_id = create_resp.json()["id"]
+
+    response = client.get(f"/api/handcraft/{order_id}/pdf")
+    assert response.status_code == 200
+    assert len(PdfReader(BytesIO(response.content)).pages) >= 1
+
+
+def test_download_handcraft_pdf_skips_section_for_done_records(client, db, monkeypatch):
+    """A done RestockRequest is history — the export should treat the order as
+    'all complete' for shortage purposes (no table, just the notice)."""
+    monkeypatch.setattr("services.handcraft_pdf.download_image_bytes", _fake_download_image_bytes)
+    from models.restock_request import RestockRequest
+    from time_utils import now_beijing
+
+    part = create_part(db, {"name": "已补A", "category": "小配件", "unit": "个"})
+    add_stock(db, "part", part.id, 3.0, "initial")
+    create_resp = client.post(
+        "/api/handcraft/",
+        json={
+            "supplier_name": "已补商家",
+            "parts": [{"part_id": part.id, "qty": 5, "unit": "个"}],
+        },
+    )
+    order_id = create_resp.json()["id"]
+
+    db.add(RestockRequest(
+        part_id=part.id, handcraft_order_id=order_id,
+        source="picking", status="done", completed_at=now_beijing(),
+        shortfall_qty=None,
+    ))
+    db.flush()
+
+    response = client.get(f"/api/handcraft/{order_id}/pdf")
+    assert response.status_code == 200
