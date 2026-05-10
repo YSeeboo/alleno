@@ -120,3 +120,82 @@ def test_delete_jewelry(db):
 def test_delete_jewelry_not_found(db):
     with pytest.raises(ValueError):
         delete_jewelry(db, "SP-PCS-99999")
+
+
+# ---------------------------------------------------------------------------
+# copy_jewelry tests
+# ---------------------------------------------------------------------------
+
+from services.jewelry import copy_jewelry
+from services.bom import set_bom, get_bom
+from services.part import create_part
+
+
+def _seed_part(db, name="珍珠", category="小配件"):
+    return create_part(db, {"name": name, "category": category, "unit": "颗"})
+
+
+def test_copy_jewelry_basic_info(db):
+    src = create_jewelry(db, {
+        "name": "源套装",
+        "category": "套装",
+        "color": "金",
+        "unit": "套",
+        "retail_price": 200.0,
+        "wholesale_price": 120.0,
+        "image": "src.jpg",
+        "structure_image": "src-struct.jpg",
+        "handcraft_cost": 30.0,
+    })
+    new = copy_jewelry(db, src.id, {"name": "源套装-副本"})
+    assert new.id != src.id
+    assert new.id.startswith("SP-SET-")
+    assert new.name == "源套装-副本"
+    assert new.category == "套装"
+    assert new.color == "金"
+    assert new.unit == "套"
+    assert float(new.retail_price) == 200.0
+    assert float(new.wholesale_price) == 120.0
+    assert new.image == "src.jpg"
+    assert new.structure_image == "src-struct.jpg"
+    assert float(new.handcraft_cost) == 30.0
+    assert new.status == "active"
+
+
+def test_copy_jewelry_clones_bom(db):
+    src = create_jewelry(db, {"name": "S", "category": "单件"})
+    p1 = _seed_part(db, name="珍珠")
+    p2 = _seed_part(db, name="链子")
+    set_bom(db, src.id, p1.id, 2.5)
+    set_bom(db, src.id, p2.id, 1.0)
+
+    new = copy_jewelry(db, src.id, {"name": "S-副本"})
+    rows = get_bom(db, new.id)
+    parts = {r.part_id: float(r.qty_per_unit) for r in rows}
+    assert parts == {p1.id: 2.5, p2.id: 1.0}
+
+
+def test_copy_jewelry_override_fields(db):
+    src = create_jewelry(db, {"name": "S", "category": "单件", "color": "金", "retail_price": 50.0})
+    new = copy_jewelry(db, src.id, {"name": "S-副本", "color": "银", "retail_price": 80.0})
+    assert new.name == "S-副本"
+    assert new.color == "银"
+    assert float(new.retail_price) == 80.0
+
+
+def test_copy_jewelry_ignores_category_in_override(db):
+    src = create_jewelry(db, {"name": "S", "category": "套装"})
+    new = copy_jewelry(db, src.id, {"name": "S-副本", "category": "单件"})
+    assert new.category == "套装"
+    assert new.id.startswith("SP-SET-")
+
+
+def test_copy_jewelry_source_not_found(db):
+    with pytest.raises(ValueError, match="Jewelry not found"):
+        copy_jewelry(db, "SP-PCS-99999", {"name": "X"})
+
+
+def test_copy_jewelry_empty_bom(db):
+    src = create_jewelry(db, {"name": "S", "category": "单件"})
+    new = copy_jewelry(db, src.id, {"name": "S-副本"})
+    assert get_bom(db, new.id) == []

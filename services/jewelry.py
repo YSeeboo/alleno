@@ -77,3 +77,48 @@ def delete_jewelry(db: Session, jewelry_id: str) -> None:
         raise ValueError(f"Jewelry not found: {jewelry_id}")
     db.delete(jewelry)
     db.flush()
+
+
+def copy_jewelry(db: Session, source_id: str, override_data: dict) -> Jewelry:
+    """Clone a jewelry's basic info + BOM rows into a new jewelry record.
+
+    - Raises ValueError if source_id does not exist.
+    - Category is always inherited from source (any 'category' key in
+      override_data is ignored).
+    - Inventory log is NOT cloned; the new jewelry starts at stock 0.
+    - status defaults to 'active'.
+    """
+    from models.bom import Bom
+    from services._helpers import _next_id
+
+    source = get_jewelry(db, source_id)
+    if source is None:
+        raise ValueError(f"Jewelry not found: {source_id}")
+
+    base_data = {
+        "name": source.name,
+        "image": source.image,
+        "structure_image": source.structure_image,
+        "category": source.category,
+        "color": source.color,
+        "unit": source.unit,
+        "retail_price": float(source.retail_price) if source.retail_price is not None else None,
+        "wholesale_price": float(source.wholesale_price) if source.wholesale_price is not None else None,
+        "handcraft_cost": float(source.handcraft_cost) if source.handcraft_cost is not None else None,
+    }
+    merged = {**base_data, **(override_data or {})}
+    merged["category"] = source.category  # force, ignore any override
+
+    new_jewelry = create_jewelry(db, merged)
+
+    src_boms = db.query(Bom).filter(Bom.jewelry_id == source_id).all()
+    for src_bom in src_boms:
+        new_bom = Bom(
+            id=_next_id(db, Bom, "BM"),
+            jewelry_id=new_jewelry.id,
+            part_id=src_bom.part_id,
+            qty_per_unit=src_bom.qty_per_unit,
+        )
+        db.add(new_bom)
+    db.flush()
+    return new_jewelry
