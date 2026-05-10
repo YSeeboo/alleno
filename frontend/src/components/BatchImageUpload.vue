@@ -75,6 +75,7 @@
   <AttachToHandcraftModal
     v-model:show="showAttachModal"
     :batch-parts="liveBatchParts"
+    :initial-target="initialAttachTarget"
   />
 </template>
 
@@ -125,9 +126,14 @@ const splitMenuOptions = [
   { label: '新建一张', key: 'new' },
 ]
 
-const openAttach = (_key) => {
-  // _key is reserved for future "preselect target" wiring; for now both menu
-  // items just open the submodal (which defaults to "new").
+// Tracks which radio the submodal should default to. Updated each time the
+// user picks a menu item or clicks the main "加入手工单" button.
+const initialAttachTarget = ref('new')
+
+const openAttach = (key) => {
+  if (key === 'existing' || key === 'new') {
+    initialAttachTarget.value = key
+  }
   showAttachModal.value = true
 }
 

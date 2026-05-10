@@ -131,10 +131,10 @@ const refreshRows = () => {
 }
 
 watch(selectedBatchId, refreshRows, { immediate: true })
-watch(() => props.existingItems, refreshRows)
+watch(() => props.existingItems, refreshRows, { deep: true })
 
 // --- Selection helpers ---
-const eligibleRows = computed(() => rows.value)
+const eligibleRows = computed(() => rows.value.filter((r) => r._existingItemId == null))
 const checkedCount = computed(() => rows.value.filter((r) => r._checked).length)
 const allEligibleSelected = computed(() =>
   eligibleRows.value.length > 0 &&
@@ -145,7 +145,7 @@ const someEligibleSelected = computed(() =>
 )
 
 const toggleSelectAll = (checked) => {
-  for (const r of rows.value) r._checked = checked
+  for (const r of eligibleRows.value) r._checked = checked
   bubble()
 }
 

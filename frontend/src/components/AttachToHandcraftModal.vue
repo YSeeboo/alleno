@@ -87,6 +87,9 @@ const props = defineProps({
   show: Boolean,
   // Batch parts: [{ part_id, name, image, unit, imported_qty }]
   batchParts: { type: Array, default: () => [] },
+  // Which radio target should be selected when the modal opens.
+  // Set by the caller's openAttach(key). Allowed: 'new' | 'existing'.
+  initialTarget: { type: String, default: 'new' },
 })
 const emit = defineEmits(['update:show'])
 
@@ -129,6 +132,10 @@ watch(
   () => props.show,
   async (v) => {
     if (!v) return
+    // Reset transient state — keep the form consistent across reopens.
+    target.value = props.initialTarget
+    existingOrderId.value = null
+    orderOptions.value = []
     try {
       const { data } = await listSuppliers({ type: 'handcraft' })
       supplierOptions.value = data.map((s) => ({ label: s.name, value: s.name }))

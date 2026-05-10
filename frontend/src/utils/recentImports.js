@@ -26,7 +26,12 @@ const readRaw = () => {
 }
 
 const writeRaw = (list) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
+  } catch {
+    // Quota exceeded or storage disabled — batch bridge silently degrades.
+    // The Excel import itself succeeded; this only loses the convenience batch.
+  }
 }
 
 const prune = (list, now) => {

@@ -1250,43 +1250,46 @@ const attachRecentBatch = async () => {
   }
 
   // Build one task per row.
-  const tasks = payload.rows.map((row) => async () => {
-    if (row._existingItemId == null) {
-      return addHandcraftPart(orderId, {
-        part_id: row.part_id,
-        qty: row.qty,
+  try {
+    const tasks = payload.rows.map((row) => async () => {
+      if (row._existingItemId == null) {
+        return addHandcraftPart(orderId, {
+          part_id: row.part_id,
+          qty: row.qty,
+          unit: row.unit,
+        })
+      }
+      return updateHandcraftPart(orderId, row._existingItemId, {
+        qty: (Number(row._existingQty) || 0) + row.qty,
         unit: row.unit,
       })
-    }
-    return updateHandcraftPart(orderId, row._existingItemId, {
-      qty: (Number(row._existingQty) || 0) + row.qty,
-      unit: row.unit,
     })
-  })
 
-  const results = await runWithConcurrency(tasks, 5)
+    const results = await runWithConcurrency(tasks, 5)
 
-  let okNew = 0
-  let okUpd = 0
-  let failures = 0
-  results.forEach((r, idx) => {
-    const row = payload.rows[idx]
-    if (r.ok) {
-      if (row._existingItemId == null) okNew++
-      else okUpd++
-    } else {
-      failures++
-      const detail = r.error?.response?.data?.detail || r.error?.message || '未知错误'
-      message.error(`${row.part_id} 加入失败：${detail}`)
+    let okNew = 0
+    let okUpd = 0
+    let failures = 0
+    results.forEach((r, idx) => {
+      const row = payload.rows[idx]
+      if (r.ok) {
+        if (row._existingItemId == null) okNew++
+        else okUpd++
+      } else {
+        failures++
+        const detail = r.error?.response?.data?.detail || r.error?.message || '未知错误'
+        message.error(`${row.part_id} 加入失败：${detail}`)
+      }
+    })
+
+    if (okNew + okUpd > 0) {
+      message.success(`已新增 ${okNew} 项，累加 ${okUpd} 项${failures > 0 ? `（${failures} 项失败）` : ''}`)
+      addModalVisible.value = false
+      await loadData()
     }
-  })
-
-  if (okNew + okUpd > 0) {
-    message.success(`已新增 ${okNew} 项，累加 ${okUpd} 项${failures > 0 ? `（${failures} 项失败）` : ''}`)
-    addModalVisible.value = false
-    await loadData()
+  } finally {
+    attachSubmitting.value = false
   }
-  attachSubmitting.value = false
 }
 
 const openEditModal = (row) => {
