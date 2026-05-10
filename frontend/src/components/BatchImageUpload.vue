@@ -59,19 +59,33 @@
     </div>
     <template #footer>
       <n-space justify="end">
-        <n-button type="primary" @click="$emit('update:show', false)">完成</n-button>
+        <n-button @click="$emit('update:show', false)">完成</n-button>
+        <n-button-group v-if="triggeredBy === 'import' && batchId">
+          <n-button type="primary" @click="openAttach('new')">加入手工单</n-button>
+          <n-dropdown trigger="click" :options="splitMenuOptions" @select="openAttach">
+            <n-button type="primary" style="padding: 0 8px;">
+              <span style="font-size: 10px;">▾</span>
+            </n-button>
+          </n-dropdown>
+        </n-button-group>
       </n-space>
     </template>
   </n-modal>
+
+  <AttachToHandcraftModal
+    v-model:show="showAttachModal"
+    :batch-parts="liveBatchParts"
+  />
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { NModal, NTable, NImage, NButton, NIcon, NSpin, NSpace, useMessage } from 'naive-ui'
+import { ref, computed } from 'vue'
+import { NModal, NTable, NImage, NButton, NButtonGroup, NDropdown, NIcon, NSpin, NSpace, useMessage } from 'naive-ui'
 import { CloseOutline } from '@vicons/ionicons5'
 import { uploadImageToOss } from '@/api/uploads'
 import { updatePart } from '@/api/parts'
-import { updateBatchPartImage } from '@/utils/recentImports'
+import { updateBatchPartImage, getBatchById } from '@/utils/recentImports'
+import AttachToHandcraftModal from '@/components/AttachToHandcraftModal.vue'
 import { useIsMobile } from '@/composables/useIsMobile'
 
 const { isMobile } = useIsMobile()
@@ -94,6 +108,28 @@ const message = useMessage()
 const uploadedImages = ref({})
 const focusedPartId = ref(null)
 const uploadingPartId = ref(null)
+
+// --- Attach-to-handcraft submodal ---
+const showAttachModal = ref(false)
+
+// Read the live batch (with up-to-date image URLs) on demand so the submodal
+// gets fresh data even if the user pasted images right before clicking.
+const liveBatchParts = computed(() => {
+  if (!props.batchId) return []
+  const batch = getBatchById(props.batchId)
+  return batch?.parts ?? []
+})
+
+const splitMenuOptions = [
+  { label: '加入已有 pending 单', key: 'existing' },
+  { label: '新建一张', key: 'new' },
+]
+
+const openAttach = (_key) => {
+  // _key is reserved for future "preselect target" wiring; for now both menu
+  // items just open the submodal (which defaults to "new").
+  showAttachModal.value = true
+}
 
 function setFocus(partId, event) {
   focusedPartId.value = partId
