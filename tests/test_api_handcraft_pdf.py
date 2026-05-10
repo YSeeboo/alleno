@@ -85,9 +85,10 @@ def test_download_handcraft_pdf_moves_image_three_and_four_to_second_page(client
 
     response = client.get(f"/api/handcraft/{order_id}/pdf")
     assert response.status_code == 200
-    # Page 1 (data) + page 2 (inline images, pushed off page 1)
-    # + page 3 (no-shortage notice — its own page so it doesn't paint over images).
-    assert len(PdfReader(BytesIO(response.content)).pages) == 3
+    # Render order is now: parts → 配件配齐 notice → images. Page 1 holds the
+    # first chunk of rows; page 2 holds the remaining row + notice + 4 inline
+    # images (≤4 still flow inline, just below the notice now).
+    assert len(PdfReader(BytesIO(response.content)).pages) == 2
 
 
 def test_download_handcraft_pdf_moves_all_images_after_detail_pages_when_more_than_ten_rows(client, db, monkeypatch):
@@ -133,8 +134,9 @@ def test_download_handcraft_pdf_moves_all_images_after_detail_pages_when_more_th
 
     response = client.get(f"/api/handcraft/{order_id}/pdf")
     assert response.status_code == 200
-    # 2 data pages + 1 inline-images page + 1 no-shortage notice page = 3
-    assert len(PdfReader(BytesIO(response.content)).pages) == 3
+    # Same as above: parts → notice → images. 20 rows fit across 2 pages
+    # with the notice + 4 inline images on the trailing page.
+    assert len(PdfReader(BytesIO(response.content)).pages) == 2
 
 
 def test_download_handcraft_pdf_order_not_found(client):

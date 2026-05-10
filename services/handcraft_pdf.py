@@ -105,86 +105,99 @@ def build_handcraft_order_pdf(db, order_id: str) -> tuple[bytes, str]:
     for i, d in enumerate(details, 1):
         d["seq"] = i
     delivery_images = payload["delivery_images"]
-    image_count = len(delivery_images)
-    # 5+ images always go to dedicated pages, never inline with data
-    inline_images = delivery_images if image_count <= 4 else []
-    dedicated_images = delivery_images if image_count > 4 else []
 
-    # Measure first-page available space dynamically
+    # Render order is fixed: parts → shortage section → images. Inline-image
+    # optimization (squeezing ≤4 images onto the same page as parts) was
+    # dropped because it forces images to render BEFORE the shortage section,
+    # which contradicts the intended ordering. ≤4 images can still flow
+    # inline below the shortage section if there's room on the same page.
+
     first_page_available = _measure_first_page_available(pdf, payload, template_text)
     detail_page_available = _PAGE_HEIGHT - _MARGIN_TOP - _MARGIN_BOTTOM - _HEADER_ROW_HEIGHT
 
-    first_page_max = _max_rows_with_images(len(inline_images), first_page_available, _FIRST_PAGE_ROW_HEIGHT)
+    # Phase 1: parts pages (rows only, no images on parts pages anymore).
+    last_y = _draw_parts_pages(
+        pdf, payload, template_text, details,
+        first_page_available=first_page_available,
+        detail_page_available=detail_page_available,
+    )
 
-    if len(details) <= first_page_max:
-        # All data + inline images fit on one page
-        last_y = _draw_detail_page(
-            pdf, payload, template_text, details,
-            include_static_header=True,
-            page_images=inline_images,
-        )
-        last_y = _draw_shortage_section(pdf, payload, last_y)
-        if dedicated_images:
-            pdf.showPage()
-            _draw_images_page(pdf, payload, template_text, dedicated_images)
-    else:
-        remaining_details = list(details)
-        page_index = 0
-        last_page_images: list[str] = []
-        last_y = _PAGE_HEIGHT - _MARGIN_TOP
+    # Phase 2: shortage section / "全部配齐" notice.
+    last_y = _draw_shortage_section(pdf, payload, last_y)
 
-        while remaining_details:
-            if page_index == 0:
-                page_available = first_page_available
-                row_h = _FIRST_PAGE_ROW_HEIGHT
-                page_size = _max_rows_with_images(0, page_available, row_h)
-            else:
-                page_available = detail_page_available
-                row_h = _DETAIL_PAGE_ROW_HEIGHT
-                page_size = _DETAIL_PAGE_MAX_ROWS
-
-            chunk = remaining_details[:page_size]
-            remaining_details = remaining_details[page_size:]
-
-            is_last_data_page = len(remaining_details) == 0
-
-            page_images: list[str] = []
-            if is_last_data_page and inline_images:
-                rows_used = len(chunk)
-                space_left = page_available - rows_used * row_h
-                layout = _compute_image_layout(len(inline_images), space_left)
-                if layout is not None:
-                    page_images = inline_images
-
-            last_y = _draw_detail_page(
-                pdf, payload, template_text, chunk,
-                include_static_header=(page_index == 0),
-                page_images=page_images,
-            )
-            last_page_images = page_images
-
-            if remaining_details or ((inline_images or dedicated_images) and not page_images and is_last_data_page):
-                pdf.showPage()
-                last_y = _PAGE_HEIGHT - _MARGIN_TOP
-            page_index += 1
-
-        # If last data page couldn't fit inline images, dedicate a page.
-        # _draw_images_page leaves the cursor on the page it just drew,
-        # so we must showPage() before the shortage section — otherwise
-        # the section paints over the images.
-        if inline_images and not last_page_images:
-            _draw_images_page(pdf, payload, template_text, inline_images)
-            pdf.showPage()
-            last_y = _PAGE_HEIGHT - _MARGIN_TOP
-        last_y = _draw_shortage_section(pdf, payload, last_y)
-        # 5+ images always get dedicated pages
-        if dedicated_images:
-            if last_page_images or last_y < _PAGE_HEIGHT - _MARGIN_TOP - 10:
-                pdf.showPage()
-            _draw_images_page(pdf, payload, template_text, dedicated_images)
+    # Phase 3: delivery images. ≤4 images may flow inline below the shortage
+    # section; 5+ always get dedicated pages.
+    if delivery_images:
+        last_y = _draw_delivery_images(pdf, payload, template_text, delivery_images, last_y)
 
     pdf.save()
     return buffer.getvalue(), build_export_filename(payload["order"].supplier_name, payload["order"].created_at, "pdf")
+
+
+def _draw_parts_pages(
+    pdf, payload: dict, template_text: dict, details: list[dict],
+    first_page_available: float, detail_page_available: float,
+) -> float:
+    """Paginate the parts table across pages without any inline images.
+    Returns the final y position after the last drawn row."""
+    if not details:
+        # Empty order — still render a header so the page isn't blank.
+        return _draw_detail_page(
+            pdf, payload, template_text, [],
+            include_static_header=True, page_images=[],
+        )
+
+    remaining = list(details)
+    page_index = 0
+    last_y = _PAGE_HEIGHT - _MARGIN_TOP
+
+    while remaining:
+        if page_index == 0:
+            row_h = _FIRST_PAGE_ROW_HEIGHT
+            page_size = _max_rows_with_images(0, first_page_available, row_h)
+        else:
+            row_h = _DETAIL_PAGE_ROW_HEIGHT
+            page_size = _DETAIL_PAGE_MAX_ROWS
+
+        chunk = remaining[:page_size]
+        remaining = remaining[page_size:]
+
+        last_y = _draw_detail_page(
+            pdf, payload, template_text, chunk,
+            include_static_header=(page_index == 0),
+            page_images=[],
+        )
+
+        if remaining:
+            pdf.showPage()
+            last_y = _PAGE_HEIGHT - _MARGIN_TOP
+        page_index += 1
+
+    return last_y
+
+
+def _draw_delivery_images(
+    pdf, payload: dict, template_text: dict,
+    delivery_images: list[str], current_y: float,
+) -> float:
+    """Render delivery images. ≤4 images: try to fit inline below current_y;
+    if there's no room, dedicated page(s). 5+ images: always dedicated pages."""
+    image_count = len(delivery_images)
+    space_left = current_y - _MARGIN_BOTTOM
+
+    # ≤4 images may flow inline below the shortage section if there's room.
+    if image_count <= 4:
+        layout = _compute_image_layout(image_count, space_left)
+        if layout is not None:
+            cols, rows, image_height = layout
+            current_y -= _IMAGE_GAP
+            _draw_images_block(pdf, delivery_images, current_y, cols, rows, image_height)
+            return current_y - rows * image_height - (rows - 1) * _IMAGE_ROW_GAP
+
+    # Either too many images to fit inline, or 5+ — go to dedicated page(s).
+    pdf.showPage()
+    _draw_images_page(pdf, payload, template_text, delivery_images)
+    return _MARGIN_BOTTOM
 
 
 # ---------------------------------------------------------------------------
