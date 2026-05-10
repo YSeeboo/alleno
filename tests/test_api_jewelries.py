@@ -136,8 +136,18 @@ def test_copy_jewelry_basic(client):
 
 def test_copy_jewelry_new_stock_is_zero(client):
     src = client.post("/api/jewelries/", json={"name": "S", "category": "单件"}).json()
+    # Give source some stock so the test actually verifies inventory is NOT cloned.
+    add = client.post(f"/api/inventory/jewelry/{src['id']}/add", json={"qty": 5, "reason": "test seed"})
+    assert add.status_code == 200, add.text
+
     resp = client.post(f"/api/jewelries/{src['id']}/copy", json={"name": "S-副本"})
     new_id = resp.json()["id"]
+
+    # Confirm source actually has stock now
+    src_stock = client.get(f"/api/inventory/jewelry/{src['id']}")
+    assert src_stock.json()["current"] == 5
+
+    # The new jewelry must NOT have inherited any stock
     stock_resp = client.get(f"/api/inventory/jewelry/{new_id}")
     assert stock_resp.status_code == 200
     assert stock_resp.json()["current"] == 0
@@ -145,7 +155,7 @@ def test_copy_jewelry_new_stock_is_zero(client):
 
 def test_copy_jewelry_source_not_found(client):
     resp = client.post("/api/jewelries/SP-PCS-99999/copy", json={"name": "X"})
-    assert resp.status_code == 400
+    assert resp.status_code == 404
 
 
 def test_copy_jewelry_missing_name(client):
@@ -171,7 +181,7 @@ def test_copy_jewelry_category_in_payload_ignored(client):
     src = client.post("/api/jewelries/", json={"name": "S", "category": "套装"}).json()
     resp = client.post(f"/api/jewelries/{src['id']}/copy", json={
         "name": "S-副本",
-        "category": "单件",  # should be silently ignored by Pydantic + service guard
+        "category": "单件",  # not declared in JewelryCopyRequest; Pydantic drops it
     })
     assert resp.status_code == 201
     new = resp.json()

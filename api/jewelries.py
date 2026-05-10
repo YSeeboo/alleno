@@ -66,6 +66,8 @@ def api_delete_jewelry(jewelry_id: str, db: Session = Depends(get_db)):
 
 @router.post("/{source_id}/copy", response_model=JewelryResponse, status_code=201)
 def api_copy_jewelry(source_id: str, body: JewelryCopyRequest, db: Session = Depends(get_db)):
+    if get_jewelry(db, source_id) is None:
+        raise HTTPException(status_code=404, detail=f"Jewelry {source_id} not found")
     with service_errors():
         new_jewelry = copy_jewelry(db, source_id, body.model_dump(exclude_unset=True))
     return new_jewelry
