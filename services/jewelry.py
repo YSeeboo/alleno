@@ -2,8 +2,9 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from models.bom import Bom
 from models.jewelry import Jewelry
-from services._helpers import _next_id_by_category, keyword_filter
+from services._helpers import _next_id, _next_id_by_category, keyword_filter
 
 _VALID_STATUSES = {"active", "inactive"}
 
@@ -88,9 +89,6 @@ def copy_jewelry(db: Session, source_id: str, override_data: dict) -> Jewelry:
     - Inventory log is NOT cloned; the new jewelry starts at stock 0.
     - status defaults to 'active'.
     """
-    from models.bom import Bom
-    from services._helpers import _next_id
-
     source = get_jewelry(db, source_id)
     if source is None:
         raise ValueError(f"Jewelry not found: {source_id}")
@@ -102,12 +100,12 @@ def copy_jewelry(db: Session, source_id: str, override_data: dict) -> Jewelry:
         "category": source.category,
         "color": source.color,
         "unit": source.unit,
-        "retail_price": float(source.retail_price) if source.retail_price is not None else None,
-        "wholesale_price": float(source.wholesale_price) if source.wholesale_price is not None else None,
-        "handcraft_cost": float(source.handcraft_cost) if source.handcraft_cost is not None else None,
+        "retail_price": source.retail_price,
+        "wholesale_price": source.wholesale_price,
+        "handcraft_cost": source.handcraft_cost,
     }
-    merged = {**base_data, **(override_data or {})}
-    merged["category"] = source.category  # force, ignore any override
+    safe_override = {k: v for k, v in (override_data or {}).items() if k != "category"}
+    merged = {**base_data, **safe_override}
 
     new_jewelry = create_jewelry(db, merged)
 

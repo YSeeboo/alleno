@@ -2,7 +2,9 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import pytest
-from services.jewelry import create_jewelry, get_jewelry, list_jewelries, update_jewelry, set_status, delete_jewelry, JEWELRY_CATEGORIES
+from services.jewelry import copy_jewelry, create_jewelry, get_jewelry, list_jewelries, update_jewelry, set_status, delete_jewelry, JEWELRY_CATEGORIES
+from services.bom import set_bom, get_bom
+from services.part import create_part
 
 
 # ---------------------------------------------------------------------------
@@ -125,10 +127,6 @@ def test_delete_jewelry_not_found(db):
 # ---------------------------------------------------------------------------
 # copy_jewelry tests
 # ---------------------------------------------------------------------------
-
-from services.jewelry import copy_jewelry
-from services.bom import set_bom, get_bom
-from services.part import create_part
 
 
 def _seed_part(db, name="珍珠", category="小配件"):
