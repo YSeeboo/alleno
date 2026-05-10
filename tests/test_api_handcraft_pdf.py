@@ -327,3 +327,34 @@ def test_download_handcraft_pdf_overflow_inline_images_with_shortage_does_not_ov
     # data pages + inline-images page + shortage page. Pre-fix the shortage
     # section painted on top of the images page so the count was one less.
     assert len(pages) >= 4, f"expected ≥4 pages (got {len(pages)}); shortage may be overlapping images"
+
+
+def test_download_handcraft_pdf_zero_shortfall_is_skipped(client, db, monkeypatch):
+    """shortfall_qty == 0 means 'not actually short' — keep the row in DB
+    as history but suppress it from the supplier PDF (and the small
+    semantic mismatch with the '以下配件因库存不足暂未发出' subtitle)."""
+    monkeypatch.setattr("services.handcraft_pdf.download_image_bytes", _fake_download_image_bytes)
+    from models.restock_request import RestockRequest
+    from services.handcraft_export import get_handcraft_export_payload
+
+    part = create_part(db, {"name": "零差额", "category": "小配件", "unit": "个"})
+    add_stock(db, "part", part.id, 10.0, "init")
+    create_resp = client.post(
+        "/api/handcraft/",
+        json={
+            "supplier_name": "零商家",
+            "parts": [{"part_id": part.id, "qty": 5, "unit": "个"}],
+        },
+    )
+    order_id = create_resp.json()["id"]
+    db.add(RestockRequest(
+        part_id=part.id, handcraft_order_id=order_id,
+        source="picking", status="pending", shortfall_qty=0,
+    ))
+    db.flush()
+
+    payload = get_handcraft_export_payload(db, order_id)
+    assert payload["shortage_rows"] == []  # zero skipped → falls back to "all complete" notice
+
+    response = client.get(f"/api/handcraft/{order_id}/pdf")
+    assert response.status_code == 200  # gate didn't block (only null does)

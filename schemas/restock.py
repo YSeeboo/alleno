@@ -70,7 +70,6 @@ class RestockHistoryItem(BaseModel):
     supplier_name: Optional[str]
     source: str
     qty: Optional[float] = None
-    shortfall_qty: Optional[float] = None
     note: Optional[str]
     created_at: datetime
     completed_at: Optional[datetime]

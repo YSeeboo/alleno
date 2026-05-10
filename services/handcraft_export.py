@@ -102,6 +102,9 @@ def _build_shortage_rows(db: Session, order_id: str) -> list[dict]:
             "以下配件未填写差额：" + ", ".join(missing) + "，请先填写后再导出"
         )
 
+    # shortfall_qty == 0 means "user decided this isn't actually short" — keep
+    # the DB row as history but skip from the supplier-facing PDF.
+    visible = [r for r in rows if float(r.shortfall_qty) > 0]
     return [
         {
             "seq": idx,
@@ -112,7 +115,7 @@ def _build_shortage_rows(db: Session, order_id: str) -> list[dict]:
             "qty": float(r.shortfall_qty),
             "note": r.note or "",
         }
-        for idx, r in enumerate(rows, start=1)
+        for idx, r in enumerate(visible, start=1)
     ]
 
 
