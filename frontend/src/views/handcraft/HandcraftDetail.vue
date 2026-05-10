@@ -237,53 +237,94 @@
       </n-card>
     </n-spin>
 
-    <n-modal v-model:show="addModalVisible" preset="card" title="添加配件明细" :style="{ width: isMobile ? '95vw' : '500px' }">
-      <form @submit.prevent="doAddItem">
-      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="90">
-        <n-form-item label="配件">
-          <n-select
-            v-model:value="addForm.part_id"
-            :options="partOptions"
-            :render-label="renderOptionWithImage"
-            filterable
-            clearable
-            placeholder="选择配件"
-            @update:value="onAddPartSelect"
+    <n-modal v-model:show="addModalVisible" preset="card" title="添加配件明细" :style="{ width: isMobile ? '95vw' : '560px' }">
+      <n-tabs v-model:value="addModalTab" type="line" animated>
+        <n-tab-pane name="single" tab="单条添加">
+          <form @submit.prevent="doAddItem">
+            <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="90">
+              <n-form-item label="配件">
+                <n-select
+                  v-model:value="addForm.part_id"
+                  :options="partOptions"
+                  :render-label="renderOptionWithImage"
+                  filterable
+                  clearable
+                  placeholder="选择配件"
+                  @update:value="onAddPartSelect"
+                />
+              </n-form-item>
+              <n-form-item label="数量">
+                <n-input-number v-model:value="addForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
+              </n-form-item>
+              <n-form-item label="单位">
+                <n-select v-model:value="addForm.unit" :options="unitOptions" />
+              </n-form-item>
+              <n-form-item label="重量">
+                <div style="display: flex; gap: 8px; width: 100%;">
+                  <n-input-number
+                    v-model:value="addForm.weight"
+                    :min="0"
+                    :precision="2"
+                    :step="0.1"
+                    placeholder="可选"
+                    clearable
+                    style="flex: 1;"
+                  />
+                  <n-select
+                    v-model:value="addForm.weight_unit"
+                    :options="weightUnitOptions"
+                    style="width: 90px;"
+                  />
+                </div>
+              </n-form-item>
+              <n-form-item label="备注">
+                <n-input v-model:value="addForm.note" placeholder="备注（可选）" />
+              </n-form-item>
+            </n-form>
+          </form>
+        </n-tab-pane>
+
+        <n-tab-pane name="recent" tab="最近导入">
+          <RecentImportsPicker
+            :existing-items="items"
+            @change="onRecentChange"
           />
-        </n-form-item>
-        <n-form-item label="数量">
-          <n-input-number v-model:value="addForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
-        </n-form-item>
-        <n-form-item label="单位">
-          <n-select v-model:value="addForm.unit" :options="unitOptions" />
-        </n-form-item>
-        <n-form-item label="重量">
-          <div style="display: flex; gap: 8px; width: 100%;">
-            <n-input-number
-              v-model:value="addForm.weight"
-              :min="0"
-              :precision="2"
-              :step="0.1"
-              placeholder="可选"
-              clearable
-              style="flex: 1;"
-            />
-            <n-select
-              v-model:value="addForm.weight_unit"
-              :options="weightUnitOptions"
-              style="width: 90px;"
-            />
-          </div>
-        </n-form-item>
-        <n-form-item label="备注">
-          <n-input v-model:value="addForm.note" placeholder="备注（可选）" />
-        </n-form-item>
-      </n-form>
-      </form>
+        </n-tab-pane>
+      </n-tabs>
+
       <template #footer>
-        <n-space justify="end">
-          <n-button @click="addModalVisible = false">取消</n-button>
-          <n-button type="primary" :loading="addSubmitting" @click="doAddItem">确认添加</n-button>
+        <n-space justify="space-between" style="width: 100%;">
+          <span v-if="addModalTab === 'recent' && recentAttachPayload.rows.length > 0" style="font-size: 12px; color: #6b7280;">
+            新增 <strong>{{ recentAttachPayload.newCount }}</strong> 项 ·
+            累加 <strong>{{ recentAttachPayload.updateCount }}</strong> 项 ·
+            共 <strong>{{ recentAttachPayload.totalQty }}</strong> 件
+          </span>
+          <span v-else style="font-size: 12px; color: #9ca3af;">
+            <span v-if="addModalTab === 'recent'">请勾选要加入的项</span>
+          </span>
+
+          <n-space>
+            <n-button @click="addModalVisible = false">取消</n-button>
+            <n-button
+              v-if="addModalTab === 'single'"
+              type="primary"
+              :loading="addSubmitting"
+              @click="doAddItem"
+            >确认添加</n-button>
+            <n-button
+              v-else
+              type="primary"
+              :loading="attachSubmitting"
+              :disabled="recentAttachPayload.rows.length === 0 || recentAttachPayload.hasZeroQty"
+              @click="attachRecentBatch"
+            >
+              {{
+                recentAttachPayload.hasZeroQty
+                  ? '勾选项含数量 0'
+                  : `加入 ${recentAttachPayload.rows.length} 项`
+              }}
+            </n-button>
+          </n-space>
         </n-space>
       </template>
     </n-modal>
@@ -503,7 +544,7 @@ import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
   NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon, NImage,
-  NRadioGroup, NRadio, NDatePicker,
+  NRadioGroup, NRadio, NDatePicker, NTabs, NTabPane,
 } from 'naive-ui'
 import { CreateOutline, CopyOutline } from '@vicons/ionicons5'
 import {
@@ -533,6 +574,8 @@ import { listOrders, getTodo, createLink, batchLink } from '@/api/orders'
 import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 import HandcraftPickingSimulationModal from '@/components/picking/HandcraftPickingSimulationModal.vue'
+import RecentImportsPicker from '@/components/RecentImportsPicker.vue'
+import { getActiveBatches } from '@/utils/recentImports'
 
 const route = useRoute()
 const router = useRouter()
@@ -679,6 +722,13 @@ const weightUnitOptions = [
 const addModalVisible = ref(false)
 const addSubmitting = ref(false)
 const addForm = ref({ part_id: null, qty: 1, unit: '个', weight: null, weight_unit: 'kg', note: '' })
+const addModalTab = ref('recent') // default tab; overridden in openAddModal
+const recentAttachPayload = ref({ rows: [], newCount: 0, updateCount: 0, totalQty: 0, hasZeroQty: false })
+const attachSubmitting = ref(false)
+
+const onRecentChange = (payload) => {
+  recentAttachPayload.value = payload
+}
 
 const editModalVisible = ref(false)
 const editSubmitting = ref(false)
@@ -1132,6 +1182,8 @@ const doChangeStatus = (newStatus) => {
 
 const openAddModal = () => {
   addForm.value = { part_id: null, qty: 1, unit: '个', weight: null, weight_unit: 'kg', note: '' }
+  // Default to "recent imports" if there's at least one fresh batch; otherwise "single".
+  addModalTab.value = getActiveBatches().length > 0 ? 'recent' : 'single'
   addModalVisible.value = true
 }
 
@@ -1156,6 +1208,11 @@ const doAddItem = async () => {
   } finally {
     addSubmitting.value = false
   }
+}
+
+const attachRecentBatch = async () => {
+  // Implemented in Task 6.
+  console.log('attachRecentBatch payload:', recentAttachPayload.value)
 }
 
 const openEditModal = (row) => {
