@@ -85,7 +85,9 @@ def test_download_handcraft_pdf_moves_image_three_and_four_to_second_page(client
 
     response = client.get(f"/api/handcraft/{order_id}/pdf")
     assert response.status_code == 200
-    assert len(PdfReader(BytesIO(response.content)).pages) == 2
+    # Page 1 (data) + page 2 (inline images, pushed off page 1)
+    # + page 3 (no-shortage notice — its own page so it doesn't paint over images).
+    assert len(PdfReader(BytesIO(response.content)).pages) == 3
 
 
 def test_download_handcraft_pdf_moves_all_images_after_detail_pages_when_more_than_ten_rows(client, db, monkeypatch):
@@ -131,7 +133,8 @@ def test_download_handcraft_pdf_moves_all_images_after_detail_pages_when_more_th
 
     response = client.get(f"/api/handcraft/{order_id}/pdf")
     assert response.status_code == 200
-    assert len(PdfReader(BytesIO(response.content)).pages) == 2
+    # 2 data pages + 1 inline-images page + 1 no-shortage notice page = 3
+    assert len(PdfReader(BytesIO(response.content)).pages) == 3
 
 
 def test_download_handcraft_pdf_order_not_found(client):
@@ -271,3 +274,56 @@ def test_download_handcraft_pdf_skips_section_for_done_records(client, db, monke
 
     response = client.get(f"/api/handcraft/{order_id}/pdf")
     assert response.status_code == 200
+
+
+def test_download_handcraft_pdf_overflow_inline_images_with_shortage_does_not_overlap(
+    client, db, monkeypatch,
+):
+    """Regression: when details span multiple pages AND inline images get
+    pushed to their own page AND there's a shortage section, the shortage
+    section must NOT paint over the images. We check page count: details
+    page(s) + inline-images page + shortage page (forced new page) ≥ 3."""
+    monkeypatch.setattr("services.handcraft_pdf.download_image_bytes", _fake_download_image_bytes)
+    from models.restock_request import RestockRequest
+
+    part = create_part(
+        db,
+        {"name": "溢出件", "category": "小配件", "unit": "个", "image": "https://img.example.com/p.png"},
+    )
+    add_stock(db, "part", part.id, 200.0, "init")
+
+    # 60 single-line items so the LAST data page is dense enough that the 4
+    # inline images can't fit at its bottom. That's the path Bug 2 covers:
+    # _draw_images_page is forced onto its own page, and the shortage section
+    # must NOT paint over those images.
+    parts_payload = [
+        {"part_id": part.id, "qty": 1, "unit": "个", "note": f"row-{i}"}
+        for i in range(60)
+    ]
+    create_resp = client.post(
+        "/api/handcraft/",
+        json={"supplier_name": "溢出商家", "parts": parts_payload},
+    )
+    order_id = create_resp.json()["id"]
+
+    client.patch(
+        f"/api/handcraft/{order_id}/delivery-images",
+        json={"delivery_images": [
+            "https://img.example.com/a.png", "https://img.example.com/b.png",
+            "https://img.example.com/c.png", "https://img.example.com/d.png",
+        ]},
+    )
+
+    # One pending shortage (filled) → table prints
+    db.add(RestockRequest(
+        part_id=part.id, handcraft_order_id=order_id,
+        source="picking", status="pending", shortfall_qty=50,
+    ))
+    db.flush()
+
+    response = client.get(f"/api/handcraft/{order_id}/pdf")
+    assert response.status_code == 200
+    pages = PdfReader(BytesIO(response.content)).pages
+    # data pages + inline-images page + shortage page. Pre-fix the shortage
+    # section painted on top of the images page so the count was one less.
+    assert len(pages) >= 4, f"expected ≥4 pages (got {len(pages)}); shortage may be overlapping images"

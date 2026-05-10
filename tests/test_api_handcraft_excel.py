@@ -191,3 +191,32 @@ def _color_for_source(source: str) -> tuple[int, int, int]:
         40 + (total * 3) % 150,
         40 + (total * 5) % 150,
     )
+
+
+def test_download_handcraft_excel_blocks_when_shortfall_unfilled(client, db):
+    """Excel must surface the same 400 as PDF when a pending RestockRequest
+    has null shortfall_qty. Without service_errors() it would 500."""
+    from services.part import create_part
+    from services.inventory import add_stock
+    from models.restock_request import RestockRequest
+
+    part = create_part(db, {"name": "缺件Excel", "category": "小配件", "unit": "个"})
+    add_stock(db, "part", part.id, 5.0, "initial")
+    create_resp = client.post(
+        "/api/handcraft/",
+        json={
+            "supplier_name": "Excel缺件商家",
+            "parts": [{"part_id": part.id, "qty": 8, "unit": "个"}],
+        },
+    )
+    order_id = create_resp.json()["id"]
+
+    db.add(RestockRequest(
+        part_id=part.id, handcraft_order_id=order_id,
+        source="picking", status="pending", shortfall_qty=None,
+    ))
+    db.flush()
+
+    response = client.get(f"/api/handcraft/{order_id}/excel")
+    assert response.status_code == 400
+    assert "未填写差额" in response.json()["detail"]

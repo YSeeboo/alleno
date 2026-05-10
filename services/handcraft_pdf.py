@@ -168,9 +168,13 @@ def build_handcraft_order_pdf(db, order_id: str) -> tuple[bytes, str]:
                 last_y = _PAGE_HEIGHT - _MARGIN_TOP
             page_index += 1
 
-        # If last data page couldn't fit inline images, dedicate a page
+        # If last data page couldn't fit inline images, dedicate a page.
+        # _draw_images_page leaves the cursor on the page it just drew,
+        # so we must showPage() before the shortage section — otherwise
+        # the section paints over the images.
         if inline_images and not last_page_images:
             _draw_images_page(pdf, payload, template_text, inline_images)
+            pdf.showPage()
             last_y = _PAGE_HEIGHT - _MARGIN_TOP
         last_y = _draw_shortage_section(pdf, payload, last_y)
         # 5+ images always get dedicated pages

@@ -193,7 +193,8 @@ def api_download_handcraft_excel(order_id: str, db: Session = Depends(get_db)):
     order = get_handcraft_order(db, order_id)
     if order is None:
         raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
-    file_bytes, filename = build_handcraft_order_excel(db, order_id)
+    with service_errors():
+        file_bytes, filename = build_handcraft_order_excel(db, order_id)
     return Response(
         content=file_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
