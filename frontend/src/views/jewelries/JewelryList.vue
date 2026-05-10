@@ -27,8 +27,15 @@
       <n-empty v-else-if="!loading" description="暂无数据" style="margin-top: 24px;" />
     </n-spin>
 
-    <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑饰品' : '新增饰品'" :style="{ width: isMobile ? '95vw' : '480px' }">
+    <n-modal v-model:show="showModal" preset="card" :title="modalTitle" :style="{ width: isMobile ? '95vw' : '480px' }">
       <form @submit.prevent="save">
+      <n-alert
+        v-if="copySourceId"
+        type="warning"
+        style="margin-bottom: 12px;"
+      >
+        从 <b>{{ copySourceId }} {{ copySourceName }}</b> 复制（含 BOM 配件清单）。类目沿用源饰品。
+      </n-alert>
       <n-form ref="formRef" :model="form" label-placement="left" label-width="100">
         <n-form-item label="名称" path="name" :rule="{ required: true, message: '请输入名称' }">
           <n-input v-model:value="form.name" />
@@ -53,10 +60,11 @@
         <n-form-item
           label="类目"
           path="category"
-          :rule="editingId ? undefined : { required: true, message: '请选择类目', trigger: 'change' }"
+          :rule="(editingId || copySourceId) ? undefined : { required: true, message: '请选择类目', trigger: 'change' }"
         >
-          <n-select v-model:value="form.category" :options="categoryOptions" clearable placeholder="请选择类目" :disabled="!!editingId" />
-          <span v-if="!!editingId" style="color: #999; font-size: 12px; margin-left: 8px;">类目不可修改</span>
+          <n-select v-model:value="form.category" :options="categoryOptions" clearable placeholder="请选择类目" :disabled="!!editingId || !!copySourceId" />
+          <span v-if="editingId" style="color: #999; font-size: 12px; margin-left: 8px;">类目不可修改</span>
+          <span v-else-if="copySourceId" style="color: #999; font-size: 12px; margin-left: 8px;">复制时不可修改</span>
         </n-form-item>
         <n-form-item label="颜色"><n-input v-model:value="form.color" /></n-form-item>
         <n-form-item label="单位">
@@ -108,9 +116,9 @@ import { useMessage, useDialog } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
 import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
-  NModal, NDataTable, NSpin, NEmpty, NImage, NDropdown,
+  NModal, NDataTable, NSpin, NEmpty, NImage, NDropdown, NAlert,
 } from 'naive-ui'
-import { listJewelries, createJewelry, updateJewelry, updateJewelryStatus, deleteJewelry } from '@/api/jewelries'
+import { listJewelries, createJewelry, updateJewelry, updateJewelryStatus, deleteJewelry, copyJewelry } from '@/api/jewelries'
 import { batchGetStock } from '@/api/inventory'
 import { listTemplates, applyTemplate } from '@/api/jewelryTemplates'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
@@ -123,6 +131,11 @@ const dialog = useDialog()
 const authStore = useAuthStore()
 const { isMobile } = useIsMobile()
 const canUseTemplates = computed(() => authStore.hasPermission('parts'))
+const modalTitle = computed(() => {
+  if (editingId.value) return '编辑饰品'
+  if (copySourceId.value) return '复制饰品'
+  return '新增饰品'
+})
 const loading = ref(true)
 const rows = ref([])
 const filterStatus = ref(null)
@@ -219,6 +232,8 @@ const showTemplateSelectModal = ref(false)
 const loadingTemplateList = ref(false)
 const templateList = ref([])
 const selectedTemplate = ref(null)
+const copySourceId = ref(null)
+const copySourceName = ref('')
 
 // Auto-fill unit based on category
 watch(
@@ -265,6 +280,7 @@ const openTemplateSelect = async () => {
 
 const selectTemplate = (tpl) => {
   selectedTemplate.value = tpl
+  copySourceId.value = null
   showTemplateSelectModal.value = false
   // Open create modal with template info
   editingId.value = null
@@ -275,15 +291,35 @@ const selectTemplate = (tpl) => {
 const openCreate = () => {
   editingId.value = null
   selectedTemplate.value = null
+  copySourceId.value = null
   Object.assign(form, { name: '', image: '', category: null, color: '', unit: null, retail_price: null, wholesale_price: null })
   showModal.value = true
 }
 
 const openEdit = (row) => {
+  copySourceId.value = null
   editingId.value = row.id
   const cat = row.category && VALID_CATEGORIES.includes(row.category) ? row.category : null
   Object.assign(form, {
     name: row.name,
+    image: row.image || '',
+    category: cat,
+    color: row.color || '',
+    unit: row.unit || null,
+    retail_price: row.retail_price ?? null,
+    wholesale_price: row.wholesale_price ?? null,
+  })
+  showModal.value = true
+}
+
+const openCopy = (row) => {
+  editingId.value = null
+  selectedTemplate.value = null
+  copySourceId.value = row.id
+  copySourceName.value = row.name
+  const cat = row.category && VALID_CATEGORIES.includes(row.category) ? row.category : null
+  Object.assign(form, {
+    name: `${row.name}-副本`,
     image: row.image || '',
     category: cat,
     color: row.color || '',
@@ -314,9 +350,16 @@ const save = async () => {
       message.success('保存成功')
       showModal.value = false
       await load()
+    } else if (copySourceId.value) {
+      const { category, ...copyData } = form
+      const { data: newJewelry } = await copyJewelry(copySourceId.value, copyData)
+      message.success('复制成功')
+      copySourceId.value = null
+      copySourceName.value = ''
+      showModal.value = false
+      router.push(`/jewelries/${newJewelry.id}`)
     } else {
       const { data: newJewelry } = await createJewelry(form)
-      // If creating from template, apply BOM
       if (selectedTemplate.value) {
         try {
           await applyTemplate(selectedTemplate.value.id, newJewelry.id)
@@ -397,8 +440,14 @@ const columns = [
         h('button', { class: 'icon-btn', title: '详情', onClick: () => router.push(`/jewelries/${row.id}`) }, '→'),
         h('button', { class: 'icon-btn', title: '编辑', onClick: () => openEdit(row) }, '✎'),
         h(NDropdown, {
-          options: [{ label: '删除', key: 'delete' }],
-          onSelect: (key) => { if (key === 'delete') confirmDelete(row) },
+          options: [
+            { label: '复制', key: 'copy' },
+            { label: '删除', key: 'delete' },
+          ],
+          onSelect: (key) => {
+            if (key === 'copy') openCopy(row)
+            if (key === 'delete') confirmDelete(row)
+          },
         }, {
           default: () => h('button', { class: 'icon-btn', title: '更多' }, '⋮'),
         }),
