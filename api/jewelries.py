@@ -4,8 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
-from schemas.jewelry import JewelryCreate, JewelryUpdate, JewelryResponse, StatusUpdate
-from services.jewelry import create_jewelry, get_jewelry, list_jewelries, update_jewelry, delete_jewelry, set_status
+from schemas.jewelry import JewelryCreate, JewelryUpdate, JewelryResponse, StatusUpdate, JewelryCopyRequest
+from services.jewelry import (
+    create_jewelry, get_jewelry, list_jewelries, update_jewelry,
+    delete_jewelry, set_status, copy_jewelry,
+)
 from api._errors import service_errors
 
 router = APIRouter(prefix="/api/jewelries", tags=["jewelries"])
@@ -59,3 +62,10 @@ def api_delete_jewelry(jewelry_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"Jewelry {jewelry_id} not found")
     with service_errors():
         delete_jewelry(db, jewelry_id)
+
+
+@router.post("/{source_id}/copy", response_model=JewelryResponse, status_code=201)
+def api_copy_jewelry(source_id: str, body: JewelryCopyRequest, db: Session = Depends(get_db)):
+    with service_errors():
+        new_jewelry = copy_jewelry(db, source_id, body.model_dump(exclude_unset=True))
+    return new_jewelry

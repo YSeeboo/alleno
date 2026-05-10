@@ -98,3 +98,82 @@ def test_set_status(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "inactive"
+
+
+def _put_bom(client, jewelry_id, part_id, qty):
+    return client.put(f"/api/bom/{jewelry_id}/{part_id}", json={"qty_per_unit": qty})
+
+
+def _create_part(client, name="珍珠", category="小配件"):
+    return client.post("/api/parts/", json={"name": name, "category": category, "unit": "颗"}).json()
+
+
+def test_copy_jewelry_basic(client):
+    src = client.post("/api/jewelries/", json={
+        "name": "源套装", "category": "套装", "color": "金", "unit": "套",
+        "retail_price": 200.0, "wholesale_price": 120.0,
+    }).json()
+    p = _create_part(client)
+    _put_bom(client, src["id"], p["id"], 1.5)
+
+    resp = client.post(f"/api/jewelries/{src['id']}/copy", json={"name": "源套装-副本"})
+    assert resp.status_code == 201
+    new = resp.json()
+    assert new["id"] != src["id"]
+    assert new["id"].startswith("SP-SET-")
+    assert new["name"] == "源套装-副本"
+    assert new["category"] == "套装"
+    assert new["color"] == "金"
+    assert new["retail_price"] == 200.0
+
+    bom_resp = client.get(f"/api/bom/{new['id']}")
+    assert bom_resp.status_code == 200
+    bom_rows = bom_resp.json()
+    assert len(bom_rows) == 1
+    assert bom_rows[0]["part_id"] == p["id"]
+    assert float(bom_rows[0]["qty_per_unit"]) == 1.5
+
+
+def test_copy_jewelry_new_stock_is_zero(client):
+    src = client.post("/api/jewelries/", json={"name": "S", "category": "单件"}).json()
+    resp = client.post(f"/api/jewelries/{src['id']}/copy", json={"name": "S-副本"})
+    new_id = resp.json()["id"]
+    stock_resp = client.get(f"/api/inventory/jewelry/{new_id}")
+    assert stock_resp.status_code == 200
+    assert stock_resp.json()["current"] == 0
+
+
+def test_copy_jewelry_source_not_found(client):
+    resp = client.post("/api/jewelries/SP-PCS-99999/copy", json={"name": "X"})
+    assert resp.status_code == 400
+
+
+def test_copy_jewelry_missing_name(client):
+    src = client.post("/api/jewelries/", json={"name": "S", "category": "单件"}).json()
+    resp = client.post(f"/api/jewelries/{src['id']}/copy", json={})
+    assert resp.status_code == 422
+
+
+def test_copy_jewelry_override_fields(client):
+    src = client.post("/api/jewelries/", json={
+        "name": "S", "category": "单件", "color": "金", "retail_price": 50.0,
+    }).json()
+    resp = client.post(f"/api/jewelries/{src['id']}/copy", json={
+        "name": "S-副本", "color": "银", "retail_price": 80.0,
+    })
+    new = resp.json()
+    assert new["name"] == "S-副本"
+    assert new["color"] == "银"
+    assert new["retail_price"] == 80.0
+
+
+def test_copy_jewelry_category_in_payload_ignored(client):
+    src = client.post("/api/jewelries/", json={"name": "S", "category": "套装"}).json()
+    resp = client.post(f"/api/jewelries/{src['id']}/copy", json={
+        "name": "S-副本",
+        "category": "单件",  # should be silently ignored by Pydantic + service guard
+    })
+    assert resp.status_code == 201
+    new = resp.json()
+    assert new["category"] == "套装"
+    assert new["id"].startswith("SP-SET-")
