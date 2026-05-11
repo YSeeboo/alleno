@@ -822,3 +822,46 @@ def test_get_parts_actual_qty_null_when_no_override(client, db):
     resp = client.get(f"/api/handcraft/{created['id']}/parts")
     assert resp.status_code == 200
     assert resp.json()[0]["actual_qty"] is None
+
+
+def test_get_parts_omits_actual_qty_for_composite(client, db):
+    """Composite part_items: picking sets actual_qty on atom rows, but the
+    composite item itself never gets a (pi.id, pi.part_id) match — so its
+    response actual_qty stays None."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from models.part_bom import PartBom
+    from services._helpers import _next_id
+
+    composite = create_part(db, {"name": "Composite C1", "category": "小配件"})
+    composite.is_composite = True
+    atom = create_part(db, {"name": "Atom A1", "category": "小配件"})
+    db.add(PartBom(
+        id=_next_id(db, PartBom, "PB"),
+        parent_part_id=composite.id,
+        child_part_id=atom.id,
+        qty_per_unit=Decimal("2"),
+    ))
+    add_stock(db, "part", atom.id, 100.0, "初始入库")
+    db.flush()
+
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier Composite",
+        "parts": [{"part_id": composite.id, "qty": 5.0}],
+    }).json()
+    order_id = created["id"]
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id).one()
+
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pi.id,
+        atom_part_id=atom.id,
+        actual_qty=Decimal("9.0000"),
+    ))
+    db.flush()
+
+    resp = client.get(f"/api/handcraft/{order_id}/parts")
+    assert resp.status_code == 200
+    row = resp.json()[0]
+    assert row["part_id"] == composite.id
+    assert row["actual_qty"] is None
