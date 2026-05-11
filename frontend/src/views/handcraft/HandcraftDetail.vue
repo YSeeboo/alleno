@@ -526,9 +526,10 @@
     </n-modal>
 
     <HandcraftPickingSimulationModal
-      v-model:show="pickingModalShow"
+      :show="pickingModalShow"
       :order-id="String(route.params.id)"
       :status="order?.status || 'pending'"
+      @update:show="(v) => { pickingModalShow = v; if (!v) loadData() }"
       @restock-changed="loadRestock"
     />
 
