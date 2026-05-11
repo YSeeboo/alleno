@@ -80,7 +80,8 @@ import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { NModal, NRadio, NRadioGroup, NSelect, NInput, NButton, NSpace } from 'naive-ui'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
-import { listHandcraft, createHandcraft, addHandcraftPart, updateHandcraftPart, getHandcraftParts } from '@/api/handcraft'
+import { listHandcraft, createHandcraft } from '@/api/handcraft'
+import { attachPartsToOrder } from '@/api/handcraftActions'
 import { useIsMobile } from '@/composables/useIsMobile'
 
 const props = defineProps({
@@ -134,8 +135,11 @@ watch(
     if (!v) return
     // Reset transient state — keep the form consistent across reopens.
     target.value = props.initialTarget
+    existingSupplier.value = null
     existingOrderId.value = null
     orderOptions.value = []
+    newSupplierName.value = null
+    newNote.value = ''
     try {
       const { data } = await listSuppliers({ type: 'handcraft' })
       supplierOptions.value = data.map((s) => ({ label: s.name, value: s.name }))
@@ -158,24 +162,6 @@ const onSupplierChange = async (name) => {
   } catch (_) {
     orderOptions.value = []
   }
-}
-
-// --- Concurrency helper (duplicated from HandcraftDetail intentionally — small enough not to extract) ---
-const runWithConcurrency = async (tasks, limit = 5) => {
-  const results = new Array(tasks.length)
-  let i = 0
-  const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
-    while (i < tasks.length) {
-      const idx = i++
-      try {
-        results[idx] = { ok: true, value: await tasks[idx]() }
-      } catch (error) {
-        results[idx] = { ok: false, error }
-      }
-    }
-  })
-  await Promise.all(workers)
-  return results
 }
 
 // --- Confirm ---
@@ -213,29 +199,24 @@ const confirm = async () => {
     } else {
       // existing
       targetOrderId = existingOrderId.value
-      // Need the current items to compute add vs update.
-      const { data: currentItems } = await getHandcraftParts(targetOrderId)
-      const tasks = partsPayload.map((p) => async () => {
-        const existing = currentItems.find((it) => it.part_id === p.part_id)
-        if (existing) {
-          return updateHandcraftPart(targetOrderId, existing.id, {
-            qty: (Number(existing.qty) || 0) + p.qty,
-            unit: p.unit,
-          })
+      try {
+        const { okNew, okUpd, failures } = await attachPartsToOrder(targetOrderId, partsPayload)
+        failures.forEach((f) => {
+          message.error(`${f.part_id} 加入失败：${f.detail}`)
+        })
+        const okCount = okNew + okUpd
+        if (okCount > 0) {
+          message.success(`已加入 ${okCount} 项${failures.length > 0 ? `（${failures.length} 项失败）` : ''}`)
+        } else {
+          // Nothing succeeded; don't navigate.
+          return
         }
-        return addHandcraftPart(targetOrderId, p)
-      })
-      const results = await runWithConcurrency(tasks, 5)
-      const failures = results.filter((r) => !r.ok)
-      const okCount = results.length - failures.length
-      results.forEach((r, idx) => {
-        if (!r.ok) {
-          const detail = r.error?.response?.data?.detail || r.error?.message || '未知错误'
-          message.error(`${partsPayload[idx].part_id} 加入失败：${detail}`)
+      } catch (err) {
+        if (err?.code === 'NOT_PENDING') {
+          message.error(err.message)
+          return
         }
-      })
-      if (okCount > 0) {
-        message.success(`已加入 ${okCount} 项${failures.length > 0 ? `（${failures.length} 项失败）` : ''}`)
+        throw err
       }
     }
 

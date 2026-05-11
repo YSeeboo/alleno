@@ -629,7 +629,7 @@ const doImport = async () => {
       part_id: r.part_id,
       name: r.name,
       image: r.image,
-      unit: '个', // results don't carry unit; util will treat missing as '个'
+      unit: r.unit || '个',
       imported_qty: r.stock_added,
     }))
     const batch = allImported.length > 0

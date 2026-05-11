@@ -80,7 +80,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { NModal, NTable, NImage, NButton, NButtonGroup, NDropdown, NIcon, NSpin, NSpace, useMessage } from 'naive-ui'
 import { CloseOutline } from '@vicons/ionicons5'
 import { uploadImageToOss } from '@/api/uploads'
@@ -113,13 +113,10 @@ const uploadingPartId = ref(null)
 // --- Attach-to-handcraft submodal ---
 const showAttachModal = ref(false)
 
-// Read the live batch (with up-to-date image URLs) on demand so the submodal
-// gets fresh data even if the user pasted images right before clicking.
-const liveBatchParts = computed(() => {
-  if (!props.batchId) return []
-  const batch = getBatchById(props.batchId)
-  return batch?.parts ?? []
-})
+// Snapshot of the batch's parts taken when the attach submodal is opened.
+// Plain ref (not computed) because localStorage isn't reactive — we need
+// to re-read at click time to capture image URLs the user pasted right before.
+const liveBatchParts = ref([])
 
 const splitMenuOptions = [
   { label: '加入已有 pending 单', key: 'existing' },
@@ -134,6 +131,9 @@ const openAttach = (key) => {
   if (key === 'existing' || key === 'new') {
     initialAttachTarget.value = key
   }
+  liveBatchParts.value = props.batchId
+    ? (getBatchById(props.batchId)?.parts ?? [])
+    : []
   showAttachModal.value = true
 }
 

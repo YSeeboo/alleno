@@ -576,6 +576,7 @@ import ImageUploadModal from '@/components/ImageUploadModal.vue'
 import HandcraftPickingSimulationModal from '@/components/picking/HandcraftPickingSimulationModal.vue'
 import RecentImportsPicker from '@/components/RecentImportsPicker.vue'
 import { getActiveBatches } from '@/utils/recentImports'
+import { attachPartsToOrder } from '@/api/handcraftActions'
 
 const route = useRoute()
 const router = useRouter()
@@ -722,7 +723,7 @@ const weightUnitOptions = [
 const addModalVisible = ref(false)
 const addSubmitting = ref(false)
 const addForm = ref({ part_id: null, qty: 1, unit: '个', weight: null, weight_unit: 'kg', note: '' })
-const addModalTab = ref('recent') // default tab; overridden in openAddModal
+const addModalTab = ref(null) // set by openAddModal based on whether batches exist
 const recentAttachPayload = ref({ rows: [], newCount: 0, updateCount: 0, totalQty: 0, hasZeroQty: false })
 const attachSubmitting = ref(false)
 
@@ -1210,82 +1211,33 @@ const doAddItem = async () => {
   }
 }
 
-// Run async fns with a max concurrency. Returns an array in the same order
-// as `tasks`, where each entry is either { ok: true, value } or { ok: false, error }.
-const runWithConcurrency = async (tasks, limit = 5) => {
-  const results = new Array(tasks.length)
-  let i = 0
-  const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
-    while (i < tasks.length) {
-      const idx = i++
-      try {
-        results[idx] = { ok: true, value: await tasks[idx]() }
-      } catch (error) {
-        results[idx] = { ok: false, error }
-      }
-    }
-  })
-  await Promise.all(workers)
-  return results
-}
-
 const attachRecentBatch = async () => {
   const payload = recentAttachPayload.value
   if (payload.rows.length === 0 || payload.hasZeroQty) return
 
   attachSubmitting.value = true
-  const orderId = route.params.id
-
-  // Re-validate the order is still pending (another tab might have sent it).
   try {
-    const { data: latest } = await getHandcraft(orderId)
-    if (latest.status !== 'pending') {
-      message.error(`手工单已是 ${latest.status} 状态，无法再添加配件`)
-      attachSubmitting.value = false
-      return
-    }
-  } catch (_) {
-    attachSubmitting.value = false
-    return
-  }
+    const parts = payload.rows.map((row) => ({
+      part_id: row.part_id,
+      qty: row.qty,
+      unit: row.unit,
+    }))
+    const { okNew, okUpd, failures } = await attachPartsToOrder(route.params.id, parts)
 
-  // Build one task per row.
-  try {
-    const tasks = payload.rows.map((row) => async () => {
-      if (row._existingItemId == null) {
-        return addHandcraftPart(orderId, {
-          part_id: row.part_id,
-          qty: row.qty,
-          unit: row.unit,
-        })
-      }
-      return updateHandcraftPart(orderId, row._existingItemId, {
-        qty: (Number(row._existingQty) || 0) + row.qty,
-        unit: row.unit,
-      })
-    })
-
-    const results = await runWithConcurrency(tasks, 5)
-
-    let okNew = 0
-    let okUpd = 0
-    let failures = 0
-    results.forEach((r, idx) => {
-      const row = payload.rows[idx]
-      if (r.ok) {
-        if (row._existingItemId == null) okNew++
-        else okUpd++
-      } else {
-        failures++
-        const detail = r.error?.response?.data?.detail || r.error?.message || '未知错误'
-        message.error(`${row.part_id} 加入失败：${detail}`)
-      }
+    failures.forEach((f) => {
+      message.error(`${f.part_id} 加入失败：${f.detail}`)
     })
 
     if (okNew + okUpd > 0) {
-      message.success(`已新增 ${okNew} 项，累加 ${okUpd} 项${failures > 0 ? `（${failures} 项失败）` : ''}`)
+      message.success(`已新增 ${okNew} 项，累加 ${okUpd} 项${failures.length > 0 ? `（${failures.length} 项失败）` : ''}`)
       addModalVisible.value = false
       await loadData()
+    }
+  } catch (err) {
+    if (err?.code === 'NOT_PENDING') {
+      message.error(err.message)
+    } else {
+      throw err
     }
   } finally {
     attachSubmitting.value = false

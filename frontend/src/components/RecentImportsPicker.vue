@@ -127,11 +127,20 @@ const refreshRows = () => {
       _checked: !existing, // default: tick only if not already in the order
     }
   })
-  bubble()
 }
 
 watch(selectedBatchId, refreshRows, { immediate: true })
-watch(() => props.existingItems, refreshRows, { deep: true })
+
+// existingItems can change while the modal is open (sibling actions, polling,
+// loadData after a partial save). Patch markers in place so the user's edited
+// qty and checkbox state survive.
+watch(() => props.existingItems, (newItems) => {
+  for (const row of rows.value) {
+    const existing = newItems.find((it) => it.part_id === row.part_id)
+    row._existingItemId = existing ? existing.id : null
+    row._existingQty = existing ? existing.qty : null
+  }
+}, { deep: true })
 
 // --- Selection helpers ---
 const eligibleRows = computed(() => rows.value.filter((r) => r._existingItemId == null))
