@@ -26,6 +26,7 @@ from schemas.handcraft import (
     HandcraftSuggestPartItem,
     HandcraftSuggestRequest,
     HandcraftUpdate,
+    SupplementAndSendHandcraftResponse,
 )
 from schemas.production_loss import ConfirmLossHandcraftRequest, ProductionLossResponse
 from schemas.restock import RestockRequestRead
@@ -51,6 +52,7 @@ from services.handcraft import (
     list_handcraft_pending_receive_items,
     send_handcraft_order,
     suggest_handcraft_parts,
+    supplement_and_send_handcraft_order,
     update_handcraft_delivery_images,
     update_handcraft_jewelry,
     update_handcraft_order,
@@ -266,6 +268,18 @@ def api_send_handcraft_order(order_id: str, db: Session = Depends(get_db)):
         order = send_handcraft_order(db, order_id)
     return order
 
+
+@router.post(
+    "/{order_id}/supplement-and-send",
+    response_model=SupplementAndSendHandcraftResponse,
+)
+def api_supplement_and_send_handcraft_order(order_id: str, db: Session = Depends(get_db)):
+    order = get_handcraft_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"HandcraftOrder {order_id} not found")
+    with service_errors():
+        order, supplemented = supplement_and_send_handcraft_order(db, order_id)
+    return SupplementAndSendHandcraftResponse(order=order, supplemented=supplemented)
 
 
 @router.post("/{order_id}/parts", response_model=HandcraftPartItemResponse, status_code=201)
