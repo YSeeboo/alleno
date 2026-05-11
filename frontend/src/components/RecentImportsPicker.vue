@@ -129,6 +129,10 @@ const refreshRows = () => {
   })
 }
 
+// rows watcher must be registered BEFORE selectedBatchId's immediate fire,
+// so the initial rows.value assignment inside refreshRows is caught.
+watch(rows, bubble, { deep: true })
+
 watch(selectedBatchId, refreshRows, { immediate: true })
 
 // existingItems can change while the modal is open (sibling actions, polling,
@@ -155,12 +159,7 @@ const someEligibleSelected = computed(() =>
 
 const toggleSelectAll = (checked) => {
   for (const r of eligibleRows.value) r._checked = checked
-  bubble()
 }
-
-// Watch row changes (qty, _checked) — emit summary up so the modal footer can
-// show "新增 X · 累加 Y · 共 Z 件" and enable/disable the submit button.
-watch(rows, bubble, { deep: true })
 
 function bubble() {
   const checked = rows.value.filter((r) => r._checked)
