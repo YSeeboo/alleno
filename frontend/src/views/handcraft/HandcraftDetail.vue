@@ -547,7 +547,7 @@ import {
   NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon, NImage,
   NRadioGroup, NRadio, NDatePicker, NTabs, NTabPane,
 } from 'naive-ui'
-import { CreateOutline, CopyOutline } from '@vicons/ionicons5'
+import { CreateOutline } from '@vicons/ionicons5'
 import {
   getHandcraft, getHandcraftParts, getHandcraftJewelries, sendHandcraft, supplementAndSendHandcraft,
   addHandcraftPart, updateHandcraftPart, deleteHandcraftPart,
