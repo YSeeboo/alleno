@@ -87,6 +87,13 @@ class PlatingDeliveryImagesUpdate(BaseModel):
     delivery_images: List[str] = Field(default_factory=list, max_length=10)
 
 
+class SupplementAndSendPlatingResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    order: PlatingResponse
+    supplemented: dict[str, float] = Field(default_factory=dict)
+
+
 class PendingReceiveItemResponse(BaseModel):
     id: int
     plating_order_id: str
