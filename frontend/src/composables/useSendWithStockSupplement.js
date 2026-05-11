@@ -62,7 +62,7 @@ export function useSendWithStockSupplement({
     const partIds = items.map(it => it.partId).filter(Boolean)
     let stocks = {}
     try {
-      const resp = await batchGetStock('part', partIds)
+      const resp = await batchGetStock('part', partIds, { _silentError: true })
       stocks = resp.data || {}
     } catch (e) {
       message.error('查询库存失败，请重试')
@@ -83,8 +83,8 @@ export function useSendWithStockSupplement({
       positiveText: '确认补进并发出',
       positiveButtonProps: { type: 'primary' },
       onPositiveClick: async () => {
-        await runSupplementAndSend()
-        return true
+        const ok = await runSupplementAndSend()
+        return ok
       },
     })
   }
@@ -102,8 +102,10 @@ export function useSendWithStockSupplement({
         message.success(`已补进 ${count} 个配件共 ${total} 件，订单已发出`)
       }
       await onSuccess()
+      return true
     } catch (e) {
       message.error(e.response?.data?.detail || '补进失败')
+      return false
     } finally {
       sending.value = false
     }
