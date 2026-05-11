@@ -159,3 +159,88 @@ def test_update_plating_delivery_images_rejects_more_than_four(setup):
         update_plating_delivery_images(db, order.id, [
             f"{i}.png" for i in range(11)
         ])
+
+
+def test_supplement_and_send_normal(setup):
+    """1 part short by 5; supplement should write 1 缺货补进 log + 1 电镀发出 log."""
+    from services.plating import supplement_and_send_plating_order
+    from services.inventory import get_stock
+    from models.inventory_log import InventoryLog
+    db, p1, _ = setup  # p1 has 200 stock from fixture
+    order = create_plating_order(db, "厂A", [
+        {"part_id": p1.id, "qty": 205, "plating_method": "金色"},  # short by 5
+    ])
+    result_order, supplemented = supplement_and_send_plating_order(db, order.id)
+    assert result_order.status == "processing"
+    assert supplemented == {p1.id: 5.0}
+    assert get_stock(db, "part", p1.id) == 0.0  # 200 + 5 - 205
+    logs = (
+        db.query(InventoryLog)
+        .filter(InventoryLog.item_id == p1.id)
+        .order_by(InventoryLog.id)
+        .all()
+    )
+    reasons = [(l.reason, float(l.change_qty), l.note) for l in logs]
+    assert reasons[1] == ("电镀单缺货补进", 5.0, order.id)
+    assert reasons[2][0] == "电镀发出"
+    assert reasons[2][1] == -205.0
+
+
+def test_supplement_and_send_no_shortage(setup):
+    from services.plating import supplement_and_send_plating_order
+    from services.inventory import get_stock
+    from models.inventory_log import InventoryLog
+    db, p1, _ = setup
+    order = create_plating_order(db, "厂A", [
+        {"part_id": p1.id, "qty": 50, "plating_method": "金色"},
+    ])
+    _, supplemented = supplement_and_send_plating_order(db, order.id)
+    assert supplemented == {}
+    assert get_stock(db, "part", p1.id) == 150.0
+    assert db.query(InventoryLog).filter(
+        InventoryLog.reason == "电镀单缺货补进"
+    ).count() == 0
+
+
+def test_supplement_and_send_multi_parts(setup):
+    from services.plating import supplement_and_send_plating_order
+    from services.part import create_part
+    db, p1, p2 = setup  # p1=200, p2=100
+    p3 = create_part(db, {"name": "扣3", "category": "小配件"})
+    order = create_plating_order(db, "厂A", [
+        {"part_id": p1.id, "qty": 50, "plating_method": "金色"},   # enough
+        {"part_id": p2.id, "qty": 150, "plating_method": "金色"},  # short 50
+        {"part_id": p3.id, "qty": 20, "plating_method": "金色"},   # short 20
+    ])
+    _, supplemented = supplement_and_send_plating_order(db, order.id)
+    assert supplemented == {p2.id: 50.0, p3.id: 20.0}
+
+
+def test_supplement_and_send_aggregates_same_part(setup):
+    from services.plating import supplement_and_send_plating_order
+    from services.inventory import get_stock
+    db, p1, _ = setup
+    order = create_plating_order(db, "厂A", [
+        {"part_id": p1.id, "qty": 150, "plating_method": "金色"},
+        {"part_id": p1.id, "qty": 100, "plating_method": "银色"},
+    ])
+    _, supplemented = supplement_and_send_plating_order(db, order.id)
+    assert supplemented == {p1.id: 50.0}
+    assert get_stock(db, "part", p1.id) == 0.0
+
+
+def test_supplement_and_send_order_not_pending(setup):
+    from services.plating import supplement_and_send_plating_order
+    db, p1, _ = setup
+    order = create_plating_order(db, "厂A", [
+        {"part_id": p1.id, "qty": 50, "plating_method": "金色"},
+    ])
+    send_plating_order(db, order.id)
+    with pytest.raises(ValueError, match="cannot be sent"):
+        supplement_and_send_plating_order(db, order.id)
+
+
+def test_supplement_and_send_order_not_found(db):
+    from services.plating import supplement_and_send_plating_order
+    with pytest.raises(ValueError, match="not found"):
+        supplement_and_send_plating_order(db, "EP-9999")
