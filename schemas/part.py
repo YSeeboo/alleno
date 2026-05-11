@@ -75,6 +75,7 @@ class PartImportRowResult(BaseModel):
     row_number: int
     part_id: str
     name: str
+    unit: str
     image: Optional[str] = None
     action: str
     stock_added: float

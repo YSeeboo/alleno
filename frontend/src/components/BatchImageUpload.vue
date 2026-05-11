@@ -59,18 +59,34 @@
     </div>
     <template #footer>
       <n-space justify="end">
-        <n-button type="primary" @click="$emit('update:show', false)">完成</n-button>
+        <n-button @click="$emit('update:show', false)">完成</n-button>
+        <n-button-group v-if="triggeredBy === 'import' && batchId">
+          <n-button type="primary" @click="openAttach('new')">加入手工单</n-button>
+          <n-dropdown trigger="click" :options="splitMenuOptions" @select="openAttach">
+            <n-button type="primary" style="padding: 0 8px;">
+              <span style="font-size: 10px;">▾</span>
+            </n-button>
+          </n-dropdown>
+        </n-button-group>
       </n-space>
     </template>
   </n-modal>
+
+  <AttachToHandcraftModal
+    v-model:show="showAttachModal"
+    :batch-parts="liveBatchParts"
+    :initial-target="initialAttachTarget"
+  />
 </template>
 
 <script setup>
 import { ref } from 'vue'
-import { NModal, NTable, NImage, NButton, NIcon, NSpin, NSpace, useMessage } from 'naive-ui'
+import { NModal, NTable, NImage, NButton, NButtonGroup, NDropdown, NIcon, NSpin, NSpace, useMessage } from 'naive-ui'
 import { CloseOutline } from '@vicons/ionicons5'
 import { uploadImageToOss } from '@/api/uploads'
 import { updatePart } from '@/api/parts'
+import { updateBatchPartImage, getBatchById } from '@/utils/recentImports'
+import AttachToHandcraftModal from '@/components/AttachToHandcraftModal.vue'
 import { useIsMobile } from '@/composables/useIsMobile'
 
 const { isMobile } = useIsMobile()
@@ -78,6 +94,13 @@ const { isMobile } = useIsMobile()
 const props = defineProps({
   show: Boolean,
   parts: { type: Array, default: () => [] },  // [{ part_id, name }]
+  // When set, image upload/remove is mirrored into recentImports for the
+  // matching batch — keeps the batch's image URLs fresh for downstream
+  // handcraft attach flows.
+  batchId: { type: String, default: null },
+  // 'import' = triggered by PartList.doImport (enables the 'add to handcraft'
+  //            button in Task 8). 'manual' = standalone補图 (no extra button).
+  triggeredBy: { type: String, default: 'manual' },
 })
 
 const emit = defineEmits(['update:show', 'done'])
@@ -86,6 +109,33 @@ const message = useMessage()
 const uploadedImages = ref({})
 const focusedPartId = ref(null)
 const uploadingPartId = ref(null)
+
+// --- Attach-to-handcraft submodal ---
+const showAttachModal = ref(false)
+
+// Snapshot of the batch's parts taken when the attach submodal is opened.
+// Plain ref (not computed) because localStorage isn't reactive — we need
+// to re-read at click time to capture image URLs the user pasted right before.
+const liveBatchParts = ref([])
+
+const splitMenuOptions = [
+  { label: '加入已有 pending 单', key: 'existing' },
+  { label: '新建一张', key: 'new' },
+]
+
+// Tracks which radio the submodal should default to. Updated each time the
+// user picks a menu item or clicks the main "加入手工单" button.
+const initialAttachTarget = ref('new')
+
+const openAttach = (key) => {
+  if (key === 'existing' || key === 'new') {
+    initialAttachTarget.value = key
+  }
+  liveBatchParts.value = props.batchId
+    ? (getBatchById(props.batchId)?.parts ?? [])
+    : []
+  showAttachModal.value = true
+}
 
 function setFocus(partId, event) {
   focusedPartId.value = partId
@@ -109,6 +159,7 @@ async function handlePaste(event, partId) {
     })
     await updatePart(partId, { image: url })
     uploadedImages.value[partId] = url
+    if (props.batchId) updateBatchPartImage(props.batchId, partId, url)
     message.success(`${partId} 图片上传成功`)
   } catch (err) {
     message.error(`${partId} 上传失败: ${err.message || '未知错误'}`)
@@ -121,6 +172,7 @@ async function removeImage(partId) {
   try {
     await updatePart(partId, { image: null })
     delete uploadedImages.value[partId]
+    if (props.batchId) updateBatchPartImage(props.batchId, partId, null)
   } catch (err) {
     message.error(`删除失败: ${err.message || '未知错误'}`)
   }

@@ -234,6 +234,8 @@
     <BatchImageUpload
       v-model:show="showBatchImageUpload"
       :parts="batchImageParts"
+      :batch-id="batchImageBatchId"
+      triggered-by="import"
     />
 
     <input
@@ -261,11 +263,14 @@ import { batchGetStock, addStock } from '@/api/inventory'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import ImageUploadModal from '../../components/ImageUploadModal.vue'
 import BatchImageUpload from '@/components/BatchImageUpload.vue'
+import { pushBatch } from '@/utils/recentImports'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
 const { isMobile } = useIsMobile()
+const authStore = useAuthStore()
 
 const loading = ref(true)
 const rows = ref([])
@@ -405,6 +410,7 @@ const importing = ref(false)
 const importError = ref('')
 const showBatchImageUpload = ref(false)
 const batchImageParts = ref([])
+const batchImageBatchId = ref(null)
 watch(showBatchImageUpload, (val) => {
   if (!val) load()
 })
@@ -616,9 +622,23 @@ const doImport = async () => {
     const { data } = await importPartsExcel(importFile.value)
     message.success(`导入成功：新增 ${data.created_count} 条，更新 ${data.updated_count} 条，入库 ${data.stock_entry_count} 条`)
 
-    const partsWithoutImage = (data.results || []).filter(r => !r.image)
+    // Persist the import as a "batch" — feeds both the post-import
+    // image-upload step and the downstream handcraft attach flows
+    // (HandcraftDetail "最近导入" tab + BatchImageUpload submodal).
+    const allImported = (data.results || []).map((r) => ({
+      part_id: r.part_id,
+      name: r.name,
+      image: r.image,
+      unit: r.unit || '个',
+      imported_qty: r.stock_added,
+    }))
+    const batch = allImported.length > 0
+      ? pushBatch(allImported, { operator: authStore.user?.username || '' })
+      : null
+
+    const partsWithoutImage = (data.results || []).filter((r) => !r.image)
     if (partsWithoutImage.length > 0) {
-      const doUpload = await new Promise(resolve => {
+      const doUpload = await new Promise((resolve) => {
         dialog.info({
           title: '上传图片',
           content: `有 ${partsWithoutImage.length} 个配件没有图片，是否现在上传？`,
@@ -631,6 +651,7 @@ const doImport = async () => {
       })
       if (doUpload) {
         batchImageParts.value = partsWithoutImage
+        batchImageBatchId.value = batch?.batch_id ?? null
         showBatchImageUpload.value = true
       }
     }

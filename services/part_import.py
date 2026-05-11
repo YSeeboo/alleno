@@ -119,6 +119,7 @@ def import_parts_excel(db: Session, file_bytes: bytes, filename: str | None) -> 
             "row_number": plan["row"].row_number,
             "part_id": part.id,
             "name": part.name,
+            "unit": part.unit or "个",
             "image": part.image,
             "action": action,
             "stock_added": qty,
