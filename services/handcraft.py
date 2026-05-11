@@ -289,21 +289,9 @@ def send_handcraft_order(db: Session, handcraft_order_id: str) -> HandcraftOrder
         .filter(HandcraftJewelryItem.handcraft_order_id == handcraft_order_id)
         .all()
     )
-    # Load actual_qty overrides for this order. The key (pi.id, pi.part_id)
-    # only matches atomic items; composite items naturally fall back to pi.qty
-    # because their picking_weight rows have atom_part_id != pi.part_id.
-    weight_rows = (
-        db.query(HandcraftPickingWeight)
-        .filter(
-            HandcraftPickingWeight.handcraft_order_id == handcraft_order_id,
-            HandcraftPickingWeight.actual_qty.is_not(None),
-        )
-        .all()
-    )
-    actual_by_key = {
-        (w.part_item_id, w.atom_part_id): float(w.actual_qty)
-        for w in weight_rows
-    }
+    # Atomic items pick up the picking override; composite items naturally
+    # fall back to pi.qty because their weight rows have atom_part_id != pi.part_id.
+    actual_by_key = _load_actual_qty_map(db, handcraft_order_id)
     # Aggregate effective qty by part_id (avoids double-deducting when same part appears multiple times)
     part_totals: dict[str, float] = {}
     for item in part_items:
@@ -414,16 +402,13 @@ def _attach_loss_qty(db, items, order_id: str, item_type: str) -> list:
     return items
 
 
-def _attach_actual_qty(db: Session, items: list, order_id: str) -> list:
-    """Attach picking actual_qty to atomic part items only.
+def _load_actual_qty_map(db: Session, order_id: str) -> dict[tuple[int, str], float]:
+    """Load picking actual_qty overrides keyed by (part_item_id, atom_part_id).
 
-    The lookup key (part_item_id, atom_part_id == pi.part_id) naturally
-    filters to atomic items: composite expansions only produce
-    picking_weight rows where atom_part_id != pi.part_id, so the lookup
-    misses and item.actual_qty stays None.
+    The key shape lets callers look up `(pi.id, pi.part_id)` to get the atomic
+    override (or fall back). Composite expansions live under a different
+    `atom_part_id` and naturally miss that lookup.
     """
-    if not items:
-        return items
     rows = (
         db.query(HandcraftPickingWeight)
         .filter(
@@ -432,10 +417,17 @@ def _attach_actual_qty(db: Session, items: list, order_id: str) -> list:
         )
         .all()
     )
-    actual_by_key = {
+    return {
         (r.part_item_id, r.atom_part_id): float(r.actual_qty)
         for r in rows
     }
+
+
+def _attach_actual_qty(db: Session, items: list, order_id: str) -> list:
+    """Attach picking actual_qty to atomic part items only."""
+    if not items:
+        return items
+    actual_by_key = _load_actual_qty_map(db, order_id)
     for it in items:
         it.actual_qty = actual_by_key.get((it.id, it.part_id))
     return items

@@ -1001,3 +1001,47 @@ def test_send_handcraft_composite_unaffected_by_atom_actual_qty(client, db):
     resp = client.post(f"/api/handcraft/{order_id}/send")
     assert resp.status_code == 200
     assert get_stock(db, "part", composite.id) == pytest.approx(45.0)  # 50 - 5
+
+
+def test_send_handcraft_aggregates_overrides_across_items(client, db):
+    """Same atomic part_id in two pi rows with separate actual_qty overrides:
+    effective qty is summed per part_id before deduction (30 + 40 = 70)."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    part, jewelry = _setup(db)  # 100 stock for part
+    add_stock(db, "part", part.id, 100.0, "额外入库")  # bump to 200 for headroom
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier AggAQ",
+        "parts": [
+            {"part_id": part.id, "qty": 50.0},
+            {"part_id": part.id, "qty": 60.0},
+        ],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 1}],
+    }).json()
+    order_id = created["id"]
+    pis = (
+        db.query(HandcraftPartItem)
+        .filter_by(handcraft_order_id=order_id)
+        .order_by(HandcraftPartItem.id.asc())
+        .all()
+    )
+    assert len(pis) == 2
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pis[0].id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("30.0000"),
+    ))
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pis[1].id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("40.0000"),
+    ))
+    db.flush()
+
+    resp = client.post(f"/api/handcraft/{order_id}/send")
+    assert resp.status_code == 200
+    # 200 stock − (30 + 40) effective = 130
+    assert get_stock(db, "part", part.id) == pytest.approx(130.0)
