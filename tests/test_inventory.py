@@ -59,3 +59,47 @@ def test_add_stock_rejects_zero(db):
 def test_deduct_stock_rejects_negative(db):
     with pytest.raises(ValueError, match="qty must be positive"):
         deduct_stock(db, "part", "PJ-0001", -5, "invalid")
+
+
+def test_supplement_shortfall_skips_when_enough(db):
+    from services.inventory import supplement_shortfall, add_stock, get_stock
+    from services.part import create_part
+    p = create_part(db, {"name": "扣子", "category": "小配件"})
+    add_stock(db, "part", p.id, 100.0, "入库")
+    result = supplement_shortfall(
+        db, "part", {p.id: 50.0}, reason="手工单缺货补进", note="HC-0001"
+    )
+    assert result == {}
+    assert get_stock(db, "part", p.id) == 100.0  # unchanged
+
+
+def test_supplement_shortfall_partial(db):
+    from services.inventory import supplement_shortfall, add_stock, get_stock
+    from services.part import create_part
+    p1 = create_part(db, {"name": "扣子", "category": "小配件"})
+    p2 = create_part(db, {"name": "链", "category": "链条"})
+    p3 = create_part(db, {"name": "吊", "category": "吊坠"})
+    add_stock(db, "part", p1.id, 100.0, "入库")   # enough for needs=50
+    add_stock(db, "part", p2.id, 30.0, "入库")    # short for needs=50 by 20
+    # p3 has zero stock; needs=10 → supplement 10
+    result = supplement_shortfall(
+        db, "part",
+        {p1.id: 50.0, p2.id: 50.0, p3.id: 10.0},
+        reason="手工单缺货补进", note="HC-0001",
+    )
+    assert result == {p2.id: 20.0, p3.id: 10.0}
+    assert get_stock(db, "part", p1.id) == 100.0
+    assert get_stock(db, "part", p2.id) == 50.0   # 30 + 20
+    assert get_stock(db, "part", p3.id) == 10.0
+    # Verify the log entries are tagged correctly
+    from models.inventory_log import InventoryLog
+    logs = (
+        db.query(InventoryLog)
+        .filter(InventoryLog.reason == "手工单缺货补进")
+        .order_by(InventoryLog.id)
+        .all()
+    )
+    assert [(l.item_id, float(l.change_qty), l.note) for l in logs] == [
+        (p2.id, 20.0, "HC-0001"),
+        (p3.id, 10.0, "HC-0001"),
+    ]

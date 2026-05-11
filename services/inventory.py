@@ -172,3 +172,28 @@ def get_inventory_overview(
 
     results.sort(key=lambda x: x["item_id"])
     return results
+
+
+def supplement_shortfall(
+    db: Session,
+    item_type: str,
+    needs: dict[str, float],
+    reason: str,
+    note: str | None = None,
+) -> dict[str, float]:
+    """Re-query current stock for each item; for any where needed > current,
+    call add_stock for the gap. Returns {item_id: gap} for items actually
+    supplemented (callers can show this to users). Items already at or above
+    needed are skipped (no log written).
+    """
+    if not needs:
+        return {}
+    stocks = batch_get_stock(db, item_type, list(needs.keys()))
+    supplemented: dict[str, float] = {}
+    for item_id, needed in needs.items():
+        current = stocks.get(item_id, 0.0)
+        gap = float(needed) - float(current)
+        if gap > 0:
+            add_stock(db, item_type, item_id, gap, reason, note)
+            supplemented[item_id] = gap
+    return supplemented
