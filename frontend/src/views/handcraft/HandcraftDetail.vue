@@ -1803,11 +1803,25 @@ const itemColumns = [
     key: 'qty',
     render: (row) => {
       const suggested = computeSuggestedQty(row)
-      const actual = row.qty
-      if (suggested == null) return actual ?? '-'
+      const planned = row.qty
+      const override = row.actual_qty
+      const hasOverride = override != null && Number(override) !== Number(planned)
+      const displayed = override ?? planned
+
+      const mainContent = hasOverride
+        ? [
+            h('span', { style: 'color: #1a8917; font-weight: 600;' }, displayed),
+            h('span', { style: 'color: #999; margin-left: 4px; font-size: 12px;' }, `(原 ${planned})`),
+          ]
+        : [h('span', null, displayed ?? '-')]
+
+      if (suggested == null) {
+        return h('span', { style: 'white-space: nowrap; font-variant-numeric: tabular-nums;' }, mainContent)
+      }
+
       return h(NTooltip, { trigger: 'hover' }, {
         trigger: () => h('span', { style: 'white-space: nowrap; cursor: help; font-variant-numeric: tabular-nums;' }, [
-          h('span', null, actual ?? '-'),
+          ...mainContent,
           h('span', { style: 'color: #1890ff; margin-left: 4px; font-size: 13px;' }, [
             '（建议 ',
             h('span', { style: 'font-weight: 700; font-size: 14px;' }, suggested),
