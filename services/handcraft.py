@@ -289,10 +289,26 @@ def send_handcraft_order(db: Session, handcraft_order_id: str) -> HandcraftOrder
         .filter(HandcraftJewelryItem.handcraft_order_id == handcraft_order_id)
         .all()
     )
-    # Aggregate qty by part_id to avoid double-deducting when same part appears multiple times
+    # Load actual_qty overrides for this order. The key (pi.id, pi.part_id)
+    # only matches atomic items; composite items naturally fall back to pi.qty
+    # because their picking_weight rows have atom_part_id != pi.part_id.
+    weight_rows = (
+        db.query(HandcraftPickingWeight)
+        .filter(
+            HandcraftPickingWeight.handcraft_order_id == handcraft_order_id,
+            HandcraftPickingWeight.actual_qty.is_not(None),
+        )
+        .all()
+    )
+    actual_by_key = {
+        (w.part_item_id, w.atom_part_id): float(w.actual_qty)
+        for w in weight_rows
+    }
+    # Aggregate effective qty by part_id (avoids double-deducting when same part appears multiple times)
     part_totals: dict[str, float] = {}
     for item in part_items:
-        part_totals[item.part_id] = part_totals.get(item.part_id, 0.0) + float(item.qty)
+        effective = actual_by_key.get((item.id, item.part_id), float(item.qty))
+        part_totals[item.part_id] = part_totals.get(item.part_id, 0.0) + effective
     # Batch check all parts before deducting
     stocks = batch_get_stock(db, "part", list(part_totals.keys()))
     insufficient = []
