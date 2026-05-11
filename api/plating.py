@@ -17,6 +17,7 @@ from schemas.plating import (
     PlatingItemResponse,
     PlatingResponse,
     PlatingUpdate,
+    SupplementAndSendPlatingResponse,
 )
 from schemas.plating_receipt import LinkReceiptRequest
 from schemas.production_loss import ConfirmLossRequest, ProductionLossResponse
@@ -40,6 +41,7 @@ from services.plating import (
     list_pending_receive_items,
     list_plating_orders,
     send_plating_order,
+    supplement_and_send_plating_order,
     update_plating_delivery_images,
     update_plating_item,
     update_plating_order,
@@ -177,6 +179,18 @@ def api_send_plating_order(order_id: str, db: Session = Depends(get_db)):
         order = send_plating_order(db, order_id)
     return order
 
+
+@router.post(
+    "/{order_id}/supplement-and-send",
+    response_model=SupplementAndSendPlatingResponse,
+)
+def api_supplement_and_send_plating_order(order_id: str, db: Session = Depends(get_db)):
+    order = get_plating_order(db, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"PlatingOrder {order_id} not found")
+    with service_errors():
+        order, supplemented = supplement_and_send_plating_order(db, order_id)
+    return SupplementAndSendPlatingResponse(order=order, supplemented=supplemented)
 
 
 @router.post("/{order_id}/items", response_model=PlatingItemResponse, status_code=201)
