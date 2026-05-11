@@ -244,3 +244,18 @@ def test_supplement_and_send_order_not_found(db):
     from services.plating import supplement_and_send_plating_order
     with pytest.raises(ValueError, match="not found"):
         supplement_and_send_plating_order(db, "EP-9999")
+
+
+def test_supplement_and_send_no_items(setup):
+    """Order with no items must be rejected."""
+    from services.plating import supplement_and_send_plating_order
+    from models.plating_order import PlatingOrder
+    from time_utils import now_beijing
+    db, _, _ = setup
+    order = PlatingOrder(
+        id="EP-9000", supplier_name="测试", status="pending", created_at=now_beijing()
+    )
+    db.add(order)
+    db.flush()
+    with pytest.raises(ValueError, match="no items"):
+        supplement_and_send_plating_order(db, "EP-9000")

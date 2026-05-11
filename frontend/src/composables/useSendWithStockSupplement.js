@@ -51,8 +51,8 @@ export function useSendWithStockSupplement({
       negativeText: '知道了',
       positiveText: '一键补进并发出',
       positiveButtonProps: { type: 'warning' },
-      onPositiveClick: () => {
-        openConfirmDialog(items)
+      onPositiveClick: async () => {
+        await openConfirmDialog(items)
         return true
       },
     })
