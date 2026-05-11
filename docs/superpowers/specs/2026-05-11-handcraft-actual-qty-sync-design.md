@@ -239,6 +239,8 @@ for item in part_items:
 
 `v-model:show` 与 `@update:show` 共用：保留双向绑定的同时在关闭时触发 `loadData()`。**无条件** reload，不维护 dirty 标志——一次额外的 `getHandcraftParts + 库存查询` 成本可接受，胜过维护脏状态。
 
+**附带收益：重量列同步。** `loadData()` 内部已会调 `loadPickingWeights()`（详情页「重量」列的数据源）。详情与配货模拟弹窗的重量编辑**早已**都写入 `handcraft_picking_weight` 表（详情侧路由见 `services/handcraft.py:431,459`），数据层早就统一。本次加的 reload-on-close 让弹窗内的重量改动也能在关闭后立即在详情页可见——一次 reload 同时覆盖 actual_qty 和 weight 两条路径。
+
 ### 5.3 配货模拟弹窗本身：不动
 
 `HandcraftPickingSimulationModal.vue` 不需要任何修改。
@@ -258,6 +260,7 @@ for item in part_items:
 | 用户点「发出」时实际值未设置 | 按 `pi.qty` 扣库存（与今天一致） |
 | 同一原子 part 在多个 pi 行中出现，一部分设置了实际值 | 各 pi 行独立查 override；按 part_id 聚合后扣库存 |
 | 配货 PDF 行为 | 不变（已使用 `actual_qty ?? needed_qty`） |
+| 弹窗内修改重量后关闭 | 详情页「重量」列立即显示新值（同 loadData reload，无需单独编码） |
 
 ### 不在范围
 
