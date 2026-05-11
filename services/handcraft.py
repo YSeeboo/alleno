@@ -530,7 +530,6 @@ def update_handcraft_part(db: Session, order_id: str, item_id: int, data: dict) 
     unit_present = "weight_unit" in data
     if weight_present or unit_present:
         from services.handcraft_picking_weight import upsert_weight, delete_weight
-        from models.handcraft_order import HandcraftPickingWeight
         part = db.query(Part).filter_by(id=item.part_id).one_or_none()
         if part is None:
             raise ValueError(f"配件 {item.part_id} 不存在")
