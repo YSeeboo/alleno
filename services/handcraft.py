@@ -7,7 +7,7 @@ from sqlalchemy import Date, func, or_
 from sqlalchemy.orm import Session
 
 from models.bom import Bom
-from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem, HandcraftPickingRecord
+from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem, HandcraftPickingRecord, HandcraftPickingWeight
 from models.jewelry import Jewelry
 from models.part import Part
 from services._helpers import _next_id, keyword_filter
@@ -398,6 +398,33 @@ def _attach_loss_qty(db, items, order_id: str, item_type: str) -> list:
     return items
 
 
+def _attach_actual_qty(db: Session, items: list, order_id: str) -> list:
+    """Attach picking actual_qty to atomic part items only.
+
+    The lookup key (part_item_id, atom_part_id == pi.part_id) naturally
+    filters to atomic items: composite expansions only produce
+    picking_weight rows where atom_part_id != pi.part_id, so the lookup
+    misses and item.actual_qty stays None.
+    """
+    if not items:
+        return items
+    rows = (
+        db.query(HandcraftPickingWeight)
+        .filter(
+            HandcraftPickingWeight.handcraft_order_id == order_id,
+            HandcraftPickingWeight.actual_qty.is_not(None),
+        )
+        .all()
+    )
+    actual_by_key = {
+        (r.part_item_id, r.atom_part_id): float(r.actual_qty)
+        for r in rows
+    }
+    for it in items:
+        it.actual_qty = actual_by_key.get((it.id, it.part_id))
+    return items
+
+
 def get_handcraft_parts(db: Session, order_id: str) -> list:
     items = (
         db.query(HandcraftPartItem)
@@ -406,7 +433,8 @@ def get_handcraft_parts(db: Session, order_id: str) -> list:
         .all()
     )
     items = _attach_part_colors(db, items)
-    return _attach_loss_qty(db, items, order_id, "handcraft_part")
+    items = _attach_loss_qty(db, items, order_id, "handcraft_part")
+    return _attach_actual_qty(db, items, order_id)
 
 
 def get_handcraft_jewelries(db: Session, order_id: str) -> list:

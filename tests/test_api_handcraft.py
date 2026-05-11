@@ -780,3 +780,45 @@ def test_supplement_and_send_handcraft_order(client, db):
 def test_supplement_and_send_handcraft_order_not_found(client, db):
     resp = client.post("/api/handcraft/HC-9999/supplement-and-send")
     assert resp.status_code == 404
+
+
+def test_get_parts_includes_actual_qty_for_atomic(client, db):
+    """When picking_weight.actual_qty is set on an atomic part_item, the
+    parts GET response surfaces it. Key match: (pi.id, pi.part_id)."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    part, jewelry = _setup(db)
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier AQ1",
+        "parts": [{"part_id": part.id, "qty": 100.0}],
+    }).json()
+    order_id = created["id"]
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id).one()
+
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pi.id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("80.0000"),
+    ))
+    db.flush()
+
+    resp = client.get(f"/api/handcraft/{order_id}/parts")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert len(rows) == 1
+    assert rows[0]["qty"] == 100.0
+    assert rows[0]["actual_qty"] == 80.0
+
+
+def test_get_parts_actual_qty_null_when_no_override(client, db):
+    """No picking_weight row → actual_qty is None in the response."""
+    part, jewelry = _setup(db)
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier AQ2",
+        "parts": [{"part_id": part.id, "qty": 50.0}],
+    }).json()
+    resp = client.get(f"/api/handcraft/{created['id']}/parts")
+    assert resp.status_code == 200
+    assert resp.json()[0]["actual_qty"] is None
