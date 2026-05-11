@@ -757,3 +757,26 @@ def test_pending_receive_global_sort_interleaves_part_and_jewelry(client, db):
     assert order_ids_in_result[1] == new_id
     assert order_ids_in_result[2] == old_id
     assert order_ids_in_result[3] == old_id
+
+
+def test_supplement_and_send_handcraft_order(client, db):
+    """Happy path: short by 5 → endpoint returns supplemented={part_id: 5.0}."""
+    part = create_part(db, {"name": "P-补", "category": "小配件"})
+    jewelry = create_jewelry(db, {"name": "J-补", "category": "单件"})
+    from services.inventory import add_stock
+    add_stock(db, "part", part.id, 5.0, "入库")  # only 5 in stock
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier-补",
+        "parts": [{"part_id": part.id, "qty": 10.0}],   # short by 5
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 3}],
+    }).json()
+    resp = client.post(f"/api/handcraft/{created['id']}/supplement-and-send")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["order"]["status"] == "processing"
+    assert data["supplemented"] == {part.id: 5.0}
+
+
+def test_supplement_and_send_handcraft_order_not_found(client, db):
+    resp = client.post("/api/handcraft/HC-9999/supplement-and-send")
+    assert resp.status_code == 404

@@ -476,6 +476,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useSummaryReturn } from '@/composables/useSummaryReturn'
+import { useSendWithStockSupplement } from '@/composables/useSendWithStockSupplement'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
@@ -483,9 +484,9 @@ import {
   NRadioGroup, NRadio, NDatePicker,
 } from 'naive-ui'
 import { tsToDateStr, isoToTs } from '@/utils/date'
-import { CreateOutline, CopyOutline } from '@vicons/ionicons5'
+import { CreateOutline } from '@vicons/ionicons5'
 import {
-  getPlating, getPlatingItems, sendPlating,
+  getPlating, getPlatingItems, sendPlating, supplementAndSendPlating,
   addPlatingItem, updatePlatingItem, deletePlatingItem,
   updatePlatingDeliveryImages, updatePlatingOrder,
   downloadPlatingExcel, downloadPlatingPdf,
@@ -509,7 +510,6 @@ const { isMobile } = useIsMobile()
 const { returnQuery: summaryReturn, back: backToSummary } = useSummaryReturn()
 
 const loading = ref(true)
-const sending = ref(false)
 const downloadingExcel = ref(false)
 const downloadingPdf = ref(false)
 const order = ref(null)
@@ -762,44 +762,14 @@ const loadData = async () => {
   }
 }
 
-const doSend = async () => {
-  sending.value = true
-  try {
-    await sendPlating(route.params.id)
-    message.success('已确认发出')
-    await loadData()
-  } catch (e) {
-    const detail = e.response?.data?.detail || ''
-    if (detail.includes('库存不足')) {
-      const items = detail.replace(/^库存不足[：:]?\s*/, '').split('；').filter(Boolean)
-      dialog.warning({
-        title: '库存不足',
-        content: () => h('ul', { style: 'padding-left: 20px; margin: 0;' }, items.map(t => {
-          const cleaned = t.replace(/^part\s+/i, '')
-          const partId = cleaned.match(/^(PJ-\S+)/)?.[1] || ''
-          const rest = partId ? cleaned.slice(partId.length) : cleaned
-          return h('li', { style: 'margin: 4px 0; display: flex; align-items: center; gap: 2px;' }, [
-            partId ? [
-              h('span', null, partId),
-              h('span', {
-                style: 'display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 4px; cursor: pointer; color: #666; background: #f0f0f0; margin: 0 4px; transition: all 0.2s;',
-                onMouseenter: (e) => { e.currentTarget.style.background = '#e0e0e0'; e.currentTarget.style.color = '#333'; },
-                onMouseleave: (e) => { e.currentTarget.style.background = '#f0f0f0'; e.currentTarget.style.color = '#666'; },
-                onClick: () => { navigator.clipboard?.writeText(partId).then(() => message.success('已复制')).catch(() => message.error('复制失败')) ?? message.error('复制失败') },
-              }, [h(NIcon, { size: 14 }, { default: () => h(CopyOutline) })]),
-              h('span', null, rest),
-            ] : cleaned,
-          ])
-        })),
-        positiveText: '知道了',
-      })
-    } else {
-      message.error(detail || '发出失败')
-    }
-  } finally {
-    sending.value = false
-  }
-}
+const { sending, doSend } = useSendWithStockSupplement({
+  orderId: computed(() => route.params.id),
+  sendApi: sendPlating,
+  supplementApi: supplementAndSendPlating,
+  onSuccess: loadData,
+  message,
+  dialog,
+})
 
 const doDownloadExcel = async () => {
   await downloadExportFile('xlsx', downloadingExcel, downloadPlatingExcel, 'Excel 下载失败')

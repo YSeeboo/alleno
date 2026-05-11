@@ -106,6 +106,13 @@ class HandcraftDeliveryImagesUpdate(BaseModel):
     delivery_images: List[str] = Field(default_factory=list, max_length=10)
 
 
+class SupplementAndSendHandcraftResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    order: HandcraftResponse
+    supplemented: dict[str, float] = Field(default_factory=dict)
+
+
 class HandcraftSuggestJewelryItem(BaseModel):
     jewelry_id: str
     qty: int = Field(gt=0)

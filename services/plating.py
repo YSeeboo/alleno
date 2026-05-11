@@ -8,7 +8,7 @@ from models.part import Part
 from models.plating_order import PlatingOrder, PlatingOrderItem
 from models.vendor_receipt import VendorReceipt
 from services._helpers import _next_id, keyword_filter
-from services.inventory import add_stock, batch_get_stock, deduct_stock
+from services.inventory import add_stock, batch_get_stock, deduct_stock, supplement_shortfall
 
 
 def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
@@ -120,6 +120,41 @@ def send_plating_order(db: Session, plating_order_id: str) -> PlatingOrder:
     db.flush()
     return order
 
+
+def supplement_and_send_plating_order(
+    db: Session, plating_order_id: str
+) -> tuple[PlatingOrder, dict[str, float]]:
+    """Supplement any part-stock shortfall for this plating order, then
+    call send_plating_order. Mirror of supplement_and_send_handcraft_order.
+    Returns (order, supplemented_dict).
+    """
+    order = get_plating_order(db, plating_order_id)
+    if order is None:
+        raise ValueError(f"PlatingOrder not found: {plating_order_id}")
+    if order.status != "pending":
+        raise ValueError(
+            f"PlatingOrder {plating_order_id} cannot be sent: "
+            f"current status is '{order.status}'"
+        )
+    items = (
+        db.query(PlatingOrderItem)
+        .filter(PlatingOrderItem.plating_order_id == plating_order_id)
+        .all()
+    )
+    if not items:
+        raise ValueError(
+            f"PlatingOrder {plating_order_id} has no items and cannot be sent"
+        )
+    part_totals: dict[str, float] = {}
+    for it in items:
+        part_totals[it.part_id] = part_totals.get(it.part_id, 0.0) + float(it.qty)
+    supplemented = supplement_shortfall(
+        db, "part", part_totals,
+        reason="电镀单缺货补进",
+        note=plating_order_id,
+    )
+    order = send_plating_order(db, plating_order_id)
+    return order, supplemented
 
 
 def get_plating_order(db: Session, plating_order_id: str) -> Optional[PlatingOrder]:

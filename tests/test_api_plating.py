@@ -669,3 +669,24 @@ def test_update_plating_order_not_pending(client, db):
 def test_update_plating_order_not_found(client, db):
     resp = client.patch("/api/plating/EP-9999", json={"supplier_name": "X"})
     assert resp.status_code == 400
+
+
+def test_supplement_and_send_plating_order(client, db):
+    """Happy path: short by 5 → endpoint returns supplemented={part_id: 5.0}."""
+    part = create_part(db, {"name": "P-补-E", "category": "小配件"})
+    from services.inventory import add_stock
+    add_stock(db, "part", part.id, 5.0, "入库")
+    created = client.post("/api/plating/", json={
+        "supplier_name": "厂-补",
+        "items": [{"part_id": part.id, "qty": 10.0, "plating_method": "金色"}],
+    }).json()
+    resp = client.post(f"/api/plating/{created['id']}/supplement-and-send")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["order"]["status"] == "processing"
+    assert data["supplemented"] == {part.id: 5.0}
+
+
+def test_supplement_and_send_plating_order_not_found(client, db):
+    resp = client.post("/api/plating/EP-9999/supplement-and-send")
+    assert resp.status_code == 404
