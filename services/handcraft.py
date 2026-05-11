@@ -11,7 +11,7 @@ from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJ
 from models.jewelry import Jewelry
 from models.part import Part
 from services._helpers import _next_id, keyword_filter
-from services.inventory import add_stock, batch_get_stock, deduct_stock
+from services.inventory import add_stock, batch_get_stock, deduct_stock, supplement_shortfall
 from time_utils import now_beijing
 
 
@@ -319,6 +319,44 @@ def send_handcraft_order(db: Session, handcraft_order_id: str) -> HandcraftOrder
     db.flush()
     return order
 
+
+
+def supplement_and_send_handcraft_order(
+    db: Session, handcraft_order_id: str
+) -> tuple[HandcraftOrder, dict[str, float]]:
+    """Supplement any part-stock shortfall for this order, then immediately
+    call send_handcraft_order. Returns (order, supplemented) where
+    supplemented is {part_id: qty} for parts that needed补进 (may be empty).
+    All validation lives in send_handcraft_order; failures roll back.
+    """
+    order = get_handcraft_order(db, handcraft_order_id)
+    if order is None:
+        raise ValueError(f"HandcraftOrder not found: {handcraft_order_id}")
+    if order.status != "pending":
+        raise ValueError(
+            f"HandcraftOrder {handcraft_order_id} cannot be sent: "
+            f"current status is '{order.status}'"
+        )
+    part_items = (
+        db.query(HandcraftPartItem)
+        .filter(HandcraftPartItem.handcraft_order_id == handcraft_order_id)
+        .all()
+    )
+    if not part_items:
+        raise ValueError(
+            f"HandcraftOrder {handcraft_order_id} has no part items "
+            f"and cannot be sent"
+        )
+    part_totals: dict[str, float] = {}
+    for item in part_items:
+        part_totals[item.part_id] = part_totals.get(item.part_id, 0.0) + float(item.qty)
+    supplemented = supplement_shortfall(
+        db, "part", part_totals,
+        reason="手工单缺货补进",
+        note=handcraft_order_id,
+    )
+    order = send_handcraft_order(db, handcraft_order_id)
+    return order, supplemented
 
 
 def get_handcraft_order(db: Session, handcraft_order_id: str) -> Optional[HandcraftOrder]:

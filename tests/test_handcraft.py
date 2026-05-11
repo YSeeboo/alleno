@@ -261,3 +261,126 @@ def test_handcraft_part_color_follows_part_color(setup):
     update_part(db, p1.id, {"color": "哑金"})
     item = get_handcraft_parts(db, order.id)[0]
     assert item.color == "哑金"
+
+
+def test_supplement_and_send_normal(setup):
+    """1 part short by 5; supplement should write 1 缺货补进 log + 1 手工发出 log."""
+    from services.handcraft import supplement_and_send_handcraft_order
+    from services.inventory import get_stock
+    from models.inventory_log import InventoryLog
+    db, p1, _, j1 = setup  # p1 has 200 stock from fixture
+    order = create_handcraft_order(
+        db, "手工坊",
+        parts=[{"part_id": p1.id, "qty": 205, "bom_qty": 200.0}],  # short by 5
+        jewelries=[{"jewelry_id": j1.id, "qty": 10}],
+    )
+    result_order, supplemented = supplement_and_send_handcraft_order(db, order.id)
+    assert result_order.status == "processing"
+    assert supplemented == {p1.id: 5.0}
+    assert get_stock(db, "part", p1.id) == 0.0  # 200 + 5 - 205
+
+    logs = (
+        db.query(InventoryLog)
+        .filter(InventoryLog.item_id == p1.id)
+        .order_by(InventoryLog.id)
+        .all()
+    )
+    # ① 入库 200 (fixture) ② 手工单缺货补进 +5 (HC-...) ③ 手工发出 -205
+    reasons = [(l.reason, float(l.change_qty), l.note) for l in logs]
+    assert reasons[1] == ("手工单缺货补进", 5.0, order.id)
+    assert reasons[2][0] == "手工发出"
+    assert reasons[2][1] == -205.0
+
+
+def test_supplement_and_send_no_shortage(setup):
+    """Stock is already enough; supplement is skipped, only 手工发出 log written."""
+    from services.handcraft import supplement_and_send_handcraft_order
+    from services.inventory import get_stock
+    from models.inventory_log import InventoryLog
+    db, p1, _, j1 = setup  # p1 has 200 stock
+    order = create_handcraft_order(
+        db, "手工坊",
+        parts=[{"part_id": p1.id, "qty": 50, "bom_qty": 50.0}],
+        jewelries=[{"jewelry_id": j1.id, "qty": 5}],
+    )
+    result_order, supplemented = supplement_and_send_handcraft_order(db, order.id)
+    assert result_order.status == "processing"
+    assert supplemented == {}
+    assert get_stock(db, "part", p1.id) == 150.0
+    assert db.query(InventoryLog).filter(
+        InventoryLog.reason == "手工单缺货补进"
+    ).count() == 0
+
+
+def test_supplement_and_send_multi_parts(setup):
+    """3 parts: 2 short, 1 enough. Only the 2 short ones get supplemented."""
+    from services.handcraft import supplement_and_send_handcraft_order
+    db, p1, p2, j1 = setup  # p1=200, p2=100
+    # Create a third part with zero stock
+    from services.part import create_part
+    p3 = create_part(db, {"name": "扣子3", "category": "小配件"})
+    order = create_handcraft_order(
+        db, "手工坊",
+        parts=[
+            {"part_id": p1.id, "qty": 50},    # enough
+            {"part_id": p2.id, "qty": 150},   # short by 50
+            {"part_id": p3.id, "qty": 20},    # short by 20
+        ],
+        jewelries=[{"jewelry_id": j1.id, "qty": 5}],
+    )
+    _, supplemented = supplement_and_send_handcraft_order(db, order.id)
+    assert supplemented == {p2.id: 50.0, p3.id: 20.0}
+
+
+def test_supplement_and_send_aggregates_same_part(setup):
+    """Same part_id in two part_items: supplement uses the aggregate total."""
+    from services.handcraft import supplement_and_send_handcraft_order
+    from services.inventory import get_stock
+    db, p1, _, j1 = setup  # p1 has 200
+    order = create_handcraft_order(
+        db, "手工坊",
+        parts=[
+            {"part_id": p1.id, "qty": 150},
+            {"part_id": p1.id, "qty": 100},   # total need = 250, short by 50
+        ],
+        jewelries=[{"jewelry_id": j1.id, "qty": 5}],
+    )
+    _, supplemented = supplement_and_send_handcraft_order(db, order.id)
+    assert supplemented == {p1.id: 50.0}
+    assert get_stock(db, "part", p1.id) == 0.0  # 200 + 50 - 250
+
+
+def test_supplement_and_send_order_not_pending(setup):
+    """Already-sent order must be rejected."""
+    from services.handcraft import supplement_and_send_handcraft_order
+    db, p1, _, j1 = setup
+    order = create_handcraft_order(
+        db, "手工坊",
+        parts=[{"part_id": p1.id, "qty": 50}],
+        jewelries=[{"jewelry_id": j1.id, "qty": 5}],
+    )
+    send_handcraft_order(db, order.id)  # now processing
+    with pytest.raises(ValueError, match="cannot be sent"):
+        supplement_and_send_handcraft_order(db, order.id)
+
+
+def test_supplement_and_send_order_not_found(db):
+    from services.handcraft import supplement_and_send_handcraft_order
+    with pytest.raises(ValueError, match="not found"):
+        supplement_and_send_handcraft_order(db, "HC-9999")
+
+
+def test_supplement_and_send_no_part_items(setup):
+    """Order with no part_items must be rejected."""
+    from services.handcraft import supplement_and_send_handcraft_order
+    from models.handcraft_order import HandcraftOrder
+    from time_utils import now_beijing
+    db, _, _, _ = setup
+    # Create an empty order manually (the normal creator requires parts)
+    order = HandcraftOrder(
+        id="HC-9000", supplier_name="测试", status="pending", created_at=now_beijing()
+    )
+    db.add(order)
+    db.flush()
+    with pytest.raises(ValueError, match="no part items"):
+        supplement_and_send_handcraft_order(db, "HC-9000")
