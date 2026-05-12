@@ -3,7 +3,7 @@ from datetime import datetime, date as date_type
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import Date, func, or_
+from sqlalchemy import Date, and_, func, or_
 from sqlalchemy.orm import Session
 
 from models.bom import Bom
@@ -821,7 +821,10 @@ def list_handcraft_pending_receive_items(
     that still have remaining qty to receive."""
     results = []
 
-    # Part items
+    # Part items. Effective qty = picking actual_qty override when set, else pi.qty.
+    # The LEFT JOIN's atomic key (part_item_id, atom_part_id == part_id) naturally
+    # excludes composite expansions (their atom_part_id != pi.part_id).
+    effective_qty_expr = func.coalesce(HandcraftPickingWeight.actual_qty, HandcraftPartItem.qty)
     pq = (
         db.query(
             HandcraftPartItem.id,
@@ -832,16 +835,24 @@ def list_handcraft_pending_receive_items(
             Part.image.label("item_image"),
             Part.is_composite.label("is_composite"),
             Part.color,
-            HandcraftPartItem.qty,
+            effective_qty_expr.label("effective_qty"),
             HandcraftPartItem.received_qty,
             HandcraftPartItem.unit,
             HandcraftOrder.created_at,
         )
         .join(HandcraftOrder, HandcraftPartItem.handcraft_order_id == HandcraftOrder.id)
         .join(Part, HandcraftPartItem.part_id == Part.id)
+        .outerjoin(
+            HandcraftPickingWeight,
+            and_(
+                HandcraftPickingWeight.part_item_id == HandcraftPartItem.id,
+                HandcraftPickingWeight.atom_part_id == HandcraftPartItem.part_id,
+                HandcraftPickingWeight.actual_qty.is_not(None),
+            ),
+        )
         .filter(
             HandcraftPartItem.status == "制作中",
-            func.coalesce(HandcraftPartItem.received_qty, 0) < HandcraftPartItem.qty,
+            func.coalesce(HandcraftPartItem.received_qty, 0) < effective_qty_expr,
         )
     )
     if supplier_name:
@@ -867,7 +878,7 @@ def list_handcraft_pending_receive_items(
             "is_output": False,
             "is_composite": row.is_composite,
             "color": row.color,
-            "qty": float(row.qty),
+            "qty": float(row.effective_qty),
             "received_qty": float(row.received_qty or 0),
             "unit": row.unit,
             "created_at": row.created_at,

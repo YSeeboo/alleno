@@ -1078,3 +1078,35 @@ def test_delete_after_send_with_actual_qty_uses_effective_for_reversal(client, d
     del_resp = client.delete(f"/api/handcraft/{order_id}")
     assert del_resp.status_code == 204
     assert get_stock(db, "part", part.id) == pytest.approx(100.0)
+
+
+def test_pending_receive_returns_effective_qty_for_atomic_override(client, db):
+    """The pending-receive list must report the effective qty as the 可回收
+    upper bound, so the UI doesn't invite users to over-receive."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    part, jewelry = _setup(db)
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier PendAQ",
+        "parts": [{"part_id": part.id, "qty": 10.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 1}],
+    }).json()
+    order_id = created["id"]
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id).one()
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pi.id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("8.0000"),
+    ))
+    db.flush()
+    send_resp = client.post(f"/api/handcraft/{order_id}/send")
+    assert send_resp.status_code == 200
+
+    resp = client.get("/api/handcraft/items/pending-receive",
+                      params={"supplier_name": "Supplier PendAQ"})
+    assert resp.status_code == 200
+    rows = [r for r in resp.json() if r["item_type"] == "part" and r["id"] == pi.id]
+    assert len(rows) == 1
+    assert rows[0]["qty"] == pytest.approx(8.0)  # effective, not pi.qty=10
