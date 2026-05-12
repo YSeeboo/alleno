@@ -755,11 +755,19 @@ def delete_handcraft_order(db: Session, order_id: str) -> None:
             if receipt:
                 _recalc_total(db, receipt)
 
-    # Reverse sent stock for parts
+    # Reverse sent stock for parts. Uses effective qty (actual_qty override
+    # when set, pi.qty otherwise) so reversal mirrors what send actually
+    # deducted — `part_items` was loaded via get_handcraft_parts, which
+    # already attached `actual_qty` to atomic items.
     if order.status != "pending":
         part_totals: dict[str, float] = {}
         for part_item in part_items:
-            part_totals[part_item.part_id] = part_totals.get(part_item.part_id, 0.0) + float(part_item.qty)
+            effective = (
+                float(part_item.actual_qty)
+                if part_item.actual_qty is not None
+                else float(part_item.qty)
+            )
+            part_totals[part_item.part_id] = part_totals.get(part_item.part_id, 0.0) + effective
         for part_id, total_sent in part_totals.items():
             add_stock(db, "part", part_id, total_sent, "手工发出撤回")
 

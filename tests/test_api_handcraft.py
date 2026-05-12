@@ -1045,3 +1045,36 @@ def test_send_handcraft_aggregates_overrides_across_items(client, db):
     assert resp.status_code == 200
     # 200 stock − (30 + 40) effective = 130
     assert get_stock(db, "part", part.id) == pytest.approx(130.0)
+
+
+def test_delete_after_send_with_actual_qty_uses_effective_for_reversal(client, db):
+    """Send deducted effective qty (actual_qty=8, not pi.qty=10); delete must
+    reverse the same effective qty, not pi.qty, or stock drifts up by (pi.qty - actual_qty)."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    part, jewelry = _setup(db)  # 100 stock
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier DelDrift",
+        "parts": [{"part_id": part.id, "qty": 10.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 1}],
+    }).json()
+    order_id = created["id"]
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id).one()
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pi.id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("8.0000"),
+    ))
+    db.flush()
+
+    # Send: deducts effective=8 → stock=92
+    send_resp = client.post(f"/api/handcraft/{order_id}/send")
+    assert send_resp.status_code == 200
+    assert get_stock(db, "part", part.id) == pytest.approx(92.0)
+
+    # Delete: must reverse effective=8 → stock back to 100, NOT 102
+    del_resp = client.delete(f"/api/handcraft/{order_id}")
+    assert del_resp.status_code == 204
+    assert get_stock(db, "part", part.id) == pytest.approx(100.0)
