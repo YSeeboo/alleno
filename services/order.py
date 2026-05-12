@@ -245,7 +245,11 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
 
     from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftPickingWeight
     from models.order import OrderItemLink, OrderTodoItem
-    from sqlalchemy import and_, func as sqla_func
+    from sqlalchemy import func as sqla_func
+    from services.handcraft import (
+        handcraft_atomic_picking_join_clause,
+        handcraft_effective_qty_expr,
+    )
 
     # Find this order's own HandcraftPartItem IDs (batch path only).
     # The batch flow creates precise row-level links: each OrderItemLink points
@@ -267,12 +271,9 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
     ), {"oid": order_id}).fetchall()
     own_hcpi_ids = {row[0] for row in batch_hcpi_rows}
 
-    # Effective qty = picking actual_qty override (atomic items) or pi.qty.
-    # The LEFT JOIN's atomic key (part_item_id, atom_part_id == pi.part_id)
-    # naturally excludes composite expansions, so composites stay on pi.qty.
-    effective_qty_expr = sqla_func.coalesce(
-        HandcraftPickingWeight.actual_qty, HandcraftPartItem.qty
-    )
+    # Effective qty per atomic part item; composite expansions naturally fall
+    # back to pi.qty because their picking_weight rows have atom_part_id != pi.part_id.
+    effective_qty_expr = handcraft_effective_qty_expr()
 
     # Sum own part items by handcraft status
     def _sum_own_parts(statuses: list[str]) -> dict[str, float]:
@@ -281,14 +282,7 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
         rows = (
             db.query(HandcraftPartItem.part_id, sqla_func.sum(effective_qty_expr))
             .join(HandcraftOrder, HandcraftPartItem.handcraft_order_id == HandcraftOrder.id)
-            .outerjoin(
-                HandcraftPickingWeight,
-                and_(
-                    HandcraftPickingWeight.part_item_id == HandcraftPartItem.id,
-                    HandcraftPickingWeight.atom_part_id == HandcraftPartItem.part_id,
-                    HandcraftPickingWeight.actual_qty.is_not(None),
-                ),
-            )
+            .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
             .filter(
                 HandcraftPartItem.id.in_(own_hcpi_ids),
                 HandcraftOrder.status.in_(statuses),
@@ -310,14 +304,7 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
         reserved_rows = (
             db.query(HandcraftPartItem.part_id, sqla_func.sum(effective_qty_expr))
             .join(HandcraftOrder, HandcraftPartItem.handcraft_order_id == HandcraftOrder.id)
-            .outerjoin(
-                HandcraftPickingWeight,
-                and_(
-                    HandcraftPickingWeight.part_item_id == HandcraftPartItem.id,
-                    HandcraftPickingWeight.atom_part_id == HandcraftPartItem.part_id,
-                    HandcraftPickingWeight.actual_qty.is_not(None),
-                ),
-            )
+            .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
             .filter(
                 HandcraftOrder.status == "pending",
                 HandcraftPartItem.part_id.in_(part_ids),

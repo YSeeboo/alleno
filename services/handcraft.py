@@ -402,6 +402,35 @@ def _attach_loss_qty(db, items, order_id: str, item_type: str) -> list:
     return items
 
 
+def handcraft_atomic_picking_join_clause():
+    """SQL ON clause for the LEFT JOIN that surfaces a part item's picking
+    actual_qty override.
+
+    Pairs `HandcraftPickingWeight` with `HandcraftPartItem` on the atomic key
+    `(part_item_id, atom_part_id == pi.part_id)` and ignores rows without an
+    override. The clause naturally excludes composite expansions — their
+    weight rows have `atom_part_id != pi.part_id` so the join misses.
+
+    Usage:
+
+        query.outerjoin(
+            HandcraftPickingWeight, handcraft_atomic_picking_join_clause()
+        )
+    """
+    return and_(
+        HandcraftPickingWeight.part_item_id == HandcraftPartItem.id,
+        HandcraftPickingWeight.atom_part_id == HandcraftPartItem.part_id,
+        HandcraftPickingWeight.actual_qty.is_not(None),
+    )
+
+
+def handcraft_effective_qty_expr():
+    """SQL column expression for a part item's effective sent quantity:
+    `coalesce(picking actual_qty, pi.qty)`. Pair with the join clause above.
+    """
+    return func.coalesce(HandcraftPickingWeight.actual_qty, HandcraftPartItem.qty)
+
+
 def _load_actual_qty_map(db: Session, order_id: str) -> dict[tuple[int, str], float]:
     """Load picking actual_qty overrides keyed by (part_item_id, atom_part_id).
 
@@ -822,9 +851,7 @@ def list_handcraft_pending_receive_items(
     results = []
 
     # Part items. Effective qty = picking actual_qty override when set, else pi.qty.
-    # The LEFT JOIN's atomic key (part_item_id, atom_part_id == part_id) naturally
-    # excludes composite expansions (their atom_part_id != pi.part_id).
-    effective_qty_expr = func.coalesce(HandcraftPickingWeight.actual_qty, HandcraftPartItem.qty)
+    effective_qty_expr = handcraft_effective_qty_expr()
     pq = (
         db.query(
             HandcraftPartItem.id,
@@ -842,14 +869,7 @@ def list_handcraft_pending_receive_items(
         )
         .join(HandcraftOrder, HandcraftPartItem.handcraft_order_id == HandcraftOrder.id)
         .join(Part, HandcraftPartItem.part_id == Part.id)
-        .outerjoin(
-            HandcraftPickingWeight,
-            and_(
-                HandcraftPickingWeight.part_item_id == HandcraftPartItem.id,
-                HandcraftPickingWeight.atom_part_id == HandcraftPartItem.part_id,
-                HandcraftPickingWeight.actual_qty.is_not(None),
-            ),
-        )
+        .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
         .filter(
             HandcraftPartItem.status == "制作中",
             func.coalesce(HandcraftPartItem.received_qty, 0) < effective_qty_expr,
