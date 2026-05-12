@@ -268,3 +268,43 @@ def test_confirm_handcraft_loss_nonexistent_order_returns_404(client, db):
         json={"loss_qty": 1, "item_type": "part"},
     )
     assert resp.status_code == 404
+
+
+def test_confirm_handcraft_part_loss_capped_by_effective_qty(client, db):
+    """When picking actual_qty=8 < pi.qty=10, only (effective - received) is
+    the loss gap. Supplier returned all 8 → gap is 0; any loss_qty must reject.
+    Pre-fix bug: gap was 10-8=2, allowing user to inflate received_qty up to 10
+    with phantom loss entries."""
+    from models.handcraft_order import HandcraftPickingWeight
+
+    part = Part(id="PJ-X-LOSSAQ", name="损耗 actual_qty", category="小配件")
+    db.add(part)
+    db.flush()
+    add_stock(db, "part", part.id, 100, "入库")
+
+    hc = HandcraftOrder(id="HC-LOSSAQ", supplier_name="手工商AQ", status="processing")
+    db.add(hc)
+    db.flush()
+    hc_part = HandcraftPartItem(
+        handcraft_order_id=hc.id,
+        part_id=part.id,
+        qty=10,
+        received_qty=8,
+        status="制作中",
+    )
+    db.add(hc_part)
+    db.flush()
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=hc.id,
+        part_item_id=hc_part.id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("8"),
+    ))
+    db.flush()
+
+    resp = client.post(
+        f"/api/handcraft/{hc.id}/items/{hc_part.id}/confirm-loss",
+        json={"loss_qty": 1, "item_type": "part"},
+    )
+    assert resp.status_code == 400
+    assert "超过差额 0" in resp.json()["detail"]

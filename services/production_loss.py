@@ -8,7 +8,7 @@ from models.plating_order import PlatingOrder, PlatingOrderItem
 from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
 from models.inventory_log import InventoryLog
 from services.plating_receipt import _check_plating_order_completion
-from services.handcraft_receipt import _check_handcraft_order_completion
+from services.handcraft_receipt import _check_handcraft_order_completion, _effective_qty
 from time_utils import now_beijing
 
 
@@ -114,7 +114,11 @@ def confirm_handcraft_loss(
     else:
         raise ValueError(f"无效的 item_type: {item_type}")
 
-    gap = float(item.qty) - float(item.received_qty or 0)
+    # Gap is computed against effective qty (picking actual_qty override when
+    # set on atomic parts) so users can't fabricate phantom loss entries to
+    # pad received_qty up to pi.qty when only effective was actually sent.
+    effective = _effective_qty(db, item, item_type)
+    gap = effective - float(item.received_qty or 0)
     if loss_qty <= 0:
         raise ValueError("损耗数量必须大于 0")
     if item_type == "jewelry" and loss_qty != int(loss_qty):
@@ -153,7 +157,7 @@ def confirm_handcraft_loss(
     else:
         item.received_qty = Decimal(str(float(item.received_qty or 0) + loss_qty))
 
-    if float(item.received_qty) >= float(item.qty):
+    if float(item.received_qty) >= effective:
         item.status = "已收回"
     db.flush()
 
