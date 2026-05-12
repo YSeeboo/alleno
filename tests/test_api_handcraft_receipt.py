@@ -680,3 +680,31 @@ def test_receipt_edit_qty_cap_uses_effective_qty(client, db):
     )
     assert edit_resp.status_code == 400
     assert "最多可回收 8" in edit_resp.json()["detail"]
+
+
+def test_order_auto_completes_when_all_effective_qty_received(client, db):
+    """When every part item has received effective qty AND jewelry items are
+    fully received, the order must auto-flip to completed. Previously the
+    order-level completion check used pi.qty, so orders with actual_qty
+    overrides got stuck in processing forever."""
+    from models.handcraft_order import HandcraftOrder
+
+    part, jewelry, order, pi = _create_sent_handcraft_with_actual_qty(db, pi_qty=10.0, actual_qty=8.0)
+
+    # Receive effective (8) parts + all (1) jewelry
+    resp = client.post("/api/handcraft-receipts/", json={
+        "supplier_name": "测试手工商",
+        "items": [
+            {"handcraft_part_item_id": pi.id, "qty": 8.0},
+            {"handcraft_jewelry_item_id":
+                db.query(HandcraftJewelryItem)
+                .filter_by(handcraft_order_id=order.id).one().id,
+             "qty": 1},
+        ],
+    })
+    assert resp.status_code == 201
+
+    db.refresh(order)
+    assert order.status == "completed", (
+        f"order should auto-complete (all effective qty received), got {order.status}"
+    )

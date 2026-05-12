@@ -64,7 +64,11 @@ def _recalc_total(db: Session, receipt: HandcraftReceipt) -> None:
 
 
 def _check_handcraft_order_completion(db: Session, handcraft_order_id: str) -> None:
-    """If all part items AND jewelry items are fully received, mark order completed."""
+    """If all part items AND jewelry items are fully received, mark order completed.
+
+    "Fully received" uses effective qty (picking actual_qty override when set)
+    for atomic part items, so orders with overrides can reach completed.
+    """
     part_items = (
         db.query(HandcraftPartItem)
         .filter(HandcraftPartItem.handcraft_order_id == handcraft_order_id)
@@ -75,8 +79,11 @@ def _check_handcraft_order_completion(db: Session, handcraft_order_id: str) -> N
         .filter(HandcraftJewelryItem.handcraft_order_id == handcraft_order_id)
         .all()
     )
-    all_items = part_items + jewelry_items
-    if all(float(i.received_qty or 0) >= float(i.qty) for i in all_items):
+    items_with_type = [(pi, "part") for pi in part_items] + [(ji, "jewelry") for ji in jewelry_items]
+    if all(
+        float(i.received_qty or 0) >= _effective_qty(db, i, t)
+        for i, t in items_with_type
+    ):
         order = db.query(HandcraftOrder).filter(HandcraftOrder.id == handcraft_order_id).first()
         if order and order.status == "processing":
             order.status = "completed"
