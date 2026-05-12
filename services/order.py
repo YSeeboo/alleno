@@ -243,9 +243,9 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
     # Get current part stock and reserved qty (pending handcraft orders hold stock)
     part_stocks = batch_get_stock(db, "part", part_ids) if part_ids else {}
 
-    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftPickingWeight
     from models.order import OrderItemLink, OrderTodoItem
-    from sqlalchemy import func as sqla_func
+    from sqlalchemy import and_, func as sqla_func
 
     # Find this order's own HandcraftPartItem IDs (batch path only).
     # The batch flow creates precise row-level links: each OrderItemLink points
@@ -267,13 +267,28 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
     ), {"oid": order_id}).fetchall()
     own_hcpi_ids = {row[0] for row in batch_hcpi_rows}
 
+    # Effective qty = picking actual_qty override (atomic items) or pi.qty.
+    # The LEFT JOIN's atomic key (part_item_id, atom_part_id == pi.part_id)
+    # naturally excludes composite expansions, so composites stay on pi.qty.
+    effective_qty_expr = sqla_func.coalesce(
+        HandcraftPickingWeight.actual_qty, HandcraftPartItem.qty
+    )
+
     # Sum own part items by handcraft status
     def _sum_own_parts(statuses: list[str]) -> dict[str, float]:
         if not own_hcpi_ids or not part_ids:
             return {}
         rows = (
-            db.query(HandcraftPartItem.part_id, sqla_func.sum(HandcraftPartItem.qty))
+            db.query(HandcraftPartItem.part_id, sqla_func.sum(effective_qty_expr))
             .join(HandcraftOrder, HandcraftPartItem.handcraft_order_id == HandcraftOrder.id)
+            .outerjoin(
+                HandcraftPickingWeight,
+                and_(
+                    HandcraftPickingWeight.part_item_id == HandcraftPartItem.id,
+                    HandcraftPickingWeight.atom_part_id == HandcraftPartItem.part_id,
+                    HandcraftPickingWeight.actual_qty.is_not(None),
+                ),
+            )
             .filter(
                 HandcraftPartItem.id.in_(own_hcpi_ids),
                 HandcraftOrder.status.in_(statuses),
@@ -289,12 +304,20 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
     # Own pending parts: still in stock AND in global reserved, but earmarked for us
     own_pending_map = _sum_own_parts(["pending"])
 
-    # Total reserved by ALL pending handcraft orders
+    # Total reserved by ALL pending handcraft orders (effective qty when set)
     reserved_map: dict[str, float] = {}
     if part_ids:
         reserved_rows = (
-            db.query(HandcraftPartItem.part_id, sqla_func.sum(HandcraftPartItem.qty))
+            db.query(HandcraftPartItem.part_id, sqla_func.sum(effective_qty_expr))
             .join(HandcraftOrder, HandcraftPartItem.handcraft_order_id == HandcraftOrder.id)
+            .outerjoin(
+                HandcraftPickingWeight,
+                and_(
+                    HandcraftPickingWeight.part_item_id == HandcraftPartItem.id,
+                    HandcraftPickingWeight.atom_part_id == HandcraftPartItem.part_id,
+                    HandcraftPickingWeight.actual_qty.is_not(None),
+                ),
+            )
             .filter(
                 HandcraftOrder.status == "pending",
                 HandcraftPartItem.part_id.in_(part_ids),
