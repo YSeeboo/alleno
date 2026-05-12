@@ -787,6 +787,64 @@ def test_link_supplier_insufficient_stock(client, db):
     assert "库存数量不足" in resp.json()["detail"]
 
 
+def test_link_supplier_reservation_uses_effective_qty(client, db):
+    """A pre-existing pending handcraft order with actual_qty < pi.qty must
+    reserve only the effective amount, not pi.qty. Otherwise link_supplier
+    would falsely report 库存不足 when there is in fact enough stock."""
+    from decimal import Decimal
+    from services.handcraft import create_handcraft_order
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    order_id, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
+    # Order needs 100 of A and 10 of B (qty=100 × bom 1.0 for B, 10 of A wait
+    # actually qty=100 jewelry × 10 A/each = 1000 A; let's just use small qty)
+    # Reset to a simpler order
+    db.query(OrderTodoBatch).filter_by(order_id=order_id).delete()
+    # Set bom to single units so reservation math is easy: 1 jewelry needs 5 A + 1 B
+    db.query(OrderItem).filter_by(order_id=order_id).delete()
+    set_bom(db, jewelry.id, part_a.id, 5)
+    set_bom(db, jewelry.id, part_b.id, 1)
+    resp = client.post("/api/orders/", json={
+        "customer_name": "ReserveAQ Test",
+        "items": [{"jewelry_id": jewelry.id, "quantity": 1, "unit_price": 50.0}],
+    })
+    order_id = resp.json()["id"]
+
+    # Stock just enough for the new order (5 of A + 1 of B), plus 1 extra A
+    # so a pending HC reserving 1-effective fits.
+    add_stock(db, "part", part_a.id, 6, "入库")
+    add_stock(db, "part", part_b.id, 1, "入库")
+
+    # Pre-existing pending HC order reserves 3 of A planned but only 1 effective
+    hc = create_handcraft_order(
+        db,
+        supplier_name="预留供应商",
+        parts=[{"part_id": part_a.id, "qty": 3}],
+        jewelries=[],
+    )
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=hc.id).one()
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=hc.id,
+        part_item_id=pi.id,
+        atom_part_id=part_a.id,
+        actual_qty=Decimal("1"),
+    ))
+    db.flush()
+
+    batch_resp = client.post(
+        f"/api/orders/{order_id}/todo-batch",
+        json={"items": [{"jewelry_id": jewelry.id, "quantity": 1}]},
+    )
+    batch_id = batch_resp.json()["id"]
+    resp = client.post(
+        f"/api/orders/{order_id}/todo-batch/{batch_id}/link-supplier",
+        json={"supplier_name": "新供应商"},
+    )
+    # Available = stock(6) − reserved(effective=1) = 5 = required ✓
+    # Pre-fix: reserved would be pi.qty=3, available 3 < required 5 → reject
+    assert resp.status_code == 200, resp.json()
+
+
 def test_link_supplier_double_allocation_rejected(client, db):
     """Second batch allocation fails when pending HC already reserves the stock."""
     order_id, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
