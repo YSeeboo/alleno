@@ -8,8 +8,12 @@ from services._helpers import keyword_filter
 from sqlalchemy.orm import Session
 
 from models.plating_order import PlatingOrder, PlatingOrderItem
-from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
+from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem, HandcraftPickingWeight
 from models.vendor_receipt import VendorReceipt
+from services.handcraft import (
+    handcraft_atomic_picking_join_clause,
+    handcraft_effective_qty_expr,
+)
 from models.part import Part
 from models.jewelry import Jewelry
 from schemas.kanban import (
@@ -88,9 +92,10 @@ def _dispatched_global(db: Session, order_type: str | None) -> dict[tuple, float
             db.query(
                 HandcraftOrder.supplier_name,
                 HandcraftPartItem.part_id,
-                func.sum(HandcraftPartItem.qty).label("qty"),
+                func.sum(handcraft_effective_qty_expr()).label("qty"),
             )
             .join(HandcraftPartItem, HandcraftOrder.id == HandcraftPartItem.handcraft_order_id)
+            .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
             .filter(HandcraftOrder.status.in_(_DISPATCHED_STATUSES))
             .group_by(HandcraftOrder.supplier_name, HandcraftPartItem.part_id)
             .all()
@@ -226,9 +231,10 @@ def _processing_outstanding_counts(db: Session, order_type: str | None) -> dict[
             db.query(
                 HandcraftOrder.supplier_name,
                 HandcraftPartItem.part_id,
-                func.sum(HandcraftPartItem.qty).label("qty"),
+                func.sum(handcraft_effective_qty_expr()).label("qty"),
             )
             .join(HandcraftPartItem, HandcraftOrder.id == HandcraftPartItem.handcraft_order_id)
+            .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
             .filter(HandcraftOrder.status == "processing")
             .group_by(HandcraftOrder.supplier_name, HandcraftPartItem.part_id)
             .all()
@@ -352,8 +358,9 @@ def _dispatched_for_vendor(db: Session, vendor_name: str, order_type: str) -> di
 
     elif order_type == "handcraft":
         rows = (
-            db.query(HandcraftPartItem.part_id, func.sum(HandcraftPartItem.qty).label("qty"))
+            db.query(HandcraftPartItem.part_id, func.sum(handcraft_effective_qty_expr()).label("qty"))
             .join(HandcraftOrder, HandcraftOrder.id == HandcraftPartItem.handcraft_order_id)
+            .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
             .filter(
                 HandcraftOrder.supplier_name == vendor_name,
                 HandcraftOrder.status.in_(_DISPATCHED_STATUSES),
@@ -410,7 +417,8 @@ def _dispatched_for_order(db: Session, order_id: str, order_type: str) -> dict[t
             result[(r.part_id, "part")] = float(r.qty)
     elif order_type == "handcraft":
         rows = (
-            db.query(HandcraftPartItem.part_id, func.sum(HandcraftPartItem.qty).label("qty"))
+            db.query(HandcraftPartItem.part_id, func.sum(handcraft_effective_qty_expr()).label("qty"))
+            .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
             .filter(HandcraftPartItem.handcraft_order_id == order_id)
             .group_by(HandcraftPartItem.part_id)
             .all()
@@ -963,7 +971,8 @@ def get_order_items_for_receipt(
     )
     received = {(r.item_id, r.item_type): float(r.qty) for r in received_rows}
     part_rows = (
-        db.query(HandcraftPartItem.part_id, func.sum(HandcraftPartItem.qty).label("qty"))
+        db.query(HandcraftPartItem.part_id, func.sum(handcraft_effective_qty_expr()).label("qty"))
+        .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
         .filter(HandcraftPartItem.handcraft_order_id == order_id)
         .group_by(HandcraftPartItem.part_id)
         .all()
@@ -1119,7 +1128,8 @@ def _force_complete_handcraft(db: Session, order: HandcraftOrder, now) -> None:
 
     # Parts (返回配件) - using direct query
     part_items = (
-        db.query(HandcraftPartItem.part_id, func.sum(HandcraftPartItem.qty).label("qty"))
+        db.query(HandcraftPartItem.part_id, func.sum(handcraft_effective_qty_expr()).label("qty"))
+        .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
         .filter(HandcraftPartItem.handcraft_order_id == order.id)
         .group_by(HandcraftPartItem.part_id)
         .all()

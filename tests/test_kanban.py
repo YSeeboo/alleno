@@ -524,3 +524,31 @@ def test_kanban_plating_get_order_items_for_receipt_blocked(db, plating_vendor):
     order, _ = plating_vendor
     with pytest.raises(ValueError, match="电镀单收回请使用电镀回收单"):
         get_order_items_for_receipt(db, order.id, "plating")
+
+
+def test_kanban_dispatched_uses_effective_qty_for_atomic(db, part, jewelry):
+    """Vendor-detail dispatched_qty must reflect picking actual_qty override.
+    Pre-fix: dispatched=pi.qty=10 + received=8 → outstanding=2 forever."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    order = create_handcraft_order(
+        db, "手工厂A",
+        parts=[{"part_id": part.id, "qty": 10, "bom_qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 1}],
+    )
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order.id).one()
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order.id,
+        part_item_id=pi.id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("8"),
+    ))
+    db.flush()
+    send_handcraft_order(db, order.id)
+
+    detail = get_vendor_detail(db, "手工厂A", "handcraft")
+    part_items = [i for i in detail.items if i.item_type == "part"]
+    assert len(part_items) == 1
+    # Effective qty (8) — not pi.qty (10) — flows into the vendor kanban.
+    assert part_items[0].dispatched_qty == 8.0
