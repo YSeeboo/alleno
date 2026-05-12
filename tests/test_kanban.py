@@ -526,6 +526,36 @@ def test_kanban_plating_get_order_items_for_receipt_blocked(db, plating_vendor):
         get_order_items_for_receipt(db, order.id, "plating")
 
 
+def test_kanban_revert_processing_to_pending_uses_effective_qty(db, part, jewelry):
+    """change_order_status processing→pending must add back effective qty,
+    matching what send actually deducted. Otherwise stock drifts up by
+    (pi.qty - actual_qty) — same shape as the delete_handcraft_order bug."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from services.inventory import get_stock
+
+    order = create_handcraft_order(
+        db, "手工厂A",
+        parts=[{"part_id": part.id, "qty": 10, "bom_qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 1}],
+    )
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order.id).one()
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order.id,
+        part_item_id=pi.id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("8"),
+    ))
+    db.flush()
+    initial = get_stock(db, "part", part.id)
+    send_handcraft_order(db, order.id)
+    assert get_stock(db, "part", part.id) == pytest.approx(initial - 8)
+
+    # Revert: stock must go back to the original — pre-fix it would be initial+2
+    change_order_status(db, order.id, "handcraft", "pending")
+    assert get_stock(db, "part", part.id) == pytest.approx(initial)
+
+
 def test_kanban_dispatched_uses_effective_qty_for_atomic(db, part, jewelry):
     """Vendor-detail dispatched_qty must reflect picking actual_qty override.
     Pre-fix: dispatched=pi.qty=10 + received=8 → outstanding=2 forever."""

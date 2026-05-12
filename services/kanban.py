@@ -1235,8 +1235,14 @@ def change_order_status(
                 .filter(HandcraftPartItem.handcraft_order_id == order_id)
                 .all()
             )
+            # Reverse the effective qty that send actually deducted; composite
+            # items naturally fall back to pi.qty because their key
+            # (pi.id, pi.part_id) never appears in picking_weight.
+            from services.handcraft import _load_actual_qty_map
+            actual_by_key = _load_actual_qty_map(db, order_id)
             for item in part_items:
-                add_stock(db, "part", item.part_id, float(item.qty), reason="手工发出撤回")
+                effective = actual_by_key.get((item.id, item.part_id), float(item.qty))
+                add_stock(db, "part", item.part_id, effective, reason="手工发出撤回")
             _set_handcraft_jewelry_pending(db, order_id)
             order.status = "pending"
 
