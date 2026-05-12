@@ -64,6 +64,47 @@ def test_get_parts_summary(client, db):
     assert isinstance(data, list)
 
 
+def test_get_parts_summary_reserved_uses_effective_qty(client, db):
+    """A pending handcraft order with actual_qty=8 (pi.qty=10) on the part
+    must reserve 8 (effective), not 10, so a sales order asking for the same
+    part sees the correct reserved_qty."""
+    import math
+    from decimal import Decimal
+    from services.inventory import add_stock
+    from services.handcraft import create_handcraft_order
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    part, jewelry = _setup(db)
+    set_bom(db, jewelry.id, part.id, 2)
+    add_stock(db, "part", part.id, 100, "入库")
+
+    # Pending handcraft order with actual_qty override (not owned by the sales order)
+    hc = create_handcraft_order(
+        db,
+        supplier_name="供应商A",
+        parts=[{"part_id": part.id, "qty": 10}],
+        jewelries=[],
+    )
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=hc.id).one()
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=hc.id,
+        part_item_id=pi.id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("8"),
+    ))
+    db.flush()
+
+    created = client.post("/api/orders/", json={
+        "customer_name": "Bob",
+        "items": [{"jewelry_id": jewelry.id, "quantity": 1, "unit_price": 75.0}]
+    }).json()
+    resp = client.get(f"/api/orders/{created['id']}/parts-summary")
+    assert resp.status_code == 200
+    rows = [r for r in resp.json() if r["part_id"] == part.id]
+    assert len(rows) == 1
+    assert rows[0]["reserved_qty"] == math.ceil(8.0)  # effective, not 10
+
+
 def test_update_order_status(client, db):
     part, jewelry = _setup(db)
     set_bom(db, jewelry.id, part.id, 1)

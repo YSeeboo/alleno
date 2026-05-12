@@ -762,11 +762,20 @@ def link_supplier(db: Session, order_id: str, batch_id: int, supplier_name: str)
         check_part_ids = [t.part_id for t in todo_items_check]
         check_stocks = batch_get_stock(db, "part", check_part_ids)
 
-        # Sum quantities reserved by pending (unsent) handcraft orders
+        # Sum quantities reserved by pending (unsent) handcraft orders.
+        # Uses effective qty (picking actual_qty override when set) so the
+        # availability shown here matches the availability get_parts_summary
+        # reports — otherwise the UI's "可用" number and this check disagree.
         from sqlalchemy import func as sqla_func
+        from models.handcraft_order import HandcraftPickingWeight
+        from services.handcraft import (
+            handcraft_atomic_picking_join_clause,
+            handcraft_effective_qty_expr,
+        )
         reserved_rows = (
-            db.query(HandcraftPartItem.part_id, sqla_func.sum(HandcraftPartItem.qty))
+            db.query(HandcraftPartItem.part_id, sqla_func.sum(handcraft_effective_qty_expr()))
             .join(HCOrder, HandcraftPartItem.handcraft_order_id == HCOrder.id)
+            .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
             .filter(
                 HCOrder.status == "pending",
                 HandcraftPartItem.part_id.in_(check_part_ids),

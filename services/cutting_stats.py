@@ -182,7 +182,9 @@ def get_handcraft_cutting_stats(db: Session, handcraft_id: str) -> list[dict]:
             continue
         part_name = part.name
         part_image = part.image
-        qty = float(item.qty)
+        # part_items came from get_handcraft_parts which attaches actual_qty
+        # for atomic items; composite items always see None and fall back.
+        qty = float(item.actual_qty if item.actual_qty is not None else item.qty)
 
         # Direct match
         cm = _extract_cm(part_name)

@@ -3,11 +3,11 @@ from datetime import datetime, date as date_type
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import Date, func, or_
+from sqlalchemy import Date, and_, func, or_
 from sqlalchemy.orm import Session
 
 from models.bom import Bom
-from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem, HandcraftPickingRecord
+from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem, HandcraftPickingRecord, HandcraftPickingWeight
 from models.jewelry import Jewelry
 from models.part import Part
 from services._helpers import _next_id, keyword_filter
@@ -289,10 +289,14 @@ def send_handcraft_order(db: Session, handcraft_order_id: str) -> HandcraftOrder
         .filter(HandcraftJewelryItem.handcraft_order_id == handcraft_order_id)
         .all()
     )
-    # Aggregate qty by part_id to avoid double-deducting when same part appears multiple times
+    # Atomic items pick up the picking override; composite items naturally
+    # fall back to pi.qty because their weight rows have atom_part_id != pi.part_id.
+    actual_by_key = _load_actual_qty_map(db, handcraft_order_id)
+    # Aggregate effective qty by part_id (avoids double-deducting when same part appears multiple times)
     part_totals: dict[str, float] = {}
     for item in part_items:
-        part_totals[item.part_id] = part_totals.get(item.part_id, 0.0) + float(item.qty)
+        effective = actual_by_key.get((item.id, item.part_id), float(item.qty))
+        part_totals[item.part_id] = part_totals.get(item.part_id, 0.0) + effective
     # Batch check all parts before deducting
     stocks = batch_get_stock(db, "part", list(part_totals.keys()))
     insufficient = []
@@ -398,6 +402,66 @@ def _attach_loss_qty(db, items, order_id: str, item_type: str) -> list:
     return items
 
 
+def handcraft_atomic_picking_join_clause():
+    """SQL ON clause for the LEFT JOIN that surfaces a part item's picking
+    actual_qty override.
+
+    Pairs `HandcraftPickingWeight` with `HandcraftPartItem` on the atomic key
+    `(part_item_id, atom_part_id == pi.part_id)` and ignores rows without an
+    override. The clause naturally excludes composite expansions — their
+    weight rows have `atom_part_id != pi.part_id` so the join misses.
+
+    Usage:
+
+        query.outerjoin(
+            HandcraftPickingWeight, handcraft_atomic_picking_join_clause()
+        )
+    """
+    return and_(
+        HandcraftPickingWeight.part_item_id == HandcraftPartItem.id,
+        HandcraftPickingWeight.atom_part_id == HandcraftPartItem.part_id,
+        HandcraftPickingWeight.actual_qty.is_not(None),
+    )
+
+
+def handcraft_effective_qty_expr():
+    """SQL column expression for a part item's effective sent quantity:
+    `coalesce(picking actual_qty, pi.qty)`. Pair with the join clause above.
+    """
+    return func.coalesce(HandcraftPickingWeight.actual_qty, HandcraftPartItem.qty)
+
+
+def _load_actual_qty_map(db: Session, order_id: str) -> dict[tuple[int, str], float]:
+    """Load picking actual_qty overrides keyed by (part_item_id, atom_part_id).
+
+    The key shape lets callers look up `(pi.id, pi.part_id)` to get the atomic
+    override (or fall back). Composite expansions live under a different
+    `atom_part_id` and naturally miss that lookup.
+    """
+    rows = (
+        db.query(HandcraftPickingWeight)
+        .filter(
+            HandcraftPickingWeight.handcraft_order_id == order_id,
+            HandcraftPickingWeight.actual_qty.is_not(None),
+        )
+        .all()
+    )
+    return {
+        (r.part_item_id, r.atom_part_id): float(r.actual_qty)
+        for r in rows
+    }
+
+
+def _attach_actual_qty(db: Session, items: list, order_id: str) -> list:
+    """Attach picking actual_qty to atomic part items only."""
+    if not items:
+        return items
+    actual_by_key = _load_actual_qty_map(db, order_id)
+    for it in items:
+        it.actual_qty = actual_by_key.get((it.id, it.part_id))
+    return items
+
+
 def get_handcraft_parts(db: Session, order_id: str) -> list:
     items = (
         db.query(HandcraftPartItem)
@@ -406,7 +470,8 @@ def get_handcraft_parts(db: Session, order_id: str) -> list:
         .all()
     )
     items = _attach_part_colors(db, items)
-    return _attach_loss_qty(db, items, order_id, "handcraft_part")
+    items = _attach_loss_qty(db, items, order_id, "handcraft_part")
+    return _attach_actual_qty(db, items, order_id)
 
 
 def get_handcraft_jewelries(db: Session, order_id: str) -> list:
@@ -502,7 +567,6 @@ def update_handcraft_part(db: Session, order_id: str, item_id: int, data: dict) 
     unit_present = "weight_unit" in data
     if weight_present or unit_present:
         from services.handcraft_picking_weight import upsert_weight, delete_weight
-        from models.handcraft_order import HandcraftPickingWeight
         part = db.query(Part).filter_by(id=item.part_id).one_or_none()
         if part is None:
             raise ValueError(f"配件 {item.part_id} 不存在")
@@ -720,11 +784,19 @@ def delete_handcraft_order(db: Session, order_id: str) -> None:
             if receipt:
                 _recalc_total(db, receipt)
 
-    # Reverse sent stock for parts
+    # Reverse sent stock for parts. Uses effective qty (actual_qty override
+    # when set, pi.qty otherwise) so reversal mirrors what send actually
+    # deducted — `part_items` was loaded via get_handcraft_parts, which
+    # already attached `actual_qty` to atomic items.
     if order.status != "pending":
         part_totals: dict[str, float] = {}
         for part_item in part_items:
-            part_totals[part_item.part_id] = part_totals.get(part_item.part_id, 0.0) + float(part_item.qty)
+            effective = (
+                float(part_item.actual_qty)
+                if part_item.actual_qty is not None
+                else float(part_item.qty)
+            )
+            part_totals[part_item.part_id] = part_totals.get(part_item.part_id, 0.0) + effective
         for part_id, total_sent in part_totals.items():
             add_stock(db, "part", part_id, total_sent, "手工发出撤回")
 
@@ -778,7 +850,8 @@ def list_handcraft_pending_receive_items(
     that still have remaining qty to receive."""
     results = []
 
-    # Part items
+    # Part items. Effective qty = picking actual_qty override when set, else pi.qty.
+    effective_qty_expr = handcraft_effective_qty_expr()
     pq = (
         db.query(
             HandcraftPartItem.id,
@@ -789,16 +862,17 @@ def list_handcraft_pending_receive_items(
             Part.image.label("item_image"),
             Part.is_composite.label("is_composite"),
             Part.color,
-            HandcraftPartItem.qty,
+            effective_qty_expr.label("effective_qty"),
             HandcraftPartItem.received_qty,
             HandcraftPartItem.unit,
             HandcraftOrder.created_at,
         )
         .join(HandcraftOrder, HandcraftPartItem.handcraft_order_id == HandcraftOrder.id)
         .join(Part, HandcraftPartItem.part_id == Part.id)
+        .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
         .filter(
             HandcraftPartItem.status == "制作中",
-            func.coalesce(HandcraftPartItem.received_qty, 0) < HandcraftPartItem.qty,
+            func.coalesce(HandcraftPartItem.received_qty, 0) < effective_qty_expr,
         )
     )
     if supplier_name:
@@ -824,7 +898,7 @@ def list_handcraft_pending_receive_items(
             "is_output": False,
             "is_composite": row.is_composite,
             "color": row.color,
-            "qty": float(row.qty),
+            "qty": float(row.effective_qty),
             "received_qty": float(row.received_qty or 0),
             "unit": row.unit,
             "created_at": row.created_at,

@@ -335,6 +335,37 @@ def test_handcraft_cutting_stats_not_found(db):
         get_handcraft_cutting_stats(db, "HC-9999")
 
 
+def test_handcraft_cutting_stats_uses_actual_qty_for_atomic(db):
+    """Atomic chain item with picking actual_qty=8, pi.qty=10:
+    cutting stats must reflect effective (8), not planned (10)."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    chain = _make_chain_part(db)
+    add_stock(db, "part", chain.id, 100, "入库")
+
+    from services.handcraft import create_handcraft_order
+    jewelry = create_jewelry(db, {"name": "J-AQ-Cut", "category": "单件"})
+    order = create_handcraft_order(
+        db,
+        supplier_name="TestSupplier",
+        parts=[{"part_id": chain.id, "qty": 10}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 1}],
+    )
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order.id).one()
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order.id,
+        part_item_id=pi.id,
+        atom_part_id=chain.id,
+        actual_qty=Decimal("8"),
+    ))
+    db.flush()
+
+    stats = get_handcraft_cutting_stats(db, order.id)
+    assert len(stats) == 1
+    assert stats[0]["qty"] == 8.0  # effective, not 10
+
+
 # ---------------------------------------------------------------------------
 # API endpoint tests
 # ---------------------------------------------------------------------------

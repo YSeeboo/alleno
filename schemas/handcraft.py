@@ -88,6 +88,7 @@ class HandcraftPartItemResponse(BaseModel):
     unit: Optional[str] = None
     note: Optional[str] = None
     loss_qty: Optional[float] = None
+    actual_qty: Optional[float] = None
 
 
 class HandcraftResponse(BaseModel):

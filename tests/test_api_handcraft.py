@@ -780,3 +780,333 @@ def test_supplement_and_send_handcraft_order(client, db):
 def test_supplement_and_send_handcraft_order_not_found(client, db):
     resp = client.post("/api/handcraft/HC-9999/supplement-and-send")
     assert resp.status_code == 404
+
+
+def test_get_parts_includes_actual_qty_for_atomic(client, db):
+    """When picking_weight.actual_qty is set on an atomic part_item, the
+    parts GET response surfaces it. Key match: (pi.id, pi.part_id)."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    part, jewelry = _setup(db)
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier AQ1",
+        "parts": [{"part_id": part.id, "qty": 100.0}],
+    }).json()
+    order_id = created["id"]
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id).one()
+
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pi.id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("80.0000"),
+    ))
+    db.flush()
+
+    resp = client.get(f"/api/handcraft/{order_id}/parts")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert len(rows) == 1
+    assert rows[0]["qty"] == 100.0
+    assert rows[0]["actual_qty"] == 80.0
+
+
+def test_get_parts_actual_qty_null_when_no_override(client, db):
+    """No picking_weight row → actual_qty is None in the response."""
+    part, jewelry = _setup(db)
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier AQ2",
+        "parts": [{"part_id": part.id, "qty": 50.0}],
+    }).json()
+    resp = client.get(f"/api/handcraft/{created['id']}/parts")
+    assert resp.status_code == 200
+    assert resp.json()[0]["actual_qty"] is None
+
+
+def test_get_parts_omits_actual_qty_for_composite(client, db):
+    """Composite part_items: picking sets actual_qty on atom rows, but the
+    composite item itself never gets a (pi.id, pi.part_id) match — so its
+    response actual_qty stays None."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from models.part_bom import PartBom
+    from services._helpers import _next_id
+
+    composite = create_part(db, {"name": "Composite C1", "category": "小配件"})
+    composite.is_composite = True
+    atom = create_part(db, {"name": "Atom A1", "category": "小配件"})
+    db.add(PartBom(
+        id=_next_id(db, PartBom, "PB"),
+        parent_part_id=composite.id,
+        child_part_id=atom.id,
+        qty_per_unit=Decimal("2"),
+    ))
+    add_stock(db, "part", atom.id, 100.0, "初始入库")
+    db.flush()
+
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier Composite",
+        "parts": [{"part_id": composite.id, "qty": 5.0}],
+    }).json()
+    order_id = created["id"]
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id).one()
+
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pi.id,
+        atom_part_id=atom.id,
+        actual_qty=Decimal("9.0000"),
+    ))
+    db.flush()
+
+    resp = client.get(f"/api/handcraft/{order_id}/parts")
+    assert resp.status_code == 200
+    row = resp.json()[0]
+    assert row["part_id"] == composite.id
+    assert row["actual_qty"] is None
+
+
+def test_send_handcraft_uses_actual_qty_when_present(client, db):
+    """Atomic item with actual_qty=80 and pi.qty=100 → send deducts 80."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    part, jewelry = _setup(db)  # adds 100 stock for the part
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier SAQ1",
+        "parts": [{"part_id": part.id, "qty": 100.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 1}],
+    }).json()
+    order_id = created["id"]
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id).one()
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pi.id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("80.0000"),
+    ))
+    db.flush()
+
+    resp = client.post(f"/api/handcraft/{order_id}/send")
+    assert resp.status_code == 200
+    assert get_stock(db, "part", part.id) == pytest.approx(20.0)  # 100 - 80
+
+
+def test_send_handcraft_falls_back_to_pi_qty_when_no_override(client, db):
+    """No actual_qty → behaves exactly as before."""
+    part, jewelry = _setup(db)
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier SAQ2",
+        "parts": [{"part_id": part.id, "qty": 30.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 1}],
+    }).json()
+    resp = client.post(f"/api/handcraft/{created['id']}/send")
+    assert resp.status_code == 200
+    assert get_stock(db, "part", part.id) == pytest.approx(70.0)  # 100 - 30
+
+
+def test_send_handcraft_stock_check_uses_effective_qty_under(client, db):
+    """actual_qty=80 < stock=90 < pi.qty=100 → send succeeds (uses effective 80)."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    part = create_part(db, {"name": "P-EU", "category": "小配件"})
+    jewelry = create_jewelry(db, {"name": "J-EU", "category": "单件"})
+    add_stock(db, "part", part.id, 90.0, "初始入库")
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier SAQ3",
+        "parts": [{"part_id": part.id, "qty": 100.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 1}],
+    }).json()
+    order_id = created["id"]
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id).one()
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pi.id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("80.0000"),
+    ))
+    db.flush()
+
+    resp = client.post(f"/api/handcraft/{order_id}/send")
+    assert resp.status_code == 200
+    assert get_stock(db, "part", part.id) == pytest.approx(10.0)
+
+
+def test_send_handcraft_stock_check_uses_effective_qty_over(client, db):
+    """actual_qty=100 > stock=90 (even though pi.qty=80 would succeed) → fail."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    part = create_part(db, {"name": "P-EO", "category": "小配件"})
+    jewelry = create_jewelry(db, {"name": "J-EO", "category": "单件"})
+    add_stock(db, "part", part.id, 90.0, "初始入库")
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier SAQ4",
+        "parts": [{"part_id": part.id, "qty": 80.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 1}],
+    }).json()
+    order_id = created["id"]
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id).one()
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pi.id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("100.0000"),
+    ))
+    db.flush()
+
+    resp = client.post(f"/api/handcraft/{order_id}/send")
+    assert resp.status_code == 400
+    assert "库存不足" in resp.json()["detail"]
+    assert get_stock(db, "part", part.id) == pytest.approx(90.0)  # unchanged
+
+
+def test_send_handcraft_composite_unaffected_by_atom_actual_qty(client, db):
+    """Composite pi.qty=5 with atom actual_qty=99 → still deducts composite=5."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from models.part_bom import PartBom
+    from services._helpers import _next_id
+
+    composite = create_part(db, {"name": "Comp-SC", "category": "小配件"})
+    composite.is_composite = True
+    atom = create_part(db, {"name": "Atom-SC", "category": "小配件"})
+    db.add(PartBom(
+        id=_next_id(db, PartBom, "PB"),
+        parent_part_id=composite.id,
+        child_part_id=atom.id,
+        qty_per_unit=Decimal("2"),
+    ))
+    jewelry = create_jewelry(db, {"name": "J-SC", "category": "单件"})
+    add_stock(db, "part", composite.id, 50.0, "初始入库")
+    db.flush()
+
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier SC",
+        "parts": [{"part_id": composite.id, "qty": 5.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 1}],
+    }).json()
+    order_id = created["id"]
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id).one()
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pi.id,
+        atom_part_id=atom.id,
+        actual_qty=Decimal("99.0000"),
+    ))
+    db.flush()
+
+    resp = client.post(f"/api/handcraft/{order_id}/send")
+    assert resp.status_code == 200
+    assert get_stock(db, "part", composite.id) == pytest.approx(45.0)  # 50 - 5
+
+
+def test_send_handcraft_aggregates_overrides_across_items(client, db):
+    """Same atomic part_id in two pi rows with separate actual_qty overrides:
+    effective qty is summed per part_id before deduction (30 + 40 = 70)."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    part, jewelry = _setup(db)  # 100 stock for part
+    add_stock(db, "part", part.id, 100.0, "额外入库")  # bump to 200 for headroom
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier AggAQ",
+        "parts": [
+            {"part_id": part.id, "qty": 50.0},
+            {"part_id": part.id, "qty": 60.0},
+        ],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 1}],
+    }).json()
+    order_id = created["id"]
+    pis = (
+        db.query(HandcraftPartItem)
+        .filter_by(handcraft_order_id=order_id)
+        .order_by(HandcraftPartItem.id.asc())
+        .all()
+    )
+    assert len(pis) == 2
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pis[0].id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("30.0000"),
+    ))
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pis[1].id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("40.0000"),
+    ))
+    db.flush()
+
+    resp = client.post(f"/api/handcraft/{order_id}/send")
+    assert resp.status_code == 200
+    # 200 stock − (30 + 40) effective = 130
+    assert get_stock(db, "part", part.id) == pytest.approx(130.0)
+
+
+def test_delete_after_send_with_actual_qty_uses_effective_for_reversal(client, db):
+    """Send deducted effective qty (actual_qty=8, not pi.qty=10); delete must
+    reverse the same effective qty, not pi.qty, or stock drifts up by (pi.qty - actual_qty)."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    part, jewelry = _setup(db)  # 100 stock
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier DelDrift",
+        "parts": [{"part_id": part.id, "qty": 10.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 1}],
+    }).json()
+    order_id = created["id"]
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id).one()
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pi.id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("8.0000"),
+    ))
+    db.flush()
+
+    # Send: deducts effective=8 → stock=92
+    send_resp = client.post(f"/api/handcraft/{order_id}/send")
+    assert send_resp.status_code == 200
+    assert get_stock(db, "part", part.id) == pytest.approx(92.0)
+
+    # Delete: must reverse effective=8 → stock back to 100, NOT 102
+    del_resp = client.delete(f"/api/handcraft/{order_id}")
+    assert del_resp.status_code == 204
+    assert get_stock(db, "part", part.id) == pytest.approx(100.0)
+
+
+def test_pending_receive_returns_effective_qty_for_atomic_override(client, db):
+    """The pending-receive list must report the effective qty as the 可回收
+    upper bound, so the UI doesn't invite users to over-receive."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+
+    part, jewelry = _setup(db)
+    created = client.post("/api/handcraft/", json={
+        "supplier_name": "Supplier PendAQ",
+        "parts": [{"part_id": part.id, "qty": 10.0}],
+        "jewelries": [{"jewelry_id": jewelry.id, "qty": 1}],
+    }).json()
+    order_id = created["id"]
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order_id).one()
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=pi.id,
+        atom_part_id=part.id,
+        actual_qty=Decimal("8.0000"),
+    ))
+    db.flush()
+    send_resp = client.post(f"/api/handcraft/{order_id}/send")
+    assert send_resp.status_code == 200
+
+    resp = client.get("/api/handcraft/items/pending-receive",
+                      params={"supplier_name": "Supplier PendAQ"})
+    assert resp.status_code == 200
+    rows = [r for r in resp.json() if r["item_type"] == "part" and r["id"] == pi.id]
+    assert len(rows) == 1
+    assert rows[0]["qty"] == pytest.approx(8.0)  # effective, not pi.qty=10

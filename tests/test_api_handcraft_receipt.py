@@ -586,3 +586,125 @@ def test_jewelry_handcraft_cost_diff_on_add_items(client, db):
     assert add_resp.status_code == 201
     db.refresh(jewelry)
     assert float(jewelry.handcraft_cost) == pytest.approx(8.0)
+
+
+# ── actual_qty (picking override) interacts with receipt cap + status ──
+
+
+def _create_sent_handcraft_with_actual_qty(db, pi_qty=10.0, actual_qty=8.0):
+    """Create + send a handcraft order whose atomic part item has an actual_qty
+    override stashed in handcraft_picking_weight."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPickingWeight
+
+    part = create_part(db, {"name": "配件AQ", "category": "小配件"})
+    jewelry = create_jewelry(db, {"name": "饰品AQ", "category": "单件"})
+    add_stock(db, "part", part.id, 100.0, "初始入库")
+    order = create_handcraft_order(
+        db, "测试手工商",
+        parts=[{"part_id": part.id, "qty": pi_qty}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 1}],
+    )
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order.id).one()
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order.id,
+        part_item_id=pi.id,
+        atom_part_id=part.id,
+        actual_qty=Decimal(str(actual_qty)),
+    ))
+    db.flush()
+    send_handcraft_order(db, order.id)
+    db.flush()
+    return part, jewelry, order, pi
+
+
+def test_receipt_cap_rejects_over_effective_qty(client, db):
+    """pi.qty=10, actual_qty=8: trying to receive 9 must fail (cap is 8)."""
+    part, jewelry, order, pi = _create_sent_handcraft_with_actual_qty(db)
+    resp = client.post("/api/handcraft-receipts/", json={
+        "supplier_name": "测试手工商",
+        "items": [{"handcraft_part_item_id": pi.id, "qty": 9.0}],
+    })
+    assert resp.status_code == 400
+    assert "最多可回收 8" in resp.json()["detail"]
+
+
+def test_receipt_at_effective_qty_flips_to_完成(client, db):
+    """Receiving exactly effective_qty (8) must flip status to 已收回 even
+    though pi.qty is still 10."""
+    part, jewelry, order, pi = _create_sent_handcraft_with_actual_qty(db)
+    resp = client.post("/api/handcraft-receipts/", json={
+        "supplier_name": "测试手工商",
+        "items": [{"handcraft_part_item_id": pi.id, "qty": 8.0}],
+    })
+    assert resp.status_code == 201
+    db.refresh(pi)
+    assert pi.status == "已收回"
+    # Stock: 100 - 8 sent + 8 received = 100
+    assert get_stock(db, "part", part.id) == pytest.approx(100.0)
+
+
+def test_receipt_add_items_cap_uses_effective_qty(client, db):
+    """The add-items endpoint enforces the same effective cap on subsequent receipts."""
+    part, jewelry, order, pi = _create_sent_handcraft_with_actual_qty(db)
+    # First receive 5 (under effective=8)
+    create_resp = client.post("/api/handcraft-receipts/", json={
+        "supplier_name": "测试手工商",
+        "items": [{"handcraft_part_item_id": pi.id, "qty": 5.0}],
+    })
+    assert create_resp.status_code == 201
+    receipt_id = create_resp.json()["id"]
+
+    # Try to add 4 more → would total 9 > effective 8 → reject
+    add_resp = client.post(f"/api/handcraft-receipts/{receipt_id}/items", json={
+        "items": [{"handcraft_part_item_id": pi.id, "qty": 4.0}],
+    })
+    assert add_resp.status_code == 400
+    assert "最多可回收 3" in add_resp.json()["detail"]
+
+
+def test_receipt_edit_qty_cap_uses_effective_qty(client, db):
+    """Edit qty validation also uses effective cap."""
+    part, jewelry, order, pi = _create_sent_handcraft_with_actual_qty(db)
+    create_resp = client.post("/api/handcraft-receipts/", json={
+        "supplier_name": "测试手工商",
+        "items": [{"handcraft_part_item_id": pi.id, "qty": 5.0}],
+    })
+    receipt_id = create_resp.json()["id"]
+    item_id = create_resp.json()["items"][0]["id"]
+
+    # Edit existing item to qty=9 → exceeds effective=8 → reject
+    edit_resp = client.put(
+        f"/api/handcraft-receipts/{receipt_id}/items/{item_id}",
+        json={"qty": 9.0},
+    )
+    assert edit_resp.status_code == 400
+    assert "最多可回收 8" in edit_resp.json()["detail"]
+
+
+def test_order_auto_completes_when_all_effective_qty_received(client, db):
+    """When every part item has received effective qty AND jewelry items are
+    fully received, the order must auto-flip to completed. Previously the
+    order-level completion check used pi.qty, so orders with actual_qty
+    overrides got stuck in processing forever."""
+    from models.handcraft_order import HandcraftOrder
+
+    part, jewelry, order, pi = _create_sent_handcraft_with_actual_qty(db, pi_qty=10.0, actual_qty=8.0)
+
+    # Receive effective (8) parts + all (1) jewelry
+    resp = client.post("/api/handcraft-receipts/", json={
+        "supplier_name": "测试手工商",
+        "items": [
+            {"handcraft_part_item_id": pi.id, "qty": 8.0},
+            {"handcraft_jewelry_item_id":
+                db.query(HandcraftJewelryItem)
+                .filter_by(handcraft_order_id=order.id).one().id,
+             "qty": 1},
+        ],
+    })
+    assert resp.status_code == 201
+
+    db.refresh(order)
+    assert order.status == "completed", (
+        f"order should auto-complete (all effective qty received), got {order.status}"
+    )

@@ -4,7 +4,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
+from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem, HandcraftPickingWeight
 from models.handcraft_receipt import HandcraftReceipt, HandcraftReceiptItem
 from models.jewelry import Jewelry
 from models.part import Part
@@ -23,6 +23,25 @@ def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
     if d is None:
         return None
     return datetime.combine(d, datetime.min.time())
+
+
+def _effective_qty(db: Session, oi, item_type: str) -> float:
+    """Effective sent quantity used as the receipt cap and the status-flip
+    threshold.
+
+    For atomic part items, the picking-side `actual_qty` override (if set)
+    is authoritative — receipt may not exceed what was actually sent.
+    Composite part items and jewelry items have no override path, so they
+    fall back to oi.qty.
+    """
+    if item_type != "part":
+        return float(oi.qty)
+    row = db.query(HandcraftPickingWeight.actual_qty).filter(
+        HandcraftPickingWeight.part_item_id == oi.id,
+        HandcraftPickingWeight.atom_part_id == oi.part_id,
+        HandcraftPickingWeight.actual_qty.is_not(None),
+    ).one_or_none()
+    return float(row[0]) if row is not None else float(oi.qty)
 
 
 def _replace_date(existing: Optional[datetime], new_date: date_type) -> datetime:
@@ -45,7 +64,11 @@ def _recalc_total(db: Session, receipt: HandcraftReceipt) -> None:
 
 
 def _check_handcraft_order_completion(db: Session, handcraft_order_id: str) -> None:
-    """If all part items AND jewelry items are fully received, mark order completed."""
+    """If all part items AND jewelry items are fully received, mark order completed.
+
+    "Fully received" uses effective qty (picking actual_qty override when set)
+    for atomic part items, so orders with overrides can reach completed.
+    """
     part_items = (
         db.query(HandcraftPartItem)
         .filter(HandcraftPartItem.handcraft_order_id == handcraft_order_id)
@@ -56,8 +79,11 @@ def _check_handcraft_order_completion(db: Session, handcraft_order_id: str) -> N
         .filter(HandcraftJewelryItem.handcraft_order_id == handcraft_order_id)
         .all()
     )
-    all_items = part_items + jewelry_items
-    if all(float(i.received_qty or 0) >= float(i.qty) for i in all_items):
+    items_with_type = [(pi, "part") for pi in part_items] + [(ji, "jewelry") for ji in jewelry_items]
+    if all(
+        float(i.received_qty or 0) >= _effective_qty(db, i, t)
+        for i, t in items_with_type
+    ):
         order = db.query(HandcraftOrder).filter(HandcraftOrder.id == handcraft_order_id).first()
         if order and order.status == "processing":
             order.status = "completed"
@@ -86,7 +112,7 @@ def _apply_receive(db: Session, order_item, item_type: str, qty: float) -> None:
         elif order_item.part_id:
             add_stock(db, "part", order_item.part_id, qty, "手工收回")
             _auto_consume_child_parts(db, order_item.handcraft_order_id, order_item.part_id, qty)
-    if float(order_item.received_qty) >= float(order_item.qty):
+    if float(order_item.received_qty) >= _effective_qty(db, order_item, item_type):
         order_item.status = "已收回"
     else:
         order_item.status = "制作中"
@@ -186,7 +212,7 @@ def _reverse_receive(db: Session, order_item, item_type: str, qty: float) -> Non
         elif order_item.part_id:
             deduct_stock(db, "part", order_item.part_id, qty, "手工收回撤回")
             _reverse_auto_consume_child_parts(db, order_item.handcraft_order_id, order_item.part_id, qty)
-    if float(order_item.received_qty) >= float(order_item.qty):
+    if float(order_item.received_qty) >= _effective_qty(db, order_item, item_type):
         order_item.status = "已收回"
     else:
         order_item.status = "制作中"
@@ -375,7 +401,7 @@ def create_handcraft_receipt(
             )
 
         qty = item_data["qty"]
-        remaining = float(order_item.qty) - float(order_item.received_qty or 0)
+        remaining = _effective_qty(db, order_item, item_type) - float(order_item.received_qty or 0)
         if qty > remaining:
             raise ValueError(f"{'HandcraftPartItem' if item_type == 'part' else 'HandcraftJewelryItem'} {order_item.id}: 最多可回收 {remaining}, 当前填写 {qty}")
 
@@ -440,7 +466,7 @@ def add_handcraft_receipt_items(
             )
 
         qty = item_data["qty"]
-        remaining = float(order_item.qty) - float(order_item.received_qty or 0)
+        remaining = _effective_qty(db, order_item, item_type) - float(order_item.received_qty or 0)
         if qty > remaining:
             raise ValueError(f"{'HandcraftPartItem' if item_type == 'part' else 'HandcraftJewelryItem'} {order_item.id}: 最多可回收 {remaining}, 当前填写 {qty}")
 
@@ -609,7 +635,7 @@ def update_handcraft_receipt_item(db: Session, receipt_id: str, item_id: int, da
         new_qty = data["qty"]
         if item.item_type == "jewelry" and new_qty != int(new_qty):
             raise ValueError("饰品收回数量必须为整数")
-        remaining = float(oi.qty) - float(oi.received_qty or 0) + old_qty
+        remaining = _effective_qty(db, oi, item.item_type) - float(oi.received_qty or 0) + old_qty
         if new_qty > remaining:
             raise ValueError(f"最多可回收 {remaining}, 当前填写 {new_qty}")
         item.qty = new_qty
