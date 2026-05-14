@@ -853,6 +853,12 @@ def add_handcraft_jewelry(db: Session, order_id: str, item: dict) -> HandcraftJe
         raise ValueError(f"HandcraftOrder not found: {order_id}")
     if order.status not in ("pending", "processing"):
         raise ValueError(f"Cannot add jewelry: order {order_id} status is '{order.status}', must be 'pending' or 'processing'")
+    # Manual customer attribution rows are pending-only: once parts have been
+    # dispatched, the user can't just bolt on a new customer's share without
+    # also sending additional stock.
+    customer_name = item.get("customer_name")
+    if customer_name is not None and order.status != "pending":
+        raise ValueError("发出后不可新增手填客户分拣行；请在 pending 状态完成")
     jewelry_id = item.get("jewelry_id")
     part_id = item.get("part_id")
     if jewelry_id and part_id:
@@ -876,6 +882,7 @@ def add_handcraft_jewelry(db: Session, order_id: str, item: dict) -> HandcraftJe
         status=item_status,
         unit=item.get("unit") or default_unit,
         note=item.get("note"),
+        customer_name=customer_name,
     )
     db.add(new_item)
     db.flush()

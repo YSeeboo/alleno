@@ -192,3 +192,55 @@ def test_update_customer_name_blocked_when_completed(db):
     db.flush()
     with pytest.raises(ValueError):
         update_handcraft_jewelry(db, "HC-UJ3", j.id, {"customer_name": "y"})
+
+
+def test_add_manual_jewelry_allowed_in_pending(db):
+    from models.handcraft_order import HandcraftOrder
+    from models.jewelry import Jewelry
+    from services.handcraft import _gen_receipt_code, add_handcraft_jewelry
+
+    db.add(Jewelry(id="SP-AJ", name="x", category="吊坠"))
+    db.flush()
+    hc = HandcraftOrder(id="HC-AJ", supplier_name="测", status="pending",
+                        receipt_code=_gen_receipt_code(db))
+    db.add(hc)
+    db.flush()
+
+    item = add_handcraft_jewelry(db, "HC-AJ",
+        {"jewelry_id": "SP-AJ", "qty": 50, "customer_name": "Z 客户"})
+    assert item.customer_name == "Z 客户"
+
+
+def test_add_manual_jewelry_blocked_in_processing(db):
+    from models.handcraft_order import HandcraftOrder
+    from models.jewelry import Jewelry
+    from services.handcraft import _gen_receipt_code, add_handcraft_jewelry
+
+    db.add(Jewelry(id="SP-AJ2", name="x", category="吊坠"))
+    db.flush()
+    hc = HandcraftOrder(id="HC-AJ2", supplier_name="测", status="processing",
+                        receipt_code=_gen_receipt_code(db))
+    db.add(hc)
+    db.flush()
+    with pytest.raises(ValueError, match="手填客户"):
+        add_handcraft_jewelry(db, "HC-AJ2",
+            {"jewelry_id": "SP-AJ2", "qty": 50, "customer_name": "Z 客户"})
+
+
+def test_add_jewelry_without_customer_name_still_allowed_in_processing(db):
+    """Internal callers (link_supplier) add HC jewelry rows in processing too.
+    Only when caller passes customer_name does the rule kick in."""
+    from models.handcraft_order import HandcraftOrder
+    from models.jewelry import Jewelry
+    from services.handcraft import _gen_receipt_code, add_handcraft_jewelry
+
+    db.add(Jewelry(id="SP-AJ3", name="x", category="吊坠"))
+    db.flush()
+    hc = HandcraftOrder(id="HC-AJ3", supplier_name="测", status="processing",
+                        receipt_code=_gen_receipt_code(db))
+    db.add(hc)
+    db.flush()
+
+    item = add_handcraft_jewelry(db, "HC-AJ3",
+        {"jewelry_id": "SP-AJ3", "qty": 50})
+    assert item.customer_name is None
