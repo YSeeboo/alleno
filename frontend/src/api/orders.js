@@ -69,3 +69,6 @@ export const downloadPickingListPdf = (orderId, includePicked = false) =>
     { include_picked: includePicked },
     { responseType: 'blob' },
   )
+
+export const getBatchBreakdownPreview = (orderId, batchId) =>
+  api.get(`/orders/${orderId}/todo-batch/${batchId}/breakdown-preview`)

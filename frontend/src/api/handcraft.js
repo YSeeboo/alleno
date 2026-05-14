@@ -91,3 +91,11 @@ export const deleteHandcraftPickingActualQty = (id, partItemId, atomPartId) =>
   api.delete(`/handcraft/${id}/picking/actual_qty`, {
     data: { part_item_id: partItemId, atom_part_id: atomPartId },
   })
+
+// ─── Customer breakdown ───
+
+export const getHandcraftByReceiptCode = (code) =>
+  api.get(`/handcraft/by-receipt-code/${encodeURIComponent(code)}`)
+
+export const getHandcraftJewelryBreakdown = (id) =>
+  api.get(`/handcraft/${id}/jewelry-breakdown`)

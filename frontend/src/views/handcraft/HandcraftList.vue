@@ -10,6 +10,14 @@
         :style="{ width: isMobile ? '100%' : '140px' }" @update:value="load" />
       <n-select v-model:value="filterSupplier" :options="supplierOptions" clearable placeholder="筛选商家"
         :style="{ width: isMobile ? '100%' : '160px' }" @update:value="load" />
+      <n-input-group :style="{ width: isMobile ? '100%' : '240px' }">
+        <n-input v-model:value="receiptCodeInput" placeholder="回执编号"
+          maxlength="5" :input-props="{ style: 'text-transform: uppercase' }"
+          @keyup.enter="jumpByReceiptCode" />
+        <n-button type="primary" :loading="lookingUp" @click="jumpByReceiptCode">
+          扫码跳转
+        </n-button>
+      </n-input-group>
       <div class="filter-bar-end">
         <n-button type="primary" @click="router.push('/handcraft/create')">新建手工单</n-button>
       </div>
@@ -24,8 +32,8 @@
 <script setup>
 import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { useDialog, useMessage, NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
-import { listHandcraft, deleteHandcraft, getHandcraftSuppliers } from '@/api/handcraft'
+import { useDialog, useMessage, NButton, NSelect, NDataTable, NSpin, NEmpty, NInput, NInputGroup } from 'naive-ui'
+import { listHandcraft, deleteHandcraft, getHandcraftSuppliers, getHandcraftByReceiptCode } from '@/api/handcraft'
 import { useIsMobile } from '@/composables/useIsMobile'
 
 const router = useRouter()
@@ -38,6 +46,29 @@ const rows = ref([])
 const filterStatus = ref(null)
 const filterSupplier = ref(null)
 const supplierOptions = ref([])
+const receiptCodeInput = ref('')
+const lookingUp = ref(false)
+
+async function jumpByReceiptCode() {
+  const code = receiptCodeInput.value.trim().toUpperCase()
+  if (code.length !== 5) {
+    message.warning('请输入 5 位回执编号')
+    return
+  }
+  lookingUp.value = true
+  try {
+    const { data } = await getHandcraftByReceiptCode(code)
+    router.push(`/handcraft/${data.id}`)
+  } catch (err) {
+    if (err?.response?.status === 404) {
+      message.error(`无此回执编号：${code}`)
+    } else {
+      message.error('查询失败')
+    }
+  } finally {
+    lookingUp.value = false
+  }
+}
 const statusOptions = [
   { label: '待发出', value: 'pending' },
   { label: '进行中', value: 'processing' },
