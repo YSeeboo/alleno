@@ -68,6 +68,9 @@ class HandcraftJewelryItem(Base):
     status = Column(String, nullable=False, default="未送出")
     unit = Column(String, nullable=True, default="套")
     note = Column(Text, nullable=True)
+    # Manual customer attribution. From-order rows leave this NULL and
+    # derive the customer name via OrderItemLink → Order.customer_name.
+    customer_name = Column(String, nullable=True)
 
 
 class HandcraftPickingRecord(Base):

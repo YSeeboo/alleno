@@ -90,6 +90,7 @@ class HandcraftJewelryUpdate(BaseModel):
     weight_unit: Optional[str] = None
     unit: Optional[str] = None
     note: Optional[str] = None
+    customer_name: Optional[str] = None
 
 
 class StatusUpdate(BaseModel):

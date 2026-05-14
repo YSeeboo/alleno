@@ -23,6 +23,7 @@ class HandcraftJewelryIn(BaseModel):
     weight_unit: Optional[str] = None
     unit: Optional[str] = None
     note: Optional[str] = None
+    customer_name: Optional[str] = None
 
     @model_validator(mode="after")
     def exactly_one_output_id(self):
@@ -69,6 +70,7 @@ class HandcraftJewelryItemResponse(BaseModel):
     status: str
     unit: Optional[str] = None
     note: Optional[str] = None
+    customer_name: Optional[str] = None
     loss_qty: Optional[float] = None
 
 

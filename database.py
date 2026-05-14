@@ -66,6 +66,14 @@ def ensure_schema_compat(target_engine=None):
                 "ON handcraft_order (receipt_code) WHERE receipt_code IS NOT NULL"
             ))
 
+        if inspector.has_table("handcraft_jewelry_item"):
+            columns = {col["name"] for col in inspector.get_columns("handcraft_jewelry_item")}
+            if "customer_name" not in columns:
+                conn.execute(text(
+                    "ALTER TABLE handcraft_jewelry_item ADD COLUMN customer_name VARCHAR NULL"
+                ))
+                logger.warning("Added missing handcraft_jewelry_item.customer_name column")
+
         if inspector.has_table("part"):
             columns = {col["name"] for col in inspector.get_columns("part")}
             if "parent_part_id" not in columns:
