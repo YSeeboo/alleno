@@ -152,6 +152,16 @@ def api_list_handcraft_pending_receive_items(
         )
 
 
+# Declared before /{order_id} so the literal prefix wins over the path param.
+@router.get("/by-receipt-code/{code}", response_model=HandcraftResponse)
+def api_get_handcraft_order_by_receipt_code(code: str, db: Session = Depends(get_db)):
+    from services.handcraft import get_handcraft_order_by_receipt_code
+    order = get_handcraft_order_by_receipt_code(db, code)
+    if order is None:
+        raise HTTPException(status_code=404, detail=f"无此回执编号：{code}")
+    return order
+
+
 @router.get("/{order_id}", response_model=HandcraftResponse)
 def api_get_handcraft_order(order_id: str, db: Session = Depends(get_db)):
     order = get_handcraft_order(db, order_id)

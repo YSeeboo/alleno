@@ -73,3 +73,37 @@ def test_link_supplier_assigns_receipt_code(db):
     hc = db.query(HandcraftOrder).filter_by(id=result["handcraft_order_id"]).first()
     assert hc.receipt_code is not None
     assert len(hc.receipt_code) == 5
+
+
+def test_get_handcraft_order_by_receipt_code(client, db):
+    from models.part import Part
+    db.add(Part(id="PJ-DZ-LC1", name="lookup test", category="吊坠"))
+    db.flush()
+    order = create_handcraft_order(
+        db, supplier_name="李师傅",
+        parts=[{"part_id": "PJ-DZ-LC1", "qty": 1}],
+    )
+    db.flush()
+
+    r = client.get(f"/api/handcraft/by-receipt-code/{order.receipt_code}")
+    assert r.status_code == 200, r.text
+    assert r.json()["id"] == order.id
+
+
+def test_get_handcraft_order_by_receipt_code_404(client):
+    r = client.get("/api/handcraft/by-receipt-code/ZZZZZ")
+    assert r.status_code == 404
+
+
+def test_get_handcraft_order_by_receipt_code_case_insensitive(client, db):
+    from models.part import Part
+    db.add(Part(id="PJ-DZ-LC2", name="ci test", category="吊坠"))
+    db.flush()
+    order = create_handcraft_order(
+        db, supplier_name="李师傅2",
+        parts=[{"part_id": "PJ-DZ-LC2", "qty": 1}],
+    )
+    db.flush()
+
+    r = client.get(f"/api/handcraft/by-receipt-code/{order.receipt_code.lower()}")
+    assert r.status_code == 200

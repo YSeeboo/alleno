@@ -397,6 +397,15 @@ def get_handcraft_order(db: Session, handcraft_order_id: str) -> Optional[Handcr
     return db.query(HandcraftOrder).filter(HandcraftOrder.id == handcraft_order_id).first()
 
 
+def get_handcraft_order_by_receipt_code(db: Session, code: str) -> Optional[HandcraftOrder]:
+    """Look up a handcraft order by its 5-char opaque receipt code.
+
+    Case-insensitive: the alphabet is uppercase but users may type lowercase
+    when transcribing from the printed slip.
+    """
+    return db.query(HandcraftOrder).filter_by(receipt_code=code.upper()).first()
+
+
 def list_handcraft_orders(db: Session, status: str = None, supplier_name: str = None) -> list:
     # An explicitly empty / whitespace-only supplier_name means "caller
     # asked for this supplier but the value is empty" — return no rows
