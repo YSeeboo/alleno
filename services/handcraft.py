@@ -1,9 +1,10 @@
 import math
+import secrets
 from datetime import datetime, date as date_type
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import Date, and_, func, or_
+from sqlalchemy import Date, and_, exists, func, or_
 from sqlalchemy.orm import Session
 
 from models.bom import Bom
@@ -23,6 +24,22 @@ HANDCRAFT_BUFFER_RULES = {
     "small":  {"ratio": Decimal("0.02"), "floor": 50},
     "medium": {"ratio": Decimal("0.01"), "floor": 15},
 }
+
+
+_RECEIPT_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # 28 chars, excludes 0/O/1/I/L
+
+
+def _gen_receipt_code(db: Session, max_tries: int = 10) -> str:
+    """Generate a unique 5-char opaque receipt code for a HandcraftOrder.
+
+    Uses cryptographic randomness and rejects on collision via the unique index.
+    28^5 ≈ 17.2M combinations — collisions are negligible at realistic volumes.
+    """
+    for _ in range(max_tries):
+        code = "".join(secrets.choice(_RECEIPT_CODE_ALPHABET) for _ in range(5))
+        if not db.query(HandcraftOrder.id).filter_by(receipt_code=code).first():
+            return code
+    raise RuntimeError("无法生成唯一回执码（碰撞次数超限）")
 
 
 def compute_suggested_qty(part: Part, theoretical: Decimal) -> int:
@@ -291,7 +308,7 @@ def send_handcraft_order(db: Session, handcraft_order_id: str) -> HandcraftOrder
     )
     # Atomic items pick up the picking override; composite items naturally
     # fall back to pi.qty because their weight rows have atom_part_id != pi.part_id.
-    actual_by_key = _load_actual_qty_map(db, handcraft_order_id)
+    actual_by_key = load_actual_qty_map(db, handcraft_order_id)
     # Aggregate effective qty by part_id (avoids double-deducting when same part appears multiple times)
     part_totals: dict[str, float] = {}
     for item in part_items:
@@ -407,9 +424,15 @@ def handcraft_atomic_picking_join_clause():
     actual_qty override.
 
     Pairs `HandcraftPickingWeight` with `HandcraftPartItem` on the atomic key
-    `(part_item_id, atom_part_id == pi.part_id)` and ignores rows without an
-    override. The clause naturally excludes composite expansions — their
-    weight rows have `atom_part_id != pi.part_id` so the join misses.
+    `(part_item_id, atom_part_id == pi.part_id)`, requires `actual_qty` is set
+    AND a matching `HandcraftPickingRecord` exists (i.e. the row was 勾选'd).
+    Filling actual_qty without 勾选 is treated as a draft and ignored.
+
+    Composite part items are intentionally excluded from the override
+    system: their picking-weight rows live under each atom's id, which never
+    matches `pi.part_id`, so composites always deduct/report `pi.qty`. Atom
+    `actual_qty` rows on composites are write-only metadata for the picking
+    UI and have no effect on stock, PDFs, kanban, or receipt caps.
 
     Usage:
 
@@ -417,10 +440,17 @@ def handcraft_atomic_picking_join_clause():
             HandcraftPickingWeight, handcraft_atomic_picking_join_clause()
         )
     """
+    picked_exists = exists().where(
+        and_(
+            HandcraftPickingRecord.handcraft_part_item_id == HandcraftPartItem.id,
+            HandcraftPickingRecord.part_id == HandcraftPartItem.part_id,
+        )
+    )
     return and_(
         HandcraftPickingWeight.part_item_id == HandcraftPartItem.id,
         HandcraftPickingWeight.atom_part_id == HandcraftPartItem.part_id,
         HandcraftPickingWeight.actual_qty.is_not(None),
+        picked_exists,
     )
 
 
@@ -431,15 +461,28 @@ def handcraft_effective_qty_expr():
     return func.coalesce(HandcraftPickingWeight.actual_qty, HandcraftPartItem.qty)
 
 
-def _load_actual_qty_map(db: Session, order_id: str) -> dict[tuple[int, str], float]:
+def load_actual_qty_map(db: Session, order_id: str) -> dict[tuple[int, str], float]:
     """Load picking actual_qty overrides keyed by (part_item_id, atom_part_id).
 
     The key shape lets callers look up `(pi.id, pi.part_id)` to get the atomic
     override (or fall back). Composite expansions live under a different
     `atom_part_id` and naturally miss that lookup.
+
+    Gate: only rows that have a matching `HandcraftPickingRecord` are
+    included — filling actual_qty without 勾选 is treated as a draft and
+    excluded. Mirrors `handcraft_atomic_picking_join_clause`.
     """
     rows = (
         db.query(HandcraftPickingWeight)
+        .join(
+            HandcraftPickingRecord,
+            and_(
+                HandcraftPickingRecord.handcraft_part_item_id
+                == HandcraftPickingWeight.part_item_id,
+                HandcraftPickingRecord.part_id
+                == HandcraftPickingWeight.atom_part_id,
+            ),
+        )
         .filter(
             HandcraftPickingWeight.handcraft_order_id == order_id,
             HandcraftPickingWeight.actual_qty.is_not(None),
@@ -456,7 +499,7 @@ def _attach_actual_qty(db: Session, items: list, order_id: str) -> list:
     """Attach picking actual_qty to atomic part items only."""
     if not items:
         return items
-    actual_by_key = _load_actual_qty_map(db, order_id)
+    actual_by_key = load_actual_qty_map(db, order_id)
     for it in items:
         it.actual_qty = actual_by_key.get((it.id, it.part_id))
     return items
@@ -602,6 +645,14 @@ def update_handcraft_part(db: Session, order_id: str, item_id: int, data: dict) 
             else:
                 upsert_weight(db, order_id, item.id, item.part_id, float(new_weight), new_unit or "kg")
 
+    # `qty_changed` gates the picking-override sync below. Compare against the
+    # current value so a no-op PATCH (same qty resubmitted) doesn't churn the
+    # picking_weight row or muddy the audit log.
+    qty_changed = (
+        "qty" in data
+        and data["qty"] is not None
+        and Decimal(str(data["qty"])) != Decimal(str(item.qty))
+    )
     for field in ("qty", "unit", "note"):
         if field in data and data[field] is not None:
             setattr(item, field, data[field])
@@ -609,6 +660,24 @@ def update_handcraft_part(db: Session, order_id: str, item_id: int, data: dict) 
         item.bom_qty = data["bom_qty"]  # allow setting to None to clear
     for wf in ("weight", "weight_unit"):
         data.pop(wf, None)  # safety: should already be popped above
+
+    # When qty is edited on an atomic part item that already has an
+    # actual_qty override, propagate so the picking record matches the new
+    # plan. Composite parts have per-atom overrides at a different key and
+    # aren't shadowed by the override system — skip them.
+    if qty_changed:
+        part_obj = db.query(Part).filter_by(id=item.part_id).one_or_none()
+        if part_obj is not None and not part_obj.is_composite:
+            override_row = (
+                db.query(HandcraftPickingWeight)
+                .filter_by(part_item_id=item.id, atom_part_id=item.part_id)
+                .one_or_none()
+            )
+            if override_row is not None and override_row.actual_qty is not None:
+                override_row.actual_qty = Decimal(str(data["qty"])).quantize(
+                    Decimal("0.0001")
+                )
+
     db.flush()
     return _attach_part_colors(db, [item])[0]
 

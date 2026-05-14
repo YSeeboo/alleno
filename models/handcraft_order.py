@@ -1,6 +1,6 @@
 import json
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, Index
 
 from database import Base
 from time_utils import now_beijing
@@ -16,6 +16,7 @@ class HandcraftOrder(Base):
     completed_at = Column(DateTime, nullable=True)
     note = Column(Text, nullable=True)
     delivery_images_raw = Column("delivery_images", Text, nullable=True)
+    receipt_code = Column(String, nullable=True, unique=True)
 
     @property
     def delivery_images(self):
