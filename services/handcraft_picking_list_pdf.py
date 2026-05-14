@@ -114,11 +114,16 @@ def build_handcraft_picking_list_pdf(
 ) -> tuple[bytes, str]:
     """Build the PDF. Returns (bytes, suggested_filename). Raises ValueError if
     nothing to export (empty order, or all rows picked & include_picked=False)."""
+    from models.handcraft_order import HandcraftOrder
     _register_fonts()
     sim = get_handcraft_picking_simulation(db, handcraft_order_id)
     groups = _filter_groups(sim.groups, include_picked=include_picked)
     if not groups:
         raise ValueError("无可导出内容")
+
+    # Supplier-facing PDF: opaque receipt_code instead of the sequential HC id.
+    hc = db.query(HandcraftOrder).filter_by(id=handcraft_order_id).one()
+    receipt_code = hc.receipt_code
 
     image_urls = [g.atom_part_image for g in groups if g.atom_part_image]
     image_cache = prefetch_images(image_urls)
@@ -126,7 +131,7 @@ def build_handcraft_picking_list_pdf(
     buf = BytesIO()
     c = _NumberedCanvas(buf, pagesize=A4)
 
-    title = f"手工单配货清单 — {sim.handcraft_order_id}"
+    title = f"手工单配货清单 — 回执编号 {receipt_code}"
     subtitle = (
         f"商家: {sim.supplier_name}    "
         f"导出时间: {now_beijing().strftime('%Y-%m-%d %H:%M')}"
@@ -260,5 +265,5 @@ def build_handcraft_picking_list_pdf(
     c.save()
     pdf_bytes = buf.getvalue()
     buf.close()
-    filename = f"手工单配货清单-{handcraft_order_id}.pdf"
+    filename = f"手工单配货清单-{receipt_code}.pdf"
     return pdf_bytes, filename
