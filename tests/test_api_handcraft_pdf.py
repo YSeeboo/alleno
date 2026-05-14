@@ -360,3 +360,69 @@ def test_download_handcraft_pdf_zero_shortfall_is_skipped(client, db, monkeypatc
 
     response = client.get(f"/api/handcraft/{order_id}/pdf")
     assert response.status_code == 200  # gate didn't block (only null does)
+
+
+def test_handcraft_pdf_appends_receipt_page_with_aliases(client, db, monkeypatch):
+    """When jewelry items have resolved customers, the PDF ends with a
+    手工回执 page that uses 客户 N aliases — real names must NOT appear."""
+    monkeypatch.setattr("services.handcraft_pdf.download_image_bytes", _fake_download_image_bytes)
+
+    part = create_part(db, {"name": "RP配件", "category": "小配件"})
+    jewelry = create_jewelry(db, {"name": "RP饰品", "category": "单件"})
+    add_stock(db, "part", part.id, 100.0, "initial")
+    db.flush()
+
+    create_resp = client.post(
+        "/api/handcraft/",
+        json={
+            "supplier_name": "RP手工厂",
+            "parts": [{"part_id": part.id, "qty": 10}],
+            "jewelries": [
+                {"jewelry_id": jewelry.id, "qty": 1000, "customer_name": "周大福"},
+                {"jewelry_id": jewelry.id, "qty": 1200, "customer_name": "上海陈姐"},
+                {"jewelry_id": jewelry.id, "qty": 200, "customer_name": "广州王哥"},
+            ],
+        },
+    )
+    order_id = create_resp.json()["id"]
+
+    response = client.get(f"/api/handcraft/{order_id}/pdf")
+    assert response.status_code == 200
+
+    reader = PdfReader(BytesIO(response.content))
+    all_text = "\n".join((p.extract_text() or "") for p in reader.pages)
+    # Receipt page is present
+    assert "手工回执" in all_text
+    # Aliases used
+    assert "客户 1" in all_text
+    assert "客户 2" in all_text
+    assert "客户 3" in all_text
+    # Real names must NOT appear anywhere in the PDF
+    assert "周大福" not in all_text
+    assert "上海陈姐" not in all_text
+    assert "广州王哥" not in all_text
+
+
+def test_handcraft_pdf_skips_receipt_page_when_no_customers(client, db, monkeypatch):
+    """No 手工回执 page when no jewelry breakdown rows have a customer."""
+    monkeypatch.setattr("services.handcraft_pdf.download_image_bytes", _fake_download_image_bytes)
+
+    part = create_part(db, {"name": "NoCustPart", "category": "小配件"})
+    jewelry = create_jewelry(db, {"name": "NoCustJewelry", "category": "单件"})
+    add_stock(db, "part", part.id, 10.0, "initial")
+    db.flush()
+
+    create_resp = client.post(
+        "/api/handcraft/",
+        json={
+            "supplier_name": "NoCust厂",
+            "parts": [{"part_id": part.id, "qty": 5}],
+            "jewelries": [{"jewelry_id": jewelry.id, "qty": 3}],
+        },
+    )
+    order_id = create_resp.json()["id"]
+
+    response = client.get(f"/api/handcraft/{order_id}/pdf")
+    reader = PdfReader(BytesIO(response.content))
+    all_text = "\n".join((p.extract_text() or "") for p in reader.pages)
+    assert "手工回执" not in all_text

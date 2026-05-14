@@ -130,6 +130,10 @@ def build_handcraft_order_pdf(db, order_id: str) -> tuple[bytes, str]:
     if delivery_images:
         last_y = _draw_delivery_images(pdf, payload, template_text, delivery_images, last_y)
 
+    # Phase 4: 手工回执 page — appears only when there are jewelry breakdown
+    # entries with a resolved customer. Pure metadata, supplier-facing.
+    _draw_handcraft_receipt_page(pdf, db, payload["order"])
+
     pdf.save()
     return buffer.getvalue(), build_export_filename(payload["order"].supplier_name, payload["order"].created_at, "pdf")
 
@@ -666,3 +670,160 @@ def _draw_header_text(pdf, text: str, x: float, y: float, width: float, height: 
         pdf.setFillColor(colors.black)
         subtitle_width = stringWidth(subtitle, "Helvetica", 4.5)
         pdf.drawString(x + max(0, (width - subtitle_width) / 2), y + 4, subtitle)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 手工回执 page (customer breakdown for sorting returned goods).
+# Real customer names are intentionally replaced with per-HC sequential
+# aliases "客户 N" so the supplier cannot correlate customer identities
+# across multiple HCs over time.
+# ──────────────────────────────────────────────────────────────────────
+
+_RECEIPT_TITLE = "手工回执"
+_RECEIPT_NOTE = "请于回货时随成品一并交回此单以便分拣核对"
+
+
+def _draw_handcraft_receipt_page(pdf, db, order) -> None:
+    """Append the supplier-facing receipt page to the PDF, with customer
+    aliases hiding real customer names."""
+    from services.handcraft import get_handcraft_jewelry_breakdown
+
+    groups = get_handcraft_jewelry_breakdown(db, order.id)
+    # Keep only jewelry-kind groups that actually have a resolved customer.
+    # Part-output groups don't appear in customer sorting — they're tooling.
+    payload_groups = []
+    for g in groups:
+        if g["kind"] != "jewelry":
+            continue
+        entries_with_customer = [e for e in g["entries"] if e["customer_name"]]
+        if not entries_with_customer:
+            continue
+        payload_groups.append((g, entries_with_customer))
+
+    if not payload_groups:
+        return  # Nothing to print — skip the page entirely.
+
+    pdf.showPage()
+    y = _PAGE_HEIGHT - _MARGIN_TOP
+
+    # Title (centered, large)
+    pdf.setFont(_LABEL_FONT, 22)
+    pdf.setFillColor(colors.black)
+    title_width = stringWidth(_RECEIPT_TITLE, _LABEL_FONT, 22)
+    pdf.drawString((_PAGE_WIDTH - title_width) / 2, y - 24, _RECEIPT_TITLE)
+    y -= 36
+
+    # Receipt code subtitle, mono-ish (smaller, centered)
+    receipt_line = f"回执编号 · {order.receipt_code}"
+    pdf.setFont(_LABEL_FONT, 11)
+    pdf.setFillColor(colors.HexColor("#444444"))
+    receipt_width = stringWidth(receipt_line, _LABEL_FONT, 11)
+    pdf.drawString((_PAGE_WIDTH - receipt_width) / 2, y - 14, receipt_line)
+    y -= 28
+
+    # Meta strip: 手工商家 (left) / 发出日期 (right), with double-rule
+    pdf.setStrokeColor(colors.black)
+    pdf.setLineWidth(0.8)
+    pdf.line(_MARGIN_X, y, _PAGE_WIDTH - _MARGIN_X, y)
+    pdf.setFont(_LABEL_FONT, 11)
+    pdf.setFillColor(colors.black)
+    meta_y = y - 16
+    pdf.drawString(_MARGIN_X, meta_y, f"手工商家: {order.supplier_name or ''}")
+    date_text = format_excel_date(order.created_at) or ""
+    date_label = f"发出日期: {date_text}"
+    date_w = stringWidth(date_label, _LABEL_FONT, 11)
+    pdf.drawString(_PAGE_WIDTH - _MARGIN_X - date_w, meta_y, date_label)
+    y = meta_y - 8
+    pdf.line(_MARGIN_X, y, _PAGE_WIDTH - _MARGIN_X, y)
+    y -= 24
+
+    # Section heading
+    pdf.setFont(_LABEL_FONT, 14)
+    pdf.drawString(_MARGIN_X, y - 16, "客户分拣")
+    pdf.setLineWidth(1.4)
+    pdf.line(_MARGIN_X, y - 22, _MARGIN_X + 60, y - 22)
+    y -= 36
+
+    # Groups
+    for g, entries in payload_groups:
+        y = _draw_receipt_group(pdf, g, entries, y)
+
+    # Note (dashed border, centered text)
+    y -= 6
+    note_height = 36
+    if y - note_height < _MARGIN_BOTTOM:
+        pdf.showPage()
+        y = _PAGE_HEIGHT - _MARGIN_TOP
+    pdf.setStrokeColor(colors.HexColor("#777777"))
+    pdf.setDash(3, 3)
+    pdf.setLineWidth(0.6)
+    pdf.rect(_MARGIN_X, y - note_height, _CONTENT_WIDTH, note_height, stroke=1, fill=0)
+    pdf.setDash()  # reset to solid
+    pdf.setFont(_LABEL_FONT, 11)
+    pdf.setFillColor(colors.HexColor("#333333"))
+    note_w = stringWidth(_RECEIPT_NOTE, _LABEL_FONT, 11)
+    pdf.drawString((_PAGE_WIDTH - note_w) / 2, y - note_height / 2 - 4, _RECEIPT_NOTE)
+
+
+def _draw_receipt_group(pdf, group: dict, entries: list[dict], y: float) -> float:
+    """Render one jewelry group: header bar + per-customer lines. Returns the
+    new y after the group. Auto-paginates if it doesn't fit."""
+    # Estimate space needed: header (24) + each line (20)
+    needed = 24 + 20 * len(entries) + 14  # 14 trailing gap
+    if y - needed < _MARGIN_BOTTOM:
+        pdf.showPage()
+        y = _PAGE_HEIGHT - _MARGIN_TOP
+
+    # Header bar: black background, white text, jewelry name + total qty
+    bar_h = 22
+    pdf.setStrokeColor(colors.black)
+    pdf.setFillColor(colors.black)
+    pdf.rect(_MARGIN_X, y - bar_h, _CONTENT_WIDTH, bar_h, stroke=1, fill=1)
+    pdf.setFillColor(colors.white)
+    pdf.setFont(_LABEL_FONT, 11)
+    pdf.drawString(_MARGIN_X + 8, y - bar_h + 6, group["jewelry_name"])
+    total_label = f"共 {_format_int(group['total_qty'])} 套"
+    total_w = stringWidth(total_label, _LABEL_FONT, 11)
+    pdf.drawString(_PAGE_WIDTH - _MARGIN_X - total_w - 8, y - bar_h + 6, total_label)
+    y -= bar_h
+
+    # Body: outline box around per-customer lines
+    body_height = 20 * len(entries)
+    pdf.setStrokeColor(colors.black)
+    pdf.setFillColor(colors.white)
+    pdf.rect(_MARGIN_X, y - body_height, _CONTENT_WIDTH, body_height, stroke=1, fill=0)
+
+    pdf.setFillColor(colors.black)
+    for idx, e in enumerate(sorted(entries, key=lambda x: x["hc_jewelry_item_id"]), start=1):
+        line_top = y
+        line_bottom = y - 20
+        # checkbox
+        cb_size = 10
+        cb_x = _MARGIN_X + 10
+        cb_y = line_bottom + (20 - cb_size) / 2
+        pdf.setStrokeColor(colors.black)
+        pdf.setLineWidth(0.7)
+        pdf.rect(cb_x, cb_y, cb_size, cb_size, stroke=1, fill=0)
+        # alias label
+        pdf.setFont(_LABEL_FONT, 11)
+        pdf.drawString(cb_x + cb_size + 10, line_bottom + 6, f"客户 {idx}")
+        # qty (right-aligned)
+        qty_text = _format_int(e["qty"])
+        qty_w = stringWidth(qty_text, _LABEL_FONT, 11)
+        pdf.drawString(_PAGE_WIDTH - _MARGIN_X - qty_w - 10, line_bottom + 6, qty_text)
+        # divider between rows (skip after last)
+        if idx < len(entries):
+            pdf.setStrokeColor(colors.HexColor("#cccccc"))
+            pdf.setLineWidth(0.4)
+            pdf.line(_MARGIN_X + 6, line_bottom, _PAGE_WIDTH - _MARGIN_X - 6, line_bottom)
+        y -= 20
+
+    return y - 14  # trailing gap
+
+
+def _format_int(n) -> str:
+    """Format a numeric qty as integer when whole, else 2-decimal."""
+    f = float(n)
+    if f == int(f):
+        return str(int(f))
+    return f"{f:.2f}"

@@ -281,6 +281,7 @@ def create_handcraft_order(
             status="未送出",
             unit=j.get("unit") or default_unit,
             note=j.get("note"),
+            customer_name=j.get("customer_name"),
         ))
     db.flush()
 
