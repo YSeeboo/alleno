@@ -16,7 +16,9 @@ from schemas.order import (
     PickingSimulationResponse, PickingMarkRequest, PickingPdfRequest,
     OrderItemCreate, ExtraInfoUpdate,
     TodoBatchCreateRequest, LinkSupplierRequest,
+    BatchBreakdownPreview,
 )
+from typing import Optional
 from schemas.order_cost_snapshot import OrderCostSnapshotResponse
 from services.order import (
     add_order_item,
@@ -38,6 +40,7 @@ from services.order_todo import (
     generate_todo, get_todo, create_link, delete_link,
     batch_link, get_order_progress, batch_get_order_progress, get_jewelry_status,
     get_jewelry_for_batch, create_batch, get_batches, link_supplier, delete_batch,
+    get_batch_breakdown_preview,
 )
 from services.order_todo_pdf import build_order_todo_pdf
 from services.cutting_stats import get_order_cutting_stats
@@ -358,6 +361,17 @@ def api_link_batch_supplier(
 def api_delete_batch(order_id: str, batch_id: int, db: Session = Depends(get_db)):
     with service_errors():
         delete_batch(db, order_id, batch_id)
+
+
+@router.get(
+    "/{order_id}/todo-batch/{batch_id}/breakdown-preview",
+    response_model=Optional[BatchBreakdownPreview],
+)
+def api_get_batch_breakdown_preview(
+    order_id: str, batch_id: int, db: Session = Depends(get_db),
+):
+    with service_errors():
+        return get_batch_breakdown_preview(db, order_id, batch_id)
 
 
 @router.get("/{order_id}/progress", response_model=OrderProgressResponse)

@@ -1185,3 +1185,53 @@ def batch_get_order_progress(db: Session, order_ids: list[str]) -> list[dict]:
         result.append({"order_id": oid, "total": total, "completed": completed})
 
     return result
+
+
+def get_batch_breakdown_preview(db: Session, order_id: str, batch_id: int) -> Optional[dict]:
+    """Return a summary of how this batch contributes to its assigned HC's
+    customer breakdown.
+
+    Returns None when the batch is not yet linked to a handcraft order
+    (caller should skip rendering the preview in that case).
+    """
+    from models.jewelry import Jewelry
+    from models.handcraft_order import HandcraftOrder as HCOrder, HandcraftJewelryItem
+    from models.order import Order
+
+    batch = db.query(OrderTodoBatch).filter_by(id=batch_id, order_id=order_id).first()
+    if batch is None:
+        raise ValueError(f"批次 {batch_id} 不存在")
+    if not batch.handcraft_order_id:
+        return None
+
+    hc = db.query(HCOrder).filter_by(id=batch.handcraft_order_id).first()
+    if hc is None:
+        return None
+
+    order = db.query(Order).filter_by(id=order_id).first()
+
+    rows = (
+        db.query(HandcraftJewelryItem, Jewelry)
+        .outerjoin(Jewelry, HandcraftJewelryItem.jewelry_id == Jewelry.id)
+        .join(
+            OrderTodoBatchJewelry,
+            OrderTodoBatchJewelry.handcraft_jewelry_item_id == HandcraftJewelryItem.id,
+        )
+        .filter(OrderTodoBatchJewelry.batch_id == batch_id)
+        .all()
+    )
+
+    return {
+        "handcraft_order_id": hc.id,
+        "receipt_code": hc.receipt_code,
+        "supplier_name": hc.supplier_name,
+        "customer_name": order.customer_name if order else None,
+        "jewelry_items": [
+            {
+                "jewelry_id": (j.id if j else hj.jewelry_id) or "",
+                "jewelry_name": (j.name if j else hj.jewelry_id) or "",
+                "qty": float(hj.qty),
+            }
+            for hj, j in rows
+        ],
+    }

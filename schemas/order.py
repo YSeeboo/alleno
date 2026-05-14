@@ -283,3 +283,23 @@ class PickingMarkRequest(BaseModel):
 
 class PickingPdfRequest(BaseModel):
     include_picked: bool = False
+
+
+# ─── Customer breakdown preview (for OrderDetail batch banner) ───
+
+class BatchBreakdownPreviewItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    jewelry_id: str
+    jewelry_name: str
+    qty: float
+
+
+class BatchBreakdownPreview(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    handcraft_order_id: str
+    receipt_code: str
+    supplier_name: str
+    customer_name: Optional[str] = None
+    jewelry_items: List[BatchBreakdownPreviewItem]

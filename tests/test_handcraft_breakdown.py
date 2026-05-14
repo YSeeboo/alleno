@@ -80,3 +80,38 @@ def test_breakdown_api_endpoint(client, db, hc_with_mixed_breakdown):
     assert isinstance(data, list)
     assert data[0]["jewelry_id"] == "SP-MIX"
     assert data[0]["total_qty"] == 2400
+
+
+def test_batch_breakdown_preview_returns_jewelry_list(db, client):
+    from tests.helpers import seed_order_with_batch
+    from services.order_todo import link_supplier
+    order_id, batch_id = seed_order_with_batch(db, qty=500)
+    result = link_supplier(db, order_id, batch_id, "王师傅")
+    hc_id = result["handcraft_order_id"]
+    db.flush()
+
+    r = client.get(
+        f"/api/orders/{order_id}/todo-batch/{batch_id}/breakdown-preview"
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data is not None
+    assert data["handcraft_order_id"] == hc_id
+    assert data["receipt_code"] is not None
+    assert data["supplier_name"] == "王师傅"
+    assert data["customer_name"] == "T 客户"
+    assert len(data["jewelry_items"]) == 1
+    assert data["jewelry_items"][0]["jewelry_id"] == "SP-T100"
+    assert data["jewelry_items"][0]["qty"] == 500
+
+
+def test_batch_breakdown_preview_returns_null_when_unassigned(db, client):
+    from tests.helpers import seed_order_with_batch
+    order_id, batch_id = seed_order_with_batch(db, qty=10)
+    db.flush()
+
+    r = client.get(
+        f"/api/orders/{order_id}/todo-batch/{batch_id}/breakdown-preview"
+    )
+    assert r.status_code == 200
+    assert r.json() is None
