@@ -406,6 +406,122 @@ def get_handcraft_order_by_receipt_code(db: Session, code: str) -> Optional[Hand
     return db.query(HandcraftOrder).filter_by(receipt_code=code.upper()).first()
 
 
+_BREAKDOWN_STATUS_RANK = {"未送出": 0, "制作中": 1, "已收回": 2}
+
+
+def get_handcraft_jewelry_breakdown(db: Session, hc_id: str) -> list[dict]:
+    """Aggregated jewelry view for HC detail.
+
+    Returns one group per (kind, identity) — `kind` is "jewelry" or "part"
+    depending on whether the output row's `jewelry_id` or `part_id` is set,
+    and `identity` is that id. Each group sums qty / received_qty and lists
+    per-row entries with the resolved customer name + its source
+    ("order" via OrderItemLink, or "manual" via customer_name override).
+    """
+    from models.order import Order, OrderItemLink
+    from collections import defaultdict
+
+    rows = (
+        db.query(HandcraftJewelryItem)
+        .filter(HandcraftJewelryItem.handcraft_order_id == hc_id)
+        .order_by(HandcraftJewelryItem.id.asc())
+        .all()
+    )
+    if not rows:
+        return []
+
+    # Bulk-resolve OrderItemLink → Order for from-order rows
+    row_ids = [r.id for r in rows]
+    link_rows = (
+        db.query(
+            OrderItemLink.handcraft_jewelry_item_id,
+            OrderItemLink.order_id,
+            Order.customer_name,
+        )
+        .join(Order, Order.id == OrderItemLink.order_id)
+        .filter(OrderItemLink.handcraft_jewelry_item_id.in_(row_ids))
+        .all()
+    )
+    link_by_item = {lr.handcraft_jewelry_item_id: lr for lr in link_rows}
+
+    # Resolve jewelry / part display name + image
+    jewelry_ids = {r.jewelry_id for r in rows if r.jewelry_id}
+    part_ids_only = {r.part_id for r in rows if r.part_id and not r.jewelry_id}
+    jewelry_map = {
+        j.id: j for j in db.query(Jewelry).filter(Jewelry.id.in_(jewelry_ids)).all()
+    } if jewelry_ids else {}
+    part_map = {
+        p.id: p for p in db.query(Part).filter(Part.id.in_(part_ids_only)).all()
+    } if part_ids_only else {}
+
+    # Group rows by (kind, identity). Preserve first-seen order for stable
+    # group ordering in the UI (matches the iteration of `rows` which is id-asc).
+    grouped: dict[tuple[str, str], list[HandcraftJewelryItem]] = defaultdict(list)
+    group_order: list[tuple[str, str]] = []
+    for r in rows:
+        kind = "jewelry" if r.jewelry_id else "part"
+        identity = r.jewelry_id or r.part_id
+        key = (kind, identity)
+        if key not in grouped:
+            group_order.append(key)
+        grouped[key].append(r)
+
+    result = []
+    for kind, identity in group_order:
+        group_rows = grouped[(kind, identity)]
+        if kind == "jewelry":
+            obj = jewelry_map.get(identity)
+        else:
+            obj = part_map.get(identity)
+        name = obj.name if obj else identity
+        image = getattr(obj, "image", None) if obj else None
+
+        entries = []
+        for r in group_rows:
+            if r.customer_name is not None:
+                customer = r.customer_name
+                source = "manual"
+                source_order_id = None
+            else:
+                link = link_by_item.get(r.id)
+                if link:
+                    customer = link.customer_name
+                    source = "order"
+                    source_order_id = link.order_id
+                else:
+                    customer = None
+                    source = "manual"
+                    source_order_id = None
+            entries.append({
+                "hc_jewelry_item_id": r.id,
+                "qty": float(r.qty),
+                "received_qty": float(r.received_qty or 0),
+                "customer_name": customer,
+                "source": source,
+                "source_order_id": source_order_id,
+                "is_locked": source == "order",
+            })
+
+        # Group-level aggregate status: the lowest rank wins so the UI shows
+        # the most upstream state (any 未送出 → 未送出 for the whole group).
+        status = min(
+            group_rows,
+            key=lambda r: _BREAKDOWN_STATUS_RANK.get(r.status, 99),
+        ).status
+
+        result.append({
+            "kind": kind,
+            "jewelry_id": identity,
+            "jewelry_name": name,
+            "jewelry_image": image,
+            "total_qty": sum(float(r.qty) for r in group_rows),
+            "received_qty": sum(float(r.received_qty or 0) for r in group_rows),
+            "status": status,
+            "entries": entries,
+        })
+    return result
+
+
 def list_handcraft_orders(db: Session, status: str = None, supplier_name: str = None) -> list:
     # An explicitly empty / whitespace-only supplier_name means "caller
     # asked for this supplier but the value is empty" — return no rows

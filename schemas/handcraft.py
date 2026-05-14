@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime, date
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -208,3 +208,30 @@ class HandcraftPickingActualQtyUpsertRequest(BaseModel):
 class HandcraftPickingActualQtyDeleteRequest(BaseModel):
     part_item_id: int = Field(gt=0)
     atom_part_id: str = Field(min_length=1)
+
+
+# ─── Customer breakdown (HC detail aggregated view) ───
+
+class HandcraftJewelryBreakdownEntry(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    hc_jewelry_item_id: int
+    qty: float
+    received_qty: float
+    customer_name: Optional[str] = None
+    source: Literal["order", "manual"]
+    source_order_id: Optional[str] = None
+    is_locked: bool
+
+
+class HandcraftJewelryBreakdownGroup(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    kind: Literal["jewelry", "part"]
+    jewelry_id: str
+    jewelry_name: str
+    jewelry_image: Optional[str] = None
+    total_qty: float
+    received_qty: float
+    status: str
+    entries: List[HandcraftJewelryBreakdownEntry]

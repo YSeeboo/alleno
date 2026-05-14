@@ -12,6 +12,7 @@ from database import get_db
 from schemas.handcraft import (
     HandcraftCreate,
     HandcraftDeliveryImagesUpdate,
+    HandcraftJewelryBreakdownGroup,
     HandcraftJewelryIn,
     HandcraftJewelryItemResponse,
     HandcraftPartIn,
@@ -161,6 +162,15 @@ def api_get_handcraft_order_by_receipt_code(code: str, db: Session = Depends(get
     if order is None:
         raise HTTPException(status_code=404, detail=f"无此回执编号：{code}")
     return order
+
+
+@router.get(
+    "/{order_id}/jewelry-breakdown",
+    response_model=list[HandcraftJewelryBreakdownGroup],
+)
+def api_get_handcraft_jewelry_breakdown(order_id: str, db: Session = Depends(get_db)):
+    from services.handcraft import get_handcraft_jewelry_breakdown
+    return get_handcraft_jewelry_breakdown(db, order_id)
 
 
 @router.get("/{order_id}", response_model=HandcraftResponse)
