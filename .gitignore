@@ -73,3 +73,6 @@ heal_commit.txt
 
 # Frontend UX mockups (decision archive — keep local, not source)
 frontend/mockups/
+.env.test
+.env.test
+bin/tpytest

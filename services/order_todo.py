@@ -822,8 +822,14 @@ def link_supplier(db: Session, order_id: str, batch_id: int, supplier_name: str)
         hc = existing_hc
         hc_id = hc.id
     else:
+        from services.handcraft import _gen_receipt_code
         hc_id = _next_id(db, HCOrder, "HC")
-        hc = HCOrder(id=hc_id, supplier_name=supplier_name, status="pending")
+        hc = HCOrder(
+            id=hc_id,
+            supplier_name=supplier_name,
+            status="pending",
+            receipt_code=_gen_receipt_code(db),
+        )
         db.add(hc)
         db.flush()
 
