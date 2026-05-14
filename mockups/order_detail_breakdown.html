@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>订单详情 · 分拣预览方案对比</title>
+<style>
+  :root {
+    --primary: #6366F1;
+    --primary-hover: #4F46E5;
+    --primary-1: #eef0fe;
+    --primary-2: #e0e3fc;
+
+    --text-1: rgba(0, 0, 0, 0.88);
+    --text-2: rgba(0, 0, 0, 0.65);
+    --text-3: rgba(0, 0, 0, 0.45);
+    --text-4: rgba(0, 0, 0, 0.3);
+
+    --border: #efeff5;
+    --border-strong: #e0e0e6;
+    --divider: #e8e8ec;
+
+    --bg-body: #f5f6f9;
+    --bg-card: #ffffff;
+    --bg-hover: #f5f5f8;
+    --bg-sub: #fafafc;
+
+    --success: #18a058;
+    --success-bg: #e8f7ed;
+    --info: #2080f0;
+    --info-bg: #ecf3fd;
+    --warning: #f0a020;
+
+    --radius: 3px;
+    --radius-md: 4px;
+
+    --font-base: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --font-mono: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg-body);
+    color: var(--text-1);
+    font-family: var(--font-base);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ════════ Top bar ════════ */
+  .topbar {
+    height: 56px;
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 32px;
+  }
+  .topbar__brand {
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .topbar__brand::before {
+    content: "";
+    width: 18px; height: 18px;
+    background: var(--primary);
+    border-radius: 4px;
+  }
+  .topbar__nav { display: flex; gap: 4px; }
+  .topbar__nav a {
+    color: var(--text-2);
+    text-decoration: none;
+    font-size: 14px;
+    padding: 6px 12px;
+    border-radius: var(--radius);
+  }
+  .topbar__nav a:hover { background: var(--bg-hover); color: var(--text-1); }
+  .topbar__nav .is-active { color: var(--primary); background: var(--primary-1); font-weight: 500; }
+  .topbar__right { margin-left: auto; color: var(--text-3); font-size: 13px; }
+
+  /* ════════ Comparison wrapper ════════ */
+  .compare-head {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px 24px 0;
+  }
+  .compare-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .compare-sub {
+    color: var(--text-3);
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+
+  .scenario-label {
+    max-width: 1280px;
+    margin: 32px auto 0;
+    padding: 0 24px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .scenario-label__tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    background: var(--primary);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    border-radius: var(--radius);
+  }
+  .scenario-label__title {
+    font-size: 16px;
+    font-weight: 500;
+  }
+  .scenario-label__sub {
+    color: var(--text-3);
+    font-size: 13px;
+  }
+
+  /* ════════ Page ════════ */
+  .page {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 12px 24px 8px;
+  }
+
+  /* breadcrumb */
+  .crumb {
+    font-size: 13px;
+    color: var(--text-3);
+    margin-bottom: 12px;
+  }
+  .crumb a { color: var(--text-2); text-decoration: none; cursor: pointer; }
+  .crumb a:hover { color: var(--primary); }
+  .crumb__sep { margin: 0 8px; color: var(--text-4); }
+
+  /* ════════ Card ════════ */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    margin-bottom: 16px;
+  }
+  .card__head {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--divider);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .card__title {
+    font-size: 16px;
+    font-weight: 500;
+  }
+  .card__head-extra {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .card__body { padding: 16px 20px; }
+
+  /* desc */
+  .desc {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px 28px;
+  }
+  .desc__item { display: flex; flex-direction: column; gap: 4px; }
+  .desc__label { color: var(--text-3); font-size: 13px; }
+  .desc__value { font-size: 14px; }
+  .desc__value.mono { font-family: var(--font-mono); }
+
+  /* tag */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 8px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    line-height: 20px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-hover);
+    color: var(--text-2);
+  }
+  .tag--success {
+    border-color: #c2e7d0;
+    background: var(--success-bg);
+    color: var(--success);
+  }
+  .tag--success-strong {
+    background: var(--success);
+    color: #fff;
+    border-color: var(--success);
+    font-weight: 500;
+  }
+  .tag--primary {
+    border-color: var(--primary-2);
+    background: var(--primary-1);
+    color: var(--primary);
+  }
+
+  /* button */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 12px;
+    border-radius: var(--radius);
+    background: #fff;
+    border: 1px solid var(--border-strong);
+    color: var(--text-1);
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    line-height: 22px;
+  }
+  .btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+  .btn--primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+  }
+  .btn--primary:hover {
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
+    color: #fff;
+  }
+  .btn--error {
+    color: var(--text-2);
+  }
+  .btn--error:hover {
+    color: #d03050;
+    border-color: #d03050;
+  }
+  .btn--text {
+    background: none;
+    border: none;
+    color: var(--primary);
+    padding: 0 4px;
+  }
+  .btn--text:hover { color: var(--primary-hover); }
+
+  /* ════════ Batch styles ════════ */
+  .batch-row {
+    border: 1px solid var(--divider);
+    border-radius: var(--radius-md);
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .batch-header {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    cursor: pointer;
+    background: var(--bg-sub);
+    border-bottom: 1px solid var(--divider);
+  }
+  .batch-header:hover { background: #f0f1f4; }
+  .batch-header--collapsed { border-bottom: none; }
+  .batch-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .batch-chevron {
+    color: var(--text-3);
+    font-size: 14px;
+    user-select: none;
+    width: 12px;
+  }
+  .batch-title { font-weight: 500; font-size: 14px; }
+  .batch-date { color: var(--text-3); font-size: 13px; }
+  .batch-header-right {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  /* batch detail */
+  .batch-detail { padding: 14px 16px 16px; }
+
+  /* ════════ 方案 B: 分拣预览 banner ════════ */
+  .breakdown-banner {
+    background: var(--info-bg);
+    border: 1px solid #c6dcf9;
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .breakdown-banner__icon {
+    color: var(--info);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .breakdown-banner__body { flex: 1; }
+  .breakdown-banner__head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  .breakdown-banner__title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-1);
+  }
+  .breakdown-banner__hc {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .breakdown-banner__hc strong {
+    color: var(--info);
+    font-weight: 600;
+  }
+  .breakdown-banner__desc {
+    color: var(--text-2);
+    font-size: 13px;
+    margin-bottom: 6px;
+  }
+  .breakdown-banner__desc strong {
+    color: var(--text-1);
+    font-weight: 500;
+  }
+  .breakdown-banner__list {
+    list-style: none;
+    margin-left: 4px;
+  }
+  .breakdown-banner__list li {
+    padding: 2px 0;
+    color: var(--text-1);
+    font-size: 13px;
+  }
+  .breakdown-banner__list li::before {
+    content: "·";
+    margin-right: 6px;
+    color: var(--text-3);
+    font-weight: 700;
+  }
+  .breakdown-banner__list .qty {
+    font-family: var(--font-mono);
+    color: var(--text-2);
+    margin-left: 4px;
+  }
+  .breakdown-banner__action {
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  /* ════════ 方案 C: 常驻信息条 ════════ */
+  .breakdown-strip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    background: #f7f9fd;
+    border-bottom: 1px solid var(--divider);
+    font-size: 13px;
+  }
+  .breakdown-strip__arrow {
+    color: var(--info);
+    font-weight: 600;
+  }
+  .breakdown-strip__hc {
+    font-family: var(--font-mono);
+    color: var(--info);
+    font-weight: 600;
+  }
+  .breakdown-strip__code {
+    font-family: var(--font-mono);
+    color: var(--text-3);
+    font-size: 12px;
+  }
+  .breakdown-strip__sep {
+    color: var(--text-4);
+    margin: 0 4px;
+  }
+  .breakdown-strip__detail {
+    color: var(--text-2);
+  }
+  .breakdown-strip__detail strong {
+    color: var(--text-1);
+    font-weight: 500;
+  }
+  .breakdown-strip__link {
+    margin-left: auto;
+    color: var(--primary);
+    text-decoration: none;
+    font-size: 13px;
+  }
+  .breakdown-strip__link:hover { color: var(--primary-hover); }
+
+  /* ════════ Jewelry cards row ════════ */
+  .jewelry-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .jewelry-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px;
+    border: 1px solid var(--divider);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+  }
+  .jewelry-card__image {
+    width: 64px;
+    height: 64px;
+    background: var(--bg-hover);
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-3);
+    font-size: 24px;
+  }
+  .jewelry-card__label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-3);
+  }
+
+  /* ════════ Mini table ════════ */
+  .mini-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .mini-table thead th {
+    background: var(--bg-sub);
+    color: var(--text-2);
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--divider);
+    font-weight: 500;
+  }
+  .mini-table tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--divider);
+  }
+  .mini-table tbody tr:last-child td { border-bottom: none; }
+  .mini-table .mono {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-3);
+  }
+
+  /* annotation arrows */
+  .annot {
+    max-width: 1280px;
+    margin: 0 auto 8px;
+    padding: 0 24px;
+    color: var(--text-3);
+    font-size: 12px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .annot::before { content: "↳"; color: var(--primary); }
+
+  .footer-spacer { height: 48px; }
+</style>
+</head>
+<body>
+
+  <!-- Top bar -->
+  <nav class="topbar">
+    <div class="topbar__brand">Allen Shop</div>
+    <div class="topbar__nav">
+      <a>仪表盘</a>
+      <a class="is-active">订单</a>
+      <a>手工单</a>
+      <a>电镀单</a>
+      <a>配件库存</a>
+    </div>
+    <div class="topbar__right">2026-05-12</div>
+  </nav>
+
+  <div class="compare-head">
+    <div class="compare-title">订单详情 — 分拣预览展示位置对比</div>
+    <div class="compare-sub">同一份订单数据，分别用方案 B / 方案 C 渲染，便于直接比较</div>
+  </div>
+
+  <!-- ════════ 方案 B ════════ -->
+  <div class="scenario-label">
+    <span class="scenario-label__tag">方案 B</span>
+    <span class="scenario-label__title">展开 batch 后顶部 banner</span>
+    <span class="scenario-label__sub">— 折叠时只看 header；展开后银幕中央显示该批次去向</span>
+  </div>
+  <div class="annot">header 行干净，预览信息折进 batch-detail 顶部</div>
+
+  <main class="page">
+    <div class="crumb">
+      <a>订单</a><span class="crumb__sep">/</span><a>OR-AAAA</a><span class="crumb__sep">/</span><span>详情</span>
+    </div>
+
+    <!-- 订单基本信息 -->
+    <section class="card">
+      <header class="card__head">
+        <div class="card__title">订单基本信息</div>
+      </header>
+      <div class="card__body">
+        <div class="desc">
+          <div class="desc__item"><span class="desc__label">订单编号</span><span class="desc__value mono">OR-AAAA</span></div>
+          <div class="desc__item"><span class="desc__label">客户</span><span class="desc__value">A 客户</span></div>
+          <div class="desc__item"><span class="desc__label">下单日期</span><span class="desc__value mono">2026-05-07</span></div>
+          <div class="desc__item"><span class="desc__label">订单状态</span><span class="desc__value"><span class="tag tag--primary">处理中</span></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 配件清单 -->
+    <section class="card">
+      <header class="card__head">
+        <div class="card__title">配件清单</div>
+        <div class="card__head-extra">
+          <button class="btn btn--primary">生成指定配件清单</button>
+        </div>
+      </header>
+      <div class="card__body">
+
+        <!-- Batch 1: 已分配 + 展开（方案 B 演示） -->
+        <div class="batch-row">
+          <div class="batch-header">
+            <div class="batch-header-left">
+              <span class="batch-chevron">▾</span>
+              <span class="batch-title">批次 1</span>
+              <span class="batch-date">2026-05-08</span>
+            </div>
+            <div class="batch-header-right">
+              <button class="btn">导出 PDF</button>
+              <span class="tag tag--success-strong">✓ 已分配给：王师傅</span>
+              <button class="btn btn--error">删除</button>
+            </div>
+          </div>
+
+          <div class="batch-detail">
+            <!-- ★ 方案 B 的核心：展开后第一眼就是分拣预览 banner -->
+            <div class="breakdown-banner">
+              <div class="breakdown-banner__icon">📋</div>
+              <div class="breakdown-banner__body">
+                <div class="breakdown-banner__head">
+                  <span class="breakdown-banner__title">客户分拣预览</span>
+                  <span class="breakdown-banner__hc">已并入 <strong>HC-0123</strong> · 回执 X7K2P</span>
+                </div>
+                <div class="breakdown-banner__desc">此订单（<strong>A 客户</strong>）在该 HC 的分拣中将占：</div>
+                <ul class="breakdown-banner__list">
+                  <li>心形吊坠 · 玫瑰金<span class="qty">· 1,000 套</span></li>
+                  <li>流苏耳坠 · 一对<span class="qty">· 300 套</span></li>
+                </ul>
+              </div>
+              <div class="breakdown-banner__action">
+                <button class="btn">查看 HC →</button>
+              </div>
+            </div>
+
+            <!-- 饰品图标 -->
+            <div class="jewelry-row">
+              <div class="jewelry-card">
+                <div class="jewelry-card__image">💍</div>
+                <div class="jewelry-card__label">SP-0001</div>
+              </div>
+              <div class="jewelry-card">
+                <div class="jewelry-card__image">💎</div>
+                <div class="jewelry-card__label">SP-0002</div>
+              </div>
+            </div>
+
+            <!-- 配件明细 -->
+            <table class="mini-table">
+              <thead>
+                <tr>
+                  <th style="width: 120px">配件编号</th>
+                  <th>配件名称</th>
+                  <th style="width: 80px">需要</th>
+                  <th style="width: 80px">单位</th>
+                  <th style="width: 100px">状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="mono">PJ-DZ-00012</td><td>玫瑰金 8mm 心形主石</td><td>1,000</td><td>颗</td><td><span class="tag">已分配</span></td></tr>
+                <tr><td class="mono">PJ-LT-00007</td><td>14k 玫瑰金链条 · 18cm</td><td>1,000</td><td>条</td><td><span class="tag">已分配</span></td></tr>
+                <tr><td class="mono">PJ-X-00031</td><td>O 形扣 · 玫瑰金</td><td>2,000</td><td>个</td><td><span class="tag">已分配</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Batch 2: 未分配 -->
+        <div class="batch-row">
+          <div class="batch-header batch-header--collapsed">
+            <div class="batch-header-left">
+              <span class="batch-chevron">▸</span>
+              <span class="batch-title">批次 2</span>
+              <span class="batch-date">2026-05-09</span>
+            </div>
+            <div class="batch-header-right">
+              <button class="btn">导出 PDF</button>
+              <button class="btn btn--primary">关联手工商家</button>
+              <button class="btn btn--error">删除</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <!-- ════════ 方案 C ════════ -->
+  <div class="scenario-label">
+    <span class="scenario-label__tag" style="background: #18a058">方案 C</span>
+    <span class="scenario-label__title">header 与 detail 之间常驻一条信息条</span>
+    <span class="scenario-label__sub">— 折叠时也能看到 HC 编号 + 简要内容，单行无侵入</span>
+  </div>
+  <div class="annot">最关键的信息以一条窄信息条始终可见</div>
+
+  <main class="page">
+    <div class="crumb">
+      <a>订单</a><span class="crumb__sep">/</span><a>OR-AAAA</a><span class="crumb__sep">/</span><span>详情</span>
+    </div>
+
+    <!-- 配件清单 (略去基本信息卡，节省篇幅) -->
+    <section class="card">
+      <header class="card__head">
+        <div class="card__title">配件清单</div>
+        <div class="card__head-extra">
+          <button class="btn btn--primary">生成指定配件清单</button>
+        </div>
+      </header>
+      <div class="card__body">
+
+        <!-- Batch 1: 已分配 + 折叠（演示 strip 折叠时仍然显示） -->
+        <div class="batch-row">
+          <div class="batch-header batch-header--collapsed">
+            <div class="batch-header-left">
+              <span class="batch-chevron">▸</span>
+              <span class="batch-title">批次 1</span>
+              <span class="batch-date">2026-05-08</span>
+            </div>
+            <div class="batch-header-right">
+              <button class="btn">导出 PDF</button>
+              <span class="tag tag--success-strong">✓ 已分配给：王师傅</span>
+              <button class="btn btn--error">删除</button>
+            </div>
+          </div>
+          <!-- ★ 方案 C 的核心：常驻信息条，折叠时也在 -->
+          <div class="breakdown-strip">
+            <span class="breakdown-strip__arrow">→</span>
+            <span class="breakdown-strip__detail">已并入</span>
+            <span class="breakdown-strip__hc">HC-0123</span>
+            <span class="breakdown-strip__code">· X7K2P</span>
+            <span class="breakdown-strip__sep">|</span>
+            <span class="breakdown-strip__detail">该订单分拣：<strong>心形吊坠 × 1,000</strong> + <strong>流苏耳坠 × 300</strong></span>
+            <a class="breakdown-strip__link">查看 HC →</a>
+          </div>
+        </div>
+
+        <!-- Batch 1 again: 已分配 + 展开（演示展开后 strip 也在） -->
+        <div class="batch-row">
+          <div class="batch-header">
+            <div class="batch-header-left">
+              <span class="batch-chevron">▾</span>
+              <span class="batch-title">批次 1（展开后）</span>
+              <span class="batch-date">2026-05-08</span>
+            </div>
+            <div class="batch-header-right">
+              <button class="btn">导出 PDF</button>
+              <span class="tag tag--success-strong">✓ 已分配给：王师傅</span>
+              <button class="btn btn--error">删除</button>
+            </div>
+          </div>
+          <div class="breakdown-strip">
+            <span class="breakdown-strip__arrow">→</span>
+            <span class="breakdown-strip__detail">已并入</span>
+            <span class="breakdown-strip__hc">HC-0123</span>
+            <span class="breakdown-strip__code">· X7K2P</span>
+            <span class="breakdown-strip__sep">|</span>
+            <span class="breakdown-strip__detail">该订单分拣：<strong>心形吊坠 × 1,000</strong> + <strong>流苏耳坠 × 300</strong></span>
+            <a class="breakdown-strip__link">查看 HC →</a>
+          </div>
+
+          <div class="batch-detail">
+            <div class="jewelry-row">
+              <div class="jewelry-card">
+                <div class="jewelry-card__image">💍</div>
+                <div class="jewelry-card__label">SP-0001</div>
+              </div>
+              <div class="jewelry-card">
+                <div class="jewelry-card__image">💎</div>
+                <div class="jewelry-card__label">SP-0002</div>
+              </div>
+            </div>
+            <table class="mini-table">
+              <thead>
+                <tr>
+                  <th style="width: 120px">配件编号</th>
+                  <th>配件名称</th>
+                  <th style="width: 80px">需要</th>
+                  <th style="width: 80px">单位</th>
+                  <th style="width: 100px">状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="mono">PJ-DZ-00012</td><td>玫瑰金 8mm 心形主石</td><td>1,000</td><td>颗</td><td><span class="tag">已分配</span></td></tr>
+                <tr><td class="mono">PJ-LT-00007</td><td>14k 玫瑰金链条 · 18cm</td><td>1,000</td><td>条</td><td><span class="tag">已分配</span></td></tr>
+                <tr><td class="mono">PJ-X-00031</td><td>O 形扣 · 玫瑰金</td><td>2,000</td><td>个</td><td><span class="tag">已分配</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Batch 2: 未分配 -->
+        <div class="batch-row">
+          <div class="batch-header batch-header--collapsed">
+            <div class="batch-header-left">
+              <span class="batch-chevron">▸</span>
+              <span class="batch-title">批次 2</span>
+              <span class="batch-date">2026-05-09</span>
+            </div>
+            <div class="batch-header-right">
+              <button class="btn">导出 PDF</button>
+              <button class="btn btn--primary">关联手工商家</button>
+              <button class="btn btn--error">删除</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <div class="footer-spacer"></div>
+</body>
+</html>

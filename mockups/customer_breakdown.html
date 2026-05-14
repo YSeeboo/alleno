@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>HC-0123 · 客户分拣 · 手工单详情</title>
+<style>
+  :root {
+    --primary: #6366F1;
+    --primary-hover: #4F46E5;
+    --primary-pressed: #4338CA;
+    --primary-1: #eef0fe;
+    --primary-2: #e0e3fc;
+
+    --text-1: rgba(0, 0, 0, 0.88);
+    --text-2: rgba(0, 0, 0, 0.65);
+    --text-3: rgba(0, 0, 0, 0.45);
+    --text-4: rgba(0, 0, 0, 0.3);
+
+    --border: #efeff5;
+    --border-strong: #e0e0e6;
+    --divider: #e8e8ec;
+
+    --bg-body: #f5f6f9;
+    --bg-card: #ffffff;
+    --bg-hover: #f5f5f8;
+
+    --success: #18a058;
+    --success-bg: #e8f7ed;
+    --warning: #f0a020;
+    --warning-bg: #fdf6e8;
+    --error: #d03050;
+    --error-bg: #fbe7ec;
+    --info: #2080f0;
+
+    --tag-bg: #f5f5f8;
+    --tag-border: #e0e0e6;
+
+    --radius: 3px;
+    --radius-md: 4px;
+
+    --font-base: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --font-mono: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg-body);
+    color: var(--text-1);
+    font-family: var(--font-base);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ════════ Top nav ════════ */
+  .topbar {
+    height: 56px;
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 32px;
+  }
+  .topbar__brand {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-1);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .topbar__brand::before {
+    content: "";
+    width: 18px; height: 18px;
+    background: var(--primary);
+    border-radius: 4px;
+    display: inline-block;
+  }
+  .topbar__nav {
+    display: flex;
+    gap: 4px;
+  }
+  .topbar__nav a {
+    color: var(--text-2);
+    text-decoration: none;
+    font-size: 14px;
+    padding: 6px 12px;
+    border-radius: var(--radius);
+  }
+  .topbar__nav a:hover { background: var(--bg-hover); color: var(--text-1); }
+  .topbar__nav .is-active { color: var(--primary); background: var(--primary-1); font-weight: 500; }
+  .topbar__right {
+    margin-left: auto;
+    color: var(--text-3);
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  /* ════════ Page wrap ════════ */
+  .page {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  /* breadcrumb */
+  .crumb {
+    font-size: 13px;
+    color: var(--text-3);
+    margin-bottom: 16px;
+  }
+  .crumb a {
+    color: var(--text-2);
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .crumb a:hover { color: var(--primary); }
+  .crumb__sep { margin: 0 8px; color: var(--text-4); }
+
+  /* back button */
+  .back-btn {
+    background: none;
+    border: none;
+    color: var(--primary);
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0;
+    margin-bottom: 12px;
+  }
+  .back-btn:hover { color: var(--primary-hover); }
+
+  /* ════════ Card ════════ */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    margin-bottom: 16px;
+  }
+  .card__head {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--divider);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .card__title {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text-1);
+  }
+  .card__head-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .card__sub {
+    color: var(--text-3);
+    font-size: 13px;
+  }
+  .card__body {
+    padding: 20px 24px;
+  }
+
+  /* ════════ Descriptions (basic info grid) ════════ */
+  .desc {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px 32px;
+  }
+  .desc__item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .desc__label {
+    color: var(--text-3);
+    font-size: 13px;
+  }
+  .desc__value {
+    color: var(--text-1);
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .desc__value.mono {
+    font-family: var(--font-mono);
+  }
+
+  /* ════════ Tag (n-tag) ════════ */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 8px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    line-height: 20px;
+    border: 1px solid var(--tag-border);
+    background: var(--tag-bg);
+    color: var(--text-2);
+  }
+  .tag--success {
+    border-color: #c2e7d0;
+    background: var(--success-bg);
+    color: var(--success);
+  }
+  .tag--warning {
+    border-color: #f5d9a3;
+    background: var(--warning-bg);
+    color: var(--warning);
+  }
+  .tag--error {
+    border-color: #f0c0cc;
+    background: var(--error-bg);
+    color: var(--error);
+  }
+  .tag--primary {
+    border-color: var(--primary-2);
+    background: var(--primary-1);
+    color: var(--primary);
+  }
+
+  /* ════════ Button ════════ */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: var(--radius);
+    background: #fff;
+    border: 1px solid var(--border-strong);
+    color: var(--text-1);
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+    line-height: 22px;
+    transition: all 0.18s ease;
+  }
+  .btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+  .btn--sm {
+    padding: 2px 10px;
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .btn--primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+  }
+  .btn--primary:hover {
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
+    color: #fff;
+  }
+  .btn--text {
+    background: none;
+    border: none;
+    color: var(--primary);
+    padding: 0 4px;
+  }
+  .btn--text:hover {
+    background: none;
+    color: var(--primary-hover);
+  }
+
+  /* ════════ Data table (n-data-table) ════════ */
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  .table thead th {
+    background: #fafafc;
+    color: var(--text-2);
+    font-weight: 500;
+    text-align: left;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--divider);
+    font-size: 14px;
+  }
+  .table tbody td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--divider);
+    color: var(--text-1);
+    vertical-align: middle;
+  }
+  .table tbody tr:last-child td { border-bottom: none; }
+  .table tbody tr:hover td { background: #fafafc; }
+
+  .table__id {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-3);
+  }
+  .table__name { font-weight: 500; }
+  .table__num {
+    font-family: var(--font-mono);
+    font-feature-settings: "tnum";
+  }
+
+  /* ════════ Breakdown chips ════════ */
+  .breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 2px 9px;
+    background: var(--bg-hover);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .chip__name { color: var(--text-1); }
+  .chip__qty {
+    font-family: var(--font-mono);
+    color: var(--text-3);
+    font-size: 12px;
+  }
+  .chip__source {
+    color: var(--text-4);
+    font-size: 11px;
+    margin-left: 2px;
+    padding-left: 6px;
+    border-left: 1px solid var(--border-strong);
+  }
+  .chip__source.mono { font-family: var(--font-mono); }
+  /* 手填来源用主色浅底，一眼能跟订单来源区分 */
+  .chip--manual {
+    background: var(--primary-1);
+    border-color: var(--primary-2);
+  }
+  .chip--manual .chip__source {
+    color: var(--primary);
+    border-left-color: var(--primary-2);
+  }
+  .chip--manual .chip__qty { color: var(--primary-pressed); }
+  .breakdown__sum {
+    color: var(--success);
+    font-size: 12px;
+    margin-left: 4px;
+    font-family: var(--font-mono);
+  }
+  .breakdown__sum::before { content: "✓ "; }
+  .breakdown__empty {
+    color: var(--text-3);
+    font-size: 13px;
+  }
+
+  /* hint text below input */
+  .form-hint {
+    color: var(--text-3);
+    font-size: 12px;
+    margin-top: -4px;
+    margin-bottom: 12px;
+  }
+
+  /* ════════ Preview labels & paper ════════ */
+  .preview-label {
+    font-size: 13px;
+    color: var(--text-3);
+    margin: 24px 0 8px;
+    padding-left: 4px;
+  }
+  .preview-label strong {
+    color: var(--text-2);
+    font-weight: 500;
+    margin-right: 4px;
+  }
+
+  .paper-wrap {
+    background: #f5f6f9;
+    padding: 32px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    display: flex;
+    justify-content: center;
+  }
+  .paper {
+    background: #fff;
+    width: 100%;
+    max-width: 600px;
+    padding: 48px 56px;
+    border: 1px solid var(--border-strong);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    color: #000;
+  }
+
+  .paper__title {
+    text-align: center;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.3em;
+    padding-left: 0.3em;
+    margin-bottom: 4px;
+  }
+  .paper__subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 28px;
+    font-family: var(--font-mono);
+  }
+
+  .paper__meta {
+    display: flex;
+    justify-content: space-between;
+    border-top: 1px solid #d0d0d0;
+    border-bottom: 1px solid #d0d0d0;
+    padding: 10px 4px;
+    margin-bottom: 24px;
+    font-size: 13px;
+  }
+  .paper__meta-item {
+    display: flex;
+    gap: 8px;
+  }
+  .paper__meta-label { color: #666; }
+  .paper__meta-value { font-weight: 500; }
+  .paper__meta-value.mono { font-family: var(--font-mono); }
+
+  .paper__section-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #000;
+  }
+
+  .paper__group {
+    margin-bottom: 16px;
+    border: 1px solid #000;
+  }
+  .paper__group-head {
+    background: #000;
+    color: #fff;
+    padding: 6px 12px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+  }
+  .paper__group-name {}
+  .paper__group-name code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    margin-left: 8px;
+    opacity: 0.75;
+  }
+  .paper__group-total {
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .paper__line {
+    display: grid;
+    grid-template-columns: 22px 1fr auto;
+    gap: 12px;
+    padding: 7px 14px;
+    font-size: 13px;
+    align-items: center;
+  }
+  .paper__line + .paper__line {
+    border-top: 1px dashed #d0d0d0;
+  }
+  .paper__check {
+    width: 13px;
+    height: 13px;
+    border: 1.5px solid #000;
+  }
+  .paper__line-cust { font-weight: 500; }
+  .paper__line-order {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: #666;
+  }
+  .paper__line-order--direct {
+    font-family: inherit;
+    color: #666;
+  }
+  .paper__line-qty {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    min-width: 48px;
+    text-align: right;
+  }
+
+  .paper__note {
+    margin-top: 28px;
+    padding: 12px 14px;
+    border: 1px dashed #666;
+    text-align: center;
+    font-size: 13px;
+    color: #333;
+    letter-spacing: 0.04em;
+  }
+
+  .paper__sign {
+    margin-top: 36px;
+    padding-top: 14px;
+    border-top: 1px solid #d0d0d0;
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #666;
+  }
+  .paper__sign-line {
+    display: inline-block;
+    width: 90px;
+    border-bottom: 1px solid #000;
+    margin-left: 8px;
+  }
+
+  .paper__pagebreak {
+    text-align: center;
+    color: var(--text-4);
+    font-size: 11px;
+    margin: 16px 0 8px;
+    letter-spacing: 0.1em;
+  }
+  .paper__pagebreak::before,
+  .paper__pagebreak::after {
+    content: " ··········· ";
+  }
+
+  /* ════════ Action row in detail ════════ */
+  .actions {
+    margin-top: 8px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  /* ════════ Modal (n-modal) ════════ */
+  .modal-mask {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 80px;
+    z-index: 100;
+  }
+  .modal {
+    width: 640px;
+    background: #fff;
+    border-radius: var(--radius-md);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 120px);
+  }
+  .modal__head {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--divider);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .modal__title {
+    font-size: 16px;
+    font-weight: 500;
+  }
+  .modal__close {
+    margin-left: auto;
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: var(--text-3);
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+  }
+  .modal__close:hover { color: var(--text-1); }
+  .modal__body { padding: 24px; overflow-y: auto; }
+  .modal__foot {
+    padding: 12px 24px;
+    border-top: 1px solid var(--divider);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .modal__foot-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+  }
+
+  .form-meta {
+    color: var(--text-2);
+    font-size: 13px;
+    margin-bottom: 16px;
+    padding: 10px 12px;
+    background: var(--bg-hover);
+    border-radius: var(--radius);
+    display: flex;
+    gap: 16px;
+  }
+  .form-meta strong {
+    color: var(--text-1);
+    font-weight: 500;
+  }
+
+  /* form table inside modal */
+  .form-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .form-table th {
+    text-align: left;
+    color: var(--text-2);
+    font-size: 13px;
+    font-weight: 500;
+    padding-bottom: 8px;
+  }
+  .form-table td { padding: 6px 6px 6px 0; vertical-align: middle; }
+  .form-table td:first-child { padding-left: 0; }
+  .form-table td:last-child { padding-right: 0; text-align: right; width: 32px; }
+
+  .input {
+    width: 100%;
+    padding: 5px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--text-1);
+    background: #fff;
+    outline: none;
+    line-height: 22px;
+    transition: border-color 0.15s;
+  }
+  .input:hover { border-color: #b8b8bf; }
+  .input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.18); }
+  .input.mono { font-family: var(--font-mono); }
+  .input::placeholder { color: var(--text-4); }
+
+  .icon-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: none;
+    color: var(--text-3);
+    cursor: pointer;
+    border-radius: var(--radius);
+    font-size: 16px;
+    line-height: 1;
+  }
+  .icon-btn:hover { background: var(--bg-hover); color: var(--error); }
+  .icon-btn:disabled,
+  .icon-btn--locked {
+    color: var(--text-4);
+    cursor: not-allowed;
+  }
+  .icon-btn--locked:hover {
+    background: none;
+    color: var(--text-4);
+  }
+
+  /* row state in form-table */
+  .form-table tr.is-locked td { background: #fbfbfd; }
+  .form-table tr.is-locked .input {
+    background: transparent;
+    border-color: transparent;
+    color: var(--text-2);
+    cursor: not-allowed;
+  }
+  .form-table tr.is-locked .input:hover,
+  .form-table tr.is-locked .input:focus {
+    border-color: transparent;
+    box-shadow: none;
+  }
+  .source-cell {
+    font-size: 12px;
+    color: var(--text-3);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .source-cell--manual {
+    color: var(--primary);
+  }
+  .source-cell .order-link {
+    font-family: var(--font-mono);
+    color: var(--primary);
+    text-decoration: none;
+  }
+  .source-cell .order-link:hover { color: var(--primary-hover); text-decoration: underline; }
+  .lock-icon {
+    color: var(--text-4);
+    font-size: 12px;
+  }
+
+  .add-row-btn {
+    margin-top: 8px;
+    background: none;
+    border: 1px dashed var(--border-strong);
+    color: var(--text-2);
+    width: 100%;
+    padding: 8px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .add-row-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+
+  .form-sum {
+    margin-right: auto;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+  .form-sum strong {
+    color: var(--text-1);
+    font-family: var(--font-mono);
+    margin-right: 2px;
+  }
+  .form-sum--ok strong { color: var(--success); }
+  .form-sum--err strong { color: var(--error); }
+</style>
+</head>
+<body>
+
+  <!-- ════════ Top bar ════════ -->
+  <nav class="topbar">
+    <div class="topbar__brand">Allen Shop</div>
+    <div class="topbar__nav">
+      <a>仪表盘</a>
+      <a>订单</a>
+      <a class="is-active">手工单</a>
+      <a>电镀单</a>
+      <a>配件库存</a>
+      <a>看板</a>
+    </div>
+    <div class="topbar__right">
+      <span>2026-05-12</span>
+      <span>👤 ycb</span>
+    </div>
+  </nav>
+
+  <!-- ════════ Page ════════ -->
+  <main class="page">
+
+    <button class="back-btn">← 返回</button>
+    <div class="crumb">
+      <a>手工单</a>
+      <span class="crumb__sep">/</span>
+      <a>HC-0123</a>
+      <span class="crumb__sep">/</span>
+      <span>详情</span>
+    </div>
+
+    <!-- 基本信息 -->
+    <section class="card">
+      <header class="card__head">
+        <div class="card__title">基本信息</div>
+        <div class="card__head-actions">
+          <button class="btn btn--sm">导出 Excel</button>
+          <button class="btn btn--sm">配货单 PDF</button>
+          <button class="btn btn--sm">客户分拣单 PDF</button>
+        </div>
+      </header>
+      <div class="card__body">
+        <div class="desc">
+          <div class="desc__item">
+            <span class="desc__label">手工单编号</span>
+            <span class="desc__value mono">HC-0123</span>
+          </div>
+          <div class="desc__item">
+            <span class="desc__label">手工商家</span>
+            <span class="desc__value">王师傅 <button class="btn--text btn">编辑</button></span>
+          </div>
+          <div class="desc__item">
+            <span class="desc__label">状态</span>
+            <span class="desc__value"><span class="tag tag--primary">制作中</span></span>
+          </div>
+          <div class="desc__item">
+            <span class="desc__label">创建日期</span>
+            <span class="desc__value mono">2026-05-08</span>
+          </div>
+          <div class="desc__item">
+            <span class="desc__label">发出日期</span>
+            <span class="desc__value mono">2026-05-08</span>
+          </div>
+          <div class="desc__item">
+            <span class="desc__label">饰品总数</span>
+            <span class="desc__value mono">3,200 套</span>
+          </div>
+          <div class="desc__item">
+            <span class="desc__label">客户分拣</span>
+            <span class="desc__value">
+              <span class="tag">2 / 3 已填写</span>
+              <span style="color: var(--text-3); font-size: 12px;">（非必填）</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 配件明细 (concise stub) -->
+    <section class="card">
+      <header class="card__head">
+        <div class="card__title">配件明细</div>
+        <div class="card__sub">3 项 · 详见展开</div>
+      </header>
+      <div class="card__body" style="color: var(--text-3); font-size: 13px;">
+        — 此处省略，与现有 HandcraftDetail 的配件表格一致 —
+      </div>
+    </section>
+
+    <!-- 产出明细 - 加客户分拣列 -->
+    <section class="card">
+      <header class="card__head">
+        <div class="card__title">产出明细</div>
+        <div class="card__sub">共 3 项 · 3,200 套</div>
+      </header>
+      <table class="table">
+        <thead>
+          <tr>
+            <th style="width: 110px">饰品编号</th>
+            <th>饰品名称</th>
+            <th style="width: 80px">数量</th>
+            <th style="width: 70px">已收回</th>
+            <th style="width: 80px">单位</th>
+            <th style="width: 100px">状态</th>
+            <th>客户分拣</th>
+            <th style="width: 140px; text-align: right">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="table__id">SP-0001</td>
+            <td class="table__name">心形吊坠 · 玫瑰金</td>
+            <td class="table__num">2400</td>
+            <td class="table__num">0</td>
+            <td>套</td>
+            <td><span class="tag">制作中</span></td>
+            <td>
+              <div class="breakdown">
+                <span class="chip" title="来自订单 OR-AAAA，需到订单详情修改">
+                  <span class="chip__name">A客户</span><span class="chip__qty">1000</span>
+                  <span class="chip__source mono">↗ OR-AAAA</span>
+                </span>
+                <span class="chip" title="来自订单 OR-BBBB">
+                  <span class="chip__name">B客户</span><span class="chip__qty">1200</span>
+                  <span class="chip__source mono">↗ OR-BBBB</span>
+                </span>
+                <span class="chip chip--manual" title="HC 详情手填，可在此处编辑">
+                  <span class="chip__name">C客户</span><span class="chip__qty">200</span>
+                  <span class="chip__source">手填</span>
+                </span>
+                <span class="breakdown__sum">2400</span>
+              </div>
+            </td>
+            <td style="text-align: right">
+              <button class="btn btn--text">编辑分拣</button>
+              <button class="btn btn--text">…</button>
+            </td>
+          </tr>
+          <tr>
+            <td class="table__id">SP-0002</td>
+            <td class="table__name">流苏耳坠 · 一对</td>
+            <td class="table__num">300</td>
+            <td class="table__num">0</td>
+            <td>套</td>
+            <td><span class="tag">制作中</span></td>
+            <td>
+              <div class="breakdown">
+                <span class="chip" title="来自订单 OR-DDDD">
+                  <span class="chip__name">D客户</span><span class="chip__qty">300</span>
+                  <span class="chip__source mono">↗ OR-DDDD</span>
+                </span>
+                <span class="breakdown__sum">300</span>
+              </div>
+            </td>
+            <td style="text-align: right">
+              <button class="btn btn--text">编辑分拣</button>
+              <button class="btn btn--text">…</button>
+            </td>
+          </tr>
+          <tr>
+            <td class="table__id">SP-0003</td>
+            <td class="table__name">925 银手链</td>
+            <td class="table__num">500</td>
+            <td class="table__num">0</td>
+            <td>套</td>
+            <td><span class="tag">制作中</span></td>
+            <td><span class="breakdown__empty">— 未分拣</span></td>
+            <td style="text-align: right">
+              <button class="btn btn--text">添加分拣</button>
+              <button class="btn btn--text">…</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ════════ PDF 预览 · 手工回执末页 ════════ -->
+    <p class="preview-label"><strong>PDF 末页预览</strong> · 当前 PDF（配货单 / 收回单）末尾追加 "手工回执" 页</p>
+    <div class="paper-wrap">
+      <div class="paper">
+        <div class="paper__pagebreak">第 N 页 · 手工回执</div>
+
+        <div class="paper__title">手工回执</div>
+        <div class="paper__subtitle">回执编号 · X7K2P</div>
+
+        <div class="paper__meta">
+          <div class="paper__meta-item">
+            <span class="paper__meta-label">手工商家</span>
+            <span class="paper__meta-value">王师傅</span>
+          </div>
+          <div class="paper__meta-item">
+            <span class="paper__meta-label">发出日期</span>
+            <span class="paper__meta-value mono">2026-05-08</span>
+          </div>
+        </div>
+
+        <div class="paper__section-title">客户分拣</div>
+
+        <div class="paper__group">
+          <div class="paper__group-head">
+            <span class="paper__group-name">心形吊坠 · 玫瑰金</span>
+            <span class="paper__group-total">共 2,400 套</span>
+          </div>
+          <div>
+            <div class="paper__line">
+              <span class="paper__check"></span>
+              <span class="paper__line-cust">A 客户</span>
+              <span class="paper__line-qty">1,000</span>
+            </div>
+            <div class="paper__line">
+              <span class="paper__check"></span>
+              <span class="paper__line-cust">B 客户</span>
+              <span class="paper__line-qty">1,200</span>
+            </div>
+            <div class="paper__line">
+              <span class="paper__check"></span>
+              <span class="paper__line-cust">C 客户</span>
+              <span class="paper__line-qty">200</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="paper__group">
+          <div class="paper__group-head">
+            <span class="paper__group-name">流苏耳坠 · 一对</span>
+            <span class="paper__group-total">共 300 套</span>
+          </div>
+          <div>
+            <div class="paper__line">
+              <span class="paper__check"></span>
+              <span class="paper__line-cust">D 客户</span>
+              <span class="paper__line-qty">300</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="paper__note">
+          请于回货时随成品一并交回此单以便分拣核对
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ════════ Modal: 编辑客户分拣 ════════ -->
+  <div class="modal-mask">
+    <div class="modal">
+      <header class="modal__head">
+        <div class="modal__title">编辑客户分拣</div>
+        <button class="modal__close">×</button>
+      </header>
+      <div class="modal__body">
+        <div class="form-meta">
+          <span>饰品：<strong>SP-0001 · 心形吊坠 · 玫瑰金</strong></span>
+          <span>数量：<strong>2,400 套</strong></span>
+        </div>
+
+        <p class="form-hint">订单来源行只读，需要修改请回到对应订单。手填行可在此处编辑、删除。</p>
+        <table class="form-table">
+          <thead>
+            <tr>
+              <th style="width: 32%">客户名</th>
+              <th style="width: 18%">数量</th>
+              <th style="width: 38%">来源</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="is-locked">
+              <td><input class="input" value="A客户" readonly /></td>
+              <td><input class="input mono" value="1000" readonly /></td>
+              <td>
+                <div class="source-cell">
+                  <span class="lock-icon">🔒</span>
+                  <span>订单 ·</span>
+                  <a class="order-link">OR-AAAA</a>
+                </div>
+              </td>
+              <td><button class="icon-btn icon-btn--locked" title="订单来源不可在此删除">×</button></td>
+            </tr>
+            <tr class="is-locked">
+              <td><input class="input" value="B客户" readonly /></td>
+              <td><input class="input mono" value="1200" readonly /></td>
+              <td>
+                <div class="source-cell">
+                  <span class="lock-icon">🔒</span>
+                  <span>订单 ·</span>
+                  <a class="order-link">OR-BBBB</a>
+                </div>
+              </td>
+              <td><button class="icon-btn icon-btn--locked">×</button></td>
+            </tr>
+            <tr>
+              <td><input class="input" value="C客户" /></td>
+              <td><input class="input mono" value="200" /></td>
+              <td>
+                <div class="source-cell source-cell--manual">
+                  <span>手填</span>
+                </div>
+              </td>
+              <td><button class="icon-btn" title="删除此行">×</button></td>
+            </tr>
+          </tbody>
+        </table>
+        <button class="add-row-btn">+ 添加手填客户</button>
+      </div>
+      <footer class="modal__foot">
+        <span class="form-sum form-sum--ok">合计 <strong>2,400</strong> / 2,400</span>
+        <div class="modal__foot-actions">
+          <button class="btn">取消</button>
+          <button class="btn btn--primary">保存</button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+</body>
+</html>
