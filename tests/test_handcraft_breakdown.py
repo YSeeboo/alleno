@@ -115,3 +115,80 @@ def test_batch_breakdown_preview_returns_null_when_unassigned(db, client):
     )
     assert r.status_code == 200
     assert r.json() is None
+
+
+def test_update_customer_name_allowed_in_processing(db):
+    """customer_name is pure metadata — editable in pending and processing."""
+    from models.handcraft_order import HandcraftOrder, HandcraftJewelryItem
+    from models.jewelry import Jewelry
+    from services.handcraft import _gen_receipt_code, update_handcraft_jewelry
+
+    db.add(Jewelry(id="SP-UJ", name="x", category="吊坠"))
+    db.flush()
+    hc = HandcraftOrder(id="HC-UJ", supplier_name="测", status="processing",
+                        receipt_code=_gen_receipt_code(db))
+    db.add(hc)
+    db.flush()
+    j = HandcraftJewelryItem(handcraft_order_id="HC-UJ", jewelry_id="SP-UJ",
+                             qty=100, received_qty=0, status="制作中", unit="套",
+                             customer_name="旧客户")
+    db.add(j)
+    db.flush()
+
+    updated = update_handcraft_jewelry(db, "HC-UJ", j.id, {"customer_name": "新客户"})
+    assert updated.customer_name == "新客户"
+
+
+def test_update_qty_still_blocked_in_processing(db):
+    """qty edits remain pending-only — existing rule."""
+    from models.handcraft_order import HandcraftOrder, HandcraftJewelryItem
+    from models.jewelry import Jewelry
+    from services.handcraft import _gen_receipt_code, update_handcraft_jewelry
+
+    db.add(Jewelry(id="SP-UJ2", name="x", category="吊坠"))
+    db.flush()
+    hc = HandcraftOrder(id="HC-UJ2", supplier_name="测", status="processing",
+                        receipt_code=_gen_receipt_code(db))
+    db.add(hc)
+    db.flush()
+    j = HandcraftJewelryItem(handcraft_order_id="HC-UJ2", jewelry_id="SP-UJ2",
+                             qty=100, received_qty=0, status="制作中", unit="套")
+    db.add(j)
+    db.flush()
+
+    with pytest.raises(ValueError, match="status"):
+        update_handcraft_jewelry(db, "HC-UJ2", j.id, {"qty": 200})
+
+
+def test_update_customer_name_blocked_for_order_linked_row(db, hc_with_mixed_breakdown):
+    """From-order rows: customer_name must be edited at the order, not here."""
+    from models.handcraft_order import HandcraftJewelryItem
+    from services.handcraft import update_handcraft_jewelry
+
+    # Find the row that came from OR-A (qty=1000, customer_name=None)
+    j = db.query(HandcraftJewelryItem).filter_by(
+        handcraft_order_id=hc_with_mixed_breakdown, qty=1000,
+    ).first()
+    with pytest.raises(ValueError, match="订单"):
+        update_handcraft_jewelry(db, hc_with_mixed_breakdown, j.id,
+                                 {"customer_name": "改名"})
+
+
+def test_update_customer_name_blocked_when_completed(db):
+    from models.handcraft_order import HandcraftOrder, HandcraftJewelryItem
+    from models.jewelry import Jewelry
+    from services.handcraft import _gen_receipt_code, update_handcraft_jewelry
+
+    db.add(Jewelry(id="SP-UJ3", name="x", category="吊坠"))
+    db.flush()
+    hc = HandcraftOrder(id="HC-UJ3", supplier_name="测", status="completed",
+                        receipt_code=_gen_receipt_code(db))
+    db.add(hc)
+    db.flush()
+    j = HandcraftJewelryItem(handcraft_order_id="HC-UJ3", jewelry_id="SP-UJ3",
+                             qty=100, received_qty=100, status="已收回", unit="套",
+                             customer_name="x")
+    db.add(j)
+    db.flush()
+    with pytest.raises(ValueError):
+        update_handcraft_jewelry(db, "HC-UJ3", j.id, {"customer_name": "y"})

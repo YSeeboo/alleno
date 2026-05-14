@@ -883,23 +883,50 @@ def add_handcraft_jewelry(db: Session, order_id: str, item: dict) -> HandcraftJe
 
 
 def update_handcraft_jewelry(db: Session, order_id: str, item_id: int, data: dict) -> HandcraftJewelryItem:
+    from models.order import OrderItemLink
+
     order = get_handcraft_order(db, order_id)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
-    if order.status != "pending":
-        raise ValueError(f"Cannot update jewelry: order {order_id} status is '{order.status}', must be 'pending'")
     item = db.query(HandcraftJewelryItem).filter(
         HandcraftJewelryItem.id == item_id,
         HandcraftJewelryItem.handcraft_order_id == order_id,
     ).first()
     if item is None:
         raise ValueError(f"HandcraftJewelryItem {item_id} not found in order {order_id}")
-    for field in ("qty", "unit", "note"):
-        if field in data and data[field] is not None:
-            setattr(item, field, data[field])
-    for wf in ("weight", "weight_unit"):
-        if wf in data:
-            setattr(item, wf, data[wf])
+
+    # customer_name has looser rules than the production-affecting fields:
+    # editable in pending OR processing (it's pure metadata, doesn't move stock).
+    # But order-linked rows derive their customer from Order.customer_name; the
+    # edit must be done at the source order, not here.
+    if "customer_name" in data:
+        if order.status == "completed":
+            raise ValueError("已完成的手工单不能修改客户名")
+        has_order_link = (
+            db.query(OrderItemLink.id)
+            .filter_by(handcraft_jewelry_item_id=item.id)
+            .first()
+            is not None
+        )
+        if has_order_link:
+            raise ValueError("订单来源行的客户名需在对应订单详情修改")
+        item.customer_name = data["customer_name"]
+
+    # All other fields stay pending-only — they affect production.
+    other_fields = {k: v for k, v in data.items() if k != "customer_name"}
+    if other_fields:
+        if order.status != "pending":
+            raise ValueError(
+                f"Cannot update jewelry: order {order_id} status is '{order.status}', "
+                f"must be 'pending'"
+            )
+        for field in ("qty", "unit", "note"):
+            if field in other_fields and other_fields[field] is not None:
+                setattr(item, field, other_fields[field])
+        for wf in ("weight", "weight_unit"):
+            if wf in other_fields:
+                setattr(item, wf, other_fields[wf])
+
     db.flush()
     return item
 
