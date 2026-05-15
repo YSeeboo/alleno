@@ -254,6 +254,15 @@
       </n-card>
     </n-spin>
 
+    <BreakdownEditModal
+      v-if="editBreakdownGroup"
+      v-model:show="editBreakdownVisible"
+      :hc-id="route.params.id"
+      :hc-status="order?.status || 'pending'"
+      :group="editBreakdownGroup"
+      @saved="onBreakdownSaved"
+    />
+
     <n-modal v-model:show="addModalVisible" preset="card" title="添加配件明细" :style="{ width: isMobile ? '95vw' : '560px' }">
       <n-tabs v-model:value="addModalTab" type="line" animated>
         <n-tab-pane name="single" tab="单条添加">
@@ -578,6 +587,7 @@ import {
   getHandcraftJewelryBreakdown,
 } from '@/api/handcraft'
 import BreakdownChips from '@/components/BreakdownChips.vue'
+import BreakdownEditModal from '@/components/BreakdownEditModal.vue'
 import { tsToDateStr, isoToTs } from '@/utils/date'
 import { confirmHandcraftLoss } from '@/api/productionLoss'
 import { changeOrderStatus } from '@/api/kanban'
