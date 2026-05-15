@@ -235,6 +235,23 @@
       <n-card v-if="jewelryItems.length > 0" title="产出明细">
         <n-data-table :columns="jewelryColumns" :data="jewelryItems" :bordered="false" />
       </n-card>
+
+      <n-card v-if="breakdownGroups.length > 0" title="客户分拣" style="margin-top: 16px;">
+        <div v-for="g in breakdownGroups" :key="`${g.kind}:${g.jewelry_id}`" class="breakdown-group">
+          <div class="breakdown-group__head">
+            <span class="breakdown-group__id">{{ g.jewelry_id }}</span>
+            <span class="breakdown-group__name">{{ g.jewelry_name }}</span>
+            <span class="breakdown-group__qty">
+              <strong>{{ g.total_qty }}</strong> · 已收 {{ g.received_qty }}
+              <n-tag size="small" :bordered="false" style="margin-left: 8px;">{{ g.status }}</n-tag>
+            </span>
+            <n-button size="small" @click="openBreakdownEditor(g)">编辑分拣</n-button>
+          </div>
+          <div class="breakdown-group__chips">
+            <BreakdownChips :entries="g.entries" />
+          </div>
+        </div>
+      </n-card>
     </n-spin>
 
     <n-modal v-model:show="addModalVisible" preset="card" title="添加配件明细" :style="{ width: isMobile ? '95vw' : '560px' }">
@@ -552,13 +569,15 @@ import { CreateOutline } from '@vicons/ionicons5'
 import {
   getHandcraft, getHandcraftParts, getHandcraftJewelries, sendHandcraft, supplementAndSendHandcraft,
   addHandcraftPart, updateHandcraftPart, deleteHandcraftPart,
-  updateHandcraftJewelry, deleteHandcraftJewelry, updateHandcraft,
+  addHandcraftJewelry, updateHandcraftJewelry, deleteHandcraftJewelry, updateHandcraft,
   updateHandcraftDeliveryImages, downloadHandcraftExcel, downloadHandcraftPdf,
   getHandcraftPartOrders, deleteHandcraftPartOrderLink,
   getHandcraftJewelryOrders, deleteHandcraftJewelryOrderLink,
   getHandcraftCuttingStats, downloadHandcraftCuttingStatsPdf,
   getHandcraftPicking,
+  getHandcraftJewelryBreakdown,
 } from '@/api/handcraft'
+import BreakdownChips from '@/components/BreakdownChips.vue'
 import { tsToDateStr, isoToTs } from '@/utils/date'
 import { confirmHandcraftLoss } from '@/api/productionLoss'
 import { changeOrderStatus } from '@/api/kanban'
@@ -1474,6 +1493,7 @@ const renderEditableCell = (field, row, emptyLabel) => {
 // --- Jewelry items ---
 const jewelryItems = ref([])
 const jewelryMap = ref({})
+const breakdownGroups = ref([])
 
 const loadJewelries = async () => {
   try {
@@ -1498,6 +1518,15 @@ const loadJewelries = async () => {
     })
   } catch (_) {
     jewelryItems.value = []
+  }
+}
+
+const loadBreakdown = async () => {
+  try {
+    const { data } = await getHandcraftJewelryBreakdown(route.params.id)
+    breakdownGroups.value = data || []
+  } catch (_) {
+    breakdownGroups.value = []
   }
 }
 
@@ -2090,12 +2119,25 @@ onMounted(async () => {
     listSuppliers({ type: 'handcraft' }).then(({ data }) => {
       supplierOptions.value = data.map((s) => ({ label: s.name, value: s.name }))
     })
-    await Promise.all([loadJewelries(), loadPartItemOrderLinks()])
+    await Promise.all([loadJewelries(), loadPartItemOrderLinks(), loadBreakdown()])
     await loadJewelryItemOrderLinks()
   } finally {
     loading.value = false
   }
 })
+
+function openBreakdownEditor(group) {
+  editBreakdownGroup.value = group
+  editBreakdownVisible.value = true
+}
+
+function onBreakdownSaved() {
+  loadBreakdown()
+  loadJewelries()
+}
+
+const editBreakdownVisible = ref(false)
+const editBreakdownGroup = ref(null)
 </script>
 
 <style scoped>
@@ -2220,5 +2262,42 @@ onMounted(async () => {
 :deep(.restock-row-done) {
   opacity: 0.6;
   background: #fafafa;
+}
+
+.breakdown-group {
+  padding: 10px 0;
+  border-bottom: 1px solid #e8e8ec;
+}
+.breakdown-group:last-child { border-bottom: none; }
+.breakdown-group__head {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+.breakdown-group__id {
+  font-family: "SF Mono", Menlo, monospace;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  padding: 2px 6px;
+  background: #f5f5f8;
+  border-radius: 3px;
+}
+.breakdown-group__name {
+  font-weight: 500;
+  font-size: 15px;
+}
+.breakdown-group__qty {
+  margin-left: auto;
+  margin-right: 12px;
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 13px;
+}
+.breakdown-group__qty strong {
+  font-family: "SF Mono", Menlo, monospace;
+  color: rgba(0, 0, 0, 0.88);
+}
+.breakdown-group__chips {
+  padding-left: 4px;
 }
 </style>
