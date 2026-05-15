@@ -386,6 +386,38 @@ def test_supplement_and_send_no_part_items(setup):
         supplement_and_send_handcraft_order(db, "HC-9000")
 
 
+def test_supplement_and_send_uses_picking_actual_qty(setup):
+    """When a part item has a 勾选'd picking actual_qty > pi.qty, supplement
+    must top up to actual_qty (the amount send will deduct), not to pi.qty.
+    Pre-fix: supplement adds (pi.qty - current), then send tries to deduct
+    actual_qty, fails 库存不足 by exactly (actual_qty - pi.qty).
+    """
+    from services.handcraft import supplement_and_send_handcraft_order
+    from models.handcraft_order import HandcraftPartItem
+    from services.inventory import deduct_stock
+    db, p1, _, j1 = setup  # p1 starts at 200
+    # Drain p1 to 0 so any miscount surfaces immediately.
+    deduct_stock(db, "part", p1.id, 200.0, "归零")
+    assert get_stock(db, "part", p1.id) == 0.0
+
+    order = create_handcraft_order(
+        db, "手工坊",
+        parts=[{"part_id": p1.id, "qty": 100, "bom_qty": 100.0}],
+        jewelries=[{"jewelry_id": j1.id, "qty": 1}],
+    )
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order.id).one()
+    # picking 实际称重 = 105 (e.g. rounded up to a packaging unit)
+    _seed_picking_actual_qty(db, order.id, pi.id, p1.id, 105.0)
+    _mark_picked(db, order.id, pi.id, p1.id)
+
+    result_order, supplemented = supplement_and_send_handcraft_order(db, order.id)
+    assert result_order.status == "processing"
+    # Must supplement to actual_qty=105, not pi.qty=100
+    assert supplemented == {p1.id: 105.0}
+    # Net: 0 + 105 (supplement) - 105 (send) = 0
+    assert get_stock(db, "part", p1.id) == 0.0
+
+
 # --- Picked-state gate + Edit sync (Bug 1 / Bug 2 fix coverage) ---
 
 

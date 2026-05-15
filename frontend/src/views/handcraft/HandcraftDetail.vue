@@ -6,7 +6,17 @@
     </n-space>
 
     <n-spin :show="loading">
-      <n-card v-if="order" title="基本信息" style="margin-bottom: 16px;">
+      <n-card
+        v-if="order"
+        style="margin-bottom: 16px;"
+        :content-style="collapsed.basic ? 'padding: 0' : undefined"
+      >
+        <template #header>
+          <div class="section-header" @click="collapsed.basic = !collapsed.basic">
+            <span class="section-chevron">{{ collapsed.basic ? '▸' : '▾' }}</span>
+            <span>基本信息</span>
+          </div>
+        </template>
         <template #header-extra>
           <n-space size="small">
             <n-button
@@ -30,6 +40,7 @@
             </n-button>
           </n-space>
         </template>
+        <div v-show="!collapsed.basic">
         <n-descriptions :column="isMobile ? 1 : 3" bordered>
           <n-descriptions-item label="手工单号">{{ order.id }}</n-descriptions-item>
           <n-descriptions-item label="回执编号" v-if="order.receipt_code">
@@ -194,9 +205,32 @@
             确认发出
           </n-button>
         </n-space>
+        </div>
       </n-card>
 
-      <n-card title="配件明细" style="margin-bottom: 16px;">
+      <n-card
+        v-if="jewelryItems.length > 0"
+        style="margin-bottom: 16px;"
+        :content-style="collapsed.jewelry ? 'padding: 0' : undefined"
+      >
+        <template #header>
+          <div class="section-header" @click="collapsed.jewelry = !collapsed.jewelry">
+            <span class="section-chevron">{{ collapsed.jewelry ? '▸' : '▾' }}</span>
+            <span>产出明细</span>
+          </div>
+        </template>
+        <div v-show="!collapsed.jewelry">
+          <n-data-table :columns="jewelryColumns" :data="jewelryItems" :bordered="false" />
+        </div>
+      </n-card>
+
+      <n-card style="margin-bottom: 16px;" :content-style="collapsed.parts ? 'padding: 0' : undefined">
+        <template #header>
+          <div class="section-header" @click="collapsed.parts = !collapsed.parts">
+            <span class="section-chevron">{{ collapsed.parts ? '▸' : '▾' }}</span>
+            <span>配件明细</span>
+          </div>
+        </template>
         <template #header-extra>
           <n-space size="small">
             <n-button
@@ -232,27 +266,37 @@
             </n-button>
           </n-space>
         </template>
-        <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" />
-        <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
+        <div v-show="!collapsed.parts">
+          <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" />
+          <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
+        </div>
       </n-card>
 
-      <n-card v-if="jewelryItems.length > 0" title="产出明细">
-        <n-data-table :columns="jewelryColumns" :data="jewelryItems" :bordered="false" />
-      </n-card>
-
-      <n-card v-if="breakdownGroups.length > 0" title="客户分拣" style="margin-top: 16px;">
-        <div v-for="g in breakdownGroups" :key="`${g.kind}:${g.jewelry_id}`" class="breakdown-group">
-          <div class="breakdown-group__head">
-            <span class="breakdown-group__id">{{ g.jewelry_id }}</span>
-            <span class="breakdown-group__name">{{ g.jewelry_name }}</span>
-            <span class="breakdown-group__qty">
-              <strong>{{ g.total_qty }}</strong> · 已收 {{ g.received_qty }}
-              <n-tag size="small" :bordered="false" style="margin-left: 8px;">{{ g.status }}</n-tag>
-            </span>
-            <n-button size="small" @click="openBreakdownEditor(g)">编辑分拣</n-button>
+      <n-card
+        v-if="breakdownGroups.length > 0"
+        style="margin-top: 16px;"
+        :content-style="collapsed.breakdown ? 'padding: 0' : undefined"
+      >
+        <template #header>
+          <div class="section-header" @click="collapsed.breakdown = !collapsed.breakdown">
+            <span class="section-chevron">{{ collapsed.breakdown ? '▸' : '▾' }}</span>
+            <span>客户分拣</span>
           </div>
-          <div class="breakdown-group__chips">
-            <BreakdownChips :entries="g.entries" />
+        </template>
+        <div v-show="!collapsed.breakdown">
+          <div v-for="g in breakdownGroups" :key="`${g.kind}:${g.jewelry_id}`" class="breakdown-group">
+            <div class="breakdown-group__head">
+              <span class="breakdown-group__id">{{ g.jewelry_id }}</span>
+              <span class="breakdown-group__name">{{ g.jewelry_name }}</span>
+              <span class="breakdown-group__qty">
+                <strong>{{ g.total_qty }}</strong> · 已收 {{ g.received_qty }}
+                <n-tag size="small" :bordered="false" style="margin-left: 8px;">{{ g.status }}</n-tag>
+              </span>
+              <n-button size="small" @click="openBreakdownEditor(g)">编辑分拣</n-button>
+            </div>
+            <div class="breakdown-group__chips">
+              <BreakdownChips :entries="g.entries" />
+            </div>
           </div>
         </div>
       </n-card>
@@ -511,7 +555,17 @@
       </template>
     </n-modal>
 
-    <n-card v-if="order" title="补货清单" style="margin-top: 16px;">
+    <n-card
+      v-if="order"
+      style="margin-top: 16px;"
+      :content-style="collapsed.restock ? 'padding: 0' : undefined"
+    >
+      <template #header>
+        <div class="section-header" @click="collapsed.restock = !collapsed.restock">
+          <span class="section-chevron">{{ collapsed.restock ? '▸' : '▾' }}</span>
+          <span>补货清单</span>
+        </div>
+      </template>
       <template #header-extra>
         <n-space size="small">
           <n-tag size="small" type="warning" :bordered="false">
@@ -523,14 +577,16 @@
           <n-button size="small" type="primary" @click="openManualRestockModal">+ 手动添加</n-button>
         </n-space>
       </template>
-      <n-data-table
-        :columns="restockColumns"
-        :data="restockRows"
-        :loading="restockLoading"
-        :bordered="false"
-        size="small"
-        :row-class-name="restockRowClass"
-      />
+      <div v-show="!collapsed.restock">
+        <n-data-table
+          :columns="restockColumns"
+          :data="restockRows"
+          :loading="restockLoading"
+          :bordered="false"
+          size="small"
+          :row-class-name="restockRowClass"
+        />
+      </div>
     </n-card>
 
     <n-modal v-model:show="manualRestockShow" preset="card" title="手动添加补货项" style="max-width: 480px;">
@@ -567,7 +623,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, h, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
@@ -623,6 +679,13 @@ const loading = ref(true)
 const downloadingExcel = ref(false)
 const downloadingPdf = ref(false)
 const order = ref(null)
+const collapsed = reactive({
+  basic: false,
+  jewelry: false,
+  parts: false,
+  restock: false,
+  breakdown: false,
+})
 const editingCreatedAt = ref(false)
 const editingCreatedAtTs = ref(null)
 const savingCreatedAt = ref(false)
@@ -2328,5 +2391,21 @@ const editBreakdownGroup = ref(null)
 }
 .breakdown-group__chips {
   padding-left: 4px;
+}
+
+.section-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+}
+
+.section-chevron {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  color: #999;
 }
 </style>

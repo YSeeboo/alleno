@@ -302,6 +302,23 @@ def create_handcraft_order(
     return order
 
 
+def _compute_effective_part_totals(
+    db: Session, handcraft_order_id: str, part_items: list
+) -> dict[str, float]:
+    """Sum picking-effective qty per part_id for a handcraft order. Atomic
+    items use the 勾选'd actual_qty override; composites and unpicked atoms
+    fall back to pi.qty. Single source of truth for both
+    `send_handcraft_order` and `supplement_and_send_handcraft_order` — they
+    must agree, otherwise supplement under-tops and send fails 库存不足.
+    """
+    actual_by_key = load_actual_qty_map(db, handcraft_order_id)
+    totals: dict[str, float] = {}
+    for item in part_items:
+        effective = actual_by_key.get((item.id, item.part_id), float(item.qty))
+        totals[item.part_id] = totals.get(item.part_id, 0.0) + effective
+    return totals
+
+
 def send_handcraft_order(db: Session, handcraft_order_id: str) -> HandcraftOrder:
     order = get_handcraft_order(db, handcraft_order_id)
     if order is None:
@@ -320,14 +337,7 @@ def send_handcraft_order(db: Session, handcraft_order_id: str) -> HandcraftOrder
         .filter(HandcraftJewelryItem.handcraft_order_id == handcraft_order_id)
         .all()
     )
-    # Atomic items pick up the picking override; composite items naturally
-    # fall back to pi.qty because their weight rows have atom_part_id != pi.part_id.
-    actual_by_key = load_actual_qty_map(db, handcraft_order_id)
-    # Aggregate effective qty by part_id (avoids double-deducting when same part appears multiple times)
-    part_totals: dict[str, float] = {}
-    for item in part_items:
-        effective = actual_by_key.get((item.id, item.part_id), float(item.qty))
-        part_totals[item.part_id] = part_totals.get(item.part_id, 0.0) + effective
+    part_totals = _compute_effective_part_totals(db, handcraft_order_id, part_items)
     # Batch check all parts before deducting
     stocks = batch_get_stock(db, "part", list(part_totals.keys()))
     insufficient = []
@@ -382,9 +392,7 @@ def supplement_and_send_handcraft_order(
             f"HandcraftOrder {handcraft_order_id} has no part items "
             f"and cannot be sent"
         )
-    part_totals: dict[str, float] = {}
-    for item in part_items:
-        part_totals[item.part_id] = part_totals.get(item.part_id, 0.0) + float(item.qty)
+    part_totals = _compute_effective_part_totals(db, handcraft_order_id, part_items)
     supplemented = supplement_shortfall(
         db, "part", part_totals,
         reason="手工单缺货补进",
