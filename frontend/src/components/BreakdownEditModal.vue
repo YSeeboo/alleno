@@ -172,7 +172,28 @@ function addManualRow() {
 }
 
 async function save() {
+  // Pre-flight validation — surface row-specific problems before any HTTP
+  // call so we don't end up half-committed.
+  for (let i = 0; i < rows.value.length; i++) {
+    const r = rows.value[i]
+    if (r.is_locked) continue
+    const trimmed = (r.customer_name || '').trim()
+    if (!trimmed) {
+      message.error(`第 ${i + 1} 行客户名不能为空`)
+      return
+    }
+    if (!(Number(r.qty) > 0)) {
+      message.error(`第 ${i + 1} 行数量必须大于 0`)
+      return
+    }
+  }
+
   saving.value = true
+  // Save is not transactional across the multiple HTTP calls below. If any
+  // call fails mid-flight, some changes may have already been persisted.
+  // We always emit('saved') in the finally so the parent re-fetches a fresh
+  // breakdown, preventing the modal from showing stale "before-save" state.
+  let dirtied = false
   try {
     // 1) Delete originals that are no longer in `rows`
     const survivingIds = new Set(
@@ -182,6 +203,7 @@ async function save() {
       if (orig.is_locked) continue
       if (!survivingIds.has(orig.hc_jewelry_item_id)) {
         await deleteHandcraftJewelry(props.hcId, orig.hc_jewelry_item_id)
+        dirtied = true
       }
     }
 
@@ -189,11 +211,6 @@ async function save() {
     for (const r of rows.value) {
       if (r.is_locked) continue
       if (r._new) {
-        if (!r.customer_name || !r.customer_name.trim()) {
-          message.error('手填客户行的客户名不能为空')
-          saving.value = false
-          return
-        }
         const payload = {
           qty: r.qty,
           customer_name: r.customer_name.trim(),
@@ -204,20 +221,23 @@ async function save() {
           payload.part_id = props.group.jewelry_id
         }
         await addHandcraftJewelry(props.hcId, payload)
+        dirtied = true
       } else if (r._dirty) {
-        const payload = {}
-        if (r.customer_name !== null) payload.customer_name = r.customer_name
+        const payload = { customer_name: r.customer_name.trim() }
         if (canEditQty.value) payload.qty = r.qty
         await updateHandcraftJewelry(props.hcId, r.hc_jewelry_item_id, payload)
+        dirtied = true
       }
     }
 
     message.success('已保存')
-    emit('saved')
     emit('update:show', false)
   } catch (err) {
-    message.error(err?.response?.data?.detail || '保存失败')
+    message.error(err?.response?.data?.detail || '保存失败，请刷新核对')
   } finally {
+    // Always re-emit saved if we touched anything, so the parent reloads
+    // breakdown groups and reflects whatever did succeed.
+    if (dirtied) emit('saved')
     saving.value = false
   }
 }

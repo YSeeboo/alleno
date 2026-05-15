@@ -822,6 +822,8 @@ def update_handcraft_part(db: Session, order_id: str, item_id: int, data: dict) 
 
 
 def delete_handcraft_part(db: Session, order_id: str, item_id: int) -> None:
+    from models.order import OrderItemLink
+
     order = get_handcraft_order(db, order_id)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
@@ -833,6 +835,13 @@ def delete_handcraft_part(db: Session, order_id: str, item_id: int) -> None:
     ).first()
     if item is None:
         raise ValueError(f"HandcraftPartItem {item_id} not found in order {order_id}")
+    # Order-linked rows must be unlinked at the source order, not deleted here.
+    # Otherwise the cascade-less FK on OrderItemLink raises IntegrityError → 500.
+    has_order_link = db.query(OrderItemLink.id).filter_by(
+        handcraft_part_item_id=item.id
+    ).first() is not None
+    if has_order_link:
+        raise ValueError("订单来源行不能在此删除；请先在订单详情解除关联")
     remaining = db.query(HandcraftPartItem).filter(
         HandcraftPartItem.handcraft_order_id == order_id,
         HandcraftPartItem.id != item_id,
@@ -940,6 +949,8 @@ def update_handcraft_jewelry(db: Session, order_id: str, item_id: int, data: dic
 
 
 def delete_handcraft_jewelry(db: Session, order_id: str, item_id: int) -> None:
+    from models.order import OrderItemLink
+
     order = get_handcraft_order(db, order_id)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
@@ -951,6 +962,13 @@ def delete_handcraft_jewelry(db: Session, order_id: str, item_id: int) -> None:
     ).first()
     if item is None:
         raise ValueError(f"HandcraftJewelryItem {item_id} not found in order {order_id}")
+    # Order-linked rows must be unlinked at the source order, not deleted here.
+    # Otherwise the cascade-less FK on OrderItemLink raises IntegrityError → 500.
+    has_order_link = db.query(OrderItemLink.id).filter_by(
+        handcraft_jewelry_item_id=item.id
+    ).first() is not None
+    if has_order_link:
+        raise ValueError("订单来源行不能在此删除；请先在订单详情解除关联")
     remaining = db.query(HandcraftJewelryItem).filter(
         HandcraftJewelryItem.handcraft_order_id == order_id,
         HandcraftJewelryItem.id != item_id,

@@ -244,3 +244,72 @@ def test_add_jewelry_without_customer_name_still_allowed_in_processing(db):
     item = add_handcraft_jewelry(db, "HC-AJ3",
         {"jewelry_id": "SP-AJ3", "qty": 50})
     assert item.customer_name is None
+
+
+def test_delete_jewelry_blocked_when_order_linked(db, hc_with_mixed_breakdown):
+    """delete_handcraft_jewelry must refuse to delete an order-linked row
+    so the FK doesn't blow up the request with a 500."""
+    from models.handcraft_order import HandcraftJewelryItem, HandcraftOrder
+    from services.handcraft import delete_handcraft_jewelry
+
+    # The hc_with_mixed_breakdown fixture leaves HC-MIX in pending, with
+    # an order-linked row at qty=1000. Confirm that's the case, then delete.
+    hc = db.query(HandcraftOrder).filter_by(id=hc_with_mixed_breakdown).first()
+    assert hc.status == "pending"
+    linked_row = db.query(HandcraftJewelryItem).filter_by(
+        handcraft_order_id=hc_with_mixed_breakdown, qty=1000,
+    ).first()
+    with pytest.raises(ValueError, match="订单"):
+        delete_handcraft_jewelry(db, hc_with_mixed_breakdown, linked_row.id)
+
+
+def test_delete_part_blocked_when_order_linked(db):
+    """delete_handcraft_part must refuse to delete an order-linked part row."""
+    from tests.helpers import seed_order_with_batch
+    from services.order_todo import link_supplier
+    from services.handcraft import delete_handcraft_part
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem
+
+    order_id, batch_id = seed_order_with_batch(db, qty=100)
+    result = link_supplier(db, order_id, batch_id, "王师傅")
+    hc_id = result["handcraft_order_id"]
+    # link_supplier created HC + part item + OrderItemLink to OrderTodoItem.
+    # The HC stays pending (default state).
+    hc = db.query(HandcraftOrder).filter_by(id=hc_id).first()
+    assert hc.status == "pending"
+    part_item = db.query(HandcraftPartItem).filter_by(
+        handcraft_order_id=hc_id,
+    ).first()
+    with pytest.raises(ValueError, match="订单"):
+        delete_handcraft_part(db, hc_id, part_item.id)
+
+
+def test_create_link_blocked_when_jewelry_has_customer_name(db):
+    """A manual breakdown row (has customer_name) must not be retro-linked
+    to an order — the two are mutually exclusive."""
+    from models.handcraft_order import HandcraftOrder, HandcraftJewelryItem
+    from models.order import Order, OrderItem
+    from models.jewelry import Jewelry
+    from services.handcraft import _gen_receipt_code
+    from services.order_todo import create_link
+
+    db.add(Jewelry(id="SP-CL", name="x", category="吊坠"))
+    db.flush()
+    hc = HandcraftOrder(id="HC-CL", supplier_name="x", status="pending",
+                        receipt_code=_gen_receipt_code(db))
+    db.add(hc)
+    db.add(Order(id="OR-CL", customer_name="Z 客户", status="待生产"))
+    db.flush()
+    db.add(OrderItem(order_id="OR-CL", jewelry_id="SP-CL", quantity=50, unit_price=1))
+    db.flush()
+    hji = HandcraftJewelryItem(handcraft_order_id="HC-CL", jewelry_id="SP-CL",
+                               qty=50, received_qty=0, status="未送出", unit="套",
+                               customer_name="手填客户A")
+    db.add(hji)
+    db.flush()
+
+    with pytest.raises(ValueError, match="手填客户名"):
+        create_link(db, {
+            "order_id": "OR-CL",
+            "handcraft_jewelry_item_id": hji.id,
+        })

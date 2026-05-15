@@ -207,6 +207,12 @@ def create_link(db: Session, data: dict) -> OrderItemLink:
             hji = db.get(HandcraftJewelryItem, data["handcraft_jewelry_item_id"])
             if hji is None:
                 raise ValueError(f"HandcraftJewelryItem not found: {data['handcraft_jewelry_item_id']}")
+            # Invariant: customer_name (手填) and OrderItemLink are mutually
+            # exclusive. update_handcraft_jewelry already blocks editing
+            # customer_name on linked rows; we mirror that on the link side
+            # so a manual row can't get retro-linked to an order.
+            if hji.customer_name is not None:
+                raise ValueError("该手工饰品项已设置手填客户名，请先清除后再关联订单")
             order_jewelry_ids = {
                 oi.jewelry_id
                 for oi in db.query(OrderItem).filter(OrderItem.order_id == data["order_id"]).all()
