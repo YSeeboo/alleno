@@ -4,7 +4,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem, HandcraftPickingWeight
+from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem, HandcraftPickingRecord, HandcraftPickingWeight
 from models.handcraft_receipt import HandcraftReceipt, HandcraftReceiptItem
 from models.jewelry import Jewelry
 from models.part import Part
@@ -29,18 +29,28 @@ def _effective_qty(db: Session, oi, item_type: str) -> float:
     """Effective sent quantity used as the receipt cap and the status-flip
     threshold.
 
-    For atomic part items, the picking-side `actual_qty` override (if set)
-    is authoritative — receipt may not exceed what was actually sent.
-    Composite part items and jewelry items have no override path, so they
-    fall back to oi.qty.
+    For atomic part items, the picking-side `actual_qty` override is
+    authoritative *only when the row was also 勾选'd* (a matching
+    `HandcraftPickingRecord` exists). Filling actual_qty without 勾选 is a
+    draft and ignored. Composite part items and jewelry items have no
+    override path, so they fall back to oi.qty.
     """
     if item_type != "part":
         return float(oi.qty)
-    row = db.query(HandcraftPickingWeight.actual_qty).filter(
-        HandcraftPickingWeight.part_item_id == oi.id,
-        HandcraftPickingWeight.atom_part_id == oi.part_id,
-        HandcraftPickingWeight.actual_qty.is_not(None),
-    ).one_or_none()
+    row = (
+        db.query(HandcraftPickingWeight.actual_qty)
+        .join(
+            HandcraftPickingRecord,
+            (HandcraftPickingRecord.handcraft_part_item_id == HandcraftPickingWeight.part_item_id)
+            & (HandcraftPickingRecord.part_id == HandcraftPickingWeight.atom_part_id),
+        )
+        .filter(
+            HandcraftPickingWeight.part_item_id == oi.id,
+            HandcraftPickingWeight.atom_part_id == oi.part_id,
+            HandcraftPickingWeight.actual_qty.is_not(None),
+        )
+        .one_or_none()
+    )
     return float(row[0]) if row is not None else float(oi.qty)
 
 

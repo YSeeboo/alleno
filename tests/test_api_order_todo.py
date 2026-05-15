@@ -793,7 +793,7 @@ def test_link_supplier_reservation_uses_effective_qty(client, db):
     would falsely report 库存不足 when there is in fact enough stock."""
     from decimal import Decimal
     from services.handcraft import create_handcraft_order
-    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingRecord, HandcraftPickingWeight
 
     order_id, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
     # Order needs 100 of A and 10 of B (qty=100 × bom 1.0 for B, 10 of A wait
@@ -828,6 +828,11 @@ def test_link_supplier_reservation_uses_effective_qty(client, db):
         part_item_id=pi.id,
         atom_part_id=part_a.id,
         actual_qty=Decimal("1"),
+    ))
+    db.add(HandcraftPickingRecord(
+        handcraft_order_id=hc.id,
+        handcraft_part_item_id=pi.id,
+        part_id=part_a.id,
     ))
     db.flush()
 

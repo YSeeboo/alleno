@@ -783,10 +783,10 @@ def test_supplement_and_send_handcraft_order_not_found(client, db):
 
 
 def test_get_parts_includes_actual_qty_for_atomic(client, db):
-    """When picking_weight.actual_qty is set on an atomic part_item, the
-    parts GET response surfaces it. Key match: (pi.id, pi.part_id)."""
+    """When picking_weight.actual_qty is set on an atomic part_item AND
+    the row is 勾选'd, the parts GET response surfaces it."""
     from decimal import Decimal
-    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingRecord, HandcraftPickingWeight
 
     part, jewelry = _setup(db)
     created = client.post("/api/handcraft/", json={
@@ -801,6 +801,11 @@ def test_get_parts_includes_actual_qty_for_atomic(client, db):
         part_item_id=pi.id,
         atom_part_id=part.id,
         actual_qty=Decimal("80.0000"),
+    ))
+    db.add(HandcraftPickingRecord(
+        handcraft_order_id=order_id,
+        handcraft_part_item_id=pi.id,
+        part_id=part.id,
     ))
     db.flush()
 
@@ -868,9 +873,9 @@ def test_get_parts_omits_actual_qty_for_composite(client, db):
 
 
 def test_send_handcraft_uses_actual_qty_when_present(client, db):
-    """Atomic item with actual_qty=80 and pi.qty=100 → send deducts 80."""
+    """Atomic item with actual_qty=80, picked, pi.qty=100 → send deducts 80."""
     from decimal import Decimal
-    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingRecord, HandcraftPickingWeight
 
     part, jewelry = _setup(db)  # adds 100 stock for the part
     created = client.post("/api/handcraft/", json={
@@ -885,6 +890,11 @@ def test_send_handcraft_uses_actual_qty_when_present(client, db):
         part_item_id=pi.id,
         atom_part_id=part.id,
         actual_qty=Decimal("80.0000"),
+    ))
+    db.add(HandcraftPickingRecord(
+        handcraft_order_id=order_id,
+        handcraft_part_item_id=pi.id,
+        part_id=part.id,
     ))
     db.flush()
 
@@ -907,9 +917,9 @@ def test_send_handcraft_falls_back_to_pi_qty_when_no_override(client, db):
 
 
 def test_send_handcraft_stock_check_uses_effective_qty_under(client, db):
-    """actual_qty=80 < stock=90 < pi.qty=100 → send succeeds (uses effective 80)."""
+    """actual_qty=80, picked < stock=90 < pi.qty=100 → send succeeds (uses 80)."""
     from decimal import Decimal
-    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingRecord, HandcraftPickingWeight
 
     part = create_part(db, {"name": "P-EU", "category": "小配件"})
     jewelry = create_jewelry(db, {"name": "J-EU", "category": "单件"})
@@ -927,6 +937,11 @@ def test_send_handcraft_stock_check_uses_effective_qty_under(client, db):
         atom_part_id=part.id,
         actual_qty=Decimal("80.0000"),
     ))
+    db.add(HandcraftPickingRecord(
+        handcraft_order_id=order_id,
+        handcraft_part_item_id=pi.id,
+        part_id=part.id,
+    ))
     db.flush()
 
     resp = client.post(f"/api/handcraft/{order_id}/send")
@@ -935,9 +950,10 @@ def test_send_handcraft_stock_check_uses_effective_qty_under(client, db):
 
 
 def test_send_handcraft_stock_check_uses_effective_qty_over(client, db):
-    """actual_qty=100 > stock=90 (even though pi.qty=80 would succeed) → fail."""
+    """actual_qty=100 (picked) > stock=90 (even though pi.qty=80 would
+    succeed) → fail."""
     from decimal import Decimal
-    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingRecord, HandcraftPickingWeight
 
     part = create_part(db, {"name": "P-EO", "category": "小配件"})
     jewelry = create_jewelry(db, {"name": "J-EO", "category": "单件"})
@@ -954,6 +970,11 @@ def test_send_handcraft_stock_check_uses_effective_qty_over(client, db):
         part_item_id=pi.id,
         atom_part_id=part.id,
         actual_qty=Decimal("100.0000"),
+    ))
+    db.add(HandcraftPickingRecord(
+        handcraft_order_id=order_id,
+        handcraft_part_item_id=pi.id,
+        part_id=part.id,
     ))
     db.flush()
 
@@ -1004,10 +1025,11 @@ def test_send_handcraft_composite_unaffected_by_atom_actual_qty(client, db):
 
 
 def test_send_handcraft_aggregates_overrides_across_items(client, db):
-    """Same atomic part_id in two pi rows with separate actual_qty overrides:
-    effective qty is summed per part_id before deduction (30 + 40 = 70)."""
+    """Same atomic part_id in two pi rows with separate actual_qty overrides
+    (both picked): effective qty is summed per part_id before deduction
+    (30 + 40 = 70)."""
     from decimal import Decimal
-    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingRecord, HandcraftPickingWeight
 
     part, jewelry = _setup(db)  # 100 stock for part
     add_stock(db, "part", part.id, 100.0, "额外入库")  # bump to 200 for headroom
@@ -1039,6 +1061,12 @@ def test_send_handcraft_aggregates_overrides_across_items(client, db):
         atom_part_id=part.id,
         actual_qty=Decimal("40.0000"),
     ))
+    for pi in pis:
+        db.add(HandcraftPickingRecord(
+            handcraft_order_id=order_id,
+            handcraft_part_item_id=pi.id,
+            part_id=part.id,
+        ))
     db.flush()
 
     resp = client.post(f"/api/handcraft/{order_id}/send")
@@ -1048,10 +1076,11 @@ def test_send_handcraft_aggregates_overrides_across_items(client, db):
 
 
 def test_delete_after_send_with_actual_qty_uses_effective_for_reversal(client, db):
-    """Send deducted effective qty (actual_qty=8, not pi.qty=10); delete must
-    reverse the same effective qty, not pi.qty, or stock drifts up by (pi.qty - actual_qty)."""
+    """Send deducted effective qty (actual_qty=8 picked, not pi.qty=10);
+    delete must reverse the same effective qty, not pi.qty, or stock drifts
+    up by (pi.qty - actual_qty)."""
     from decimal import Decimal
-    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingRecord, HandcraftPickingWeight
 
     part, jewelry = _setup(db)  # 100 stock
     created = client.post("/api/handcraft/", json={
@@ -1067,6 +1096,11 @@ def test_delete_after_send_with_actual_qty_uses_effective_for_reversal(client, d
         atom_part_id=part.id,
         actual_qty=Decimal("8.0000"),
     ))
+    db.add(HandcraftPickingRecord(
+        handcraft_order_id=order_id,
+        handcraft_part_item_id=pi.id,
+        part_id=part.id,
+    ))
     db.flush()
 
     # Send: deducts effective=8 → stock=92
@@ -1081,10 +1115,11 @@ def test_delete_after_send_with_actual_qty_uses_effective_for_reversal(client, d
 
 
 def test_pending_receive_returns_effective_qty_for_atomic_override(client, db):
-    """The pending-receive list must report the effective qty as the 可回收
-    upper bound, so the UI doesn't invite users to over-receive."""
+    """The pending-receive list must report the effective qty (actual_qty
+    when picked) as the 可回收 upper bound, so the UI doesn't invite users
+    to over-receive."""
     from decimal import Decimal
-    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingRecord, HandcraftPickingWeight
 
     part, jewelry = _setup(db)
     created = client.post("/api/handcraft/", json={
@@ -1099,6 +1134,11 @@ def test_pending_receive_returns_effective_qty_for_atomic_override(client, db):
         part_item_id=pi.id,
         atom_part_id=part.id,
         actual_qty=Decimal("8.0000"),
+    ))
+    db.add(HandcraftPickingRecord(
+        handcraft_order_id=order_id,
+        handcraft_part_item_id=pi.id,
+        part_id=part.id,
     ))
     db.flush()
     send_resp = client.post(f"/api/handcraft/{order_id}/send")

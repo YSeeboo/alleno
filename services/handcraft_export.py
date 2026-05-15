@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from models.handcraft_order import HandcraftPartItem
 from models.part import Part
 from models.restock_request import RestockRequest
-from services.handcraft import get_handcraft_order
+from services.handcraft import load_actual_qty_map, get_handcraft_order
 from services.handcraft_picking_weight import sum_weight_by_part_item
 from services.plating_export import (
     build_export_filename,
@@ -33,10 +33,19 @@ def get_handcraft_export_payload(db: Session, order_id: str) -> dict:
         for part in db.query(Part).filter(Part.id.in_(part_ids)).all()
     }
 
+    # Effective qty: picking actual_qty (only when 勾选'd) overrides pi.qty.
+    # Mirrors the displayed "发出数量" and the qty used by send/receive so the
+    # PDF/Excel suppliers see matches what the system actually deducts.
+    actual_by_key = load_actual_qty_map(db, order_id)
+
     detail_rows = []
     for item in items:
         part = parts.get(item.part_id)
-        qty = float(item.qty) if item.qty is not None else None
+        override = actual_by_key.get((item.id, item.part_id))
+        if override is not None:
+            qty = float(override)
+        else:
+            qty = float(item.qty) if item.qty is not None else None
         # Weight now lives in handcraft_picking_weight (per atom). SUM normalizes
         # to kg across mixed units, so the display unit is always kg.
         weight = sum_weight_by_part_item(db, item.id, target_unit="kg")

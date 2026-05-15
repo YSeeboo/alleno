@@ -1238,8 +1238,8 @@ def change_order_status(
             # Reverse the effective qty that send actually deducted; composite
             # items naturally fall back to pi.qty because their key
             # (pi.id, pi.part_id) never appears in picking_weight.
-            from services.handcraft import _load_actual_qty_map
-            actual_by_key = _load_actual_qty_map(db, order_id)
+            from services.handcraft import load_actual_qty_map
+            actual_by_key = load_actual_qty_map(db, order_id)
             for item in part_items:
                 effective = actual_by_key.get((item.id, item.part_id), float(item.qty))
                 add_stock(db, "part", item.part_id, effective, reason="手工发出撤回")

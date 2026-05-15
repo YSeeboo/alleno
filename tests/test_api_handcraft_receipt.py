@@ -593,9 +593,10 @@ def test_jewelry_handcraft_cost_diff_on_add_items(client, db):
 
 def _create_sent_handcraft_with_actual_qty(db, pi_qty=10.0, actual_qty=8.0):
     """Create + send a handcraft order whose atomic part item has an actual_qty
-    override stashed in handcraft_picking_weight."""
+    override stashed in handcraft_picking_weight, plus a matching
+    handcraft_picking_record so the override is honored as 勾选'd."""
     from decimal import Decimal
-    from models.handcraft_order import HandcraftPickingWeight
+    from models.handcraft_order import HandcraftPickingRecord, HandcraftPickingWeight
 
     part = create_part(db, {"name": "配件AQ", "category": "小配件"})
     jewelry = create_jewelry(db, {"name": "饰品AQ", "category": "单件"})
@@ -611,6 +612,11 @@ def _create_sent_handcraft_with_actual_qty(db, pi_qty=10.0, actual_qty=8.0):
         part_item_id=pi.id,
         atom_part_id=part.id,
         actual_qty=Decimal(str(actual_qty)),
+    ))
+    db.add(HandcraftPickingRecord(
+        handcraft_order_id=order.id,
+        handcraft_part_item_id=pi.id,
+        part_id=part.id,
     ))
     db.flush()
     send_handcraft_order(db, order.id)

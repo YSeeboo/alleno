@@ -336,10 +336,10 @@ def test_handcraft_cutting_stats_not_found(db):
 
 
 def test_handcraft_cutting_stats_uses_actual_qty_for_atomic(db):
-    """Atomic chain item with picking actual_qty=8, pi.qty=10:
+    """Atomic chain item with picking actual_qty=8 (picked), pi.qty=10:
     cutting stats must reflect effective (8), not planned (10)."""
     from decimal import Decimal
-    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingRecord, HandcraftPickingWeight
 
     chain = _make_chain_part(db)
     add_stock(db, "part", chain.id, 100, "入库")
@@ -358,6 +358,11 @@ def test_handcraft_cutting_stats_uses_actual_qty_for_atomic(db):
         part_item_id=pi.id,
         atom_part_id=chain.id,
         actual_qty=Decimal("8"),
+    ))
+    db.add(HandcraftPickingRecord(
+        handcraft_order_id=order.id,
+        handcraft_part_item_id=pi.id,
+        part_id=chain.id,
     ))
     db.flush()
 

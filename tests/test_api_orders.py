@@ -72,7 +72,7 @@ def test_get_parts_summary_reserved_uses_effective_qty(client, db):
     from decimal import Decimal
     from services.inventory import add_stock
     from services.handcraft import create_handcraft_order
-    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingRecord, HandcraftPickingWeight
 
     part, jewelry = _setup(db)
     set_bom(db, jewelry.id, part.id, 2)
@@ -91,6 +91,11 @@ def test_get_parts_summary_reserved_uses_effective_qty(client, db):
         part_item_id=pi.id,
         atom_part_id=part.id,
         actual_qty=Decimal("8"),
+    ))
+    db.add(HandcraftPickingRecord(
+        handcraft_order_id=hc.id,
+        handcraft_part_item_id=pi.id,
+        part_id=part.id,
     ))
     db.flush()
 

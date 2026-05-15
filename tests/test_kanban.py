@@ -531,7 +531,7 @@ def test_kanban_revert_processing_to_pending_uses_effective_qty(db, part, jewelr
     matching what send actually deducted. Otherwise stock drifts up by
     (pi.qty - actual_qty) — same shape as the delete_handcraft_order bug."""
     from decimal import Decimal
-    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingRecord, HandcraftPickingWeight
     from services.inventory import get_stock
 
     order = create_handcraft_order(
@@ -546,6 +546,11 @@ def test_kanban_revert_processing_to_pending_uses_effective_qty(db, part, jewelr
         atom_part_id=part.id,
         actual_qty=Decimal("8"),
     ))
+    db.add(HandcraftPickingRecord(
+        handcraft_order_id=order.id,
+        handcraft_part_item_id=pi.id,
+        part_id=part.id,
+    ))
     db.flush()
     initial = get_stock(db, "part", part.id)
     send_handcraft_order(db, order.id)
@@ -557,10 +562,11 @@ def test_kanban_revert_processing_to_pending_uses_effective_qty(db, part, jewelr
 
 
 def test_kanban_dispatched_uses_effective_qty_for_atomic(db, part, jewelry):
-    """Vendor-detail dispatched_qty must reflect picking actual_qty override.
-    Pre-fix: dispatched=pi.qty=10 + received=8 → outstanding=2 forever."""
+    """Vendor-detail dispatched_qty must reflect picking actual_qty override
+    (when 勾选'd). Pre-fix: dispatched=pi.qty=10 + received=8 →
+    outstanding=2 forever."""
     from decimal import Decimal
-    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingRecord, HandcraftPickingWeight
 
     order = create_handcraft_order(
         db, "手工厂A",
@@ -573,6 +579,11 @@ def test_kanban_dispatched_uses_effective_qty_for_atomic(db, part, jewelry):
         part_item_id=pi.id,
         atom_part_id=part.id,
         actual_qty=Decimal("8"),
+    ))
+    db.add(HandcraftPickingRecord(
+        handcraft_order_id=order.id,
+        handcraft_part_item_id=pi.id,
+        part_id=part.id,
     ))
     db.flush()
     send_handcraft_order(db, order.id)

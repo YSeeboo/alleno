@@ -384,3 +384,174 @@ def test_supplement_and_send_no_part_items(setup):
     db.flush()
     with pytest.raises(ValueError, match="no part items"):
         supplement_and_send_handcraft_order(db, "HC-9000")
+
+
+# --- Picked-state gate + Edit sync (Bug 1 / Bug 2 fix coverage) ---
+
+
+def _seed_picking_actual_qty(db, order_id, part_item_id, atom_part_id, qty):
+    """Insert a HandcraftPickingWeight row with actual_qty (no record yet)."""
+    from decimal import Decimal
+    from models.handcraft_order import HandcraftPickingWeight
+    db.add(HandcraftPickingWeight(
+        handcraft_order_id=order_id,
+        part_item_id=part_item_id,
+        atom_part_id=atom_part_id,
+        actual_qty=Decimal(str(qty)),
+    ))
+    db.flush()
+
+
+def _mark_picked(db, order_id, part_item_id, atom_part_id):
+    from models.handcraft_order import HandcraftPickingRecord
+    db.add(HandcraftPickingRecord(
+        handcraft_order_id=order_id,
+        handcraft_part_item_id=part_item_id,
+        part_id=atom_part_id,
+    ))
+    db.flush()
+
+
+def test_actual_qty_without_picked_falls_back_to_pi_qty(setup):
+    """Gate: actual_qty is set but the row was not 勾选'd → send uses pi.qty,
+    not the override. Encodes the new spec: 填数字+未勾选=不采纳."""
+    db, p1, _, j1 = setup
+    order = create_handcraft_order(
+        db, "GateSupp1",
+        parts=[{"part_id": p1.id, "qty": 100.0}],
+        jewelries=[{"jewelry_id": j1.id, "qty": 1}],
+    )
+    from models.handcraft_order import HandcraftPartItem
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order.id).one()
+    _seed_picking_actual_qty(db, order.id, pi.id, p1.id, 80.0)  # filled but not picked
+
+    send_handcraft_order(db, order.id)
+    # Pre-stock was 200; no gate would deduct 80 → 120 left.
+    # With gate, deducts pi.qty=100 → 100 left.
+    assert get_stock(db, "part", p1.id) == pytest.approx(100.0)
+
+
+def test_actual_qty_with_picked_overrides_pi_qty(setup):
+    """Gate positive case: filled + 勾选 → send uses actual_qty."""
+    db, p1, _, j1 = setup
+    order = create_handcraft_order(
+        db, "GateSupp2",
+        parts=[{"part_id": p1.id, "qty": 100.0}],
+        jewelries=[{"jewelry_id": j1.id, "qty": 1}],
+    )
+    from models.handcraft_order import HandcraftPartItem
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order.id).one()
+    _seed_picking_actual_qty(db, order.id, pi.id, p1.id, 80.0)
+    _mark_picked(db, order.id, pi.id, p1.id)
+
+    send_handcraft_order(db, order.id)
+    # Pre-stock 200, deduct effective 80 → 120 left.
+    assert get_stock(db, "part", p1.id) == pytest.approx(120.0)
+
+
+def test_update_handcraft_part_qty_overwrites_measured_actual_qty(setup):
+    """Spec lock-in: Edit qty unconditionally overwrites actual_qty, even
+    when actual_qty differs from the original pi.qty (i.e. the user
+    measured something different during picking). Confirmed semantic — see
+    conversation 2026-05-13. If this assumption changes, update the spec
+    AND this test together."""
+    from services.handcraft import update_handcraft_part
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    db, p1, _, j1 = setup
+    order = create_handcraft_order(
+        db, "MeasureSupp",
+        parts=[{"part_id": p1.id, "qty": 100.0}],
+        jewelries=[{"jewelry_id": j1.id, "qty": 1}],
+    )
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order.id).one()
+    _seed_picking_actual_qty(db, order.id, pi.id, p1.id, 80.0)  # measured 80, planned 100
+    _mark_picked(db, order.id, pi.id, p1.id)
+
+    update_handcraft_part(db, order.id, pi.id, {"qty": 110.0})
+
+    row = db.query(HandcraftPickingWeight).filter_by(
+        part_item_id=pi.id, atom_part_id=p1.id,
+    ).one()
+    assert float(row.actual_qty) == pytest.approx(110.0)
+
+
+def test_update_handcraft_part_qty_noop_leaves_actual_qty_alone(setup):
+    """No-op PATCH (resubmitting the same qty) must not write to the
+    picking_weight row. Without the equality check, idempotent client
+    retries would churn the audit log and reset the override."""
+    from services.handcraft import update_handcraft_part
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    db, p1, _, j1 = setup
+    order = create_handcraft_order(
+        db, "NoopSupp",
+        parts=[{"part_id": p1.id, "qty": 100.0}],
+        jewelries=[{"jewelry_id": j1.id, "qty": 1}],
+    )
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order.id).one()
+    _seed_picking_actual_qty(db, order.id, pi.id, p1.id, 80.0)
+    _mark_picked(db, order.id, pi.id, p1.id)
+
+    update_handcraft_part(db, order.id, pi.id, {"qty": 100.0})  # same as current
+
+    row = db.query(HandcraftPickingWeight).filter_by(
+        part_item_id=pi.id, atom_part_id=p1.id,
+    ).one()
+    assert float(row.actual_qty) == pytest.approx(80.0)  # preserved
+
+
+def test_update_handcraft_part_qty_syncs_actual_qty(setup):
+    """Bug 1 fix: when picking has set actual_qty (and is picked), Edit qty
+    must propagate to actual_qty so the override stays consistent."""
+    from services.handcraft import update_handcraft_part
+    from models.handcraft_order import HandcraftPartItem, HandcraftPickingWeight
+    db, p1, _, j1 = setup
+    order = create_handcraft_order(
+        db, "EditSupp",
+        parts=[{"part_id": p1.id, "qty": 100.0}],
+        jewelries=[{"jewelry_id": j1.id, "qty": 1}],
+    )
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order.id).one()
+    _seed_picking_actual_qty(db, order.id, pi.id, p1.id, 80.0)
+    _mark_picked(db, order.id, pi.id, p1.id)
+
+    update_handcraft_part(db, order.id, pi.id, {"qty": 110.0})
+
+    row = db.query(HandcraftPickingWeight).filter_by(
+        part_item_id=pi.id, atom_part_id=p1.id,
+    ).one()
+    assert float(row.actual_qty) == pytest.approx(110.0)
+
+
+def test_export_payload_uses_effective_qty_when_picked(setup):
+    """Bug 2 fix: PDF/Excel payload returns actual_qty when picked."""
+    from services.handcraft_export import get_handcraft_export_payload
+    from models.handcraft_order import HandcraftPartItem
+    db, p1, _, j1 = setup
+    order = create_handcraft_order(
+        db, "ExportSupp1",
+        parts=[{"part_id": p1.id, "qty": 100.0}],
+        jewelries=[{"jewelry_id": j1.id, "qty": 1}],
+    )
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order.id).one()
+    _seed_picking_actual_qty(db, order.id, pi.id, p1.id, 80.0)
+    _mark_picked(db, order.id, pi.id, p1.id)
+
+    payload = get_handcraft_export_payload(db, order.id)
+    assert payload["details"][0]["qty"] == pytest.approx(80.0)
+
+
+def test_export_payload_uses_pi_qty_when_not_picked(setup):
+    """Gate: filled actual_qty but no 勾选 → export falls back to pi.qty."""
+    from services.handcraft_export import get_handcraft_export_payload
+    from models.handcraft_order import HandcraftPartItem
+    db, p1, _, j1 = setup
+    order = create_handcraft_order(
+        db, "ExportSupp2",
+        parts=[{"part_id": p1.id, "qty": 100.0}],
+        jewelries=[{"jewelry_id": j1.id, "qty": 1}],
+    )
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order.id).one()
+    _seed_picking_actual_qty(db, order.id, pi.id, p1.id, 80.0)  # no _mark_picked
+
+    payload = get_handcraft_export_payload(db, order.id)
+    assert payload["details"][0]["qty"] == pytest.approx(100.0)

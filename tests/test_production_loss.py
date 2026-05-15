@@ -275,7 +275,7 @@ def test_confirm_handcraft_part_loss_capped_by_effective_qty(client, db):
     the loss gap. Supplier returned all 8 → gap is 0; any loss_qty must reject.
     Pre-fix bug: gap was 10-8=2, allowing user to inflate received_qty up to 10
     with phantom loss entries."""
-    from models.handcraft_order import HandcraftPickingWeight
+    from models.handcraft_order import HandcraftPickingRecord, HandcraftPickingWeight
 
     part = Part(id="PJ-X-LOSSAQ", name="损耗 actual_qty", category="小配件")
     db.add(part)
@@ -299,6 +299,11 @@ def test_confirm_handcraft_part_loss_capped_by_effective_qty(client, db):
         part_item_id=hc_part.id,
         atom_part_id=part.id,
         actual_qty=Decimal("8"),
+    ))
+    db.add(HandcraftPickingRecord(
+        handcraft_order_id=hc.id,
+        handcraft_part_item_id=hc_part.id,
+        part_id=part.id,
     ))
     db.flush()
 
