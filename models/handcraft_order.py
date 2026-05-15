@@ -1,6 +1,6 @@
 import json
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, Index
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 
 from database import Base
 from time_utils import now_beijing
@@ -16,7 +16,11 @@ class HandcraftOrder(Base):
     completed_at = Column(DateTime, nullable=True)
     note = Column(Text, nullable=True)
     delivery_images_raw = Column("delivery_images", Text, nullable=True)
-    receipt_code = Column(String, nullable=True, unique=True)
+    # Uniqueness lives in a partial index built by ensure_schema_compat
+    # (WHERE receipt_code IS NOT NULL). Don't add `unique=True` here — it
+    # would create a redundant full-table unique constraint that has to be
+    # kept in sync with the partial index.
+    receipt_code = Column(String, nullable=True)
 
     @property
     def delivery_images(self):

@@ -26,14 +26,21 @@ HANDCRAFT_BUFFER_RULES = {
 }
 
 
-_RECEIPT_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # 28 chars, excludes 0/O/1/I/L
+_RECEIPT_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # 31 chars, excludes 0/O/1/I/L
 
 
 def _gen_receipt_code(db: Session, max_tries: int = 10) -> str:
     """Generate a unique 5-char opaque receipt code for a HandcraftOrder.
 
-    Uses cryptographic randomness and rejects on collision via the unique index.
-    28^5 ≈ 17.2M combinations — collisions are negligible at realistic volumes.
+    Uses cryptographic randomness and probes the unique index for collisions.
+    31^5 ≈ 28.6M combinations — collisions are negligible at realistic volumes.
+
+    The SELECT-then-INSERT is intentionally not atomic. Concurrent callers can
+    pass the check with the same code and rely on the partial unique index
+    (ix_handcraft_order_receipt_code) to reject the loser at INSERT time —
+    callers must surface that IntegrityError up. Acceptable for the single-
+    store usage pattern; if multi-writer becomes a thing, switch to
+    `INSERT ... ON CONFLICT DO NOTHING RETURNING id` and retry on empty.
     """
     for _ in range(max_tries):
         code = "".join(secrets.choice(_RECEIPT_CODE_ALPHABET) for _ in range(5))
@@ -227,7 +234,13 @@ def create_handcraft_order(
             db.flush()
     else:
         order_id = _next_id(db, HandcraftOrder, "HC")
-        order = HandcraftOrder(id=order_id, supplier_name=supplier_name, status="pending", note=note)
+        order = HandcraftOrder(
+            id=order_id,
+            supplier_name=supplier_name,
+            status="pending",
+            note=note,
+            receipt_code=_gen_receipt_code(db),
+        )
         if created_at is not None:
             order.created_at = _user_date_to_datetime(created_at)
         db.add(order)

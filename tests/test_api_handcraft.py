@@ -25,6 +25,9 @@ def test_create_handcraft_order(client, db):
     assert data["supplier_name"] == "Supplier A"
     assert data["status"] == "pending"
     assert data["delivery_images"] == []
+    # receipt_code: generated server-side, opaque 5-char string.
+    assert isinstance(data["receipt_code"], str)
+    assert len(data["receipt_code"]) == 5
 
     parts_resp = client.get(f"/api/handcraft/{data['id']}/parts")
     assert parts_resp.status_code == 200

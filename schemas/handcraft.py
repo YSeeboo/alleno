@@ -101,6 +101,7 @@ class HandcraftResponse(BaseModel):
     completed_at: Optional[datetime] = None
     note: Optional[str] = None
     delivery_images: List[str] = Field(default_factory=list)
+    receipt_code: Optional[str] = None
 
 
 class HandcraftDeliveryImagesUpdate(BaseModel):

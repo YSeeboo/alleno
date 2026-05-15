@@ -53,6 +53,18 @@ def ensure_schema_compat(target_engine=None):
             if "delivery_images" not in columns:
                 conn.execute(text("ALTER TABLE handcraft_order ADD COLUMN delivery_images TEXT NULL"))
                 logger.warning("Added missing handcraft_order.delivery_images column")
+            if "receipt_code" not in columns:
+                conn.execute(text("ALTER TABLE handcraft_order ADD COLUMN receipt_code VARCHAR NULL"))
+                logger.warning("Added missing handcraft_order.receipt_code column")
+            # Partial unique index is the sole uniqueness guarantee for
+            # receipt_code (model has no `unique=True`). Run unconditionally
+            # — IF NOT EXISTS makes it idempotent — so fresh DBs created by
+            # create_all() (which doesn't reach the ALTER branch) also get
+            # the constraint, not just upgraded ones.
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_handcraft_order_receipt_code "
+                "ON handcraft_order (receipt_code) WHERE receipt_code IS NOT NULL"
+            ))
 
         if inspector.has_table("part"):
             columns = {col["name"] for col in inspector.get_columns("part")}

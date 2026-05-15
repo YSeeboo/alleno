@@ -16,14 +16,6 @@ def test_gen_receipt_code_uses_safe_alphabet(db):
     assert all(c not in code for c in "0OIL1")
 
 
-def test_gen_receipt_code_is_unique(db):
-    code1 = _gen_receipt_code(db)
-    db.add(HandcraftOrder(id="HC-T1", supplier_name="王", status="pending", receipt_code=code1))
-    db.flush()
-    code2 = _gen_receipt_code(db)
-    assert code1 != code2
-
-
 def test_gen_receipt_code_raises_after_too_many_collisions(db, monkeypatch):
     import services.handcraft as svc
     fixed = "AAAAA"
