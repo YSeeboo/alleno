@@ -97,13 +97,13 @@ class HandcraftResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    receipt_code: Optional[str] = None
     supplier_name: str
     status: str
     created_at: datetime
     completed_at: Optional[datetime] = None
     note: Optional[str] = None
     delivery_images: List[str] = Field(default_factory=list)
-    receipt_code: Optional[str] = None
 
 
 class HandcraftDeliveryImagesUpdate(BaseModel):

@@ -32,6 +32,10 @@
         </template>
         <n-descriptions :column="isMobile ? 1 : 3" bordered>
           <n-descriptions-item label="手工单号">{{ order.id }}</n-descriptions-item>
+          <n-descriptions-item label="回执编号" v-if="order.receipt_code">
+            <span class="receipt-code">{{ order.receipt_code }}</span>
+            <span class="receipt-code__hint">（对外打印用）</span>
+          </n-descriptions-item>
           <n-descriptions-item label="手工商家">
             <template v-if="editingSupplier && order.status === 'pending'">
               <n-space align="center" size="small">
@@ -2272,6 +2276,21 @@ const editBreakdownGroup = ref(null)
 :deep(.restock-row-done) {
   opacity: 0.6;
   background: #fafafa;
+}
+
+.receipt-code {
+  font-family: "SF Mono", Menlo, monospace;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  font-size: 14px;
+  padding: 2px 8px;
+  background: #f5f5f8;
+  border-radius: 3px;
+}
+.receipt-code__hint {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  margin-left: 8px;
 }
 
 .breakdown-group {

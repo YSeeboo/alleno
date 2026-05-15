@@ -115,6 +115,14 @@ const rowProps = (row) => ({ style: 'cursor: pointer;', onClick: () => router.pu
 
 const columns = [
   { title: '手工单号', key: 'id' },
+  {
+    title: '回执编号',
+    key: 'receipt_code',
+    width: 110,
+    render: (r) => r.receipt_code
+      ? h('span', { class: 'receipt-code-cell' }, r.receipt_code)
+      : h('span', { style: 'color: rgba(0,0,0,.3)' }, '—'),
+  },
   { title: '手工商家', key: 'supplier_name' },
   {
     title: '状态',
@@ -149,3 +157,15 @@ onMounted(async () => {
   await load()
 })
 </script>
+
+<style scoped>
+.receipt-code-cell {
+  font-family: "SF Mono", Menlo, monospace;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  font-size: 13px;
+  padding: 1px 6px;
+  background: #f5f5f8;
+  border-radius: 3px;
+}
+</style>
