@@ -137,11 +137,10 @@ const columns = [
     key: 'action',
     width: 60,
     render(row) {
+      // Locked (order-linked) rows can't be removed here — go to the
+      // source order. Manual rows are removable in pending OR processing;
+      // the backend enforces the same rule.
       if (row.is_locked) return null
-      // Allow removing newly-added rows freely. Removing an existing manual row
-      // is only possible in pending status (server-side rule for delete).
-      const canDelete = row._new || canEditQty.value
-      if (!canDelete) return null
       return h(
         NButton,
         {

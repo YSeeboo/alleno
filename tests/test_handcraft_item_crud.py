@@ -329,13 +329,38 @@ def test_delete_jewelry_pending_order(client, pending_order, jewelry2):
     assert item_id not in ids
 
 
-def test_delete_jewelry_non_pending_order_rejected(client, sent_order):
+def test_delete_jewelry_processing_order_manual_row_ok(client, sent_order, jewelry2):
+    """Manual jewelry rows can be deleted while the order is in processing —
+    they're customer-attribution metadata, not stock-coupled. Only completed
+    blocks the deletion."""
+    order_id = sent_order["id"]
+    # Add a second jewelry so we don't trip the "last jewelry" guard
+    add_resp = client.post(f"/api/handcraft/{order_id}/jewelries", json={
+        "jewelry_id": jewelry2.id, "qty": 3,
+    })
+    item_id = add_resp.json()["id"]
+
+    resp = client.delete(f"/api/handcraft/{order_id}/jewelries/{item_id}")
+    assert resp.status_code == 204
+
+    jewelries_resp = client.get(f"/api/handcraft/{order_id}/jewelries")
+    ids = [j["id"] for j in jewelries_resp.json()]
+    assert item_id not in ids
+
+
+def test_delete_jewelry_completed_order_rejected(client, db, sent_order):
+    """Completed orders are frozen — no jewelry deletions allowed."""
     order_id = sent_order["id"]
     item_id = _get_first_jewelry_id(client, order_id)
+    # Force-complete the order via a direct DB write (PATCH /status is disabled)
+    from models.handcraft_order import HandcraftOrder
+    order = db.query(HandcraftOrder).filter(HandcraftOrder.id == order_id).one()
+    order.status = "completed"
+    db.commit()
 
     resp = client.delete(f"/api/handcraft/{order_id}/jewelries/{item_id}")
     assert resp.status_code == 400
-    assert "pending" in resp.json()["detail"].lower()
+    assert "完成" in resp.json()["detail"]
 
 
 def test_delete_jewelry_not_found(client, pending_order):

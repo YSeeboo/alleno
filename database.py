@@ -65,6 +65,34 @@ def ensure_schema_compat(target_engine=None):
                 "CREATE UNIQUE INDEX IF NOT EXISTS ix_handcraft_order_receipt_code "
                 "ON handcraft_order (receipt_code) WHERE receipt_code IS NOT NULL"
             ))
+            # Backfill receipt_code for any pre-existing rows. Idempotent — a
+            # no-op once every row has a code. Needed for HCs created before
+            # ca56591 wired create_handcraft_order; they still show up on
+            # supplier-facing PDFs and would otherwise render 'None'.
+            missing_rows = conn.execute(text(
+                "SELECT id FROM handcraft_order WHERE receipt_code IS NULL"
+            )).scalars().all()
+            if missing_rows:
+                import secrets
+                from services.handcraft import _RECEIPT_CODE_ALPHABET
+                used_codes = set(conn.execute(text(
+                    "SELECT receipt_code FROM handcraft_order WHERE receipt_code IS NOT NULL"
+                )).scalars().all())
+                for hc_id in missing_rows:
+                    code = None
+                    for _ in range(20):
+                        candidate = "".join(secrets.choice(_RECEIPT_CODE_ALPHABET) for _ in range(5))
+                        if candidate not in used_codes:
+                            used_codes.add(candidate)
+                            code = candidate
+                            break
+                    if code is None:
+                        raise RuntimeError(f"Failed to backfill receipt_code for {hc_id}")
+                    conn.execute(
+                        text("UPDATE handcraft_order SET receipt_code=:c WHERE id=:id"),
+                        {"c": code, "id": hc_id},
+                    )
+                logger.warning("Backfilled receipt_code for %d existing row(s)", len(missing_rows))
 
         if inspector.has_table("handcraft_jewelry_item"):
             columns = {col["name"] for col in inspector.get_columns("handcraft_jewelry_item")}

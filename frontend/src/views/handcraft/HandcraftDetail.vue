@@ -2208,9 +2208,11 @@ function openBreakdownEditor(group) {
   editBreakdownVisible.value = true
 }
 
-function onBreakdownSaved() {
-  loadBreakdown()
-  loadJewelries()
+async function onBreakdownSaved() {
+  // Await both reloads so the parent's breakdownGroups + jewelryItems are
+  // settled before the modal's saving spinner clears — otherwise the user
+  // can see stale chips for a frame.
+  await Promise.all([loadBreakdown(), loadJewelries()])
 }
 
 const editBreakdownVisible = ref(false)

@@ -962,8 +962,8 @@ def delete_handcraft_jewelry(db: Session, order_id: str, item_id: int) -> None:
     order = get_handcraft_order(db, order_id)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
-    if order.status != "pending":
-        raise ValueError(f"Cannot delete jewelry: order {order_id} status is '{order.status}', must be 'pending'")
+    if order.status == "completed":
+        raise ValueError("已完成的手工单不能删除饰品项")
     item = db.query(HandcraftJewelryItem).filter(
         HandcraftJewelryItem.id == item_id,
         HandcraftJewelryItem.handcraft_order_id == order_id,
@@ -977,6 +977,10 @@ def delete_handcraft_jewelry(db: Session, order_id: str, item_id: int) -> None:
     ).first() is not None
     if has_order_link:
         raise ValueError("订单来源行不能在此删除；请先在订单详情解除关联")
+    # In processing, manual rows can still be removed — they're purely customer-
+    # attribution metadata. Note that parts deducted at send() remain deducted;
+    # the user is responsible for any downstream reconciliation. We trade a
+    # small risk of phantom production for the ability to fix attribution errors.
     remaining = db.query(HandcraftJewelryItem).filter(
         HandcraftJewelryItem.handcraft_order_id == order_id,
         HandcraftJewelryItem.id != item_id,
