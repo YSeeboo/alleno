@@ -328,6 +328,11 @@
 
             <!-- Small row (detail), with transition -->
             <div v-show="expandedBatchIds.has(batch.id)" class="batch-detail">
+              <BreakdownBanner
+                v-if="batch.supplier_name && expandedBatchIds.has(batch.id)"
+                :order-id="route.params.id"
+                :batch-id="batch.id"
+              />
               <!-- Jewelry header row -->
               <div class="batch-jewelry-row">
                 <div
@@ -627,6 +632,7 @@ import {
 import { tsToDateStr, isoToTs } from '@/utils/date'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 import PickingSimulationModal from '@/components/picking/PickingSimulationModal.vue'
+import BreakdownBanner from '@/components/BreakdownBanner.vue'
 import {
   getOrder, getOrderItems, getPartsSummary, updateOrderStatus,
   getTodo, deleteLink, addOrderItem, deleteOrderItem,
