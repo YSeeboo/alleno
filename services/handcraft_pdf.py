@@ -761,8 +761,15 @@ def _draw_handcraft_receipt_page(pdf, db, order) -> None:
 
         # The code itself — very large, makes the supplier impossible to mix
         # up. STSong-Light has no proper Latin advance, so without tracking
-        # the chars visibly overlap; setCharSpace via TextObject preserves the
-        # raw string for text extraction.
+        # the chars visibly overlap. setCharSpace via TextObject preserves
+        # the raw string for text extraction.
+        #
+        # CAREFUL: TextObject.setCharSpace mutates Canvas._charSpace as a
+        # side-effect (see reportlab/pdfgen/textobject.py), so it leaks into
+        # subsequent pdf.drawString() calls and tracks every char on the
+        # rest of the page. We reset both ends: setCharSpace(0) inside the
+        # text object so the BT/ET block ends clean, and pdf._charSpace = 0
+        # after drawText as belt-and-suspenders.
         code_char_space = 10
         code_text_w = (
             stringWidth(order.receipt_code, _LABEL_FONT, 42)
@@ -773,7 +780,9 @@ def _draw_handcraft_receipt_page(pdf, db, order) -> None:
         code_obj.setFillColor(_RP_INK)
         code_obj.setCharSpace(code_char_space)
         code_obj.textOut(order.receipt_code)
+        code_obj.setCharSpace(0)
         pdf.drawText(code_obj)
+        pdf._charSpace = 0
         y -= 50
 
     # Thin rule under the code block
