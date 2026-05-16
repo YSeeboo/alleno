@@ -977,10 +977,14 @@ def delete_handcraft_jewelry(db: Session, order_id: str, item_id: int) -> None:
     ).first() is not None
     if has_order_link:
         raise ValueError("订单来源行不能在此删除；请先在订单详情解除关联")
-    # In processing, manual rows can still be removed — they're purely customer-
-    # attribution metadata. Note that parts deducted at send() remain deducted;
-    # the user is responsible for any downstream reconciliation. We trade a
-    # small risk of phantom production for the ability to fix attribution errors.
+    # In processing, manual rows can still be removed — they're customer-
+    # attribution metadata, not stock-coupled. But a row that has already
+    # taken receipts (received_qty > 0) is referenced by HandcraftReceiptItem
+    # rows whose FK is non-cascading, so deleting it would raise
+    # IntegrityError → 500. Block before we get there and tell the user to
+    # revert the receipt first.
+    if order.status != "pending" and float(item.received_qty or 0) > 0:
+        raise ValueError("此行已有回收记录，不能删除；请先撤销回收单")
     remaining = db.query(HandcraftJewelryItem).filter(
         HandcraftJewelryItem.handcraft_order_id == order_id,
         HandcraftJewelryItem.id != item_id,

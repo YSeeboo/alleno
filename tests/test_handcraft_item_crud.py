@@ -348,6 +348,44 @@ def test_delete_jewelry_processing_order_manual_row_ok(client, sent_order, jewel
     assert item_id not in ids
 
 
+def test_delete_jewelry_with_received_qty_rejected(client, part, jewelry, jewelry2):
+    """A manual row that has already taken receipts (received_qty > 0) is
+    referenced by HandcraftReceiptItem rows with a non-cascading FK.
+    Deleting it would raise IntegrityError → 500. We must block it cleanly.
+
+    Scenario from production review: HC pending → add manual "C 客户" qty=10
+    → send → receive 5 against that row → user tries to delete it."""
+    create_resp = client.post("/api/handcraft/", json={
+        "supplier_name": "手工厂C",
+        "parts": [{"part_id": part.id, "qty": 50.0}],
+        "jewelries": [
+            {"jewelry_id": jewelry.id, "qty": 10},
+            {"jewelry_id": jewelry2.id, "qty": 10, "customer_name": "C 客户"},
+        ],
+    })
+    assert create_resp.status_code == 201
+    order_id = create_resp.json()["id"]
+    # The manual "C 客户" row is the second jewelry
+    jewelries = client.get(f"/api/handcraft/{order_id}/jewelries").json()
+    manual_item_id = next(
+        j["id"] for j in jewelries if j.get("customer_name") == "C 客户"
+    )
+
+    # Send (parts deducted) then partially receive against the manual row
+    send_resp = client.post(f"/api/handcraft/{order_id}/send")
+    assert send_resp.status_code == 200
+    recv_resp = client.post("/api/handcraft-receipts/", json={
+        "supplier_name": "手工厂C",
+        "items": [{"handcraft_jewelry_item_id": manual_item_id, "qty": 5}],
+    })
+    assert recv_resp.status_code == 201, recv_resp.json()
+
+    # Now try to delete — must be a clean 400, not a 500
+    resp = client.delete(f"/api/handcraft/{order_id}/jewelries/{manual_item_id}")
+    assert resp.status_code == 400
+    assert "回收" in resp.json()["detail"]
+
+
 def test_delete_jewelry_completed_order_rejected(client, db, sent_order):
     """Completed orders are frozen — no jewelry deletions allowed."""
     order_id = sent_order["id"]
