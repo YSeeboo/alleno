@@ -759,11 +759,21 @@ def _draw_handcraft_receipt_page(pdf, db, order) -> None:
         pdf.drawString((_PAGE_WIDTH - lw) / 2, y - 12, code_label)
         y -= 22
 
-        # The code itself — very large, makes the supplier impossible to mix up
-        pdf.setFont(_LABEL_FONT, 42)
-        pdf.setFillColor(_RP_INK)
-        cw = stringWidth(order.receipt_code, _LABEL_FONT, 42)
-        pdf.drawString((_PAGE_WIDTH - cw) / 2, y - 36, order.receipt_code)
+        # The code itself — very large, makes the supplier impossible to mix
+        # up. STSong-Light has no proper Latin advance, so without tracking
+        # the chars visibly overlap; setCharSpace via TextObject preserves the
+        # raw string for text extraction.
+        code_char_space = 10
+        code_text_w = (
+            stringWidth(order.receipt_code, _LABEL_FONT, 42)
+            + code_char_space * (len(order.receipt_code) - 1)
+        )
+        code_obj = pdf.beginText((_PAGE_WIDTH - code_text_w) / 2, y - 36)
+        code_obj.setFont(_LABEL_FONT, 42)
+        code_obj.setFillColor(_RP_INK)
+        code_obj.setCharSpace(code_char_space)
+        code_obj.textOut(order.receipt_code)
+        pdf.drawText(code_obj)
         y -= 50
 
     # Thin rule under the code block
