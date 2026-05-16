@@ -1,6 +1,9 @@
 <template>
   <n-modal :show="show" preset="card" :title="title" :style="{ width: '680px' }"
-           @update:show="$emit('update:show', $event)">
+           :closable="!saving"
+           :mask-closable="!saving"
+           :close-on-esc="!saving"
+           @update:show="onShowUpdate">
     <p class="hint">
       订单来源行只读，需要修改请回到对应订单。手填行可在此处编辑/删除（数量与新增仅在
       <strong>未发出</strong> 状态可用）。
@@ -14,7 +17,7 @@
       <span class="sum" :class="sumClass">
         合计 <strong>{{ sumQty }}</strong> / {{ group.total_qty }}
       </span>
-      <n-button @click="$emit('update:show', false)">关闭</n-button>
+      <n-button :disabled="saving" @click="$emit('update:show', false)">关闭</n-button>
       <n-button type="primary" :loading="saving" @click="save">保存</n-button>
     </div>
   </n-modal>
@@ -50,6 +53,14 @@ watch(() => props.show, (v) => {
     }))
   }
 })
+
+// Block all close paths while a save is in flight. Naive-UI's close props
+// already disable the X / mask / esc, but update:show also fires from those
+// paths in some flows, so we double-gate here for safety.
+function onShowUpdate(v) {
+  if (!v && saving.value) return
+  emit('update:show', v)
+}
 
 const canAddManual = computed(() => props.hcStatus === 'pending')
 const canEditQty = computed(() => props.hcStatus === 'pending')

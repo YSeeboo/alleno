@@ -386,6 +386,41 @@ def test_delete_jewelry_with_received_qty_rejected(client, part, jewelry, jewelr
     assert "回收" in resp.json()["detail"]
 
 
+def test_delete_jewelry_with_batch_ref_rejected(client, db):
+    """An HC jewelry row born from link_supplier carries two inbound FKs:
+    OrderItemLink (the link) and OrderTodoBatchJewelry.handcraft_jewelry_item_id
+    (the batch ref). delete_link removes only the former — the batch ref can
+    outlive the link. Without the batch_ref guard, the next delete attempt
+    would raise IntegrityError → 500."""
+    from tests.helpers import seed_order_with_batch
+    from services.order_todo import link_supplier
+    from models.order import OrderItemLink, OrderTodoBatchJewelry
+    from models.handcraft_order import HandcraftJewelryItem
+
+    order_id, batch_id = seed_order_with_batch(db, qty=50)
+    result = link_supplier(db, order_id, batch_id, "王师傅")
+    hc_id = result["handcraft_order_id"]
+    db.commit()
+
+    # Find the HC jewelry row and verify both refs exist
+    ji = db.query(HandcraftJewelryItem).filter_by(handcraft_order_id=hc_id).first()
+    assert ji is not None
+    link = db.query(OrderItemLink).filter_by(handcraft_jewelry_item_id=ji.id).first()
+    assert link is not None
+    bj = db.query(OrderTodoBatchJewelry).filter_by(handcraft_jewelry_item_id=ji.id).first()
+    assert bj is not None  # batch ref is set by link_supplier
+
+    # Remove the link only (mimics 解除关联 on the order detail page)
+    db.delete(link)
+    db.commit()
+
+    # Now the row has no OrderItemLink but still has a live batch ref.
+    # delete must come back as a clean 400, not 500.
+    resp = client.delete(f"/api/handcraft/{hc_id}/jewelries/{ji.id}")
+    assert resp.status_code == 400
+    assert "批次" in resp.json()["detail"]
+
+
 def test_delete_jewelry_completed_order_rejected(client, db, sent_order):
     """Completed orders are frozen — no jewelry deletions allowed."""
     order_id = sent_order["id"]

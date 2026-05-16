@@ -232,6 +232,49 @@ def test_delete_handcraft_order(client, db):
     assert db.query(HandcraftJewelryItem).filter(HandcraftJewelryItem.handcraft_order_id == order_id).count() == 0
 
 
+def test_delete_handcraft_order_created_by_link_supplier(client, db):
+    """Production regression: deleting an HC born from link_supplier used to
+    500 with IntegrityError because the bulk-delete of HandcraftJewelryItem
+    hit the non-cascading FK from OrderItemLink and OrderTodoBatchJewelry.
+    Now the delete cleans up both: link rows are dropped (the production
+    assignment they represented is gone), and the batch's
+    handcraft_jewelry_item_id is nulled so the order batch survives and
+    can be re-scheduled to a different supplier."""
+    from tests.helpers import seed_order_with_batch
+    from services.order_todo import link_supplier
+    from models.order import OrderItemLink, OrderTodoBatchJewelry
+    from models.handcraft_order import HandcraftOrder
+
+    order_id, batch_id = seed_order_with_batch(db, qty=50)
+    result = link_supplier(db, order_id, batch_id, "王师傅")
+    hc_id = result["handcraft_order_id"]
+    db.commit()
+
+    # Confirm both inbound FKs exist before delete
+    assert db.query(OrderItemLink).filter(
+        OrderItemLink.handcraft_part_item_id.isnot(None)
+    ).count() >= 1
+    bj_before = db.query(OrderTodoBatchJewelry).filter_by(batch_id=batch_id).first()
+    assert bj_before.handcraft_jewelry_item_id is not None
+
+    # The fix: delete must be a clean 204, not 500
+    resp = client.delete(f"/api/handcraft/{hc_id}")
+    assert resp.status_code == 204, resp.text
+
+    # HC is gone
+    assert db.query(HandcraftOrder).filter(HandcraftOrder.id == hc_id).first() is None
+    # OrderItemLink rows referencing the now-deleted HC items are dropped
+    assert db.query(OrderItemLink).filter(
+        OrderItemLink.handcraft_part_item_id.isnot(None)
+    ).count() == 0
+    # Order batch survives, but its FK to the deleted HC jewelry is nulled.
+    # Expire identity-map cache so we see the post-update state.
+    db.expire_all()
+    bj_after = db.query(OrderTodoBatchJewelry).filter_by(batch_id=batch_id).first()
+    assert bj_after is not None
+    assert bj_after.handcraft_jewelry_item_id is None
+
+
 def test_delete_completed_handcraft_order_restores_stock_and_clears_receipts(client, db):
     from services.handcraft_receipt import create_handcraft_receipt
     part, jewelry = _setup(db)

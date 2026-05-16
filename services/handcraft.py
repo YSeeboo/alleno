@@ -957,7 +957,7 @@ def update_handcraft_jewelry(db: Session, order_id: str, item_id: int, data: dic
 
 
 def delete_handcraft_jewelry(db: Session, order_id: str, item_id: int) -> None:
-    from models.order import OrderItemLink
+    from models.order import OrderItemLink, OrderTodoBatchJewelry
 
     order = get_handcraft_order(db, order_id)
     if order is None:
@@ -970,13 +970,22 @@ def delete_handcraft_jewelry(db: Session, order_id: str, item_id: int) -> None:
     ).first()
     if item is None:
         raise ValueError(f"HandcraftJewelryItem {item_id} not found in order {order_id}")
-    # Order-linked rows must be unlinked at the source order, not deleted here.
-    # Otherwise the cascade-less FK on OrderItemLink raises IntegrityError → 500.
+    # Two non-cascading inbound FKs point at handcraft_jewelry_item.id:
+    #   - OrderItemLink.handcraft_jewelry_item_id (the live link)
+    #   - OrderTodoBatchJewelry.handcraft_jewelry_item_id (the batch ref,
+    #     which can outlive the link — delete_link does not null it out)
+    # Either dangling reference would raise IntegrityError → 500 on
+    # db.delete(item). Guard symmetrically before any mutation.
     has_order_link = db.query(OrderItemLink.id).filter_by(
         handcraft_jewelry_item_id=item.id
     ).first() is not None
     if has_order_link:
         raise ValueError("订单来源行不能在此删除；请先在订单详情解除关联")
+    has_batch_ref = db.query(OrderTodoBatchJewelry.id).filter_by(
+        handcraft_jewelry_item_id=item.id
+    ).first() is not None
+    if has_batch_ref:
+        raise ValueError("此行由订单批次创建；请先通过订单详情撤销批次关联")
     # In processing, manual rows can still be removed — they're customer-
     # attribution metadata, not stock-coupled. But a row that has already
     # taken receipts (received_qty > 0) is referenced by HandcraftReceiptItem
@@ -1085,6 +1094,33 @@ def delete_handcraft_order(db: Session, order_id: str) -> None:
         HandcraftPickingRecord.handcraft_order_id == order_id
     ).delete(synchronize_session=False)
     db.flush()
+
+    # Clean up non-cascading inbound FKs before bulk-deleting items / the
+    # order itself. Three FKs point at things we're about to drop:
+    #   - OrderItemLink.handcraft_{part,jewelry}_item_id → rows dropped
+    #     (the production assignment they represented dies with the HC)
+    #   - OrderTodoBatchJewelry.handcraft_jewelry_item_id → nulled out
+    #     so the order batch survives and can be re-scheduled
+    #   - OrderTodoBatch.handcraft_order_id → nulled out (same reason;
+    #     this is what bites *delete the HandcraftOrder row itself*)
+    # Mirrors the cleanup pattern in services.order_todo.delete_batch.
+    from models.order import OrderItemLink, OrderTodoBatch, OrderTodoBatchJewelry
+    if part_item_ids:
+        db.query(OrderItemLink).filter(
+            OrderItemLink.handcraft_part_item_id.in_(part_item_ids)
+        ).delete(synchronize_session=False)
+    if jewelry_item_ids:
+        db.query(OrderItemLink).filter(
+            OrderItemLink.handcraft_jewelry_item_id.in_(jewelry_item_ids)
+        ).delete(synchronize_session=False)
+        db.query(OrderTodoBatchJewelry).filter(
+            OrderTodoBatchJewelry.handcraft_jewelry_item_id.in_(jewelry_item_ids)
+        ).update({"handcraft_jewelry_item_id": None}, synchronize_session=False)
+    db.query(OrderTodoBatch).filter(
+        OrderTodoBatch.handcraft_order_id == order_id
+    ).update({"handcraft_order_id": None}, synchronize_session=False)
+    db.flush()
+
     db.query(HandcraftPartItem).filter(HandcraftPartItem.handcraft_order_id == order_id).delete(synchronize_session=False)
     db.query(HandcraftJewelryItem).filter(HandcraftJewelryItem.handcraft_order_id == order_id).delete(synchronize_session=False)
     db.flush()
