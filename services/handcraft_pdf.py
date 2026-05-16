@@ -685,16 +685,39 @@ _RECEIPT_NOTE = "请于回货时随成品一并交回此单以便分拣核对"
 # Receipt page typography & spacing
 _RP_INK = colors.HexColor("#111111")
 _RP_INK_SOFT = colors.HexColor("#555555")
-_RP_RULE = colors.HexColor("#222222")
-_RP_RULE_SOFT = colors.HexColor("#cfcfcf")
-_RP_GROUP_ACCENT = colors.HexColor("#111111")
-_RP_LINE_H = 24   # taller rows for better breathing
-_RP_GROUP_HEAD_H = 26
+_RP_RULE = colors.HexColor("#666666")
+_RP_RULE_SOFT = colors.HexColor("#d8d8d8")
+_RP_FOOTER_BG = colors.HexColor("#f3f3f3")
+_RP_FOOTER_RULE = colors.HexColor("#c4c4c4")
+_RP_ROW_H = 38                  # customer row height in the breakdown table
+_RP_HEADER_H = 26               # header row height in the breakdown table
+# Column proportions of _CONTENT_WIDTH for the 5-column table
+_RP_COL_PCT = (0.26, 0.12, 0.18, 0.24, 0.20)
+
+
+def _format_chinese_date(dt) -> str:
+    """Format like 2026年05月11日 — supplier-friendly, locale-stable."""
+    if not dt:
+        return ""
+    return f"{dt.year}年{dt.month:02d}月{dt.day:02d}日"
+
+
+def _rp_columns():
+    """5-column layout for the 客户分拣 table.
+
+    Returns (col_left_x, col_width) tuples — left edges and widths in pt."""
+    widths = [_CONTENT_WIDTH * p for p in _RP_COL_PCT]
+    lefts = [_MARGIN_X]
+    for w in widths[:-1]:
+        lefts.append(lefts[-1] + w)
+    return lefts, widths
 
 
 def _draw_handcraft_receipt_page(pdf, db, order) -> None:
-    """Append the supplier-facing receipt page to the PDF, with customer
-    aliases hiding real customer names. Restrained, paper-ledger styling."""
+    """Append the supplier-facing receipt page with a 5-column 客户分拣 table:
+    商品名 / 数量 / 客户名 / 客户对应数量 / 拣货确认. 商品名 + 数量 span all
+    customer rows of the same jewelry (rowspan); the right 3 cols have one
+    row per customer. Real customer names are aliased to 客户 N."""
     from services.handcraft import get_handcraft_jewelry_breakdown
 
     groups = get_handcraft_jewelry_breakdown(db, order.id)
@@ -708,180 +731,235 @@ def _draw_handcraft_receipt_page(pdf, db, order) -> None:
         payload_groups.append((g, entries_with_customer))
 
     if not payload_groups:
-        return  # Nothing to print — skip the page entirely.
+        return
 
     pdf.showPage()
     y = _PAGE_HEIGHT - _MARGIN_TOP
 
-    # ── Title block ─────────────────────────────────────────────────
-    # 手工回执 — centered, large, with PDF char-spacing for gravitas.
-    # Char-spacing via TextObject preserves the raw string for text
-    # extraction / search (no literal spaces inserted between chars).
-    title_char_space = 8
-    title_width = (
-        stringWidth(_RECEIPT_TITLE, _LABEL_FONT, 24)
-        + title_char_space * (len(_RECEIPT_TITLE) - 1)
-    )
-    title_obj = pdf.beginText((_PAGE_WIDTH - title_width) / 2, y - 28)
-    title_obj.setFont(_LABEL_FONT, 24)
-    title_obj.setFillColor(_RP_INK)
-    title_obj.setCharSpace(title_char_space)
-    title_obj.textOut(_RECEIPT_TITLE)
-    pdf.drawText(title_obj)
-    y -= 44
-
-    # Centered short rule under the title
-    rule_half_w = 50
-    pdf.setStrokeColor(_RP_RULE)
-    pdf.setLineWidth(1.0)
-    pdf.line(
-        (_PAGE_WIDTH - rule_half_w * 2) / 2, y,
-        (_PAGE_WIDTH + rule_half_w * 2) / 2, y,
-    )
-    y -= 24
-
-    # ── Receipt code (prominent — this is the supplier's key identifier) ──
-    if order.receipt_code:
-        code_label = "回执编号"
-        code_text = order.receipt_code
-        code_char_space = 4  # tracked spacing on the code itself
-        pdf.setFont(_LABEL_FONT, 10)
-        label_width = stringWidth(code_label, _LABEL_FONT, 10)
-        code_width = (
-            stringWidth(code_text, _LABEL_FONT, 22)
-            + code_char_space * (len(code_text) - 1)
-        )
-        total_block_w = label_width + 12 + code_width
-        start_x = (_PAGE_WIDTH - total_block_w) / 2
-
-        pdf.setFillColor(_RP_INK_SOFT)
-        pdf.drawString(start_x, y - 18, code_label)
-
-        code_obj = pdf.beginText(start_x + label_width + 12, y - 22)
-        code_obj.setFont(_LABEL_FONT, 22)
-        code_obj.setFillColor(_RP_INK)
-        code_obj.setCharSpace(code_char_space)
-        code_obj.textOut(code_text)
-        pdf.drawText(code_obj)
-        y -= 44
-    else:
-        y -= 8  # small breathing space if no code
-
-    # ── Meta strip: 手工商家 / 发出日期 ─────────────────────────────
-    pdf.setStrokeColor(_RP_RULE_SOFT)
-    pdf.setLineWidth(0.6)
-    pdf.line(_MARGIN_X, y, _PAGE_WIDTH - _MARGIN_X, y)
-    meta_y = y - 18
-    pdf.setFont(_LABEL_FONT, 9)
-    pdf.setFillColor(_RP_INK_SOFT)
-    pdf.drawString(_MARGIN_X, meta_y, "手工商家")
-    pdf.drawString(_PAGE_WIDTH / 2, meta_y, "发出日期")
-    pdf.setFont(_LABEL_FONT, 13)
+    # ── 1. Title: 手工回执 (large, bold, centered) ─────────────────
+    pdf.setFont(_LABEL_FONT, 32)
     pdf.setFillColor(_RP_INK)
-    pdf.drawString(_MARGIN_X + 50, meta_y, order.supplier_name or "")
-    date_text = format_excel_date(order.created_at) or ""
-    pdf.drawString(_PAGE_WIDTH / 2 + 50, meta_y, date_text)
-    y = meta_y - 10
+    tw = stringWidth(_RECEIPT_TITLE, _LABEL_FONT, 32)
+    pdf.drawString((_PAGE_WIDTH - tw) / 2, y - 34, _RECEIPT_TITLE)
+    y -= 52
+
+    # Thin rule under title (full content width)
     pdf.setStrokeColor(_RP_RULE_SOFT)
-    pdf.setLineWidth(0.6)
+    pdf.setLineWidth(0.8)
+    pdf.line(_MARGIN_X, y, _PAGE_WIDTH - _MARGIN_X, y)
+    y -= 26
+
+    # ── 2. Receipt code block (HUGE, dominates the page identity) ──
+    if order.receipt_code:
+        # Small label above the code
+        code_label = "回执编号"
+        pdf.setFont(_LABEL_FONT, 11)
+        pdf.setFillColor(_RP_INK_SOFT)
+        lw = stringWidth(code_label, _LABEL_FONT, 11)
+        pdf.drawString((_PAGE_WIDTH - lw) / 2, y - 12, code_label)
+        y -= 22
+
+        # The code itself — very large, makes the supplier impossible to mix up
+        pdf.setFont(_LABEL_FONT, 42)
+        pdf.setFillColor(_RP_INK)
+        cw = stringWidth(order.receipt_code, _LABEL_FONT, 42)
+        pdf.drawString((_PAGE_WIDTH - cw) / 2, y - 36, order.receipt_code)
+        y -= 50
+
+    # Thin rule under the code block
+    pdf.setStrokeColor(_RP_RULE_SOFT)
+    pdf.setLineWidth(0.8)
+    pdf.line(_MARGIN_X, y, _PAGE_WIDTH - _MARGIN_X, y)
+    y -= 22
+
+    # ── 3. Meta strip: 手工商家 (left) / 发出日期 (right) ────────────
+    pdf.setFont(_LABEL_FONT, 11)
+    pdf.setFillColor(_RP_INK_SOFT)
+    pdf.drawString(_MARGIN_X, y - 14, "手工商家:")
+    pdf.setFillColor(_RP_INK)
+    pdf.setFont(_LABEL_FONT, 12)
+    pdf.drawString(_MARGIN_X + 56, y - 14, order.supplier_name or "")
+
+    date_str = _format_chinese_date(order.created_at)
+    pdf.setFont(_LABEL_FONT, 11)
+    pdf.setFillColor(_RP_INK_SOFT)
+    date_label = "发出日期:"
+    pdf.setFont(_LABEL_FONT, 12)
+    dw_val = stringWidth(date_str, _LABEL_FONT, 12)
+    pdf.setFont(_LABEL_FONT, 11)
+    dw_lab = stringWidth(date_label, _LABEL_FONT, 11)
+    total_right_w = dw_lab + 8 + dw_val
+    right_block_x = _PAGE_WIDTH - _MARGIN_X - total_right_w
+    pdf.drawString(right_block_x, y - 14, date_label)
+    pdf.setFont(_LABEL_FONT, 12)
+    pdf.setFillColor(_RP_INK)
+    pdf.drawString(right_block_x + dw_lab + 8, y - 14, date_str)
+    y -= 26
+    pdf.setStrokeColor(_RP_RULE_SOFT)
+    pdf.setLineWidth(0.8)
     pdf.line(_MARGIN_X, y, _PAGE_WIDTH - _MARGIN_X, y)
     y -= 30
 
-    # ── Section heading: 客户分拣 ───────────────────────────────────
-    pdf.setFont(_LABEL_FONT, 13)
+    # ── 4. Section heading: ── 客户分拣 ── (centered with side rules) ─
+    heading = "客户分拣"
+    pdf.setFont(_LABEL_FONT, 15)
     pdf.setFillColor(_RP_INK)
-    pdf.drawString(_MARGIN_X, y - 14, "客户分拣")
+    hw = stringWidth(heading, _LABEL_FONT, 15)
+    cx = _PAGE_WIDTH / 2
+    pdf.drawString(cx - hw / 2, y - 16, heading)
     pdf.setStrokeColor(_RP_INK)
-    pdf.setLineWidth(1.2)
-    pdf.line(_MARGIN_X, y - 20, _MARGIN_X + 32, y - 20)
-    y -= 32
+    pdf.setLineWidth(1.0)
+    side_rule_w = 28
+    side_gap = 14
+    pdf.line(cx - hw / 2 - side_gap - side_rule_w, y - 10,
+             cx - hw / 2 - side_gap, y - 10)
+    pdf.line(cx + hw / 2 + side_gap, y - 10,
+             cx + hw / 2 + side_gap + side_rule_w, y - 10)
+    y -= 34
 
-    for g, entries in payload_groups:
-        y = _draw_receipt_group(pdf, g, entries, y)
+    # ── 5. Table ────────────────────────────────────────────────────
+    _rp_draw_breakdown_table(pdf, payload_groups, y)
 
-    # ── Footer note: top + bottom dashed lines only ─────────────────
-    note_block_h = 42
-    if y - note_block_h < _MARGIN_BOTTOM:
-        pdf.showPage()
-        y = _PAGE_HEIGHT - _MARGIN_TOP
-    y -= 8
-    pdf.setStrokeColor(_RP_RULE_SOFT)
-    pdf.setDash(2, 3)
-    pdf.setLineWidth(0.6)
-    pdf.line(_MARGIN_X, y, _PAGE_WIDTH - _MARGIN_X, y)
-    pdf.setFont(_LABEL_FONT, 11)
-    pdf.setFillColor(_RP_INK_SOFT)
-    note_w = stringWidth(_RECEIPT_NOTE, _LABEL_FONT, 11)
-    pdf.drawString((_PAGE_WIDTH - note_w) / 2, y - 20, _RECEIPT_NOTE)
-    pdf.line(_MARGIN_X, y - 32, _PAGE_WIDTH - _MARGIN_X, y - 32)
-    pdf.setDash()
+    # ── 6. Footer band at bottom of page ─────────────────────────────
+    _rp_draw_footer_band(pdf)
 
 
-def _draw_receipt_group(pdf, group: dict, entries: list[dict], y: float) -> float:
-    """One jewelry group: subtle header (accent square + name + total) and
-    indented rows with checkbox / alias / right-aligned qty."""
-    needed = _RP_GROUP_HEAD_H + _RP_LINE_H * len(entries) + 16
-    if y - needed < _MARGIN_BOTTOM:
-        pdf.showPage()
-        y = _PAGE_HEIGHT - _MARGIN_TOP
+def _rp_draw_breakdown_table(pdf, groups, y_start: float) -> float:
+    """Render the 5-column table with rowspan-style merged 商品名 + 数量
+    cells per jewelry group. Auto-paginates groups when they don't fit."""
+    col_x, col_w = _rp_columns()
+    right_edge = _PAGE_WIDTH - _MARGIN_X
+    headers = ("商品名", "数量", "客户名", "客户对应数量", "拣货确认")
 
-    # ── Group header: accent square + jewelry name + right-aligned total ──
-    accent_size = 6
-    accent_y = y - 12 - accent_size / 2 + 1  # vertically centered to baseline
-    pdf.setStrokeColor(_RP_GROUP_ACCENT)
-    pdf.setFillColor(_RP_GROUP_ACCENT)
-    pdf.rect(_MARGIN_X, accent_y, accent_size, accent_size, stroke=0, fill=1)
+    def _draw_header(y: float) -> float:
+        # Top border
+        pdf.setStrokeColor(_RP_RULE)
+        pdf.setLineWidth(0.7)
+        pdf.line(_MARGIN_X, y, right_edge, y)
+        # Header text — small caps-y feel, centered in each column
+        pdf.setFont(_LABEL_FONT, 10)
+        pdf.setFillColor(_RP_INK_SOFT)
+        for i, label in enumerate(headers):
+            tw = stringWidth(label, _LABEL_FONT, 10)
+            pdf.drawString(col_x[i] + col_w[i] / 2 - tw / 2, y - 16, label)
+        y -= _RP_HEADER_H
+        pdf.setStrokeColor(_RP_RULE)
+        pdf.setLineWidth(0.7)
+        pdf.line(_MARGIN_X, y, right_edge, y)
+        return y
 
-    pdf.setFont(_LABEL_FONT, 13)
-    pdf.setFillColor(_RP_INK)
-    pdf.drawString(_MARGIN_X + accent_size + 8, y - 14, group["jewelry_name"])
+    def _draw_verticals(top: float, bottom: float):
+        pdf.setStrokeColor(_RP_RULE)
+        pdf.setLineWidth(0.7)
+        for i in range(5):
+            pdf.line(col_x[i], top, col_x[i], bottom)
+        pdf.line(right_edge, top, right_edge, bottom)
 
-    total_label = f"共 {_format_int(group['total_qty'])} 套"
-    pdf.setFont(_LABEL_FONT, 11)
-    pdf.setFillColor(_RP_INK_SOFT)
-    total_w = stringWidth(total_label, _LABEL_FONT, 11)
-    pdf.drawString(_PAGE_WIDTH - _MARGIN_X - total_w, y - 14, total_label)
+    # Reserve space at the bottom for the footer band (kept inside _MARGIN_BOTTOM)
+    footer_reserve = 70
+    table_top = y_start
+    y = _draw_header(y_start)
+    verticals_top = table_top  # verticals start at the very top border
 
-    # Thin rule under the group header
-    pdf.setStrokeColor(_RP_RULE_SOFT)
-    pdf.setLineWidth(0.5)
-    pdf.line(_MARGIN_X, y - _RP_GROUP_HEAD_H + 4, _PAGE_WIDTH - _MARGIN_X,
-             y - _RP_GROUP_HEAD_H + 4)
-    y -= _RP_GROUP_HEAD_H
+    group_idx = 0
+    for g, entries in groups:
+        n = len(entries)
+        group_h = n * _RP_ROW_H
 
-    # ── Rows ────────────────────────────────────────────────────────
-    row_indent = _MARGIN_X + accent_size + 8
-    qty_right_x = _PAGE_WIDTH - _MARGIN_X
-    for idx, e in enumerate(sorted(entries, key=lambda x: x["hc_jewelry_item_id"]), start=1):
-        line_bottom = y - _RP_LINE_H
-        baseline = line_bottom + 8
+        # Page break: close out this page's verticals, start fresh
+        if y - group_h < _MARGIN_BOTTOM + footer_reserve:
+            _draw_verticals(verticals_top, y)
+            _rp_draw_footer_band(pdf)
+            pdf.showPage()
+            y_top = _PAGE_HEIGHT - _MARGIN_TOP
+            y = _draw_header(y_top)
+            verticals_top = y_top
 
-        # Checkbox
-        cb_size = 11
-        cb_y = line_bottom + (_RP_LINE_H - cb_size) / 2
+        group_idx += 1
+        group_top = y
+        group_bottom = y - group_h
+        cy = (group_top + group_bottom) / 2  # vertical center of the group
+
+        # ── 商品名 cell: ① + jewelry name, vertically centered ──
+        circle_r = 8
+        cell0_left = col_x[0] + 12
+        circle_cx = cell0_left + circle_r
         pdf.setStrokeColor(_RP_INK)
         pdf.setLineWidth(0.8)
-        pdf.rect(row_indent, cb_y, cb_size, cb_size, stroke=1, fill=0)
+        pdf.circle(circle_cx, cy + 1, circle_r, stroke=1, fill=0)
+        pdf.setFont(_LABEL_FONT, 10)
+        pdf.setFillColor(_RP_INK)
+        idx_str = str(group_idx)
+        iw = stringWidth(idx_str, _LABEL_FONT, 10)
+        pdf.drawString(circle_cx - iw / 2, cy - 2, idx_str)
+        pdf.setFont(_LABEL_FONT, 12)
+        pdf.drawString(circle_cx + circle_r + 8, cy - 3, g["jewelry_name"])
 
-        # Alias
+        # ── 数量 cell: total qty + 套, centered ──
+        c1_cx = col_x[1] + col_w[1] / 2
+        total_text = f"{_format_int(g['total_qty'])}套"
         pdf.setFont(_LABEL_FONT, 12)
         pdf.setFillColor(_RP_INK)
-        pdf.drawString(row_indent + cb_size + 12, baseline, f"客户 {idx}")
+        tw_total = stringWidth(total_text, _LABEL_FONT, 12)
+        pdf.drawString(c1_cx - tw_total / 2, cy - 3, total_text)
 
-        # Qty — right-aligned, slightly heavier (use slightly larger size)
-        qty_text = _format_int(e["qty"])
-        pdf.setFont(_LABEL_FONT, 14)
-        qty_w = stringWidth(qty_text, _LABEL_FONT, 14)
-        pdf.drawString(qty_right_x - qty_w, baseline - 1, qty_text)
+        # ── Customer rows: 客户名 / 客户对应数量 / 拣货确认 ──
+        sorted_entries = sorted(entries, key=lambda x: x["hc_jewelry_item_id"])
+        for cust_i, e in enumerate(sorted_entries, start=1):
+            row_top = y
+            row_bottom = y - _RP_ROW_H
+            row_cy = (row_top + row_bottom) / 2
 
-        # Row divider (except after last)
-        if idx < len(entries):
-            pdf.setStrokeColor(_RP_RULE_SOFT)
-            pdf.setLineWidth(0.4)
-            pdf.line(row_indent, line_bottom, qty_right_x, line_bottom)
-        y -= _RP_LINE_H
+            # 客户名 — centered
+            alias = f"客户 {cust_i}"
+            pdf.setFont(_LABEL_FONT, 12)
+            pdf.setFillColor(_RP_INK)
+            aw = stringWidth(alias, _LABEL_FONT, 12)
+            pdf.drawString(col_x[2] + col_w[2] / 2 - aw / 2, row_cy - 3, alias)
 
-    return y - 18  # group-end breathing
+            # 客户对应数量 — centered
+            qty_str = _format_int(e["qty"])
+            qw = stringWidth(qty_str, _LABEL_FONT, 12)
+            pdf.drawString(col_x[3] + col_w[3] / 2 - qw / 2, row_cy - 3, qty_str)
+
+            # 拣货确认 — centered checkbox
+            cb_size = 14
+            chcx = col_x[4] + col_w[4] / 2
+            pdf.setStrokeColor(_RP_INK)
+            pdf.setLineWidth(0.9)
+            pdf.rect(chcx - cb_size / 2, row_cy - cb_size / 2,
+                     cb_size, cb_size, stroke=1, fill=0)
+
+            # Inner row divider (only across right 3 cols — preserves rowspan
+            # visual for 商品名 + 数量)
+            if cust_i < n:
+                pdf.setStrokeColor(_RP_RULE_SOFT)
+                pdf.setLineWidth(0.4)
+                pdf.line(col_x[2], row_bottom, right_edge, row_bottom)
+
+            y -= _RP_ROW_H
+
+        # Group-bottom full-width border
+        pdf.setStrokeColor(_RP_RULE)
+        pdf.setLineWidth(0.7)
+        pdf.line(_MARGIN_X, y, right_edge, y)
+
+    _draw_verticals(verticals_top, y)
+    return y
+
+
+def _rp_draw_footer_band(pdf) -> None:
+    """Outlined reminder band at the very bottom of the page (no fill)."""
+    band_h = 34
+    band_bottom = _MARGIN_BOTTOM - 4
+    pdf.setStrokeColor(_RP_FOOTER_RULE)
+    pdf.setLineWidth(0.5)
+    pdf.rect(_MARGIN_X, band_bottom, _CONTENT_WIDTH, band_h, stroke=1, fill=0)
+
+    pdf.setFont(_LABEL_FONT, 11)
+    pdf.setFillColor(_RP_INK_SOFT)
+    nw = stringWidth(_RECEIPT_NOTE, _LABEL_FONT, 11)
+    pdf.drawString((_PAGE_WIDTH - nw) / 2, band_bottom + (band_h - 11) / 2, _RECEIPT_NOTE)
 
 
 def _format_int(n) -> str:
