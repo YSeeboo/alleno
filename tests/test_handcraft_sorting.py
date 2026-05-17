@@ -6,6 +6,7 @@ from services.handcraft import (
     create_handcraft_order,
     get_handcraft_jewelry_breakdown,
     _has_sorting_info,
+    list_suppliers_with_sorting,
 )
 
 
@@ -94,3 +95,32 @@ def test_has_sorting_info_ignores_blank_customer_name(db):
         jewelries=[{"jewelry_id": jewelry.id, "qty": 1, "customer_name": "  "}],
     )
     assert _has_sorting_info(db, order.id) is False
+
+
+def test_list_suppliers_with_sorting_returns_only_qualifying_suppliers(db):
+    part, jewelry = _setup_jewelry(db)
+    # Supplier A: 有分拣信息
+    create_handcraft_order(
+        db, supplier_name="商家A",
+        parts=[{"part_id": part.id, "qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 1, "customer_name": "C1"}],
+    )
+    # Supplier B: 无分拣信息
+    create_handcraft_order(
+        db, supplier_name="商家B",
+        parts=[{"part_id": part.id, "qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 1}],
+    )
+    # Supplier A 再来一单（验证去重）
+    create_handcraft_order(
+        db, supplier_name="商家A",
+        parts=[{"part_id": part.id, "qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 2, "customer_name": "C2"}],
+    )
+
+    suppliers = list_suppliers_with_sorting(db)
+    assert suppliers == ["商家A"]
+
+
+def test_list_suppliers_with_sorting_empty_when_no_orders(db):
+    assert list_suppliers_with_sorting(db) == []

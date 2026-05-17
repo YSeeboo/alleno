@@ -549,6 +549,25 @@ def _has_sorting_info(db: Session, hc_id: str) -> bool:
     return len(groups) > 0
 
 
+def list_suppliers_with_sorting(db: Session) -> list[str]:
+    """Return distinct supplier_name list for handcraft orders that have at least
+    one resolvable customer entry. Sorted ascending for stable UI."""
+    candidates = (
+        db.query(HandcraftOrder.id, HandcraftOrder.supplier_name)
+        .order_by(HandcraftOrder.supplier_name.asc())
+        .all()
+    )
+    seen: set[str] = set()
+    out: list[str] = []
+    for hc_id, name in candidates:
+        if name in seen:
+            continue
+        if _has_sorting_info(db, hc_id):
+            seen.add(name)
+            out.append(name)
+    return out
+
+
 def list_handcraft_orders(db: Session, status: str = None, supplier_name: str = None) -> list:
     # An explicitly empty / whitespace-only supplier_name means "caller
     # asked for this supplier but the value is empty" — return no rows
