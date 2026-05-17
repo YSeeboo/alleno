@@ -13,6 +13,7 @@ const ROUTE_PERMISSION_MAP = {
   'plating-summary': 'plating',
   handcraft: 'handcraft',
   'handcraft-receipts': 'handcraft',
+  'cargo-sorting': 'sorting',
   restock: 'handcraft',
   inventory: 'inventory',
   'inventory-log': 'inventory',
@@ -21,7 +22,8 @@ const ROUTE_PERMISSION_MAP = {
 
 const PERMISSION_ROUTE_ORDER = [
   'kanban', 'dashboard', 'parts', 'jewelries', 'orders',
-  'purchase-orders', 'plating', 'handcraft', 'restock', 'inventory', 'inventory-log', 'users',
+  'purchase-orders', 'plating', 'handcraft', 'restock', 'cargo-sorting',
+  'inventory', 'inventory-log', 'users',
 ]
 
 export function getFirstPermittedRoute(authStore) {
@@ -89,6 +91,7 @@ const router = createRouter({
         { path: 'handcraft', component: lazyLoad(() => import('@/views/handcraft/HandcraftList.vue')), meta: { perm: 'handcraft' } },
         { path: 'handcraft/create', component: lazyLoad(() => import('@/views/handcraft/HandcraftCreate.vue')), meta: { perm: 'handcraft' } },
         { path: 'handcraft/:id', component: lazyLoad(() => import('@/views/handcraft/HandcraftDetail.vue')), meta: { perm: 'handcraft' } },
+        { path: 'cargo-sorting', component: lazyLoad(() => import('@/views/cargo-sorting/CargoSorting.vue')), meta: { perm: 'sorting' } },
         { path: 'restock', component: lazyLoad(() => import('@/views/restock/RestockList.vue')), meta: { perm: 'handcraft' } },
         { path: 'inventory', component: lazyLoad(() => import('@/views/InventoryOverview.vue')), meta: { perm: 'inventory' } },
         { path: 'inventory-log', component: lazyLoad(() => import('@/views/InventoryLog.vue')), meta: { perm: 'inventory' } },
