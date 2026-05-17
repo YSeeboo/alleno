@@ -190,32 +190,3 @@ def test_sorting_by_receipt_code_requires_sorting_perm(client_with_perms, db):
     c = client_with_perms(["handcraft"])
     resp = c.get("/api/handcraft/sorting/by-receipt-code/ZZZZZ")
     assert resp.status_code == 403
-
-
-def test_require_any_permission_allows_when_user_has_one(client_with_perms):
-    """直接测一个简单端点：require_any_permission('a', 'b') 允许有 a 或 b 的用户。"""
-    from fastapi import APIRouter
-    from api.deps import require_any_permission
-
-    router = APIRouter()
-
-    @router.get("/_test_any_perm", dependencies=[require_any_permission("foo", "bar")])
-    def _h():
-        return {"ok": True}
-
-    app.include_router(router)
-    try:
-        c = client_with_perms(["bar"])
-        assert c.get("/_test_any_perm").status_code == 200
-
-        c = client_with_perms(["foo"])
-        assert c.get("/_test_any_perm").status_code == 200
-
-        c = client_with_perms(["baz"])
-        assert c.get("/_test_any_perm").status_code == 403
-
-        c = client_with_perms([], is_admin=True)
-        assert c.get("/_test_any_perm").status_code == 200
-    finally:
-        # remove the test route to keep app clean
-        app.router.routes = [r for r in app.router.routes if getattr(r, "path", "") != "/_test_any_perm"]

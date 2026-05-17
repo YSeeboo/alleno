@@ -44,19 +44,3 @@ def require_permission(perm_key: str):
     return Depends(dependency)
 
 
-def require_any_permission(*perm_keys: str):
-    """Allow access if user has ANY of the given permissions (or is admin).
-    Use for endpoints that serve multiple roles."""
-    def dependency(current_user: User = Depends(get_current_user)):
-        if current_user.is_admin:
-            return current_user
-        perms = set(current_user.permissions or [])
-        for old, new in _PERM_ALIASES.items():
-            if old in perms:
-                perms.add(new)
-        if not any(k in perms for k in perm_keys):
-            joined = " 或 ".join(perm_keys)
-            raise HTTPException(status_code=403, detail=f"无 {joined} 权限")
-        return current_user
-
-    return Depends(dependency)

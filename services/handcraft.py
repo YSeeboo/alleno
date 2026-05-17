@@ -588,21 +588,27 @@ def list_handcraft_orders_with_sorting(
         .order_by(HandcraftOrder.created_at.desc(), HandcraftOrder.id.desc())
         .all()
     )
-    qualifying = [o for o in candidates if _has_sorting_info(db, o.id)]
+    # Compute breakdown once per candidate; qualifying = non-empty breakdown.
+    qualifying: list[tuple[HandcraftOrder, list[dict]]] = []
+    for o in candidates:
+        breakdown = get_handcraft_jewelry_breakdown(db, o.id, only_with_customer=True)
+        if breakdown:
+            qualifying.append((o, breakdown))
 
     page = qualifying[offset : offset + limit]
     has_more = len(qualifying) > offset + limit
 
-    orders_out = []
-    for o in page:
-        orders_out.append({
+    orders_out = [
+        {
             "id": o.id,
             "supplier_name": o.supplier_name,
             "receipt_code": o.receipt_code,
             "status": o.status,
             "created_at": o.created_at,
-            "breakdown": get_handcraft_jewelry_breakdown(db, o.id, only_with_customer=True),
-        })
+            "breakdown": breakdown,
+        }
+        for o, breakdown in page
+    ]
     return {"orders": orders_out, "has_more": has_more}
 
 

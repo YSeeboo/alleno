@@ -33,7 +33,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { NDrawer, NDrawerContent, NSpin, NIcon } from 'naive-ui'
+import { NDrawer, NDrawerContent, NSpin, NIcon, useMessage } from 'naive-ui'
 import { CheckmarkOutline } from '@vicons/ionicons5'
 import { getCargoSortingSuppliers } from '@/api/cargoSorting'
 
@@ -43,6 +43,8 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:show', 'pick'])
 
+const message = useMessage()
+
 const loading = ref(false)
 const suppliers = ref([])
 
@@ -51,6 +53,8 @@ const load = async () => {
   try {
     const { data } = await getCargoSortingSuppliers()
     suppliers.value = data.suppliers || []
+  } catch (err) {
+    message.error('加载商家失败')
   } finally {
     loading.value = false
   }
