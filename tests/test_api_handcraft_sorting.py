@@ -34,6 +34,38 @@ def client_with_perms(db):
     app.dependency_overrides.clear()
 
 
+def _setup_part_and_jewelry(db):
+    part = create_part(db, {"name": "P1", "category": "小配件", "color": "古铜"})
+    add_stock(db, "part", part.id, 100.0, "init")
+    jewelry = create_jewelry(db, {"name": "J1", "category": "单件"})
+    return part, jewelry
+
+
+def test_suppliers_with_sorting_returns_filtered_list(client_with_perms, db):
+    part, jewelry = _setup_part_and_jewelry(db)
+    create_handcraft_order(
+        db, supplier_name="商家A",
+        parts=[{"part_id": part.id, "qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 1, "customer_name": "王"}],
+    )
+    create_handcraft_order(
+        db, supplier_name="商家B",
+        parts=[{"part_id": part.id, "qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 1}],
+    )
+
+    c = client_with_perms(["sorting"])
+    resp = c.get("/api/handcraft/suppliers-with-sorting")
+    assert resp.status_code == 200
+    assert resp.json() == {"suppliers": ["商家A"]}
+
+
+def test_suppliers_with_sorting_requires_sorting_permission(client_with_perms, db):
+    c = client_with_perms(["handcraft"])  # has handcraft but not sorting
+    resp = c.get("/api/handcraft/suppliers-with-sorting")
+    assert resp.status_code == 403
+
+
 def test_require_any_permission_allows_when_user_has_one(client_with_perms):
     """直接测一个简单端点：require_any_permission('a', 'b') 允许有 a 或 b 的用户。"""
     from fastapi import APIRouter

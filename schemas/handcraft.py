@@ -235,3 +235,23 @@ class HandcraftJewelryBreakdownGroup(BaseModel):
     received_qty: float
     status: str
     entries: List[HandcraftJewelryBreakdownEntry]
+
+
+class CargoSortingSuppliersResponse(BaseModel):
+    suppliers: List[str]
+
+
+class CargoSortingOrderView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    supplier_name: str
+    receipt_code: Optional[str] = None
+    status: str
+    created_at: datetime
+    breakdown: List[HandcraftJewelryBreakdownGroup]
+
+
+class CargoSortingListResponse(BaseModel):
+    orders: List[CargoSortingOrderView]
+    has_more: bool
