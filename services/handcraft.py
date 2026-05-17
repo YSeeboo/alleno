@@ -568,6 +568,44 @@ def list_suppliers_with_sorting(db: Session) -> list[str]:
     return out
 
 
+def list_handcraft_orders_with_sorting(
+    db: Session,
+    supplier_name: str,
+    limit: int = 15,
+    offset: int = 0,
+) -> dict:
+    """Return handcraft orders for the supplier that have resolvable customer
+    sorting info. Embeds the customer-filtered breakdown.
+
+    Returns:
+        {"orders": [{id, supplier_name, receipt_code, status, created_at, breakdown}, ...],
+         "has_more": bool}
+    """
+    # 取该商家全部订单（按创建时间倒序），过滤掉无分拣信息的
+    candidates = (
+        db.query(HandcraftOrder)
+        .filter(HandcraftOrder.supplier_name == supplier_name)
+        .order_by(HandcraftOrder.created_at.desc(), HandcraftOrder.id.desc())
+        .all()
+    )
+    qualifying = [o for o in candidates if _has_sorting_info(db, o.id)]
+
+    page = qualifying[offset : offset + limit]
+    has_more = len(qualifying) > offset + limit
+
+    orders_out = []
+    for o in page:
+        orders_out.append({
+            "id": o.id,
+            "supplier_name": o.supplier_name,
+            "receipt_code": o.receipt_code,
+            "status": o.status,
+            "created_at": o.created_at,
+            "breakdown": get_handcraft_jewelry_breakdown(db, o.id, only_with_customer=True),
+        })
+    return {"orders": orders_out, "has_more": has_more}
+
+
 def list_handcraft_orders(db: Session, status: str = None, supplier_name: str = None) -> list:
     # An explicitly empty / whitespace-only supplier_name means "caller
     # asked for this supplier but the value is empty" — return no rows

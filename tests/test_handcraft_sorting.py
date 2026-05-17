@@ -7,6 +7,7 @@ from services.handcraft import (
     get_handcraft_jewelry_breakdown,
     _has_sorting_info,
     list_suppliers_with_sorting,
+    list_handcraft_orders_with_sorting,
 )
 
 
@@ -124,3 +125,84 @@ def test_list_suppliers_with_sorting_returns_only_qualifying_suppliers(db):
 
 def test_list_suppliers_with_sorting_empty_when_no_orders(db):
     assert list_suppliers_with_sorting(db) == []
+
+
+def test_list_orders_returns_filtered_breakdowns(db):
+    part, jewelry = _setup_jewelry(db)
+    o = create_handcraft_order(
+        db, supplier_name="商家A",
+        parts=[{"part_id": part.id, "qty": 5}],
+        jewelries=[
+            {"jewelry_id": jewelry.id, "qty": 1, "customer_name": "王"},
+            {"jewelry_id": jewelry.id, "qty": 1},  # filtered out
+        ],
+    )
+
+    result = list_handcraft_orders_with_sorting(db, supplier_name="商家A")
+    assert result["has_more"] is False
+    assert len(result["orders"]) == 1
+    order_view = result["orders"][0]
+    assert order_view["id"] == o.id
+    assert order_view["supplier_name"] == "商家A"
+    assert order_view["receipt_code"] == o.receipt_code
+    assert order_view["status"] == "pending"
+    # breakdown is embedded, anonymous entries filtered out
+    assert len(order_view["breakdown"]) == 1
+    assert len(order_view["breakdown"][0]["entries"]) == 1
+
+
+def test_list_orders_excludes_orders_without_sorting_info(db):
+    part, jewelry = _setup_jewelry(db)
+    create_handcraft_order(
+        db, supplier_name="商家A",
+        parts=[{"part_id": part.id, "qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 1}],  # no customer
+    )
+    result = list_handcraft_orders_with_sorting(db, supplier_name="商家A")
+    assert result == {"orders": [], "has_more": False}
+
+
+def test_list_orders_pagination_has_more(db):
+    """16 个订单，limit=15 → has_more=True；offset=15 → 1 单，has_more=False。"""
+    from datetime import date
+    part, jewelry = _setup_jewelry(db)
+    base = date(2025, 1, 1)
+    for i in range(16):
+        from datetime import timedelta
+        create_handcraft_order(
+            db, supplier_name="商家A",
+            parts=[{"part_id": part.id, "qty": 5}],
+            jewelries=[{"jewelry_id": jewelry.id, "qty": 1, "customer_name": f"C{i}"}],
+            created_at=base + timedelta(days=i),
+        )
+
+    page1 = list_handcraft_orders_with_sorting(db, supplier_name="商家A", limit=15, offset=0)
+    assert len(page1["orders"]) == 15
+    assert page1["has_more"] is True
+
+    page2 = list_handcraft_orders_with_sorting(db, supplier_name="商家A", limit=15, offset=15)
+    assert len(page2["orders"]) == 1
+    assert page2["has_more"] is False
+
+
+def test_list_orders_exact_15_no_has_more(db):
+    """边界：恰好 15 单时 has_more=False。"""
+    from datetime import date, timedelta
+    part, jewelry = _setup_jewelry(db)
+    base = date(2025, 1, 1)
+    for i in range(15):
+        create_handcraft_order(
+            db, supplier_name="商家A",
+            parts=[{"part_id": part.id, "qty": 5}],
+            jewelries=[{"jewelry_id": jewelry.id, "qty": 1, "customer_name": f"C{i}"}],
+            created_at=base + timedelta(days=i),
+        )
+
+    result = list_handcraft_orders_with_sorting(db, supplier_name="商家A", limit=15, offset=0)
+    assert len(result["orders"]) == 15
+    assert result["has_more"] is False
+
+
+def test_list_orders_unknown_supplier_returns_empty(db):
+    result = list_handcraft_orders_with_sorting(db, supplier_name="不存在")
+    assert result == {"orders": [], "has_more": False}
