@@ -541,6 +541,14 @@ def get_handcraft_jewelry_breakdown(
     return result
 
 
+def _has_sorting_info(db: Session, hc_id: str) -> bool:
+    """True iff at least one HandcraftJewelryItem in the order has a resolvable
+    non-empty customer name (either manual customer_name or via OrderItemLink)."""
+    # 复用 breakdown 的解析逻辑，避免重复实现。性能足够：单订单查询。
+    groups = get_handcraft_jewelry_breakdown(db, hc_id, only_with_customer=True)
+    return len(groups) > 0
+
+
 def list_handcraft_orders(db: Session, status: str = None, supplier_name: str = None) -> list:
     # An explicitly empty / whitespace-only supplier_name means "caller
     # asked for this supplier but the value is empty" — return no rows
