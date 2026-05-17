@@ -129,6 +129,69 @@ def test_suppliers_with_sorting_requires_sorting_permission(client_with_perms, d
     assert resp.status_code == 403
 
 
+def test_sorting_by_receipt_code_returns_view(client_with_perms, db):
+    part, jewelry = _setup_part_and_jewelry(db)
+    o = create_handcraft_order(
+        db, supplier_name="商家A",
+        parts=[{"part_id": part.id, "qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 1, "customer_name": "王"}],
+    )
+
+    c = client_with_perms(["sorting"])
+    resp = c.get(f"/api/handcraft/sorting/by-receipt-code/{o.receipt_code}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == o.id
+    assert body["supplier_name"] == "商家A"
+    assert body["receipt_code"] == o.receipt_code
+    assert len(body["breakdown"]) == 1
+    assert body["breakdown"][0]["entries"][0]["customer_name"] == "王"
+
+
+def test_sorting_by_receipt_code_is_case_insensitive(client_with_perms, db):
+    part, jewelry = _setup_part_and_jewelry(db)
+    o = create_handcraft_order(
+        db, supplier_name="商家A",
+        parts=[{"part_id": part.id, "qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 1, "customer_name": "王"}],
+    )
+
+    c = client_with_perms(["sorting"])
+    # receipt_code is uppercase in storage; try lowercase
+    resp = c.get(f"/api/handcraft/sorting/by-receipt-code/{o.receipt_code.lower()}")
+    assert resp.status_code == 200
+    assert resp.json()["id"] == o.id
+
+
+def test_sorting_by_receipt_code_404_when_not_found(client_with_perms, db):
+    c = client_with_perms(["sorting"])
+    resp = c.get("/api/handcraft/sorting/by-receipt-code/ZZZZZ")
+    assert resp.status_code == 404
+
+
+def test_sorting_by_receipt_code_returns_order_with_empty_breakdown(client_with_perms, db):
+    """Order exists but has no resolvable customer → still 200, breakdown=[]."""
+    part, jewelry = _setup_part_and_jewelry(db)
+    o = create_handcraft_order(
+        db, supplier_name="商家A",
+        parts=[{"part_id": part.id, "qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 1}],  # no customer
+    )
+
+    c = client_with_perms(["sorting"])
+    resp = c.get(f"/api/handcraft/sorting/by-receipt-code/{o.receipt_code}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == o.id
+    assert body["breakdown"] == []
+
+
+def test_sorting_by_receipt_code_requires_sorting_perm(client_with_perms, db):
+    c = client_with_perms(["handcraft"])
+    resp = c.get("/api/handcraft/sorting/by-receipt-code/ZZZZZ")
+    assert resp.status_code == 403
+
+
 def test_require_any_permission_allows_when_user_has_one(client_with_perms):
     """直接测一个简单端点：require_any_permission('a', 'b') 允许有 a 或 b 的用户。"""
     from fastapi import APIRouter
