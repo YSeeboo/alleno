@@ -8,11 +8,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from api._errors import service_errors
-from api.deps import require_permission
 from database import get_db
 from schemas.handcraft import (
-    CargoSortingListResponse,
-    CargoSortingSuppliersResponse,
     HandcraftCreate,
     HandcraftDeliveryImagesUpdate,
     HandcraftJewelryBreakdownGroup,
@@ -53,9 +50,7 @@ from services.handcraft import (
     get_handcraft_order,
     get_handcraft_parts,
     list_handcraft_orders,
-    list_handcraft_orders_with_sorting,
     list_handcraft_pending_receive_items,
-    list_suppliers_with_sorting,
     send_handcraft_order,
     suggest_handcraft_parts,
     supplement_and_send_handcraft_order,
@@ -157,15 +152,6 @@ def api_list_handcraft_pending_receive_items(
             exclude_part_item_ids=exclude_part_item_ids or None,
             exclude_jewelry_item_ids=exclude_jewelry_item_ids or None,
         )
-
-
-@router.get(
-    "/suppliers-with-sorting",
-    response_model=CargoSortingSuppliersResponse,
-    dependencies=[require_permission("sorting")],
-)
-def api_list_suppliers_with_sorting(db: Session = Depends(get_db)):
-    return {"suppliers": list_suppliers_with_sorting(db)}
 
 
 # Declared before /{order_id} so the literal prefix wins over the path param.

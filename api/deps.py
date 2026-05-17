@@ -25,8 +25,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
 
 # Legacy permissions that were merged into another key.
 # Users with the old key are treated as having the new key.
-# "sorting" users need to read handcraft order data, so sorting implies handcraft.
-_PERM_ALIASES = {"inventory_log": "inventory", "sorting": "handcraft"}
+_PERM_ALIASES = {"inventory_log": "inventory"}
 
 
 def require_permission(perm_key: str):

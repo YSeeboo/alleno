@@ -19,6 +19,7 @@ from api.inventory import router as inventory_router
 from api.orders import router as orders_router
 from api.plating import router as plating_router
 from api.handcraft import router as handcraft_router
+from api.cargo_sorting import router as cargo_sorting_router
 from api.uploads import router as uploads_router
 from api.feishu import router as feishu_router
 from api.kanban import router as kanban_router
@@ -101,6 +102,7 @@ app.include_router(inventory_router, dependencies=[require_permission("inventory
 app.include_router(orders_router, dependencies=[require_permission("orders")])
 app.include_router(plating_router, dependencies=[require_permission("plating")])
 app.include_router(plating_summary_router, dependencies=[require_permission("plating")])
+app.include_router(cargo_sorting_router, dependencies=[require_permission("sorting")])
 app.include_router(handcraft_router, dependencies=[require_permission("handcraft")])
 app.include_router(restock_router, dependencies=[require_permission("handcraft")])
 app.include_router(uploads_router, dependencies=[Depends(get_current_user)])
