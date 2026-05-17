@@ -418,7 +418,9 @@ def get_handcraft_order_by_receipt_code(db: Session, code: str) -> Optional[Hand
 _BREAKDOWN_STATUS_RANK = {"未送出": 0, "制作中": 1, "已收回": 2}
 
 
-def get_handcraft_jewelry_breakdown(db: Session, hc_id: str) -> list[dict]:
+def get_handcraft_jewelry_breakdown(
+    db: Session, hc_id: str, only_with_customer: bool = False
+) -> list[dict]:
     """Aggregated jewelry view for HC detail.
 
     Returns one group per (kind, identity) — `kind` is "jewelry" or "part"
@@ -510,6 +512,14 @@ def get_handcraft_jewelry_breakdown(db: Session, hc_id: str) -> list[dict]:
                 "source_order_id": source_order_id,
                 "is_locked": source == "order",
             })
+
+        if only_with_customer:
+            entries = [
+                e for e in entries
+                if e["customer_name"] and e["customer_name"].strip()
+            ]
+            if not entries:
+                continue
 
         # Group-level aggregate status: the lowest rank wins so the UI shows
         # the most upstream state (any 未送出 → 未送出 for the whole group).
