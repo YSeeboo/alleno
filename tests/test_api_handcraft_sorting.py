@@ -41,6 +41,69 @@ def _setup_part_and_jewelry(db):
     return part, jewelry
 
 
+def test_sorting_list_returns_orders_with_breakdown(client_with_perms, db):
+    part, jewelry = _setup_part_and_jewelry(db)
+    o = create_handcraft_order(
+        db, supplier_name="商家A",
+        parts=[{"part_id": part.id, "qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 1, "customer_name": "王"}],
+    )
+
+    c = client_with_perms(["sorting"])
+    resp = c.get("/api/handcraft/sorting", params={"supplier_name": "商家A"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["has_more"] is False
+    assert len(body["orders"]) == 1
+    assert body["orders"][0]["id"] == o.id
+    assert body["orders"][0]["receipt_code"] == o.receipt_code
+    assert len(body["orders"][0]["breakdown"]) == 1
+
+
+def test_sorting_list_pagination(client_with_perms, db):
+    from datetime import date, timedelta
+    part, jewelry = _setup_part_and_jewelry(db)
+    base = date(2026, 1, 1)
+    for i in range(16):
+        create_handcraft_order(
+            db, supplier_name="商家A",
+            parts=[{"part_id": part.id, "qty": 5}],
+            jewelries=[{"jewelry_id": jewelry.id, "qty": 1, "customer_name": f"C{i}"}],
+            created_at=base + timedelta(days=i),
+        )
+
+    c = client_with_perms(["sorting"])
+    resp = c.get("/api/handcraft/sorting", params={"supplier_name": "商家A", "limit": 15, "offset": 0})
+    assert resp.json()["has_more"] is True
+    assert len(resp.json()["orders"]) == 15
+
+    resp = c.get("/api/handcraft/sorting", params={"supplier_name": "商家A", "limit": 15, "offset": 15})
+    assert resp.json()["has_more"] is False
+    assert len(resp.json()["orders"]) == 1
+
+
+def test_sorting_list_requires_supplier_name(client_with_perms, db):
+    c = client_with_perms(["sorting"])
+    resp = c.get("/api/handcraft/sorting")
+    assert resp.status_code == 422
+
+    resp = c.get("/api/handcraft/sorting", params={"supplier_name": ""})
+    assert resp.status_code == 422
+
+
+def test_sorting_list_unknown_supplier_returns_empty(client_with_perms, db):
+    c = client_with_perms(["sorting"])
+    resp = c.get("/api/handcraft/sorting", params={"supplier_name": "不存在"})
+    assert resp.status_code == 200
+    assert resp.json() == {"orders": [], "has_more": False}
+
+
+def test_sorting_list_requires_sorting_perm(client_with_perms, db):
+    c = client_with_perms(["handcraft"])
+    resp = c.get("/api/handcraft/sorting", params={"supplier_name": "X"})
+    assert resp.status_code == 403
+
+
 def test_suppliers_with_sorting_returns_filtered_list(client_with_perms, db):
     part, jewelry = _setup_part_and_jewelry(db)
     create_handcraft_order(
