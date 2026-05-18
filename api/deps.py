@@ -42,5 +42,3 @@ def require_permission(perm_key: str):
         return current_user
 
     return Depends(dependency)
-
-

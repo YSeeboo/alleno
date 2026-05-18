@@ -541,31 +541,49 @@ def get_handcraft_jewelry_breakdown(
     return result
 
 
-def _has_sorting_info(db: Session, hc_id: str) -> bool:
-    """True iff at least one HandcraftJewelryItem in the order has a resolvable
-    non-empty customer name (either manual customer_name or via OrderItemLink)."""
-    # 复用 breakdown 的解析逻辑，避免重复实现。性能足够：单订单查询。
-    groups = get_handcraft_jewelry_breakdown(db, hc_id, only_with_customer=True)
-    return len(groups) > 0
-
-
 def list_suppliers_with_sorting(db: Session) -> list[str]:
     """Return distinct supplier_name list for handcraft orders that have at least
     one resolvable customer entry. Sorted ascending for stable UI."""
-    candidates = (
-        db.query(HandcraftOrder.id, HandcraftOrder.supplier_name)
+    from sqlalchemy import and_, exists, func, or_, select
+    from models.order import Order, OrderItemLink
+
+    # A jewelry item "qualifies" iff:
+    #   manual customer_name set and non-empty, OR
+    #   customer_name IS NULL and linked Order has non-empty customer_name.
+    # Matches the Python resolution in get_handcraft_jewelry_breakdown:
+    # if r.customer_name is not None → manual; else fall back to OrderItemLink.
+    qualifying_subq = (
+        select(HandcraftJewelryItem.id)
+        .outerjoin(
+            OrderItemLink,
+            OrderItemLink.handcraft_jewelry_item_id == HandcraftJewelryItem.id,
+        )
+        .outerjoin(Order, Order.id == OrderItemLink.order_id)
+        .where(
+            HandcraftJewelryItem.handcraft_order_id == HandcraftOrder.id,
+            or_(
+                and_(
+                    HandcraftJewelryItem.customer_name.isnot(None),
+                    func.trim(HandcraftJewelryItem.customer_name) != "",
+                ),
+                and_(
+                    HandcraftJewelryItem.customer_name.is_(None),
+                    Order.customer_name.isnot(None),
+                    func.trim(Order.customer_name) != "",
+                ),
+            ),
+        )
+        .correlate(HandcraftOrder)
+    )
+
+    rows = (
+        db.query(HandcraftOrder.supplier_name)
+        .filter(exists(qualifying_subq))
+        .distinct()
         .order_by(HandcraftOrder.supplier_name.asc())
         .all()
     )
-    seen: set[str] = set()
-    out: list[str] = []
-    for hc_id, name in candidates:
-        if name in seen:
-            continue
-        if _has_sorting_info(db, hc_id):
-            seen.add(name)
-            out.append(name)
-    return out
+    return [r[0] for r in rows]
 
 
 def list_handcraft_orders_with_sorting(
@@ -581,34 +599,68 @@ def list_handcraft_orders_with_sorting(
         {"orders": [{id, supplier_name, receipt_code, status, created_at, breakdown}, ...],
          "has_more": bool}
     """
-    # 取该商家全部订单（按创建时间倒序），过滤掉无分拣信息的
-    candidates = (
-        db.query(HandcraftOrder)
-        .filter(HandcraftOrder.supplier_name == supplier_name)
-        .order_by(HandcraftOrder.created_at.desc(), HandcraftOrder.id.desc())
-        .all()
+    from sqlalchemy import and_, exists, func, or_, select
+    from models.order import Order, OrderItemLink
+
+    # Same qualifying predicate as list_suppliers_with_sorting — pushed to SQL.
+    qualifying_subq = (
+        select(HandcraftJewelryItem.id)
+        .outerjoin(
+            OrderItemLink,
+            OrderItemLink.handcraft_jewelry_item_id == HandcraftJewelryItem.id,
+        )
+        .outerjoin(Order, Order.id == OrderItemLink.order_id)
+        .where(
+            HandcraftJewelryItem.handcraft_order_id == HandcraftOrder.id,
+            or_(
+                and_(
+                    HandcraftJewelryItem.customer_name.isnot(None),
+                    func.trim(HandcraftJewelryItem.customer_name) != "",
+                ),
+                and_(
+                    HandcraftJewelryItem.customer_name.is_(None),
+                    Order.customer_name.isnot(None),
+                    func.trim(Order.customer_name) != "",
+                ),
+            ),
+        )
+        .correlate(HandcraftOrder)
     )
-    # Compute breakdown once per candidate; qualifying = non-empty breakdown.
-    qualifying: list[tuple[HandcraftOrder, list[dict]]] = []
-    for o in candidates:
-        breakdown = get_handcraft_jewelry_breakdown(db, o.id, only_with_customer=True)
-        if breakdown:
-            qualifying.append((o, breakdown))
 
-    page = qualifying[offset : offset + limit]
-    has_more = len(qualifying) > offset + limit
+    qualifying_ids = [
+        row[0]
+        for row in (
+            db.query(HandcraftOrder.id)
+            .filter(HandcraftOrder.supplier_name == supplier_name)
+            .filter(exists(qualifying_subq))
+            .order_by(HandcraftOrder.created_at.desc(), HandcraftOrder.id.desc())
+            .all()
+        )
+    ]
 
-    orders_out = [
-        {
+    page_ids = qualifying_ids[offset : offset + limit]
+    has_more = len(qualifying_ids) > offset + limit
+
+    if not page_ids:
+        return {"orders": [], "has_more": has_more}
+
+    # Fetch full ORM objects only for the page, preserving the qualifying order.
+    page_orders = {
+        o.id: o
+        for o in db.query(HandcraftOrder).filter(HandcraftOrder.id.in_(page_ids)).all()
+    }
+
+    orders_out = []
+    for hc_id in page_ids:
+        o = page_orders[hc_id]
+        orders_out.append({
             "id": o.id,
             "supplier_name": o.supplier_name,
             "receipt_code": o.receipt_code,
             "status": o.status,
             "created_at": o.created_at,
-            "breakdown": breakdown,
-        }
-        for o, breakdown in page
-    ]
+            "breakdown": get_handcraft_jewelry_breakdown(db, o.id, only_with_customer=True),
+        })
     return {"orders": orders_out, "has_more": has_more}
 
 

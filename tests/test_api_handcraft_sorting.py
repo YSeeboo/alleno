@@ -1,8 +1,6 @@
 """API + permission tests for cargo-sorting endpoints."""
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import text
 
 from main import app
 from database import Base, get_db
