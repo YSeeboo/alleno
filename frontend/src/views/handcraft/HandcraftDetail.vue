@@ -962,8 +962,8 @@ const restockColumns = computed(() => [
       ? `${new Date(row.completed_at).toLocaleDateString()} 完成`
       : h(NSpace, { size: 'small' }, {
         default: () => [
-          h(NButton, { size: 'tiny', onClick: () => markDoneRow(row) }, { default: () => '已补货' }),
-          h(NButton, { size: 'tiny', text: true, onClick: () => cancelRow(row) }, { default: () => '取消' }),
+          h(NButton, { size: 'small', type: 'success', onClick: () => markDoneRow(row) }, { default: () => '点击完成' }),
+          h(NButton, { size: 'small', text: true, onClick: () => cancelRow(row) }, { default: () => '取消' }),
         ],
       }),
   },

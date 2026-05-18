@@ -4,18 +4,18 @@
 
     <n-tabs v-model:value="activeTab" type="line" animated>
       <n-tab-pane name="pending" :tab="`待补货 (${summaryRows.length})`">
-        <div style="display:flex;gap:12px;align-items:center;margin:8px 0 12px;flex-wrap:wrap;">
-          <n-input v-model:value="searchQuery" placeholder="搜索配件 ID / 名称" clearable style="width:280px;" />
-          <n-checkbox v-model:checked="onlyZeroStock">仅看库存为 0</n-checkbox>
+        <div class="filter-bar">
+          <n-input v-model:value="searchQuery" placeholder="搜索配件 ID / 名称" clearable class="filter-search" />
+          <n-checkbox v-if="!isMobile" v-model:checked="onlyZeroStock">仅看库存为 0</n-checkbox>
           <n-select
             v-model:value="supplierFilter"
             :options="supplierOptions"
             placeholder="按商家筛选"
             clearable
             filterable
-            style="width:200px;"
+            class="filter-supplier"
           />
-          <span style="margin-left:auto;color:#888;font-size:13px;">
+          <span class="filter-stats">
             共 {{ filteredRows.length }} 个配件 · {{ totalSourceCount }} 条来源
           </span>
         </div>
@@ -42,7 +42,7 @@
                   />
                   <div v-else class="part-img placeholder" />
                   <div class="part-meta">
-                    <div class="part-name">{{ row.part_id }} · {{ row.part_name }}</div>
+                    <div class="part-name"><span class="part-id">{{ row.part_id }} · </span>{{ row.part_name }}</div>
                   </div>
                   <div class="metric supplier-col">
                     <div class="metric-label">商家</div>
@@ -74,23 +74,25 @@
                       </template>
                     </div>
                   </div>
-                  <div class="metric">
-                    <div class="metric-label">需求量</div>
-                    <div class="metric-value">{{ formatQty(row.total_qty) }}</div>
-                  </div>
-                  <div class="metric" :class="{ 'stock-low': isStockLow(row) }">
-                    <div class="metric-label">当前库存</div>
-                    <div class="metric-value">{{ row.current_stock }}</div>
-                  </div>
-                  <div class="metric">
-                    <div class="metric-label">来源</div>
-                    <div class="metric-value">{{ row.source_count }} 单</div>
+                  <div class="metric-group">
+                    <div class="metric">
+                      <div class="metric-label">需求量</div>
+                      <div class="metric-value">{{ formatQty(row.total_qty) }}</div>
+                    </div>
+                    <div class="metric" :class="{ 'stock-low': isStockLow(row) }">
+                      <div class="metric-label">当前库存</div>
+                      <div class="metric-value">{{ row.current_stock }}</div>
+                    </div>
+                    <div class="metric metric-source">
+                      <div class="metric-label">来源</div>
+                      <div class="metric-value">{{ row.source_count }} 单</div>
+                    </div>
                   </div>
                 </div>
               </template>
-              <template #header-extra>
+              <template v-if="!isMobile" #header-extra>
                 <n-button size="small" type="success" @click.stop="markPartDone(row)">
-                  全部已补货
+                  全部点击完成
                 </n-button>
               </template>
               <div>
@@ -99,13 +101,20 @@
                   :key="src.request_id"
                   class="source-row"
                 >
-                  <a class="hc-link" @click="goToHandcraft(src.handcraft_order_id)">
+                  <a
+                    class="hc-link"
+                    :class="{ 'hc-link-disabled': !canViewHandcraft }"
+                    :title="canViewHandcraft ? '' : '无手工单查看权限'"
+                    @click="goToHandcraft(src.handcraft_order_id)"
+                  >
                     {{ src.handcraft_order_id }}
                   </a>
-                  <span class="supplier">{{ src.supplier_name }}</span>
-                  <span class="qty">需求 {{ formatQty(src.qty) }}</span>
-                  <span class="ts">{{ formatDate(src.created_at) }} 标记</span>
-                  <n-button size="tiny" @click="markOneDone(src)">已补货</n-button>
+                  <div class="source-info">
+                    <span class="supplier">{{ src.supplier_name }}</span>
+                    <span class="qty">需求 {{ formatQty(src.qty) }}</span>
+                    <span class="ts">{{ formatDate(src.created_at) }} 标记</span>
+                  </div>
+                  <n-button size="small" type="success" class="src-action" @click="markOneDone(src)">点击完成</n-button>
                 </div>
               </div>
             </n-collapse-item>
@@ -135,6 +144,8 @@ import {
   NCollapse, NCollapseItem, NButton, NDataTable, NTag, NPopover,
   useDialog, useMessage,
 } from 'naive-ui'
+import { useIsMobile } from '@/composables/useIsMobile'
+import { useAuthStore } from '@/stores/auth'
 import {
   listRestockSummary,
   listRestockHistory,
@@ -145,6 +156,9 @@ import {
 const router = useRouter()
 const dialog = useDialog()
 const message = useMessage()
+const { isMobile } = useIsMobile()
+const authStore = useAuthStore()
+const canViewHandcraft = computed(() => authStore.hasPermission('handcraft'))
 
 const activeTab = ref('pending')
 const summaryRows = ref([])
@@ -252,6 +266,10 @@ function isStockLow(row) {
 }
 
 function goToHandcraft(hcId) {
+  if (!canViewHandcraft.value) {
+    message.warning('无手工单查看权限')
+    return
+  }
   router.push(`/handcraft/${hcId}`)
 }
 
@@ -266,8 +284,8 @@ async function markOneDone(src) {
 
 function markPartDone(row) {
   dialog.warning({
-    title: '确认全部已补货',
-    content: `把「${row.part_id} · ${row.part_name}」的所有 ${row.source_count} 条记录都标为已补货？`,
+    title: '确认全部完成',
+    content: `把「${row.part_id} · ${row.part_name}」的所有 ${row.source_count} 条补货记录标记为完成？`,
     positiveText: '确认',
     negativeText: '取消',
     onPositiveClick: async () => {
@@ -306,7 +324,7 @@ onMounted(loadSummary)
   overflow: hidden;
 }
 .part-img.placeholder { background: #fafafa; }
-.supplier-col {
+.metric.supplier-col {
   min-width: 140px;
   max-width: 220px;
   text-align: left;
@@ -359,16 +377,137 @@ onMounted(loadSummary)
   line-height: 1.4;
 }
 .metric.stock-low .metric-value { color: #d32f2f; }
+/* Wrappers are layout-flat on desktop (children flow into the parent grid/flex)
+   and become real flex containers on mobile to share a single grid cell. */
+.metric-group { display: contents; }
+.source-info { display: contents; }
+
 .source-row {
   display: grid;
-  grid-template-columns: 120px 1fr 110px 140px 80px;
+  grid-template-columns: 120px 1fr 110px 140px auto;
   align-items: center;
+  gap: 12px;
   padding: 8px 12px;
   border-top: 1px solid #f5f5f5;
   font-size: 13px;
 }
 .hc-link { color: #4361ee; cursor: pointer; }
+.hc-link.hc-link-disabled { color: #999; cursor: help; text-decoration: line-through; text-decoration-thickness: 1px; }
 .supplier { color: #666; }
 .qty { color: #555; }
 .ts { color: #888; font-size: 12px; }
+
+.filter-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 8px 0 12px;
+  flex-wrap: wrap;
+}
+.filter-search { width: 280px; }
+.filter-supplier { width: 200px; }
+.filter-stats {
+  margin-left: auto;
+  color: #888;
+  font-size: 13px;
+}
+
+@media (max-width: 768px) {
+  /* Drop ID prefix + 来源 metric on mobile — name and demand/stock are
+     the only fields that earn their pixel cost on a phone. */
+  .part-id,
+  .metric-source { display: none; }
+
+  .filter-bar { gap: 8px; }
+  .filter-search,
+  .filter-supplier { width: 100%; }
+  .filter-stats { margin-left: 0; flex-basis: 100%; }
+
+  .row-header {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    column-gap: 12px;
+    row-gap: 4px;
+    padding-right: 4px;
+    align-items: start;
+  }
+  .part-img {
+    width: 56px;
+    height: 56px;
+    grid-row: 1 / span 3;
+    align-self: start;
+  }
+  .part-meta {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    align-self: center;
+  }
+  .part-name { font-size: 14px; line-height: 1.3; }
+
+  .metric.supplier-col {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+    max-width: 100%;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .metric.supplier-col .metric-label { font-size: 12px; }
+  .supplier-chips { margin-top: 0; }
+
+  .metric-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    grid-column: 2;
+    grid-row: 3;
+    align-items: baseline;
+  }
+  .metric-group .metric {
+    min-width: 0;
+    text-align: left;
+  }
+  .metric-group .metric-label {
+    display: inline;
+    font-size: 12px;
+    margin-right: 4px;
+  }
+  .metric-group .metric-value {
+    display: inline;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .source-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "hc btn"
+      "info info";
+    gap: 4px 8px;
+    padding: 10px 8px;
+  }
+  .hc-link {
+    grid-area: hc;
+    font-weight: 500;
+    align-self: center;
+  }
+  .src-action {
+    grid-area: btn;
+    justify-self: end;
+  }
+  .source-info {
+    grid-area: info;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 10px;
+    align-items: baseline;
+    font-size: 12px;
+  }
+  .source-info .supplier,
+  .source-info .qty,
+  .source-info .ts { font-size: 12px; }
+}
 </style>
