@@ -472,6 +472,10 @@ def update_extra_info(db: Session, order_id: str, data: dict) -> Order:
     if not order:
         raise ValueError(f"订单 {order_id} 不存在")
     for key, value in data.items():
+        if key == "has_barcode" and value is None:
+            # has_barcode is a NOT NULL boolean; ignore explicit null
+            # (omit the field entirely to leave it unchanged)
+            continue
         if key == "created_at" and isinstance(value, date_type) and not isinstance(value, datetime):
             value = _replace_date(order.created_at, value)
         if hasattr(order, key):

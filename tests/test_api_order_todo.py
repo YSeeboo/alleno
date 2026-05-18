@@ -2542,3 +2542,23 @@ def test_plating_all_item_order_links_empty(client, db):
     resp = client.get(f"/api/plating/{plating_id}/items/order-links")
     assert resp.status_code == 200
     assert resp.json() == {}
+
+
+def test_patch_extra_info_has_barcode_null_is_ignored(client, db):
+    """Explicit {has_barcode: null} must be a no-op rather than triggering a
+    409. The field is NOT NULL — null means 'leave unchanged'."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+
+    # Seed has_barcode=true
+    client.patch(
+        f"/api/orders/{order_id}/extra-info",
+        json={"has_barcode": True},
+    )
+
+    # Send explicit null — must succeed and leave value unchanged
+    resp = client.patch(
+        f"/api/orders/{order_id}/extra-info",
+        json={"has_barcode": None},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["has_barcode"] is True  # unchanged, not cleared
