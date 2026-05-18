@@ -17,7 +17,8 @@
           :preview-src="g.jewelry_image || ''"
           :show-toolbar-tooltip="false"
           object-fit="cover"
-          class="thumb"
+          :width="72"
+          :height="72"
           :fallback-src="placeholder"
         />
       </div>
@@ -26,7 +27,8 @@
         <div class="id">{{ g.jewelry_id }}</div>
         <div class="customers">
           <div v-for="(e, idx) in g.entries" :key="idx" class="customer-line">
-            {{ e.customer_name }} ×{{ formatQty(e.qty) }}
+            <span class="customer-name">{{ e.customer_name }}</span>
+            <span class="qty">×{{ formatQty(e.qty) }}</span>
           </div>
         </div>
       </div>
@@ -98,20 +100,55 @@ const formatQty = (q) => (Number.isInteger(q) ? q : q.toFixed(2).replace(/\.?0+$
   flex-shrink: 0;
   width: 72px;
   height: 72px;
-  cursor: pointer;
-}
-.thumb {
-  width: 72px !important;
-  height: 72px !important;
   border-radius: 8px;
+  overflow: hidden;        /* clip safety net for wide source images */
+  cursor: pointer;
+  background: #f3f4f6;     /* shows during image load / for missing images */
+}
+.thumb-wrap :deep(.n-image) {
+  display: block;
+  width: 72px;
+  height: 72px;
+}
+.thumb-wrap :deep(.n-image img) {
+  display: block;
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
 }
 .info { flex: 1; min-width: 0; }
 .name { font-size: 14px; font-weight: 600; color: #111827; }
 .id { font-size: 11px; color: #9ca3af; margin-top: 2px; }
-.customers { margin-top: 6px; }
+.customers {
+  margin-top: 10px;
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 4px 12px;
+}
 .customer-line {
-  font-size: 13px;
-  color: #4b5563;
-  line-height: 1.7;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.customer-line + .customer-line {
+  border-top: 1px solid #e5e7eb;
+}
+.customer-line .customer-name {
+  color: #111827;
+  font-weight: 500;
+  word-break: break-all;     /* customer names can be long */
+  flex: 1;
+  min-width: 0;
+}
+.customer-line .qty {
+  color: #6366f1;
+  font-weight: 700;
+  font-size: 16px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;  /* vertical-align numbers cleanly */
 }
 </style>
