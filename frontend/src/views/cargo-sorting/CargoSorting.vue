@@ -74,6 +74,7 @@ const onSearch = async () => {
   if (!code) return
   // 互斥：点击搜索就清商家选择
   selectedSupplier.value = ''
+  lastEmptyContext.value = 'initial'  // don't keep stale supplier-empty hint
   searchLoading.value = true
   try {
     const { data } = await getCargoSortingByReceiptCode(code)
@@ -108,6 +109,8 @@ const fetchSupplierOrders = async (offset = 0) => {
 const onSupplierPicked = async (name) => {
   selectedSupplier.value = name
   codeInput.value = ''  // 互斥
+  orders.value = []     // prevent flashing previous supplier's cards
+  hasMore.value = false // ditto
   loading.value = true
   hasInteracted.value = true
   try {
