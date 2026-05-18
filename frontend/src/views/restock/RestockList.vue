@@ -4,9 +4,17 @@
 
     <n-tabs v-model:value="activeTab" type="line" animated>
       <n-tab-pane name="pending" :tab="`待补货 (${summaryRows.length})`">
-        <div style="display:flex;gap:12px;align-items:center;margin:8px 0 12px;">
+        <div style="display:flex;gap:12px;align-items:center;margin:8px 0 12px;flex-wrap:wrap;">
           <n-input v-model:value="searchQuery" placeholder="搜索配件 ID / 名称" clearable style="width:280px;" />
           <n-checkbox v-model:checked="onlyZeroStock">仅看库存为 0</n-checkbox>
+          <n-select
+            v-model:value="supplierFilter"
+            :options="supplierOptions"
+            placeholder="按商家筛选"
+            clearable
+            filterable
+            style="width:200px;"
+          />
           <span style="margin-left:auto;color:#888;font-size:13px;">
             共 {{ filteredRows.length }} 个配件 · {{ totalSourceCount }} 条来源
           </span>
@@ -22,10 +30,49 @@
             >
               <template #header>
                 <div class="row-header">
-                  <img v-if="row.part_image" :src="row.part_image" class="part-img" />
+                  <n-image
+                    v-if="row.part_image"
+                    :src="row.part_image"
+                    :width="48"
+                    :height="48"
+                    object-fit="cover"
+                    class="part-img"
+                    style="cursor:zoom-in;"
+                    @click.stop
+                  />
                   <div v-else class="part-img placeholder" />
                   <div class="part-meta">
                     <div class="part-name">{{ row.part_id }} · {{ row.part_name }}</div>
+                  </div>
+                  <div class="metric supplier-col">
+                    <div class="metric-label">商家</div>
+                    <div class="supplier-chips">
+                      <template v-if="partSuppliers(row).length === 0">
+                        <span class="supplier-empty">—</span>
+                      </template>
+                      <template v-else>
+                        <n-tag
+                          v-for="name in partSuppliers(row).slice(0, 2)"
+                          :key="name"
+                          size="small"
+                          :bordered="false"
+                          :title="name"
+                          class="supplier-chip"
+                        >
+                          {{ name }}
+                        </n-tag>
+                        <n-popover v-if="partSuppliers(row).length > 2" trigger="hover" placement="bottom">
+                          <template #trigger>
+                            <n-tag size="small" type="info" :bordered="false" class="supplier-chip-more">
+                              +{{ partSuppliers(row).length - 2 }}
+                            </n-tag>
+                          </template>
+                          <div class="supplier-popover">
+                            <div v-for="name in partSuppliers(row).slice(2)" :key="name">{{ name }}</div>
+                          </div>
+                        </n-popover>
+                      </template>
+                    </div>
                   </div>
                   <div class="metric">
                     <div class="metric-label">需求量</div>
@@ -84,8 +131,9 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  NTabs, NTabPane, NInput, NCheckbox, NSpin, NEmpty,
-  NCollapse, NCollapseItem, NButton, NDataTable, useDialog, useMessage,
+  NTabs, NTabPane, NInput, NCheckbox, NSelect, NImage, NSpin, NEmpty,
+  NCollapse, NCollapseItem, NButton, NDataTable, NTag, NPopover,
+  useDialog, useMessage,
 } from 'naive-ui'
 import {
   listRestockSummary,
@@ -103,11 +151,39 @@ const summaryRows = ref([])
 const summaryLoading = ref(false)
 const searchQuery = ref('')
 const onlyZeroStock = ref(false)
+const supplierFilter = ref(null)
+
+function partSuppliers(row) {
+  // Unique, non-empty supplier names across the part's pending sources.
+  const seen = new Set()
+  const out = []
+  for (const s of row.sources || []) {
+    const name = (s.supplier_name || '').trim()
+    if (name && !seen.has(name)) {
+      seen.add(name)
+      out.push(name)
+    }
+  }
+  return out
+}
+
+const supplierOptions = computed(() => {
+  // Suppliers derived from currently-pending rows — keeps the filter scoped
+  // to suppliers that actually have something to restock.
+  const seen = new Set()
+  for (const r of summaryRows.value) {
+    for (const name of partSuppliers(r)) seen.add(name)
+  }
+  return [...seen].sort().map((name) => ({ label: name, value: name }))
+})
 
 const filteredRows = computed(() => {
   let rows = summaryRows.value
   if (onlyZeroStock.value) {
     rows = rows.filter((r) => r.current_stock <= 0)
+  }
+  if (supplierFilter.value) {
+    rows = rows.filter((r) => partSuppliers(r).includes(supplierFilter.value))
   }
   if (searchQuery.value.trim()) {
     const q = searchQuery.value.trim().toLowerCase()
@@ -227,8 +303,35 @@ onMounted(loadSummary)
   background: #eee;
   object-fit: cover;
   flex-shrink: 0;
+  overflow: hidden;
 }
 .part-img.placeholder { background: #fafafa; }
+.supplier-col {
+  min-width: 140px;
+  max-width: 220px;
+  text-align: left;
+}
+.supplier-chips {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  margin-top: 2px;
+  overflow: hidden;
+}
+.supplier-chip {
+  max-width: 90px;
+  flex-shrink: 1;
+}
+.supplier-chip :deep(.n-tag__content) {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.supplier-chip-more { flex-shrink: 0; }
+.supplier-empty { color: #999; font-size: 14px; }
+.supplier-popover { font-size: 13px; line-height: 1.7; }
 .part-meta {
   flex: 1;
   min-width: 140px;
