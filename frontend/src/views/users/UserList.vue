@@ -75,6 +75,7 @@ const permissionOptions = [
   { value: 'plating', label: '电镀单' },
   { value: 'handcraft', label: '手工单' },
   { value: 'sorting', label: '货物分拣' },
+  { value: 'restock', label: '待补货清单' },
   { value: 'inventory', label: '库存' },
   { value: 'users', label: '用户管理' },
 ]

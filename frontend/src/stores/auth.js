@@ -10,13 +10,14 @@ export const useAuthStore = defineStore('auth', {
 
   getters: {
     isLoggedIn: (state) => !!state.token,
-    hasPermission: (state) => (key) => {
+    hasPermission: (state) => (keyOrKeys) => {
       if (!state.user) return false
       if (state.user.is_admin) return true
       const perms = new Set(state.user.permissions || [])
       // legacy: inventory_log was merged into inventory
       if (perms.has('inventory_log')) perms.add('inventory')
-      return perms.has(key)
+      const keys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys]
+      return keys.some((k) => perms.has(k))
     },
   },
 

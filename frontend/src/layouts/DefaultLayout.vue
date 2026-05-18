@@ -83,7 +83,7 @@ const allFlatItems = [
   { label: '饰品模板', key: 'jewelry-templates', icon: icon(JewelryTemplateIcon), perm: 'parts' },
   { label: '订单管理', key: 'orders', icon: icon(OrderIcon), perm: 'orders' },
   { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
-  { label: '待补货清单', key: 'restock', icon: icon(RestockIcon), perm: 'handcraft' },
+  { label: '待补货清单', key: 'restock', icon: icon(RestockIcon), perm: ['handcraft', 'restock'] },
   { label: '电镀汇总', key: 'plating-summary', icon: icon(PlatingSummaryIcon), perm: 'plating' },
   { label: '电镀发出', key: 'plating', icon: icon(PaperPlaneOutline), perm: 'plating' },
   { label: '电镀回收', key: 'plating-receipts', icon: icon(DownloadOutline), perm: 'plating' },
@@ -122,7 +122,7 @@ const allGroupedItems = [
     children: [
       { label: '订单管理', key: 'orders', icon: icon(OrderIcon), perm: 'orders' },
       { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
-      { label: '待补货清单', key: 'restock', icon: icon(RestockIcon), perm: 'handcraft' },
+      { label: '待补货清单', key: 'restock', icon: icon(RestockIcon), perm: ['handcraft', 'restock'] },
       {
         label: '电镀', key: 'plating-group', icon: icon(PlatingIcon), perm: 'plating',
         children: [

@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import models  # noqa: F401 — ensures all models are registered with Base.metadata
 from config import settings
 from database import Base, SessionLocal, engine, ensure_schema_compat
-from api.deps import get_current_user, require_permission
+from api.deps import get_current_user, require_any_permission, require_permission
 
 from api.auth import router as auth_router
 from api.users import router as users_router
@@ -104,7 +104,7 @@ app.include_router(plating_router, dependencies=[require_permission("plating")])
 app.include_router(plating_summary_router, dependencies=[require_permission("plating")])
 app.include_router(cargo_sorting_router, dependencies=[require_permission("sorting")])
 app.include_router(handcraft_router, dependencies=[require_permission("handcraft")])
-app.include_router(restock_router, dependencies=[require_permission("handcraft")])
+app.include_router(restock_router, dependencies=[require_any_permission("handcraft", "restock")])
 app.include_router(uploads_router, dependencies=[Depends(get_current_user)])
 app.include_router(feishu_router)
 app.include_router(kanban_router, prefix="/api/kanban", tags=["kanban"], dependencies=[require_permission("kanban")])
