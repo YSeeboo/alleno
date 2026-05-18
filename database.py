@@ -270,6 +270,15 @@ def ensure_schema_compat(target_engine=None):
                     ))
                     logger.warning("Added missing order.%s column", col_name)
 
+        # --- order.has_barcode (boolean flag, decoupled from barcode_text/image) ---
+        if inspector.has_table("order"):
+            cols = [c["name"] for c in inspector.get_columns("order")]
+            if "has_barcode" not in cols:
+                conn.execute(text(
+                    'ALTER TABLE "order" ADD COLUMN has_barcode BOOLEAN NOT NULL DEFAULT false'
+                ))
+                logger.warning("Added missing order.has_barcode column")
+
         # --- order_item.customer_code ---
         if inspector.has_table("order_item"):
             cols = [c["name"] for c in inspector.get_columns("order_item")]

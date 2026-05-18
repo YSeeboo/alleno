@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -27,6 +28,7 @@ class Order(Base):
     mark_text = Column(Text, nullable=True)
     mark_image = Column(String, nullable=True)
     note = Column(Text, nullable=True)
+    has_barcode = Column(Boolean, nullable=False, server_default="false", default=False)
     created_at = Column(DateTime, default=now_beijing)
 
 

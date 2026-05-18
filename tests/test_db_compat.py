@@ -88,3 +88,18 @@ def test_ensure_schema_compat_creates_missing_indexes(engine):
         inspector = inspect(conn)
         idx_names = {idx["name"] for idx in inspector.get_indexes("inventory_log")}
         assert "ix_invlog_type_id" in idx_names
+
+
+def test_ensure_schema_compat_adds_has_barcode_to_order(engine):
+    with engine.begin() as conn:
+        conn.execute(text('ALTER TABLE "order" DROP COLUMN IF EXISTS has_barcode'))
+
+    ensure_schema_compat(engine)
+
+    with engine.begin() as conn:
+        cols = {c["name"]: c for c in inspect(conn).get_columns("order")}
+        assert "has_barcode" in cols
+        assert cols["has_barcode"]["nullable"] is False
+        # Server default backfills false for existing rows; verify via PG catalog
+        default = cols["has_barcode"].get("default")
+        assert default is not None and "false" in str(default).lower()
