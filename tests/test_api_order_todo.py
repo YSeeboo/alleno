@@ -2562,3 +2562,53 @@ def test_patch_extra_info_has_barcode_null_is_ignored(client, db):
     )
     assert resp.status_code == 200
     assert resp.json()["has_barcode"] is True  # unchanged, not cleared
+
+
+def test_patch_extra_info_toggles_has_barcode_independently(client, db):
+    """has_barcode is decoupled from barcode_text/image — toggling one
+    must not touch the other."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+
+    # Initial state: has_barcode=False (server default)
+    resp = client.get(f"/api/orders/{order_id}")
+    assert resp.json()["has_barcode"] is False
+
+    # Set barcode_text and has_barcode together
+    resp = client.patch(
+        f"/api/orders/{order_id}/extra-info",
+        json={"barcode_text": "EAN-13", "has_barcode": True},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["barcode_text"] == "EAN-13"
+    assert data["has_barcode"] is True
+
+    # Toggle has_barcode off — barcode_text MUST be unchanged
+    resp = client.patch(
+        f"/api/orders/{order_id}/extra-info",
+        json={"has_barcode": False},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["has_barcode"] is False
+    assert data["barcode_text"] == "EAN-13"  # not cleared
+
+    # Toggle barcode_text — has_barcode must be unchanged
+    resp = client.patch(
+        f"/api/orders/{order_id}/extra-info",
+        json={"barcode_text": "Code128"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["barcode_text"] == "Code128"
+    assert data["has_barcode"] is False  # unchanged
+
+
+def test_get_order_includes_has_barcode_field(client, db):
+    """GET order response must include has_barcode field."""
+    order_id, *_ = _setup_order_with_bom(db, client)
+    resp = client.get(f"/api/orders/{order_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "has_barcode" in data
+    assert data["has_barcode"] is False
