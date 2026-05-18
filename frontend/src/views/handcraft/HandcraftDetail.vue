@@ -595,8 +595,19 @@
           <n-select
             v-model:value="manualRestockPartId"
             :options="partOptions"
+            :render-label="renderOptionWithImage"
             filterable
             placeholder="选择配件"
+          />
+        </n-form-item>
+        <n-form-item label="差额">
+          <n-input-number
+            v-model:value="manualRestockShortfall"
+            :min="0"
+            :precision="2"
+            placeholder="可选"
+            clearable
+            style="width: 100%;"
           />
         </n-form-item>
         <n-form-item label="备注">
@@ -666,7 +677,6 @@ import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 import HandcraftPickingSimulationModal from '@/components/picking/HandcraftPickingSimulationModal.vue'
 import RecentImportsPicker from '@/components/RecentImportsPicker.vue'
-import { getActiveBatches } from '@/utils/recentImports'
 import { attachPartsToOrder } from '@/api/handcraftActions'
 
 const route = useRoute()
@@ -991,11 +1001,13 @@ async function cancelRow(row) {
 
 const manualRestockShow = ref(false)
 const manualRestockPartId = ref(null)
+const manualRestockShortfall = ref(null)
 const manualRestockNote = ref('')
 const manualRestockSaving = ref(false)
 
 function openManualRestockModal() {
   manualRestockPartId.value = null
+  manualRestockShortfall.value = null
   manualRestockNote.value = ''
   manualRestockShow.value = true
 }
@@ -1007,12 +1019,15 @@ async function saveManualRestock() {
   }
   manualRestockSaving.value = true
   try {
-    await createRestock({
+    const { data: rec } = await createRestock({
       part_id: manualRestockPartId.value,
       handcraft_order_id: order.value.id,
       source: 'manual',
       note: manualRestockNote.value || null,
     })
+    if (manualRestockShortfall.value != null) {
+      await updateRestockShortfall(rec.id, manualRestockShortfall.value)
+    }
     manualRestockShow.value = false
     await loadRestock()
   } catch (err) {
@@ -1250,8 +1265,7 @@ const doChangeStatus = (newStatus) => {
 
 const openAddModal = () => {
   addForm.value = { part_id: null, qty: 1, unit: '个', weight: null, weight_unit: 'kg', note: '' }
-  // Default to "recent imports" if there's at least one fresh batch; otherwise "single".
-  addModalTab.value = getActiveBatches().length > 0 ? 'recent' : 'single'
+  addModalTab.value = 'single'
   addModalVisible.value = true
 }
 
