@@ -43,10 +43,16 @@ def _replace_date(existing: Optional[datetime], new_date: date_type) -> datetime
     return datetime.combine(new_date, time_of_day)
 
 
-def create_order(db: Session, customer_name: str, items: list, created_at: Optional[date_type] = None) -> Order:
+def create_order(
+    db: Session,
+    customer_name: str,
+    items: list,
+    created_at: Optional[date_type] = None,
+    has_barcode: bool = False,
+) -> Order:
     order_id = _next_id(db, Order, "OR")
     total = Decimal(0)
-    order = Order(id=order_id, customer_name=customer_name)
+    order = Order(id=order_id, customer_name=customer_name, has_barcode=has_barcode)
     if created_at is not None:
         order.created_at = _user_date_to_datetime(created_at)
     db.add(order)

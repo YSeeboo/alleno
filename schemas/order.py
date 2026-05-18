@@ -21,6 +21,7 @@ class OrderCreate(BaseModel):
     customer_name: str
     items: List[OrderItemCreate]
     created_at: Optional[date] = None
+    has_barcode: bool = False
 
 
 class StatusUpdate(BaseModel):
@@ -57,6 +58,7 @@ class OrderResponse(BaseModel):
     mark_text: Optional[str] = None
     mark_image: Optional[str] = None
     note: Optional[str] = None
+    has_barcode: bool = False
     created_at: datetime
 
 
@@ -84,6 +86,7 @@ class ExtraInfoUpdate(BaseModel):
     mark_text: Optional[str] = None
     mark_image: Optional[str] = None
     note: Optional[str] = None
+    has_barcode: Optional[bool] = None
     created_at: Optional[date] = None
 
 

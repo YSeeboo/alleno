@@ -262,3 +262,40 @@ def test_add_order_item_missing_part_returns_400(client, db):
     })
     assert r.status_code == 400
     assert "PJ-NOTREAL" in r.json()["detail"]
+
+
+def test_create_order_default_has_barcode_false(client, db):
+    _, jewelry = _setup(db)
+    resp = client.post("/api/orders/", json={
+        "customer_name": "Alice",
+        "items": [{"jewelry_id": jewelry.id, "quantity": 1, "unit_price": 100.0}],
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["has_barcode"] is False
+
+
+def test_create_order_with_has_barcode_true(client, db):
+    _, jewelry = _setup(db)
+    resp = client.post("/api/orders/", json={
+        "customer_name": "Bob",
+        "items": [{"jewelry_id": jewelry.id, "quantity": 1, "unit_price": 100.0}],
+        "has_barcode": True,
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["has_barcode"] is True
+    # Verify persisted by re-fetching
+    fetched = client.get(f"/api/orders/{data['id']}").json()
+    assert fetched["has_barcode"] is True
+
+
+def test_create_order_with_has_barcode_false_explicit(client, db):
+    _, jewelry = _setup(db)
+    resp = client.post("/api/orders/", json={
+        "customer_name": "Charlie",
+        "items": [{"jewelry_id": jewelry.id, "quantity": 1, "unit_price": 100.0}],
+        "has_barcode": False,
+    })
+    assert resp.status_code == 201
+    assert resp.json()["has_barcode"] is False

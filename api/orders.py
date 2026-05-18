@@ -73,7 +73,11 @@ def api_list_orders(
 def api_create_order(body: OrderCreate, db: Session = Depends(get_db)):
     items = [item.model_dump() for item in body.items]
     with service_errors():
-        order = create_order(db, body.customer_name, items, created_at=body.created_at)
+        order = create_order(
+            db, body.customer_name, items,
+            created_at=body.created_at,
+            has_barcode=body.has_barcode,
+        )
     return order
 
 
