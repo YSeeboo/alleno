@@ -263,21 +263,13 @@ def ensure_schema_compat(target_engine=None):
                 ("mark_text", "TEXT"),
                 ("mark_image", "VARCHAR"),
                 ("note", "TEXT"),
+                ("has_barcode", "BOOLEAN NOT NULL DEFAULT false"),
             ]:
                 if col_name not in cols:
                     conn.execute(text(
                         f'ALTER TABLE "order" ADD COLUMN {col_name} {col_type}'
                     ))
                     logger.warning("Added missing order.%s column", col_name)
-
-        # --- order.has_barcode (boolean flag, decoupled from barcode_text/image) ---
-        if inspector.has_table("order"):
-            cols = [c["name"] for c in inspector.get_columns("order")]
-            if "has_barcode" not in cols:
-                conn.execute(text(
-                    'ALTER TABLE "order" ADD COLUMN has_barcode BOOLEAN NOT NULL DEFAULT false'
-                ))
-                logger.warning("Added missing order.has_barcode column")
 
         # --- order_item.customer_code ---
         if inspector.has_table("order_item"):
