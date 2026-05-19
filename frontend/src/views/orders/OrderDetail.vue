@@ -20,6 +20,13 @@
             </template>
             <template v-else>
               {{ order?.customer_name }}
+              <n-tag
+                v-if="order?.has_barcode"
+                size="small"
+                :bordered="false"
+                :color="{ color: '#00A0E9', textColor: '#fff' }"
+                style="margin-left: 8px; font-weight: 600; letter-spacing: 0.5px;"
+              >有条码</n-tag>
               <n-button text type="primary" size="small" style="margin-left: 6px;" @click="startEditCustomerName">
                 <template #icon><n-icon :component="CreateOutline" /></template>
               </n-button>
@@ -66,6 +73,11 @@
       <n-card style="margin-bottom: 16px;">
         <n-collapse>
           <n-collapse-item title="附加信息" name="extra-info">
+            <!-- 是否有条码 -->
+            <div style="margin-bottom: 16px;">
+              <n-checkbox v-model:checked="extraInfo.has_barcode">需要贴条码</n-checkbox>
+            </div>
+
             <!-- 条码要求 -->
             <div style="margin-bottom: 20px;">
               <div style="font-weight: 500; margin-bottom: 8px;">条码要求</div>
@@ -621,7 +633,7 @@ import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NSelect, NInputNumber, NInput, NDivider, NPopconfirm, NAlert,
   NModal, NImage, NAutoComplete, NIcon, NCollapse, NCollapseItem, NForm, NFormItem, NDatePicker,
-  NTooltip, NText,
+  NTooltip, NText, NCheckbox,
 } from 'naive-ui'
 import {
   Close as CloseIcon, CreateOutline, CopyOutline,
@@ -748,6 +760,7 @@ const packagingCost = ref(null)
 
 // --- Extra Info ---
 const extraInfo = ref({
+  has_barcode: false,
   barcode_text: '',
   barcode_image: null,
   mark_text: '',
@@ -760,6 +773,7 @@ const imageUploadTarget = ref('')
 
 function initExtraInfo(o) {
   extraInfo.value = {
+    has_barcode: !!o.has_barcode,
     barcode_text: o.barcode_text || '',
     barcode_image: o.barcode_image || null,
     mark_text: o.mark_text || '',
