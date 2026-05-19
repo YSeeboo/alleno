@@ -28,7 +28,7 @@
 <script setup>
 import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
+import { NButton, NSelect, NDataTable, NSpin, NEmpty, NTag } from 'naive-ui'
 import { listOrders, batchGetProgress } from '@/api/orders'
 import { fmtMoney } from '@/utils/ui'
 import { useIsMobile } from '@/composables/useIsMobile'
@@ -73,7 +73,26 @@ const rowProps = (row) => ({ style: 'cursor: pointer;', onClick: () => router.pu
 
 const columns = [
   { title: '订单号', key: 'id' },
-  { title: '客户名', key: 'customer_name' },
+  {
+    title: '客户名',
+    key: 'customer_name',
+    render: (r) => {
+      if (!r.has_barcode) return r.customer_name
+      return h('span', null, [
+        r.customer_name,
+        h(
+          NTag,
+          {
+            size: 'small',
+            bordered: false,
+            color: { color: '#00A0E9', textColor: '#fff' },
+            style: 'margin-left: 8px; font-weight: 600; letter-spacing: 0.5px;',
+          },
+          { default: () => '有条码' }
+        ),
+      ])
+    },
+  },
   {
     title: '状态',
     key: 'status',
