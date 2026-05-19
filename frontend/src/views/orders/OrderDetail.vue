@@ -786,6 +786,7 @@ async function saveExtraInfo() {
   savingExtraInfo.value = true
   try {
     await updateExtraInfo(order.value.id, extraInfo.value)
+    await reloadOrder()
     message.success('附加信息已保存')
   } catch (err) {
     message.error('保存失败')
