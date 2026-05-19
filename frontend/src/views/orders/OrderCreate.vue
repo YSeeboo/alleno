@@ -18,6 +18,9 @@
           :style="{ width: isMobile ? '100%' : '300px' }"
         />
       </n-form-item>
+      <n-form-item label=" ">
+        <n-checkbox v-model:checked="hasBarcode">需要贴条码</n-checkbox>
+      </n-form-item>
     </n-form>
 
     <!-- Jewelry section -->
@@ -95,7 +98,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
-import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NText, NH2, NDatePicker } from 'naive-ui'
+import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NText, NH2, NDatePicker, NCheckbox } from 'naive-ui'
 import { listJewelries } from '@/api/jewelries'
 import { listParts } from '@/api/parts'
 import { createOrder } from '@/api/orders'
@@ -109,6 +112,7 @@ const { isMobile } = useIsMobile()
 
 const customerName = ref('')
 const createdAtTs = ref(null)
+const hasBarcode = ref(false)
 const jewelryItems = reactive([])
 const partItems = reactive([])
 const submitting = ref(false)
@@ -156,7 +160,7 @@ const submit = async () => {
   ]
   submitting.value = true
   try {
-    const payload = { customer_name: customerName.value, items }
+    const payload = { customer_name: customerName.value, items, has_barcode: hasBarcode.value }
     const createdAt = tsToDateStr(createdAtTs.value)
     if (createdAt) payload.created_at = createdAt
     const { data } = await createOrder(payload)
