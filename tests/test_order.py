@@ -166,3 +166,32 @@ def test_delete_preview_counts(setup):
     assert preview["item_count"] == 2
     assert preview["batch_count"] == 0
     assert preview["link_count"] == 0
+
+
+def test_delete_order_cascades_todo_batch(setup):
+    """待生产订单已排了备货批次时，删除必须连带清掉 batch / batch_jewelry /
+    todo_item，否则外键报错。这是 delete_order 中最复杂的级联路径。"""
+    db, p1, p2, j1, j2 = setup
+    order = create_order(db, "孙八", [
+        {"jewelry_id": j1.id, "quantity": 2, "unit_price": 100.0},
+    ])
+    create_batch(db, order.id, [(j1.id, 1)])
+
+    from models.order import OrderTodoBatch, OrderTodoBatchJewelry, OrderTodoItem
+    assert db.query(OrderTodoBatch).filter_by(order_id=order.id).count() == 1
+    assert db.query(OrderTodoItem).filter_by(order_id=order.id).count() > 0
+    batch_ids = [b.id for b in db.query(OrderTodoBatch).filter_by(order_id=order.id).all()]
+    assert db.query(OrderTodoBatchJewelry).filter(
+        OrderTodoBatchJewelry.batch_id.in_(batch_ids)
+    ).count() == 1
+
+    assert get_order_delete_preview(db, order.id)["batch_count"] == 1
+
+    delete_order(db, order.id)
+
+    assert get_order(db, order.id) is None
+    assert db.query(OrderTodoBatch).filter_by(order_id=order.id).count() == 0
+    assert db.query(OrderTodoItem).filter_by(order_id=order.id).count() == 0
+    assert db.query(OrderTodoBatchJewelry).filter(
+        OrderTodoBatchJewelry.batch_id.in_(batch_ids)
+    ).count() == 0
