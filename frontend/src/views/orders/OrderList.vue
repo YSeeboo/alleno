@@ -55,9 +55,14 @@ const confirmDelete = async (row) => {
     positiveText: '确认删除',
     negativeText: '取消',
     onPositiveClick: async () => {
-      await deleteOrder(row.id)
-      message.success('订单已删除')
-      await load()
+      try {
+        await deleteOrder(row.id)
+        message.success('订单已删除')
+      } catch (_) {
+        // 删除失败（如订单状态已变化），错误由 axios 拦截器提示
+      } finally {
+        await load()
+      }
     },
   })
 }
@@ -166,7 +171,10 @@ const columns = [
       return h(
         NTooltip,
         null,
-        { trigger: () => btn, default: () => '只能删除待生产状态的订单' }
+        {
+          trigger: () => h('span', { style: 'display:inline-block' }, [btn]),
+          default: () => '只能删除待生产状态的订单',
+        }
       )
     },
   },
