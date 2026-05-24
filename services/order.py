@@ -6,7 +6,10 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from sqlalchemy import func as sa_func
-from models.order import Order, OrderItem, OrderTodoBatch, OrderTodoBatchJewelry, OrderItemLink
+from models.order import (
+    Order, OrderItem, OrderTodoItem, OrderTodoBatch,
+    OrderTodoBatchJewelry, OrderItemLink, OrderPickingRecord,
+)
 from models.handcraft_order import HandcraftJewelryItem
 from models.part import Part
 from services._helpers import _next_id
@@ -638,3 +641,71 @@ def enrich_order_items(db: Session, items: list) -> list:
         }
         enriched.append(d)
     return enriched
+
+
+def get_order_delete_preview(db: Session, order_id: str) -> dict:
+    """返回级联删除将影响的数量，供前端二次确认弹窗展示。
+    订单不存在 -> ValueError。"""
+    order = get_order(db, order_id)
+    if order is None:
+        raise ValueError(f"订单 {order_id} 不存在")
+    item_count = db.query(OrderItem).filter(OrderItem.order_id == order_id).count()
+    batch_count = db.query(OrderTodoBatch).filter(OrderTodoBatch.order_id == order_id).count()
+    todo_item_ids = [
+        r[0] for r in db.query(OrderTodoItem.id)
+        .filter(OrderTodoItem.order_id == order_id).all()
+    ]
+    link_q = db.query(OrderItemLink).filter(
+        (OrderItemLink.order_id == order_id)
+        | (OrderItemLink.order_todo_item_id.in_(todo_item_ids) if todo_item_ids else False)
+    )
+    link_count = link_q.count()
+    return {"item_count": item_count, "batch_count": batch_count, "link_count": link_count}
+
+
+def delete_order(db: Session, order_id: str) -> None:
+    """硬删除待生产订单及其所有 FK 子行。
+    非待生产 / 不存在 -> ValueError。commit 由 get_db() 负责。"""
+    order = get_order(db, order_id)
+    if order is None:
+        raise ValueError(f"订单 {order_id} 不存在")
+    if order.status != "待生产":
+        raise ValueError(f"订单状态为「{order.status}」，只能删除「待生产」状态的订单")
+
+    todo_item_ids = [
+        r[0] for r in db.query(OrderTodoItem.id)
+        .filter(OrderTodoItem.order_id == order_id).all()
+    ]
+    batch_ids = [
+        r[0] for r in db.query(OrderTodoBatch.id)
+        .filter(OrderTodoBatch.order_id == order_id).all()
+    ]
+
+    db.query(OrderPickingRecord).filter(
+        OrderPickingRecord.order_id == order_id
+    ).delete(synchronize_session=False)
+
+    db.query(OrderItemLink).filter(OrderItemLink.order_id == order_id).delete(
+        synchronize_session=False
+    )
+    if todo_item_ids:
+        db.query(OrderItemLink).filter(
+            OrderItemLink.order_todo_item_id.in_(todo_item_ids)
+        ).delete(synchronize_session=False)
+
+    if batch_ids:
+        db.query(OrderTodoBatchJewelry).filter(
+            OrderTodoBatchJewelry.batch_id.in_(batch_ids)
+        ).delete(synchronize_session=False)
+
+    db.query(OrderTodoItem).filter(OrderTodoItem.order_id == order_id).delete(
+        synchronize_session=False
+    )
+    db.query(OrderTodoBatch).filter(OrderTodoBatch.order_id == order_id).delete(
+        synchronize_session=False
+    )
+    db.query(OrderItem).filter(OrderItem.order_id == order_id).delete(
+        synchronize_session=False
+    )
+    db.delete(order)
+    db.flush()

@@ -88,3 +88,63 @@ def test_update_order_status_invalid(setup):
     order = create_order(db, "张三", [{"jewelry_id": j1.id, "quantity": 1, "unit_price": 10.0}])
     with pytest.raises(ValueError, match="Invalid status"):
         update_order_status(db, order.id, "取消")
+
+
+from services.order import delete_order, get_order_delete_preview
+from services.order_todo import create_batch
+from services.picking import mark_picked
+
+
+def test_delete_pending_order_removes_order_and_items(setup):
+    db, p1, p2, j1, j2 = setup
+    order = create_order(db, "张三", [
+        {"jewelry_id": j1.id, "quantity": 2, "unit_price": 100.0},
+        {"part_id": p1.id, "quantity": 5, "unit_price": 3.0},
+    ])
+    oid = order.id
+    delete_order(db, oid)
+    assert get_order(db, oid) is None
+    assert get_order_items(db, oid) == []
+
+
+def test_delete_order_rejects_non_pending(setup):
+    db, p1, p2, j1, j2 = setup
+    order = create_order(db, "李四", [
+        {"part_id": p1.id, "quantity": 1, "unit_price": 3.0},
+    ])
+    from services.inventory import add_stock
+    add_stock(db, "part", p1.id, 10, "测试入库")
+    update_order_status(db, order.id, "已完成")
+    with pytest.raises(ValueError, match="待生产"):
+        delete_order(db, order.id)
+    assert get_order(db, order.id) is not None
+
+
+def test_delete_order_not_found(setup):
+    db, *_ = setup
+    with pytest.raises(ValueError, match="不存在|not found|OR-9999"):
+        delete_order(db, "OR-9999")
+
+
+def test_delete_order_cascades_picking_records(setup):
+    db, p1, p2, j1, j2 = setup
+    order = create_order(db, "王五", [
+        {"part_id": p1.id, "quantity": 2, "unit_price": 3.0},
+    ])
+    mark_picked(db, order.id, p1.id, 2.0)
+    from models.order import OrderPickingRecord
+    assert db.query(OrderPickingRecord).filter_by(order_id=order.id).count() == 1
+    delete_order(db, order.id)
+    assert db.query(OrderPickingRecord).filter_by(order_id=order.id).count() == 0
+
+
+def test_delete_preview_counts(setup):
+    db, p1, p2, j1, j2 = setup
+    order = create_order(db, "赵六", [
+        {"jewelry_id": j1.id, "quantity": 1, "unit_price": 100.0},
+        {"part_id": p1.id, "quantity": 2, "unit_price": 3.0},
+    ])
+    preview = get_order_delete_preview(db, order.id)
+    assert preview["item_count"] == 2
+    assert preview["batch_count"] == 0
+    assert preview["link_count"] == 0
