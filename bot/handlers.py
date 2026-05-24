@@ -53,8 +53,18 @@ async def send_feishu_card(chat_id: str, card: dict) -> None:
         )
 
 
-async def process_feishu_message(chat_id: str, text: str) -> None:
-    """Run the agent and send the reply to Feishu. Called as a background task."""
+async def process_feishu_message(chat_id: str, text: str, sender_open_id: str = "") -> None:
+    """Entry point for Feishu text messages.
+
+    - Structured-purchase-shaped messages → parser/resolver path, reply with a card.
+    - Anything else → original DeepSeek agent path, reply with text.
+    """
+    from bot.purchase_parser import is_purchase_text
+
+    if is_purchase_text(text):
+        await _process_purchase_text(chat_id, text, sender_open_id)
+        return
+
     from database import SessionLocal
     from bot.agent.runner import run_agent
 
@@ -73,3 +83,41 @@ async def process_feishu_message(chat_id: str, text: str) -> None:
         await send_feishu_message(chat_id, response)
     except Exception as exc:
         logger.exception("send_feishu_message failed: %s", exc)
+
+
+async def _process_purchase_text(chat_id: str, text: str, sender_open_id: str) -> None:
+    from database import SessionLocal
+    from bot.purchase_parser import parse_purchase_text
+    from bot.purchase_resolver import resolve, ResolveError
+    from bot.purchase_draft_store import put
+    from bot.feishu_cards import (
+        render_preview_card,
+        render_parse_error_card,
+        render_resolve_error_card,
+        render_system_error_card,
+    )
+
+    try:
+        parsed = parse_purchase_text(text)
+        if isinstance(parsed, list):  # list[ParseError]
+            await send_feishu_card(chat_id, render_parse_error_card(parsed))
+            return
+
+        db = SessionLocal()
+        try:
+            result = resolve(db, parsed)
+        finally:
+            db.close()
+
+        if isinstance(result, ResolveError):
+            await send_feishu_card(chat_id, render_resolve_error_card(result))
+            return
+
+        token = put(result, sender_open_id=sender_open_id)
+        await send_feishu_card(chat_id, render_preview_card(result, token=token))
+    except Exception as exc:
+        logger.exception("_process_purchase_text failed: %s", exc)
+        try:
+            await send_feishu_card(chat_id, render_system_error_card(str(exc)))
+        except Exception:
+            logger.exception("failed to send system_error_card")

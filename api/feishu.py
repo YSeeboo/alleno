@@ -62,7 +62,7 @@ async def feishu_webhook(request: Request, background_tasks: BackgroundTasks):
         return JSONResponse({"code": 0})
 
     from bot.handlers import process_feishu_message
-    background_tasks.add_task(process_feishu_message, chat_id, text)
+    background_tasks.add_task(process_feishu_message, chat_id, text, open_id)
 
     # Must respond within 3 seconds; actual reply is sent asynchronously
     return JSONResponse({"code": 0})

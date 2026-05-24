@@ -40,12 +40,22 @@ _QTY_SUFFIXES = ("个", "件", "包")
 _PRICE_SUFFIXES = ("元", "块", "￥", "¥")
 
 
+# Part-ID prefix detector: first token looks like a part reference (PJ- prefix).
+_PART_ID_TOKEN_RE = re.compile(r"^PJ-\S+\s+", re.IGNORECASE)
+
+
 def is_purchase_text(text: str) -> bool:
-    """Heuristic dispatch: does this look like a purchase-order message?"""
+    """Heuristic dispatch: does this look like a purchase-order message?
+
+    Matches if the first item line either:
+    - starts with any token followed by a digit (quantity-first format), OR
+    - starts with a PJ-prefixed part ID (matches even when qty is malformed).
+    """
     lines = [ln for ln in (text or "").splitlines() if ln.strip()]
     if len(lines) < 2:
         return False
-    return bool(_ITEM_FIRST_TOKEN_RE.match(lines[1].strip()))
+    second = lines[1].strip()
+    return bool(_ITEM_FIRST_TOKEN_RE.match(second) or _PART_ID_TOKEN_RE.match(second))
 
 
 def _strip_suffix(s: str, suffixes: tuple[str, ...]) -> str:
