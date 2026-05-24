@@ -57,11 +57,11 @@ const confirmDelete = async (row) => {
     onPositiveClick: async () => {
       try {
         await deleteOrder(row.id)
+        await load()
         message.success('订单已删除')
       } catch (_) {
         // 删除失败（如订单状态已变化），错误由 axios 拦截器提示
-      } finally {
-        await load()
+        await load() // 仍刷新以同步真实状态
       }
     },
   })
@@ -167,12 +167,19 @@ const columns = [
         },
         { default: () => '删除' }
       )
-      if (isPending) return btn
+      // Wrap in a span that stops propagation so clicking the cell (incl. the
+      // disabled button or surrounding whitespace) never triggers row navigation.
+      const wrap = (child) => h(
+        'span',
+        { style: 'display:inline-block', onClick: (e) => e.stopPropagation() },
+        [child]
+      )
+      if (isPending) return wrap(btn)
       return h(
         NTooltip,
         null,
         {
-          trigger: () => h('span', { style: 'display:inline-block' }, [btn]),
+          trigger: () => wrap(btn),
           default: () => '只能删除待生产状态的订单',
         }
       )

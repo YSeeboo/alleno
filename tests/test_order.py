@@ -195,3 +195,33 @@ def test_delete_order_cascades_todo_batch(setup):
     assert db.query(OrderTodoBatchJewelry).filter(
         OrderTodoBatchJewelry.batch_id.in_(batch_ids)
     ).count() == 0
+
+
+def test_delete_order_cascades_item_links(setup):
+    """订单关联了生产单时，delete_order 必须清掉 OrderItemLink —— 既包括直接挂
+    order_id 的（饰品项），也包括挂 order_todo_item_id 的（配件项）。两条删除
+    路径此前没有回归覆盖。"""
+    db, p1, p2, j1, j2 = setup
+    from models.order import OrderItemLink, OrderTodoItem
+    order = create_order(db, "周九", [
+        {"jewelry_id": j1.id, "quantity": 1, "unit_price": 100.0},
+    ])
+    # create_batch 会按 BOM 生成 order_todo_item 行
+    create_batch(db, order.id, [(j1.id, 1)])
+    todo_item = db.query(OrderTodoItem).filter_by(order_id=order.id).first()
+    assert todo_item is not None
+
+    # 两种关联各造一条
+    db.add(OrderItemLink(order_id=order.id))                       # 饰品项直挂订单
+    db.add(OrderItemLink(order_todo_item_id=todo_item.id))         # 配件项挂 todo 行
+    db.flush()
+
+    assert get_order_delete_preview(db, order.id)["link_count"] == 2
+
+    delete_order(db, order.id)
+
+    assert get_order(db, order.id) is None
+    assert db.query(OrderItemLink).filter_by(order_id=order.id).count() == 0
+    assert db.query(OrderItemLink).filter_by(
+        order_todo_item_id=todo_item.id
+    ).count() == 0
