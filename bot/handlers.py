@@ -38,6 +38,21 @@ async def send_feishu_message(chat_id: str, text: str) -> None:
             )
 
 
+async def send_feishu_card(chat_id: str, card: dict) -> None:
+    """Send an interactive card to a Feishu chat."""
+    token = await _get_tenant_access_token()
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"{_FEISHU_API}/im/v1/messages?receive_id_type=chat_id",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "receive_id": chat_id,
+                "msg_type": "interactive",
+                "content": json.dumps(card, ensure_ascii=False),
+            },
+        )
+
+
 async def process_feishu_message(chat_id: str, text: str) -> None:
     """Run the agent and send the reply to Feishu. Called as a background task."""
     from database import SessionLocal
