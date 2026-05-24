@@ -57,10 +57,18 @@ def get_plating_export_payload(db: Session, order_id: str) -> dict:
     }
 
 
-def build_export_filename(supplier_name: str | None, created_at: datetime | None, extension: str) -> str:
+def build_export_filename(
+    supplier_name: str | None,
+    created_at: datetime | None,
+    extension: str,
+    receipt_code: str | None = None,
+) -> str:
     safe_supplier_name = sanitize_filename_part(supplier_name) or "未命名电镀厂"
     short_date = format_short_date(created_at)
-    return f"发出_{safe_supplier_name}_{short_date}.{extension.lstrip('.')}"
+    ext = extension.lstrip(".")
+    code = (receipt_code or "").strip()
+    suffix = f"_{code}" if code else ""
+    return f"发出_{safe_supplier_name}_{short_date}{suffix}.{ext}"
 
 
 def format_excel_date(created_at: datetime | None) -> str | None:

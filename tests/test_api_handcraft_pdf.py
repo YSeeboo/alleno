@@ -46,7 +46,7 @@ def test_download_handcraft_pdf_single_page_with_two_images(client, db, monkeypa
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/pdf")
     expected_date = f"{order.created_at.year % 100:02d}{order.created_at.month:02d}{order.created_at.day:02d}"
-    expected_filename = f"发出_PDF手工厂_{expected_date}.pdf"
+    expected_filename = f"发出_PDF手工厂_{expected_date}_{order.receipt_code}.pdf"
     assert response.headers["content-disposition"] == (
         f'attachment; filename="handcraft-export.pdf"; filename*=UTF-8\'\'{quote(expected_filename)}'
     )
