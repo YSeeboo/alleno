@@ -138,6 +138,24 @@ def test_delete_order_cascades_picking_records(setup):
     assert db.query(OrderPickingRecord).filter_by(order_id=order.id).count() == 0
 
 
+def test_delete_order_after_revert_from_completed(setup):
+    """已完成会生成成本快照；回退到待生产后快照仍在。删除时必须连带清理，
+    否则 order_cost_snapshot 的外键会导致删除报错。"""
+    db, p1, p2, j1, j2 = setup
+    from services.inventory import add_stock
+    add_stock(db, "part", p1.id, 100, "测试入库")
+    order = create_order(db, "钱七", [
+        {"part_id": p1.id, "quantity": 3, "unit_price": 3.0},
+    ])
+    update_order_status(db, order.id, "已完成")  # 生成快照
+    from models.order_cost_snapshot import OrderCostSnapshot
+    assert db.query(OrderCostSnapshot).filter_by(order_id=order.id).count() == 1
+    update_order_status(db, order.id, "待生产")  # 回退，快照仍在
+    delete_order(db, order.id)
+    assert get_order(db, order.id) is None
+    assert db.query(OrderCostSnapshot).filter_by(order_id=order.id).count() == 0
+
+
 def test_delete_preview_counts(setup):
     db, p1, p2, j1, j2 = setup
     order = create_order(db, "赵六", [

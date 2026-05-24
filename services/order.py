@@ -11,6 +11,7 @@ from models.order import (
     OrderTodoBatchJewelry, OrderItemLink, OrderPickingRecord,
 )
 from models.handcraft_order import HandcraftJewelryItem
+from models.order_cost_snapshot import OrderCostSnapshot, OrderCostSnapshotItem
 from models.part import Part
 from services._helpers import _next_id
 from services.bom import get_bom
@@ -707,5 +708,16 @@ def delete_order(db: Session, order_id: str) -> None:
     db.query(OrderItem).filter(OrderItem.order_id == order_id).delete(
         synchronize_session=False
     )
+    snapshot_ids = [
+        r[0] for r in db.query(OrderCostSnapshot.id)
+        .filter(OrderCostSnapshot.order_id == order_id).all()
+    ]
+    if snapshot_ids:
+        db.query(OrderCostSnapshotItem).filter(
+            OrderCostSnapshotItem.snapshot_id.in_(snapshot_ids)
+        ).delete(synchronize_session=False)
+        db.query(OrderCostSnapshot).filter(
+            OrderCostSnapshot.order_id == order_id
+        ).delete(synchronize_session=False)
     db.delete(order)
     db.flush()
