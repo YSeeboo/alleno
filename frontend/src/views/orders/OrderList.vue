@@ -28,13 +28,40 @@
 <script setup>
 import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NSelect, NDataTable, NSpin, NEmpty, NTag } from 'naive-ui'
-import { listOrders, batchGetProgress } from '@/api/orders'
+import { NButton, NSelect, NDataTable, NSpin, NEmpty, NTag, NTooltip, useDialog, useMessage } from 'naive-ui'
+import { listOrders, batchGetProgress, deleteOrder, getOrderDeletePreview } from '@/api/orders'
 import { fmtMoney } from '@/utils/ui'
 import { useIsMobile } from '@/composables/useIsMobile'
 
 const router = useRouter()
 const { isMobile } = useIsMobile()
+const dialog = useDialog()
+const message = useMessage()
+
+const confirmDelete = async (row) => {
+  let parts = []
+  try {
+    const { data } = await getOrderDeletePreview(row.id)
+    if (data.item_count) parts.push(`${data.item_count} 个明细`)
+    if (data.batch_count) parts.push(`${data.batch_count} 个备货批次`)
+    if (data.link_count) parts.push(`${data.link_count} 个生产单关联`)
+  } catch (_) {
+    return // 预览失败由拦截器提示，终止
+  }
+  const cascade = parts.length ? `，将一并删除：${parts.join('、')}` : ''
+  dialog.warning({
+    title: '确认删除订单',
+    content: `确认删除订单 ${row.id}？此操作不可恢复${cascade}。`,
+    positiveText: '确认删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      await deleteOrder(row.id)
+      message.success('订单已删除')
+      await load()
+    },
+  })
+}
+
 const loading = ref(true)
 const orders = ref([])
 const filterStatus = ref(null)
@@ -119,6 +146,30 @@ const columns = [
   },
   { title: '总金额', key: 'total_amount', render: (r) => r.total_amount != null ? fmtMoney(r.total_amount) : '-' },
   { title: '创建时间', key: 'created_at', render: (r) => new Date(r.created_at).toLocaleString('zh-CN') },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 80,
+    render: (r) => {
+      const isPending = r.status === '待生产'
+      const btn = h(
+        NButton,
+        {
+          text: true,
+          type: 'error',
+          disabled: !isPending,
+          onClick: (e) => { e.stopPropagation(); confirmDelete(r) },
+        },
+        { default: () => '删除' }
+      )
+      if (isPending) return btn
+      return h(
+        NTooltip,
+        null,
+        { trigger: () => btn, default: () => '只能删除待生产状态的订单' }
+      )
+    },
+  },
 ]
 
 onMounted(load)
