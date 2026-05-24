@@ -141,6 +141,13 @@ def render_already_created_card(po_id: str) -> dict:
     }
 
 
+def render_create_failed_card(message: str) -> dict:
+    return {
+        "header": _header("❌ 建单失败", "red"),
+        "elements": [_md(message)],
+    }
+
+
 def render_system_error_card(message: str) -> dict:
     return {
         "header": _header("❌ 系统错误", "red"),

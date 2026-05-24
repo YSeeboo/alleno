@@ -10,6 +10,7 @@ from bot.feishu_cards import (
     render_token_expired_card,
     render_already_created_card,
     render_system_error_card,
+    render_create_failed_card,
 )
 from bot.purchase_draft_store import (
     pop_draft,
@@ -72,7 +73,7 @@ async def handle_card_action(action_value: dict, sender_open_id: str, chat_id: s
         except ValueError as exc:
             db.rollback()
             put_with_token(token, data, sender_open_id)
-            await _handlers.send_feishu_card(chat_id, render_system_error_card(str(exc)))
+            await _handlers.send_feishu_card(chat_id, render_create_failed_card(str(exc)))
             return
         except Exception as exc:
             db.rollback()

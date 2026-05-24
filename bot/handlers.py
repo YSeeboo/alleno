@@ -27,7 +27,7 @@ async def send_feishu_message(chat_id: str, text: str) -> None:
     token = await _get_tenant_access_token()
     async with httpx.AsyncClient() as client:
         for chunk in chunks:
-            await client.post(
+            resp = await client.post(
                 f"{_FEISHU_API}/im/v1/messages?receive_id_type=chat_id",
                 headers={"Authorization": f"Bearer {token}"},
                 json={
@@ -36,13 +36,14 @@ async def send_feishu_message(chat_id: str, text: str) -> None:
                     "content": json.dumps({"text": chunk}),
                 },
             )
+            resp.raise_for_status()
 
 
 async def send_feishu_card(chat_id: str, card: dict) -> None:
     """Send an interactive card to a Feishu chat."""
     token = await _get_tenant_access_token()
     async with httpx.AsyncClient() as client:
-        await client.post(
+        resp = await client.post(
             f"{_FEISHU_API}/im/v1/messages?receive_id_type=chat_id",
             headers={"Authorization": f"Bearer {token}"},
             json={
@@ -51,6 +52,7 @@ async def send_feishu_card(chat_id: str, card: dict) -> None:
                 "content": json.dumps(card, ensure_ascii=False),
             },
         )
+        resp.raise_for_status()
 
 
 async def process_feishu_message(chat_id: str, text: str, sender_open_id: str = "") -> None:

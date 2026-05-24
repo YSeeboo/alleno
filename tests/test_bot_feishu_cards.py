@@ -118,3 +118,12 @@ def test_simple_cards_are_json_safe():
         render_system_error_card("boom"),
     ]:
         _serializable(card)
+
+
+def test_create_failed_card_is_json_safe_and_contains_message():
+    from bot.feishu_cards import render_create_failed_card
+    card = render_create_failed_card("oops")
+    _serializable(card)
+    s = json.dumps(card, ensure_ascii=False)
+    assert "建单失败" in s
+    assert "oops" in s

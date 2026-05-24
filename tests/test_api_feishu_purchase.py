@@ -266,3 +266,81 @@ def test_webhook_url_verification_returns_challenge(client):
     r = client.post("/api/feishu/webhook", json=body)
     assert r.status_code == 200
     assert r.json() == {"challenge": "abc123"}
+
+
+def test_confirm_value_error_restores_draft_and_sends_failure_card(client, db, captured_messages, monkeypatch):
+    """If create_purchase_order raises ValueError, draft is restored and user can retry."""
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
+    db.commit()
+
+    token = _put_draft_and_get_token(db, captured_messages, "腾飞", p.id, 100, 5)
+    captured_messages["card"].clear()
+
+    # Force create_purchase_order to raise ValueError on the first call only
+    import services.purchase_order as po_module
+    original = po_module.create_purchase_order
+    calls = {"n": 0}
+
+    def flaky(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ValueError("模拟业务错误")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(po_module, "create_purchase_order", flaky)
+
+    from bot.feishu_card_handler import handle_card_action
+    _run(handle_card_action(
+        action_value={"action": "confirm", "token": token},
+        sender_open_id="open-1",
+        chat_id="chat-1",
+    ))
+
+    from models.purchase_order import PurchaseOrder
+    db.expire_all()
+    assert db.query(PurchaseOrder).count() == 0  # no PO created
+    s = json.dumps(captured_messages["card"][0]["card"], ensure_ascii=False)
+    assert "建单失败" in s
+    assert "模拟业务错误" in s
+
+    # Draft was restored — user can retry by clicking confirm again
+    captured_messages["card"].clear()
+    _run(handle_card_action(
+        action_value={"action": "confirm", "token": token},
+        sender_open_id="open-1",
+        chat_id="chat-1",
+    ))
+    db.expire_all()
+    assert db.query(PurchaseOrder).count() == 1
+    s2 = json.dumps(captured_messages["card"][0]["card"], ensure_ascii=False)
+    assert "已创建" in s2
+
+
+def test_confirm_generic_exception_does_not_restore_draft(client, db, captured_messages, monkeypatch):
+    """Non-ValueError exceptions during confirm leave token consumed (no retry loop on dirty state)."""
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
+    db.commit()
+
+    token = _put_draft_and_get_token(db, captured_messages, "腾飞", p.id, 100, 5)
+    captured_messages["card"].clear()
+
+    import services.purchase_order as po_module
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(po_module, "create_purchase_order", explode)
+
+    from bot.feishu_card_handler import handle_card_action
+    _run(handle_card_action(
+        action_value={"action": "confirm", "token": token},
+        sender_open_id="open-1",
+        chat_id="chat-1",
+    ))
+
+    s = json.dumps(captured_messages["card"][0]["card"], ensure_ascii=False)
+    assert "系统错误" in s or "建单失败" in s  # whichever the impl chose for generic Exception
+
+    # Token consumed — second click should NOT retry
+    from bot.purchase_draft_store import pop_draft
+    assert pop_draft(token, "open-1") is None
