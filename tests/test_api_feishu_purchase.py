@@ -97,3 +97,101 @@ def test_purchase_text_with_bad_qty_sends_parse_error_card(client, db, captured_
     s = json.dumps(captured_messages["card"][0]["card"], ensure_ascii=False)
     assert "解析失败" in s
     assert "abc" in s
+
+
+def _put_draft_and_get_token(db, captured_messages, vendor, part_id, qty, price):
+    """Helper: send a purchase message, return the token from the preview card."""
+    from bot.handlers import process_feishu_message
+    text = f"{vendor}\n{part_id} {qty} {price}"
+    _run(process_feishu_message(chat_id="chat-1", text=text, sender_open_id="open-1"))
+    assert len(captured_messages["card"]) >= 1
+    card = captured_messages["card"][-1]["card"]
+    actions = next(e for e in card["elements"] if e.get("tag") == "action")
+    return actions["actions"][0]["value"]["token"]
+
+
+def test_confirm_creates_po_and_writes_inventory_log(client, db, captured_messages):
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
+    db.commit()
+
+    token = _put_draft_and_get_token(db, captured_messages, "腾飞", p.id, 100, 5)
+    captured_messages["card"].clear()
+
+    from bot.feishu_card_handler import handle_card_action
+    _run(handle_card_action(
+        action_value={"action": "confirm", "token": token},
+        sender_open_id="open-1",
+        chat_id="chat-1",
+    ))
+
+    from models.purchase_order import PurchaseOrder
+    from models.inventory_log import InventoryLog
+    db.expire_all()  # see commits made by the handler's session
+    pos = db.query(PurchaseOrder).all()
+    assert len(pos) == 1
+    assert pos[0].vendor_name == "腾飞"
+    logs = db.query(InventoryLog).filter_by(item_id=p.id).all()
+    assert len(logs) == 1
+    assert logs[0].reason == "采购入库"
+    assert float(logs[0].change_qty) == 100
+
+    s = json.dumps(captured_messages["card"][0]["card"], ensure_ascii=False)
+    assert "已创建" in s
+    assert pos[0].id in s
+
+
+def test_cancel_drops_draft_and_creates_no_po(client, db, captured_messages):
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
+    db.commit()
+    token = _put_draft_and_get_token(db, captured_messages, "腾飞", p.id, 100, 5)
+    captured_messages["card"].clear()
+
+    from bot.feishu_card_handler import handle_card_action
+    _run(handle_card_action(
+        action_value={"action": "cancel", "token": token},
+        sender_open_id="open-1",
+        chat_id="chat-1",
+    ))
+
+    from models.purchase_order import PurchaseOrder
+    db.expire_all()
+    assert db.query(PurchaseOrder).count() == 0
+    s = json.dumps(captured_messages["card"][0]["card"], ensure_ascii=False)
+    assert "已取消" in s
+
+
+def test_double_confirm_returns_already_created(client, db, captured_messages):
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
+    db.commit()
+    token = _put_draft_and_get_token(db, captured_messages, "腾飞", p.id, 100, 5)
+
+    from bot.feishu_card_handler import handle_card_action
+    _run(handle_card_action(
+        action_value={"action": "confirm", "token": token},
+        sender_open_id="open-1",
+        chat_id="chat-1",
+    ))
+    captured_messages["card"].clear()
+    # Second click
+    _run(handle_card_action(
+        action_value={"action": "confirm", "token": token},
+        sender_open_id="open-1",
+        chat_id="chat-1",
+    ))
+
+    from models.purchase_order import PurchaseOrder
+    db.expire_all()
+    assert db.query(PurchaseOrder).count() == 1
+    s = json.dumps(captured_messages["card"][0]["card"], ensure_ascii=False)
+    assert "已建好" in s
+
+
+def test_confirm_unknown_token_returns_expired(client, captured_messages):
+    from bot.feishu_card_handler import handle_card_action
+    _run(handle_card_action(
+        action_value={"action": "confirm", "token": "nonexistent"},
+        sender_open_id="open-1",
+        chat_id="chat-1",
+    ))
+    s = json.dumps(captured_messages["card"][0]["card"], ensure_ascii=False)
+    assert "失效" in s
