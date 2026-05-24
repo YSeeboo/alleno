@@ -659,7 +659,7 @@ def _parsed(vendor: str, *items):
 
 
 def _seed_part(db, name="吊坠A"):
-    return create_part(db, name=name, category="吊坠", image=None)
+    return create_part(db, {"name": name, "category": "吊坠"})
 
 
 def _seed_purchase_with_vendor(db, vendor_name, part_id):
@@ -1319,8 +1319,8 @@ def _run(coro):
 
 def test_purchase_text_dispatches_to_preview_card(client, db, captured_messages, monkeypatch):
     # client fixture ensures the test DB is in place and dependencies overridden
-    p1 = create_part(db, name="吊坠A", category="吊坠", image=None)
-    p2 = create_part(db, name="链条B", category="链条", image=None)
+    p1 = create_part(db, {"name": "吊坠A", "category": "吊坠"})
+    p2 = create_part(db, {"name": "链条B", "category": "链条"})
     db.commit()
 
     # The handler grabs its own SessionLocal — make sure SessionLocal returns
@@ -1377,7 +1377,7 @@ def test_purchase_text_with_unknown_part_sends_error_card_and_creates_no_po(clie
 
 
 def test_purchase_text_with_bad_qty_sends_parse_error_card(client, db, captured_messages):
-    p = create_part(db, name="吊坠A", category="吊坠", image=None)
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
     db.commit()
 
     from bot.handlers import process_feishu_message
@@ -1517,7 +1517,7 @@ def _put_draft_and_get_token(db, captured_messages, vendor, part_id, qty, price)
 
 
 def test_confirm_creates_po_and_writes_inventory_log(client, db, captured_messages):
-    p = create_part(db, name="吊坠A", category="吊坠", image=None)
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
     db.commit()
 
     token = _put_draft_and_get_token(db, captured_messages, "腾飞", p.id, 100, 5)
@@ -1547,7 +1547,7 @@ def test_confirm_creates_po_and_writes_inventory_log(client, db, captured_messag
 
 
 def test_cancel_drops_draft_and_creates_no_po(client, db, captured_messages):
-    p = create_part(db, name="吊坠A", category="吊坠", image=None)
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
     db.commit()
     token = _put_draft_and_get_token(db, captured_messages, "腾飞", p.id, 100, 5)
     captured_messages["card"].clear()
@@ -1566,7 +1566,7 @@ def test_cancel_drops_draft_and_creates_no_po(client, db, captured_messages):
 
 
 def test_double_confirm_returns_already_created(client, db, captured_messages):
-    p = create_part(db, name="吊坠A", category="吊坠", image=None)
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
     db.commit()
     token = _put_draft_and_get_token(db, captured_messages, "腾飞", p.id, 100, 5)
 
@@ -1751,7 +1751,7 @@ def _feishu_card_action_event(chat_id, open_id, action_value, event_id="e-card-1
 
 
 def test_webhook_text_event_creates_preview_card(client, db, captured_messages):
-    p = create_part(db, name="吊坠A", category="吊坠", image=None)
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
     db.commit()
 
     body = _feishu_text_event("chat-1", "open-1", f"腾飞\n{p.id} 100 5")
@@ -1765,7 +1765,7 @@ def test_webhook_text_event_creates_preview_card(client, db, captured_messages):
 
 
 def test_webhook_card_action_confirm_creates_po(client, db, captured_messages):
-    p = create_part(db, name="吊坠A", category="吊坠", image=None)
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
     db.commit()
 
     # Step 1: send the text message to generate a preview + token
