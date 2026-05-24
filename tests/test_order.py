@@ -197,31 +197,76 @@ def test_delete_order_cascades_todo_batch(setup):
     ).count() == 0
 
 
-def test_delete_order_cascades_item_links(setup):
-    """订单关联了生产单时，delete_order 必须清掉 OrderItemLink —— 既包括直接挂
-    order_id 的（饰品项），也包括挂 order_todo_item_id 的（配件项）。两条删除
-    路径此前没有回归覆盖。"""
-    db, p1, p2, j1, j2 = setup
-    from models.order import OrderItemLink, OrderTodoItem
+def _order_with_pending_handcraft(db, p1, p2, j1):
+    """走真实流程：建单 -> create_batch -> link_supplier，使该批次迁移成一张
+    pending 手工单。返回 (order, batch, hc_order)。"""
+    from services.inventory import add_stock
+    from services.order_todo import link_supplier
+    from models.order import OrderTodoBatch
+    from models.handcraft_order import HandcraftOrder
+    add_stock(db, "part", p1.id, 100, "测试入库")
+    add_stock(db, "part", p2.id, 100, "测试入库")
     order = create_order(db, "周九", [
         {"jewelry_id": j1.id, "quantity": 1, "unit_price": 100.0},
     ])
-    # create_batch 会按 BOM 生成 order_todo_item 行
     create_batch(db, order.id, [(j1.id, 1)])
-    todo_item = db.query(OrderTodoItem).filter_by(order_id=order.id).first()
-    assert todo_item is not None
+    batch = db.query(OrderTodoBatch).filter_by(order_id=order.id).first()
+    link_supplier(db, order.id, batch.id, "测试手工商家")
+    hc = db.query(HandcraftOrder).filter_by(id=batch.handcraft_order_id).first()
+    assert hc is not None and hc.status == "pending"
+    return order, batch, hc
 
-    # 两种关联各造一条
-    db.add(OrderItemLink(order_id=order.id))                       # 饰品项直挂订单
-    db.add(OrderItemLink(order_todo_item_id=todo_item.id))         # 配件项挂 todo 行
-    db.flush()
 
-    assert get_order_delete_preview(db, order.id)["link_count"] == 2
+def test_delete_order_cleans_pending_handcraft(setup):
+    """link_supplier 把批次迁移成 pending 手工单后，删除订单必须连带清掉手工单
+    及其 HandcraftPartItem / HandcraftJewelryItem，否则会产生孤儿手工单和幽灵库存
+    预留。"""
+    db, p1, p2, j1, j2 = setup
+    from models.handcraft_order import (
+        HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem,
+    )
+    from models.order import OrderItemLink, OrderTodoItem
+
+    order, batch, hc = _order_with_pending_handcraft(db, p1, p2, j1)
+    hc_id = hc.id
+    assert db.query(HandcraftPartItem).filter_by(handcraft_order_id=hc_id).count() > 0
+    assert db.query(HandcraftJewelryItem).filter_by(handcraft_order_id=hc_id).count() > 0
 
     delete_order(db, order.id)
 
     assert get_order(db, order.id) is None
+    # 手工单及其明细全部清掉
+    assert db.query(HandcraftOrder).filter_by(id=hc_id).first() is None
+    assert db.query(HandcraftPartItem).filter_by(handcraft_order_id=hc_id).count() == 0
+    assert db.query(HandcraftJewelryItem).filter_by(handcraft_order_id=hc_id).count() == 0
+    # 关联与备货数据也清干净
     assert db.query(OrderItemLink).filter_by(order_id=order.id).count() == 0
-    assert db.query(OrderItemLink).filter_by(
-        order_todo_item_id=todo_item.id
-    ).count() == 0
+    assert db.query(OrderTodoItem).filter_by(order_id=order.id).count() == 0
+
+
+def test_delete_order_refused_when_handcraft_sent(setup):
+    """手工单已发出（非 pending）意味着真实库存已被扣 —— 此时删除订单必须被拒绝，
+    不能留下已扣料的孤儿手工单。"""
+    db, p1, p2, j1, j2 = setup
+    from models.handcraft_order import HandcraftOrder
+
+    order, batch, hc = _order_with_pending_handcraft(db, p1, p2, j1)
+    hc.status = "processing"  # 模拟已发出
+    db.flush()
+
+    with pytest.raises(ValueError, match="已发出|无法删除"):
+        delete_order(db, order.id)
+    # 订单与手工单都还在
+    assert get_order(db, order.id) is not None
+    assert db.query(HandcraftOrder).filter_by(id=hc.id).first() is not None
+
+
+def test_delete_cancelled_order_allowed(setup):
+    """已取消订单已无库存/生产关联，应允许删除。"""
+    db, p1, p2, j1, j2 = setup
+    order = create_order(db, "吴十一", [
+        {"jewelry_id": j1.id, "quantity": 1, "unit_price": 100.0},
+    ])
+    update_order_status(db, order.id, "已取消")
+    delete_order(db, order.id)
+    assert get_order(db, order.id) is None

@@ -55,14 +55,18 @@ const confirmDelete = async (row) => {
     positiveText: '确认删除',
     negativeText: '取消',
     onPositiveClick: async () => {
+      let deleted = false
       try {
         await deleteOrder(row.id)
-        await load()
-        message.success('订单已删除')
+        deleted = true
       } catch (_) {
         // 删除失败（如订单状态已变化），错误由 axios 拦截器提示
-        await load() // 仍刷新以同步真实状态
       }
+      // 无论成败都刷新一次同步真实状态；刷新自身失败不影响删除结果提示
+      try {
+        await load()
+      } catch (_) { /* 列表刷新失败，拦截器已提示 */ }
+      if (deleted) message.success('订单已删除')
     },
   })
 }
@@ -156,13 +160,13 @@ const columns = [
     key: 'actions',
     width: 80,
     render: (r) => {
-      const isPending = r.status === '待生产'
+      const isDeletable = r.status === '待生产' || r.status === '已取消'
       const btn = h(
         NButton,
         {
           text: true,
           type: 'error',
-          disabled: !isPending,
+          disabled: !isDeletable,
           onClick: (e) => { e.stopPropagation(); confirmDelete(r) },
         },
         { default: () => '删除' }
@@ -174,13 +178,13 @@ const columns = [
         { style: 'display:inline-block', onClick: (e) => e.stopPropagation() },
         [child]
       )
-      if (isPending) return wrap(btn)
+      if (isDeletable) return wrap(btn)
       return h(
         NTooltip,
         null,
         {
           trigger: () => wrap(btn),
-          default: () => '只能删除待生产状态的订单',
+          default: () => '只能删除待生产或已取消状态的订单',
         }
       )
     },

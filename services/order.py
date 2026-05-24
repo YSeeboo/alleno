@@ -664,47 +664,55 @@ def get_order_delete_preview(db: Session, order_id: str) -> dict:
     return {"item_count": item_count, "batch_count": batch_count, "link_count": link_count}
 
 
+_DELETABLE_STATUSES = ("待生产", "已取消")
+
+
 def delete_order(db: Session, order_id: str) -> None:
-    """硬删除待生产订单及其所有 FK 子行。
-    非待生产 / 不存在 -> ValueError。commit 由 get_db() 负责。"""
+    """硬删除订单及其所有 FK 子行。仅允许待生产 / 已取消状态。
+    不存在或状态不符 -> ValueError。commit 由 get_db() 负责。
+
+    备货批次通过复用 delete_batch 删除，因为 link_supplier 会把批次迁移成
+    pending 手工单（HandcraftOrder + HandcraftPartItem/HandcraftJewelryItem）。
+    delete_batch 会连带清理这些 pending 手工数据，且在手工单已发出（非 pending）
+    时抛错 —— 已发出意味着真实库存已被扣，此时拒绝删除整张订单。
+    """
     order = get_order(db, order_id)
     if order is None:
         raise ValueError(f"订单 {order_id} 不存在")
-    if order.status != "待生产":
-        raise ValueError(f"订单状态为「{order.status}」，只能删除「待生产」状态的订单")
+    if order.status not in _DELETABLE_STATUSES:
+        raise ValueError(
+            f"订单状态为「{order.status}」，只能删除「待生产」或「已取消」状态的订单"
+        )
 
-    todo_item_ids = [
-        r[0] for r in db.query(OrderTodoItem.id)
-        .filter(OrderTodoItem.order_id == order_id).all()
-    ]
-    batch_ids = [
-        r[0] for r in db.query(OrderTodoBatch.id)
-        .filter(OrderTodoBatch.order_id == order_id).all()
-    ]
+    # 逐批删除：delete_batch 负责批次本身 + 批次内 todo_item / batch_jewelry /
+    # link，以及该批次迁移出去的 pending 手工单清理（非 pending 则抛错中止）。
+    from services.order_todo import delete_batch
+    batches = db.query(OrderTodoBatch).filter(OrderTodoBatch.order_id == order_id).all()
+    for batch in batches:
+        delete_batch(db, order_id, batch.id)
 
     db.query(OrderPickingRecord).filter(
         OrderPickingRecord.order_id == order_id
     ).delete(synchronize_session=False)
 
+    # 直挂订单的 link（饰品项 create_link 路径）。仅删关联行，不删被关联的
+    # 电镀/采购等独立单据。
     db.query(OrderItemLink).filter(OrderItemLink.order_id == order_id).delete(
         synchronize_session=False
     )
-    if todo_item_ids:
+    # 批次已被 delete_batch 删除，这里只剩无批次（generate_todo 生成）的 todo_item。
+    remaining_todo_ids = [
+        r[0] for r in db.query(OrderTodoItem.id)
+        .filter(OrderTodoItem.order_id == order_id).all()
+    ]
+    if remaining_todo_ids:
         db.query(OrderItemLink).filter(
-            OrderItemLink.order_todo_item_id.in_(todo_item_ids)
+            OrderItemLink.order_todo_item_id.in_(remaining_todo_ids)
         ).delete(synchronize_session=False)
-
-    if batch_ids:
-        db.query(OrderTodoBatchJewelry).filter(
-            OrderTodoBatchJewelry.batch_id.in_(batch_ids)
-        ).delete(synchronize_session=False)
-
     db.query(OrderTodoItem).filter(OrderTodoItem.order_id == order_id).delete(
         synchronize_session=False
     )
-    db.query(OrderTodoBatch).filter(OrderTodoBatch.order_id == order_id).delete(
-        synchronize_session=False
-    )
+
     db.query(OrderItem).filter(OrderItem.order_id == order_id).delete(
         synchronize_session=False
     )

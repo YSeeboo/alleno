@@ -8,31 +8,37 @@
 
 ## 范围与规则
 
-- **仅允许删除 `待生产` 状态的订单。** 其它状态（`生产中`/`已完成`/`已取消`）一律拒绝。
-  - 理由：`待生产` 订单从未扣过库存（扣库存发生在转 `已完成` 时），也不会有 `order_cost_snapshot`（仅 `已完成` 生成）。删除它无需库存回退，是干净操作。
+- **允许删除 `待生产` 与 `已取消` 状态的订单。** 其它状态（`生产中`/`已完成`）一律拒绝。
+  - 理由：这两种状态的订单从未扣过库存（扣库存发生在转 `已完成` 时），也不会有 `order_cost_snapshot`（仅 `已完成` 生成）。删除它无需库存回退，是干净操作。`已取消` 订单已无业务价值，允许清理。
 - **硬删除**：物理删除订单及其所有 FK 子行。订单号 `OR-XXXX` 不回收（自增计数不回退）。不引入软删除列，避免改动所有订单查询。
-- **级联删除 + 弹窗告知（方案 C）**：即使是 `待生产` 订单，也可能已挂上备货批次、生产单关联等子数据（创建这些数据时不校验订单状态）。删除时一并清理，并在二次确认弹窗中列出将被删除的具体数量，让用户知情。
+- **级联删除 + 弹窗告知（方案 C）**：订单可能已挂上备货批次、生产单关联等子数据（创建这些数据时不校验订单状态）。删除时一并清理，并在二次确认弹窗中列出将被删除的具体数量，让用户知情。
+- **手工单联动**：`link_supplier` 会把备货批次迁移成一张 pending 手工单（`HandcraftOrder` + `HandcraftPartItem`/`HandcraftJewelryItem`），而订单状态仍可为 `待生产`/`已取消`。删除订单时通过复用 `services.order_todo.delete_batch` 逐批处理：它会清理这些 pending 手工数据；若手工单已发出（非 pending，真实库存已扣），`delete_batch` 抛错，整张订单删除被拒绝。
 
-## 数据流向：删除一个 `待生产` 订单
+## 数据流向：删除一个可删除（待生产 / 已取消）订单
 
-需要按外键依赖顺序删除以下 FK 子表的行，最后删订单本身：
+删除顺序：
 
-| 表 | 说明 | 是否对 order.id 有 FK |
-|----|------|:--:|
-| `order_picking_record` | 拣货模拟记录 | 是 |
-| `order_item_link` | 与电镀/手工/采购单的关联 | 是 |
-| `order_todo_batch_jewelry` | 备货批次饰品行（FK 指向 batch） | 经由 batch |
-| `order_todo_item` | 备货明细 | 是 |
-| `order_todo_batch` | 备货批次 | 是 |
-| `order_item` | 订单明细 | 是 |
-| `order` | 订单本身 | — |
+1. **逐批 `delete_batch(db, order_id, batch.id)`** —— 处理每个 `order_todo_batch`。`delete_batch` 内部：
+   - 若批次已 `link_supplier`（`batch.handcraft_order_id` 非空）：清理该批次迁移出去的 pending `HandcraftPartItem`/`HandcraftJewelryItem` 与对应 `order_item_link`，并在手工单清空后删除 `HandcraftOrder`；**手工单非 pending 时抛错**，使整张订单删除被拒绝。
+   - 删除该批次的 `order_todo_item`、`order_todo_batch_jewelry`、`order_todo_batch` 及其 link。
+2. 删除剩余 FK 子行，最后删订单本身：
+
+| 表 | 说明 | 处理方 |
+|----|------|----|
+| `order_picking_record` | 拣货模拟记录 | delete_order |
+| `order_item_link`（order_id 直挂） | 饰品项与生产单的关联 | delete_order |
+| `order_todo_item`（无批次，generate_todo 生成）+ 其 link | 备货明细 | delete_order |
+| `order_cost_snapshot_item` / `order_cost_snapshot` | 成本快照 | delete_order |
+| `order_item` | 订单明细 | delete_order |
+| `order` | 订单本身 | delete_order |
+| `order_todo_batch` / `order_todo_batch_jewelry` / 批次 `order_todo_item` | 备货批次 | delete_batch（步骤 1） |
+| `handcraft_order` / `handcraft_part_item` / `handcraft_jewelry_item`（pending） | 由 link_supplier 迁移产生 | delete_batch（步骤 1） |
 
 **不受影响 / 无需处理：**
-- `order_cost_snapshot`：仅 `已完成` 生成，`待生产` 必无。
 - `production_loss`、`vendor_receipt`：其 `order_id` 引用的是电镀/手工单（EP-/HC-），非客户订单，且无 FK，与本功能无关。
-- `inventory_log`：`待生产` 从未产生库存变动，无需写回退记录。
+- `inventory_log`：可删除状态的订单从未产生库存变动，无需写回退记录。
 
-> 注意：`order_item_link` 仅删除"关联关系"，不删除被关联的电镀单/手工单/采购单本身（它们是独立的 EP-/HC- 等单据）。
+> 注意：`order_item_link` 仅删除"关联关系"，不删除手动 `create_link` 关联的独立电镀单/采购单本身。但 `link_supplier` 自动迁移生成的 **pending 手工单** 是为本订单专门创建的，随订单一并清理（见步骤 1）。
 
 ## 后端
 
