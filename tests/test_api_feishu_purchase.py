@@ -195,3 +195,74 @@ def test_confirm_unknown_token_returns_expired(client, captured_messages):
     ))
     s = json.dumps(captured_messages["card"][0]["card"], ensure_ascii=False)
     assert "失效" in s
+
+
+def _feishu_text_event(chat_id, open_id, text, event_id="e-text-1"):
+    return {
+        "header": {"event_id": event_id, "event_type": "im.message.receive_v1"},
+        "event": {
+            "sender": {"sender_id": {"open_id": open_id}},
+            "message": {
+                "message_type": "text",
+                "chat_id": chat_id,
+                "content": json.dumps({"text": text}),
+            },
+        },
+    }
+
+
+def _feishu_card_action_event(chat_id, open_id, action_value, event_id="e-card-1"):
+    return {
+        "header": {"event_id": event_id, "event_type": "card.action.trigger"},
+        "event": {
+            "operator": {"open_id": open_id},
+            "action": {"value": action_value},
+            "context": {"open_chat_id": chat_id},
+        },
+    }
+
+
+def test_webhook_text_event_creates_preview_card(client, db, captured_messages):
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
+    db.commit()
+
+    body = _feishu_text_event("chat-1", "open-1", f"腾飞\n{p.id} 100 5")
+    r = client.post("/api/feishu/webhook", json=body)
+    assert r.status_code == 200
+
+    assert len(captured_messages["card"]) == 1
+    s = json.dumps(captured_messages["card"][0]["card"], ensure_ascii=False)
+    assert "采购单预览" in s
+
+
+def test_webhook_card_action_confirm_creates_po(client, db, captured_messages):
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
+    db.commit()
+
+    body = _feishu_text_event("chat-1", "open-1", f"腾飞\n{p.id} 100 5", event_id="e-text-2")
+    client.post("/api/feishu/webhook", json=body)
+    card = captured_messages["card"][-1]["card"]
+    actions = next(e for e in card["elements"] if e.get("tag") == "action")
+    token = actions["actions"][0]["value"]["token"]
+    captured_messages["card"].clear()
+
+    body2 = _feishu_card_action_event(
+        "chat-1", "open-1",
+        action_value={"action": "confirm", "token": token},
+        event_id="e-card-2",
+    )
+    r = client.post("/api/feishu/webhook", json=body2)
+    assert r.status_code == 200
+
+    from models.purchase_order import PurchaseOrder
+    db.expire_all()
+    assert db.query(PurchaseOrder).count() == 1
+    s = json.dumps(captured_messages["card"][-1]["card"], ensure_ascii=False)
+    assert "已创建" in s
+
+
+def test_webhook_url_verification_returns_challenge(client):
+    body = {"type": "url_verification", "challenge": "abc123"}
+    r = client.post("/api/feishu/webhook", json=body)
+    assert r.status_code == 200
+    assert r.json() == {"challenge": "abc123"}
