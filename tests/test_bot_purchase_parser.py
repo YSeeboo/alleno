@@ -142,3 +142,10 @@ def test_parse_no_items_is_error():
     result = parse_purchase_text(text)
     assert isinstance(result, list)
     assert any(e.line_no == 0 and "明细" in e.reason for e in result)
+
+
+def test_parse_price_zero_is_accepted():
+    text = "李老板\nPJ-DZ-0001 100 0"
+    result = parse_purchase_text(text)
+    assert isinstance(result, ParsedPurchase)
+    assert result.items[0].price == Decimal("0")

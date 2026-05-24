@@ -37,7 +37,7 @@ class ParsedPurchase:
 _ITEM_FIRST_TOKEN_RE = re.compile(r"^\S+\s+\d")
 
 _QTY_SUFFIXES = ("个", "件", "包")
-_PRICE_SUFFIXES = ("元", "块", "￥", "¥", "$")
+_PRICE_SUFFIXES = ("元", "块", "￥", "¥")
 
 
 def is_purchase_text(text: str) -> bool:
@@ -65,12 +65,8 @@ def _parse_decimal(raw: str, suffixes: tuple[str, ...]) -> Decimal | None:
         return None
     try:
         return Decimal(cleaned)
-    except (InvalidOperation, ValueError):
+    except InvalidOperation:
         return None
-
-
-def _looks_like_item(line: str) -> bool:
-    return bool(_ITEM_FIRST_TOKEN_RE.match(line.strip()))
 
 
 def _parse_item(line_no: int, raw_line: str) -> ParsedItem | ParseError:
@@ -86,9 +82,6 @@ def _parse_item(line_no: int, raw_line: str) -> ParsedItem | ParseError:
             raw_line=raw_line,
             reason=f"格式错：每行需要 3 或 4 个 token，实际 {len(tokens)} 个",
         )
-
-    if not part_id:
-        return ParseError(line_no=line_no, raw_line=raw_line, reason="配件编号为空")
 
     qty = _parse_decimal(qty_raw, _QTY_SUFFIXES)
     if qty is None:
@@ -144,7 +137,7 @@ def parse_purchase_text(text: str) -> ParsedPurchase | list[ParseError]:
     vendor_name = vendor_raw.strip()
     errors: list[ParseError] = []
 
-    if _looks_like_item(vendor_name):
+    if _ITEM_FIRST_TOKEN_RE.match(vendor_name):
         errors.append(ParseError(
             line_no=vendor_line_no,
             raw_line=vendor_raw,
