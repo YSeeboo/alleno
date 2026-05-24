@@ -695,6 +695,53 @@ _RP_HEADER_H = 26               # header row height in the breakdown table
 _RP_COL_PCT = (0.26, 0.12, 0.18, 0.24, 0.20)
 
 
+def _wrap_text_to_lines(
+    text: str, avail_width: float, font: str, font_size: int, max_lines: int
+) -> list[str]:
+    """Wrap text into at most max_lines lines that each fit avail_width.
+
+    If wrapping would produce more than max_lines, truncate to max_lines and
+    append '…' to the last line, trimming characters from the right until the
+    line + '…' fits. Each returned line is guaranteed to fit avail_width.
+    """
+    if not text:
+        return []
+
+    lines = simpleSplit(text, font, font_size, max(avail_width, 1))
+
+    # simpleSplit can leave a CJK line wider than avail_width when there are
+    # no break points it recognises — re-wrap those char-by-char.
+    fixed: list[str] = []
+    for line in lines:
+        if stringWidth(line, font, font_size) <= avail_width:
+            fixed.append(line)
+            continue
+        remaining = line
+        while remaining:
+            lo, hi = 1, len(remaining)
+            while lo < hi:
+                mid = (lo + hi + 1) // 2
+                if stringWidth(remaining[:mid], font, font_size) <= avail_width:
+                    lo = mid
+                else:
+                    hi = mid - 1
+            fixed.append(remaining[:lo])
+            remaining = remaining[lo:]
+
+    if len(fixed) <= max_lines:
+        return fixed
+
+    # Truncation: concatenate the overflow tail back onto the last kept line,
+    # then trim from the right until "<tail>…" fits.
+    truncated = list(fixed[:max_lines])
+    tail = truncated[-1] + "".join(fixed[max_lines:])
+    ellipsis = "…"
+    while tail and stringWidth(tail + ellipsis, font, font_size) > avail_width:
+        tail = tail[:-1]
+    truncated[-1] = (tail + ellipsis) if tail else ellipsis
+    return truncated
+
+
 def _format_chinese_date(dt) -> str:
     """Format like 2026年05月11日 — supplier-friendly, locale-stable."""
     if not dt:
@@ -911,8 +958,21 @@ def _rp_draw_breakdown_table(pdf, groups, y_start: float) -> float:
         idx_str = str(group_idx)
         iw = stringWidth(idx_str, _LABEL_FONT, 10)
         pdf.drawString(circle_cx - iw / 2, cy - 2, idx_str)
+
+        name_x = circle_cx + circle_r + 8
+        name_avail = (col_x[0] + col_w[0]) - name_x - 4
+        name_lines = _wrap_text_to_lines(
+            g["jewelry_name"] or "", name_avail, _LABEL_FONT, 12, max_lines=2
+        )
         pdf.setFont(_LABEL_FONT, 12)
-        pdf.drawString(circle_cx + circle_r + 8, cy - 3, g["jewelry_name"])
+        if len(name_lines) <= 1:
+            if name_lines:
+                pdf.drawString(name_x, cy - 3, name_lines[0])
+        else:
+            line_gap = 14
+            top_baseline = cy - 3 + (len(name_lines) - 1) * line_gap / 2
+            for i, line in enumerate(name_lines):
+                pdf.drawString(name_x, top_baseline - i * line_gap, line)
 
         # ── 数量 cell: total qty + 套, centered ──
         c1_cx = col_x[1] + col_w[1] / 2

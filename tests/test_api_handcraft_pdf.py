@@ -403,6 +403,68 @@ def test_handcraft_pdf_appends_receipt_page_with_aliases(client, db, monkeypatch
     assert "广州王哥" not in all_text
 
 
+def test_wrap_text_to_lines_short_text_returns_single_line():
+    from services.handcraft_pdf import _register_fonts, _wrap_text_to_lines, _LABEL_FONT
+
+    _register_fonts()
+    lines = _wrap_text_to_lines("短名", avail_width=200, font=_LABEL_FONT, font_size=12, max_lines=2)
+    assert lines == ["短名"]
+
+
+def test_wrap_text_to_lines_long_text_wraps_to_two_lines():
+    from services.handcraft_pdf import _register_fonts, _wrap_text_to_lines, _LABEL_FONT
+
+    _register_fonts()
+    # 14 chars at 12pt ≈ 168pt; with 90pt avail must wrap
+    lines = _wrap_text_to_lines(
+        "ZB-中号猪鼻 7*8.5项链", avail_width=90, font=_LABEL_FONT, font_size=12, max_lines=2
+    )
+    assert len(lines) == 2
+    # Full text recoverable (joined back, ignoring split whitespace)
+    assert "".join(lines).replace(" ", "") == "ZB-中号猪鼻7*8.5项链".replace(" ", "")
+
+
+def test_wrap_text_to_lines_overlong_text_truncates_with_ellipsis():
+    from services.handcraft_pdf import _register_fonts, _wrap_text_to_lines, _LABEL_FONT
+
+    _register_fonts()
+    # Way more than 2 lines worth of text
+    long_name = "ZB-超长超长超长超长超长超长超长超长超长名字测试样本拼接更长"
+    lines = _wrap_text_to_lines(
+        long_name, avail_width=90, font=_LABEL_FONT, font_size=12, max_lines=2
+    )
+    assert len(lines) == 2
+    assert lines[-1].endswith("…")
+
+
+def test_wrap_text_to_lines_empty_text_returns_empty_list():
+    from services.handcraft_pdf import _register_fonts, _wrap_text_to_lines, _LABEL_FONT
+
+    _register_fonts()
+    assert _wrap_text_to_lines("", avail_width=90, font=_LABEL_FONT, font_size=12, max_lines=2) == []
+
+
+def test_wrap_text_to_lines_each_line_fits_avail_width():
+    """Sanity: every returned line's stringWidth must be <= avail_width."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    from services.handcraft_pdf import _register_fonts, _wrap_text_to_lines, _LABEL_FONT
+
+    _register_fonts()
+    avail = 90
+    for name in [
+        "ZB-中号猪鼻 7*8.5项链",
+        "ZB-大号猪鼻 10*8项链",
+        "ZB-小号猪鼻 3.5*5.5手链",
+        "ZB-超长超长超长超长超长名字",
+    ]:
+        lines = _wrap_text_to_lines(name, avail_width=avail, font=_LABEL_FONT, font_size=12, max_lines=2)
+        for line in lines:
+            assert stringWidth(line, _LABEL_FONT, 12) <= avail, (
+                f"line {line!r} from {name!r} exceeds avail={avail}"
+            )
+
+
 def test_handcraft_pdf_skips_receipt_page_when_no_customers(client, db, monkeypatch):
     """No 手工回执 page when no jewelry breakdown rows have a customer."""
     monkeypatch.setattr("services.handcraft_pdf.download_image_bytes", _fake_download_image_bytes)
