@@ -169,7 +169,7 @@ _lock = RLock()
 _drafts: dict[str, tuple[ResolvedPurchase, float, str]] = {}
 
 # 已消费表：token -> (po_id, created_at, sender_open_id)
-# 用途：double-confirm 时回 "这张单已建好 PO-XXXX"
+# 用途：double-confirm 时回 "这张单已建好 CG-XXXX"
 _consumed: dict[str, tuple[str, float, str]] = {}
 
 def put(data: ResolvedPurchase, sender_open_id: str) -> str:
@@ -200,7 +200,7 @@ async def handle_card_action(action_value: dict, sender_open_id: str, chat_id: s
 ```
 
 - `confirm`：
-  1. `get_consumed_po(token)` 命中 → 回 `这张单已建好 PO-XXXX` 卡片（幂等）
+  1. `get_consumed_po(token)` 命中 → 回 `这张单已建好 CG-XXXX` 卡片（幂等）
   2. `pop_draft(token)`；为 None → 回 `预览已失效，请重新发送`
   3. 调 `create_purchase_order(db, vendor_name, [...], status="未付款")`
      - 成功 → `mark_consumed(token, po_id)`，回成功卡片
@@ -285,10 +285,10 @@ async def process_feishu_message(chat_id: str, text: str, sender_open_id: str) -
 
 ```
 ✅ 采购单已创建
-单号：PO-0123
+单号：CG-0123
 店家：腾飞
 合计：835.00 元 / 3 项
-[查看详情] → https://<frontend>/purchase-orders/PO-0123
+[查看详情] → https://<frontend>/purchase-orders/CG-0123
 ```
 
 ### 错误卡片（统一风格）
@@ -303,7 +303,7 @@ async def process_feishu_message(chat_id: str, text: str, sender_open_id: str) -
 | 无明细 | ❌ 没有解析到明细行 | 至少写一条配件 |
 | vendor 歧义 | ❌ 店家名歧义 | `<input>` 匹配到多个候选：`<list>`。请打更具体 |
 | token 过期 | ⚠ 预览已失效 | 请重新发送 |
-| token 已用 | ℹ 这张单已建好 | 单号 `PO-XXXX` |
+| token 已用 | ℹ 这张单已建好 | 单号 `CG-XXXX` |
 | 后端错 | ❌ 建单失败 | `<ValueError.args[0]>` |
 
 ## 错误处理
