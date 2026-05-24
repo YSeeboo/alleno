@@ -299,3 +299,46 @@ def test_create_order_with_has_barcode_false_explicit(client, db):
     })
     assert resp.status_code == 201
     assert resp.json()["has_barcode"] is False
+
+
+def test_delete_preview(client, db):
+    _, jewelry = _setup(db)
+    created = client.post("/api/orders/", json={
+        "customer_name": "Carol",
+        "items": [{"jewelry_id": jewelry.id, "quantity": 2, "unit_price": 100.0}]
+    }).json()
+    resp = client.get(f"/api/orders/{created['id']}/delete-preview")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["item_count"] == 1
+    assert body["batch_count"] == 0
+    assert body["link_count"] == 0
+
+
+def test_delete_pending_order(client, db):
+    _, jewelry = _setup(db)
+    created = client.post("/api/orders/", json={
+        "customer_name": "Dave",
+        "items": [{"jewelry_id": jewelry.id, "quantity": 1, "unit_price": 50.0}]
+    }).json()
+    resp = client.delete(f"/api/orders/{created['id']}")
+    assert resp.status_code == 204
+    assert client.get(f"/api/orders/{created['id']}").status_code == 404
+
+
+def test_delete_order_not_found(client, db):
+    resp = client.delete("/api/orders/OR-9999")
+    assert resp.status_code == 404
+
+
+def test_delete_non_pending_order_rejected(client, db):
+    part, _ = _setup(db)
+    from services.inventory import add_stock
+    add_stock(db, "part", part.id, 10, "测试入库")
+    created = client.post("/api/orders/", json={
+        "customer_name": "Eve",
+        "items": [{"part_id": part.id, "quantity": 1, "unit_price": 3.0}]
+    }).json()
+    client.patch(f"/api/orders/{created['id']}/status", json={"status": "已完成"})
+    resp = client.delete(f"/api/orders/{created['id']}")
+    assert resp.status_code == 400

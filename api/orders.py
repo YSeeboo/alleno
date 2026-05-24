@@ -23,9 +23,11 @@ from schemas.order_cost_snapshot import OrderCostSnapshotResponse
 from services.order import (
     add_order_item,
     create_order,
+    delete_order,
     delete_order_item,
     enrich_order_items,
     get_order,
+    get_order_delete_preview,
     get_order_items,
     get_parts_summary,
     update_extra_info,
@@ -146,6 +148,22 @@ def api_delete_order_item(order_id: str, item_id: int, db: Session = Depends(get
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
     with service_errors():
         delete_order_item(db, order_id, item_id)
+
+
+@router.get("/{order_id}/delete-preview")
+def api_delete_preview(order_id: str, db: Session = Depends(get_db)):
+    if get_order(db, order_id) is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    with service_errors():
+        return get_order_delete_preview(db, order_id)
+
+
+@router.delete("/{order_id}", status_code=204)
+def api_delete_order(order_id: str, db: Session = Depends(get_db)):
+    if get_order(db, order_id) is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    with service_errors():
+        delete_order(db, order_id)
 
 
 @router.get("/{order_id}/parts-summary", response_model=list[PartsSummaryItemResponse])
