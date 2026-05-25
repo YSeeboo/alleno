@@ -135,7 +135,12 @@ def build_handcraft_order_pdf(db, order_id: str) -> tuple[bytes, str]:
     _draw_handcraft_receipt_page(pdf, db, payload["order"])
 
     pdf.save()
-    return buffer.getvalue(), build_export_filename(payload["order"].supplier_name, payload["order"].created_at, "pdf")
+    return buffer.getvalue(), build_export_filename(
+        payload["order"].supplier_name,
+        payload["order"].created_at,
+        "pdf",
+        receipt_code=payload["order"].receipt_code,
+    )
 
 
 def _draw_parts_pages(

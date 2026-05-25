@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str = ""
     FEISHU_APP_ID: str = ""
     FEISHU_APP_SECRET: str = ""
+    FEISHU_VERIFICATION_TOKEN: str = ""
     # 允许使用 Bot 的飞书 open_id，多个用逗号分隔，留空则不限制
     FEISHU_WHITELIST: str = ""
     OSS_BUCKET: str = ""
