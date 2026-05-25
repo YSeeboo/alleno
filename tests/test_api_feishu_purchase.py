@@ -28,6 +28,16 @@ def captured_messages(monkeypatch):
     return captured
 
 
+@pytest.fixture(autouse=True)
+def _clear_event_dedup():
+    """The webhook's _seen_event_ids is process-level state. Clear it between
+    tests so a reused default event_id can't be silently deduped (flaky)."""
+    import api.feishu as feishu
+    feishu._seen_event_ids.clear()
+    yield
+    feishu._seen_event_ids.clear()
+
+
 def _run(coro):
     return asyncio.run(coro)
 
@@ -352,6 +362,21 @@ def test_webhook_rejects_bad_verification_token(client, captured_messages, monke
 
     body = _feishu_text_event("chat-1", "open-1", "腾飞\nPJ-DZ-00001 100 5")
     # builder doesn't set a token → mismatch
+    body["header"]["token"] = "WRONG"
+    r = client.post("/api/feishu/webhook", json=body)
+    assert r.status_code == 403
+    assert len(captured_messages["card"]) == 0
+
+
+def test_webhook_card_action_rejects_bad_verification_token(client, captured_messages, monkeypatch):
+    from config import settings
+    monkeypatch.setattr(settings, "FEISHU_VERIFICATION_TOKEN", "secret-token")
+
+    body = _feishu_card_action_event(
+        "chat-1", "open-1",
+        action_value={"action": "confirm", "token": "whatever"},
+        event_id="e-card-badtoken-1",
+    )
     body["header"]["token"] = "WRONG"
     r = client.post("/api/feishu/webhook", json=body)
     assert r.status_code == 403
