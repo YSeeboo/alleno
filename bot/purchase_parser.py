@@ -81,6 +81,11 @@ def _parse_decimal(raw: str, suffixes: tuple[str, ...]) -> Decimal | None:
 
 def _parse_item(line_no: int, raw_line: str) -> ParsedItem | ParseError:
     tokens = raw_line.split()
+    # A trailing standalone currency word (e.g. "元") belongs to the price token.
+    # Without this, "<id> <qty> <price> 元" (4 tokens) collides with the
+    # "<id> <qty> <unit> <price>" 4-token form.
+    if len(tokens) >= 2 and tokens[-1] and _strip_suffix(tokens[-1], _PRICE_SUFFIXES) == "":
+        tokens = tokens[:-2] + [tokens[-2] + tokens[-1]]
     if len(tokens) == 3:
         part_id, qty_raw, price_raw = tokens
         unit = "个"

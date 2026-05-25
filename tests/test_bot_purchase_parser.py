@@ -149,3 +149,21 @@ def test_parse_price_zero_is_accepted():
     result = parse_purchase_text(text)
     assert isinstance(result, ParsedPurchase)
     assert result.items[0].price == Decimal("0")
+
+
+def test_parse_trailing_currency_word_4_tokens():
+    result = parse_purchase_text("腾飞\nPJ-LT-00003 50 3.5 元")
+    assert isinstance(result, ParsedPurchase), result
+    item = result.items[0]
+    assert item.qty == Decimal("50")
+    assert item.unit == "个"
+    assert item.price == Decimal("3.5")
+
+
+def test_parse_unit_and_trailing_currency_word_5_tokens():
+    result = parse_purchase_text("腾飞\nPJ-LT-00003 50 件 3.5 元")
+    assert isinstance(result, ParsedPurchase), result
+    item = result.items[0]
+    assert item.qty == Decimal("50")
+    assert item.unit == "件"
+    assert item.price == Decimal("3.5")
