@@ -84,7 +84,10 @@ async def handle_card_action(action_value: dict, sender_open_id: str, chat_id: s
         db.close()
 
     mark_consumed(token, po_id=po_id, sender_open_id=sender_open_id)
-    await _handlers.send_feishu_card(
-        chat_id,
-        render_success_card(po_id, data.vendor_name, data.total_amount, len(data.items)),
-    )
+    try:
+        await _handlers.send_feishu_card(
+            chat_id,
+            render_success_card(po_id, data.vendor_name, data.total_amount, len(data.items)),
+        )
+    except Exception:
+        logger.exception("failed to send success card for %s", po_id)

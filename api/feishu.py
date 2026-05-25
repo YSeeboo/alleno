@@ -1,5 +1,6 @@
 import json
 import logging
+from collections import OrderedDict
 
 from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
@@ -9,14 +10,29 @@ from config import settings
 router = APIRouter(prefix="/api/feishu", tags=["feishu"])
 logger = logging.getLogger(__name__)
 
-# Deduplicate events in memory (bounded to 1000 entries)
-_seen_event_ids: set = set()
+# Deduplicate events in memory (bounded to 1000 entries, FIFO eviction)
+_seen_event_ids: "OrderedDict[str, None]" = OrderedDict()
 _MAX_SEEN = 1000
+
+
+def _verify_token(body: dict) -> bool:
+    """Verify the Feishu Verification Token. If no token is configured, skip
+    (keeps tests and pre-config deploys working). In production the token MUST
+    be set so forged requests are rejected."""
+    expected = settings.FEISHU_VERIFICATION_TOKEN
+    if not expected:
+        return True
+    got = body.get("header", {}).get("token") or body.get("token")
+    return got == expected
 
 
 @router.post("/webhook")
 async def feishu_webhook(request: Request, background_tasks: BackgroundTasks):
     body = await request.json()
+
+    if not _verify_token(body):
+        logger.warning("Feishu webhook token mismatch")
+        return JSONResponse({"code": 403, "msg": "invalid token"}, status_code=403)
 
     if body.get("type") == "url_verification":
         return JSONResponse({"challenge": body.get("challenge")})
@@ -28,11 +44,9 @@ async def feishu_webhook(request: Request, background_tasks: BackgroundTasks):
     if event_id:
         if event_id in _seen_event_ids:
             return JSONResponse({"code": 0})
-        _seen_event_ids.add(event_id)
-        if len(_seen_event_ids) > _MAX_SEEN:
-            excess = list(_seen_event_ids)[: len(_seen_event_ids) - _MAX_SEEN]
-            for eid in excess:
-                _seen_event_ids.discard(eid)
+        _seen_event_ids[event_id] = None
+        while len(_seen_event_ids) > _MAX_SEEN:
+            _seen_event_ids.popitem(last=False)  # evict oldest (FIFO)
 
     if event_type == "card.action.trigger":
         return await _handle_card_action_event(body, background_tasks)

@@ -277,6 +277,18 @@ update_order_status(order_id, status)        # 更新订单状态
 
 ---
 
+## 飞书 Bot
+
+飞书 Bot 通过 Webhook 接收消息，支持结构化采购单文本解析与交互卡片确认。
+
+**部署注意事项：**
+
+1. 在飞书开放平台订阅事件 `card.action.trigger`（与消息事件同一个 webhook URL：`/api/feishu/webhook`）。
+2. 设置 env `FEISHU_VERIFICATION_TOKEN`（= 飞书后台「事件订阅」页的 Verification Token），否则 webhook 不校验来源。
+3. 飞书后台 **Encrypt Key 必须留空/关闭**——当前实现不解密，开启后事件体会变成 `{"encrypt": "..."}` 而无法处理。
+
+---
+
 ## Telegram Bot 功能
 
 Bot 通过 Claude Agent + Tools 驱动，支持自然语言操作：

@@ -55,7 +55,7 @@ async def send_feishu_card(chat_id: str, card: dict) -> None:
         resp.raise_for_status()
 
 
-async def process_feishu_message(chat_id: str, text: str, sender_open_id: str = "") -> None:
+async def process_feishu_message(chat_id: str, text: str, sender_open_id: str) -> None:
     """Entry point for Feishu text messages.
 
     - Structured-purchase-shaped messages → parser/resolver path, reply with a card.
@@ -120,6 +120,6 @@ async def _process_purchase_text(chat_id: str, text: str, sender_open_id: str) -
     except Exception as exc:
         logger.exception("_process_purchase_text failed: %s", exc)
         try:
-            await send_feishu_card(chat_id, render_system_error_card(str(exc)))
+            await send_feishu_card(chat_id, render_system_error_card("系统错误，请稍后重试"))
         except Exception:
             logger.exception("failed to send system_error_card")

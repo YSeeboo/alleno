@@ -344,3 +344,48 @@ def test_confirm_generic_exception_does_not_restore_draft(client, db, captured_m
     # Token consumed — second click should NOT retry
     from bot.purchase_draft_store import pop_draft
     assert pop_draft(token, "open-1") is None
+
+
+def test_webhook_rejects_bad_verification_token(client, captured_messages, monkeypatch):
+    from config import settings
+    monkeypatch.setattr(settings, "FEISHU_VERIFICATION_TOKEN", "secret-token")
+
+    body = _feishu_text_event("chat-1", "open-1", "腾飞\nPJ-DZ-00001 100 5")
+    # builder doesn't set a token → mismatch
+    body["header"]["token"] = "WRONG"
+    r = client.post("/api/feishu/webhook", json=body)
+    assert r.status_code == 403
+    assert len(captured_messages["card"]) == 0
+
+
+def test_webhook_accepts_matching_verification_token(client, db, captured_messages, monkeypatch):
+    from config import settings
+    monkeypatch.setattr(settings, "FEISHU_VERIFICATION_TOKEN", "secret-token")
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
+    db.commit()
+
+    body = _feishu_text_event("chat-1", "open-1", f"腾飞\n{p.id} 100 5", event_id="e-token-accept-1")
+    body["header"]["token"] = "secret-token"
+    r = client.post("/api/feishu/webhook", json=body)
+    assert r.status_code == 200
+    assert len(captured_messages["card"]) == 1
+
+
+def test_webhook_whitelist_rejection_does_not_dispatch(client, db, captured_messages, monkeypatch):
+    from config import settings
+    # Configure a whitelist that does NOT include open-evil
+    monkeypatch.setattr(settings, "FEISHU_WHITELIST", "open-good")
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
+    db.commit()
+
+    body = _feishu_text_event("chat-1", "open-evil", f"腾飞\n{p.id} 100 5", event_id="e-whitelist-1")
+    r = client.post("/api/feishu/webhook", json=body)
+    assert r.status_code == 200
+    assert len(captured_messages["card"]) == 0  # background task not triggered
+
+
+def test_webhook_card_action_with_null_value_is_safe(client, captured_messages):
+    body = _feishu_card_action_event("chat-1", "open-1", action_value=None, event_id="e-null-1")
+    r = client.post("/api/feishu/webhook", json=body)
+    assert r.status_code == 200
+    assert len(captured_messages["card"]) == 0
