@@ -131,3 +131,23 @@ def test_resolve_amount_is_qty_times_price(db):
     assert isinstance(result, ResolvedPurchase)
     assert result.items[0].amount == Decimal("34.125")
     assert result.total_amount == Decimal("34.125")
+
+
+def test_resolve_vendor_branch2_tie_is_ambiguous(db):
+    p = _seed_part(db)
+    _seed_purchase_with_vendor(db, "腾飞", p.id)
+    _seed_purchase_with_vendor(db, "飞鸿", p.id)
+    # input contains both "腾飞" and "飞鸿" at equal length → ambiguous
+    result = resolve(db, _parsed("腾飞鸿", (p.id, 1, 1)))
+    assert isinstance(result, ResolveError)
+    assert result.kind == "vendor_ambiguous"
+    assert set(result.detail["candidates"]) == {"腾飞", "飞鸿"}
+
+
+def test_resolve_vendor_branch2_unique_longest_still_resolves(db):
+    p = _seed_part(db)
+    _seed_purchase_with_vendor(db, "腾飞", p.id)
+    _seed_purchase_with_vendor(db, "腾飞贸易", p.id)
+    result = resolve(db, _parsed("腾飞贸易公司", (p.id, 1, 1)))
+    assert isinstance(result, ResolvedPurchase)
+    assert result.vendor_name == "腾飞贸易"

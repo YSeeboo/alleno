@@ -64,8 +64,14 @@ def _match_vendor(input_name: str, existing: list[str]) -> tuple[str, bool] | Re
 
     contained_in_input = [e for e in eligible if e in inp]
     if contained_in_input:
-        canonical = max(contained_in_input, key=len)
-        return (canonical, False)
+        max_len = max(len(e) for e in contained_in_input)
+        longest = [e for e in contained_in_input if len(e) == max_len]
+        if len(longest) > 1:
+            return ResolveError(
+                kind="vendor_ambiguous",
+                detail={"input": input_name, "candidates": sorted(longest)},
+            )
+        return (longest[0], False)
 
     contains_input = [e for e in eligible if inp in e]
     if len(contains_input) == 1:
