@@ -439,3 +439,112 @@ def test_unique_name_goes_straight_to_preview(client, db, captured_messages):
     _run(process_feishu_message(chat_id="chat-1", text="腾飞\n珍珠链条 10 5", sender_open_id="open-1"))
     s = json.dumps(captured_messages["card"][0]["card"], ensure_ascii=False)
     assert "采购单预览" in s
+
+
+def _seed_ambiguous(db, base, *suffixes):
+    """Create parts named base+suffix (category 吊坠); return their ids in order."""
+    return [create_part(db, {"name": f"{base}{suf}", "category": "吊坠"}).id for suf in suffixes]
+
+
+def _send_and_get_disambig_token(db, captured_messages, text):
+    from bot.handlers import process_feishu_message
+    _run(process_feishu_message(chat_id="chat-1", text=text, sender_open_id="open-1"))
+    card = captured_messages["card"][-1]["card"]
+    action = next(e for e in card["elements"] if e.get("tag") == "action")
+    return action["actions"][0]["value"]["token"]
+
+
+def test_single_line_disambiguation_to_preview_then_confirm(client, db, captured_messages):
+    ids = _seed_ambiguous(db, "玫瑰吊坠", "大", "小")
+    db.commit()
+    token = _send_and_get_disambig_token(db, captured_messages, "腾飞\n玫瑰吊坠 10 5")
+    captured_messages["card"].clear()
+
+    from bot.feishu_card_handler import handle_card_action
+    _run(handle_card_action(
+        action_value={"action": "disambiguate", "token": token, "line_no": 2, "part_id": ids[0]},
+        sender_open_id="open-1", chat_id="chat-1",
+    ))
+    s = json.dumps(captured_messages["card"][-1]["card"], ensure_ascii=False)
+    assert "采购单预览" in s
+
+    captured_messages["card"].clear()
+    _run(handle_card_action(
+        action_value={"action": "confirm", "token": token},
+        sender_open_id="open-1", chat_id="chat-1",
+    ))
+    from models.purchase_order import PurchaseOrder
+    db.expire_all()
+    assert db.query(PurchaseOrder).count() == 1
+    s2 = json.dumps(captured_messages["card"][-1]["card"], ensure_ascii=False)
+    assert "已创建" in s2
+
+
+def test_two_ambiguous_lines_take_two_picks(client, db, captured_messages):
+    rose = _seed_ambiguous(db, "玫瑰吊坠", "大", "小")
+    pearl = _seed_ambiguous(db, "珍珠扣", "大", "小")
+    db.commit()
+    token = _send_and_get_disambig_token(db, captured_messages, "腾飞\n玫瑰吊坠 10 5\n珍珠扣 20 2")
+
+    from bot.feishu_card_handler import handle_card_action
+    captured_messages["card"].clear()
+    _run(handle_card_action(
+        action_value={"action": "disambiguate", "token": token, "line_no": 2, "part_id": rose[0]},
+        sender_open_id="open-1", chat_id="chat-1",
+    ))
+    s1 = json.dumps(captured_messages["card"][-1]["card"], ensure_ascii=False)
+    assert "需要确认" in s1
+    assert "珍珠扣" in s1
+
+    captured_messages["card"].clear()
+    _run(handle_card_action(
+        action_value={"action": "disambiguate", "token": token, "line_no": 3, "part_id": pearl[0]},
+        sender_open_id="open-1", chat_id="chat-1",
+    ))
+    s2 = json.dumps(captured_messages["card"][-1]["card"], ensure_ascii=False)
+    assert "采购单预览" in s2
+
+
+def test_disambiguate_expired_token(client, captured_messages):
+    from bot.feishu_card_handler import handle_card_action
+    _run(handle_card_action(
+        action_value={"action": "disambiguate", "token": "nope", "line_no": 2, "part_id": "x"},
+        sender_open_id="open-1", chat_id="chat-1",
+    ))
+    s = json.dumps(captured_messages["card"][-1]["card"], ensure_ascii=False)
+    assert "失效" in s
+
+
+def test_disambiguate_forged_part_id_ignored(client, db, captured_messages):
+    _seed_ambiguous(db, "玫瑰吊坠", "大", "小")
+    db.commit()
+    token = _send_and_get_disambig_token(db, captured_messages, "腾飞\n玫瑰吊坠 10 5")
+    captured_messages["card"].clear()
+
+    from bot.feishu_card_handler import handle_card_action
+    _run(handle_card_action(
+        action_value={"action": "disambiguate", "token": token, "line_no": 2, "part_id": "PJ-FAKE-99999"},
+        sender_open_id="open-1", chat_id="chat-1",
+    ))
+    s = json.dumps(captured_messages["card"][-1]["card"], ensure_ascii=False)
+    assert "需要确认" in s  # still asking, not advanced
+
+
+def test_disambiguate_repeat_pick_is_idempotent(client, db, captured_messages):
+    ids = _seed_ambiguous(db, "玫瑰吊坠", "大", "小")
+    db.commit()
+    token = _send_and_get_disambig_token(db, captured_messages, "腾飞\n玫瑰吊坠 10 5")
+
+    from bot.feishu_card_handler import handle_card_action
+    for _ in range(2):
+        _run(handle_card_action(
+            action_value={"action": "disambiguate", "token": token, "line_no": 2, "part_id": ids[0]},
+            sender_open_id="open-1", chat_id="chat-1",
+        ))
+    _run(handle_card_action(
+        action_value={"action": "confirm", "token": token},
+        sender_open_id="open-1", chat_id="chat-1",
+    ))
+    from models.purchase_order import PurchaseOrder
+    db.expire_all()
+    assert db.query(PurchaseOrder).count() == 1

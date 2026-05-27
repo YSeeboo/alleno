@@ -11,12 +11,21 @@ from bot.feishu_cards import (
     render_already_created_card,
     render_system_error_card,
     render_create_failed_card,
+    render_preview_card,
+    render_disambiguation_card,
 )
 from bot.purchase_draft_store import (
     pop_draft,
     put_with_token,
     mark_consumed,
     get_consumed_po,
+    get_draft,
+)
+from bot.purchase_resolver import (
+    NeedsDisambiguation,
+    ResolvedPurchase,
+    assemble_resolved,
+    first_unresolved,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,6 +38,10 @@ async def handle_card_action(action_value: dict, sender_open_id: str, chat_id: s
     if action == "cancel":
         pop_draft(token, sender_open_id)  # discard whatever is there
         await _handlers.send_feishu_card(chat_id, render_cancel_card())
+        return
+
+    if action == "disambiguate":
+        await _handle_disambiguate(action_value, sender_open_id, chat_id)
         return
 
     if action != "confirm":
@@ -91,3 +104,47 @@ async def handle_card_action(action_value: dict, sender_open_id: str, chat_id: s
         )
     except Exception:
         logger.exception("failed to send success card for %s", po_id)
+
+
+async def _handle_disambiguate(action_value: dict, sender_open_id: str, chat_id: str) -> None:
+    token = action_value.get("token", "")
+    line_no = action_value.get("line_no")
+    part_id = action_value.get("part_id")
+
+    draft = get_draft(token, sender_open_id)
+    if draft is None:
+        await _handlers.send_feishu_card(chat_id, render_token_expired_card())
+        return
+
+    # Stale tap after the flow already advanced to preview → re-show preview.
+    if isinstance(draft, ResolvedPurchase):
+        await _handlers.send_feishu_card(chat_id, render_preview_card(draft, token=token))
+        return
+    if not isinstance(draft, NeedsDisambiguation):
+        await _handlers.send_feishu_card(chat_id, render_token_expired_card())
+        return
+
+    # Apply the choice if the line is still pending and the part_id is a real candidate.
+    pl = next((p for p in draft.pending if p.line_no == line_no), None)
+    if pl is not None and pl.chosen_part_id is None:
+        if any(c.part_id == part_id for c in pl.candidates):
+            pl.chosen_part_id = part_id
+    put_with_token(token, draft, sender_open_id)
+
+    nxt = first_unresolved(draft)
+    if nxt is not None:
+        next_pl, done, total = nxt
+        await _handlers.send_feishu_card(
+            chat_id, render_disambiguation_card(next_pl, token, done, total)
+        )
+        return
+
+    # All resolved → assemble final purchase, store under same token, show preview.
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        resolved = assemble_resolved(db, draft)
+    finally:
+        db.close()
+    put_with_token(token, resolved, sender_open_id)
+    await _handlers.send_feishu_card(chat_id, render_preview_card(resolved, token=token))
