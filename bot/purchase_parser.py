@@ -33,29 +33,12 @@ class ParsedPurchase:
     items: list[ParsedItem] = field(default_factory=list)
 
 
-# Item-shape detector: a part_id followed by a digit (any unit/suffix tail allowed).
-_ITEM_FIRST_TOKEN_RE = re.compile(r"^\S+\s+\d")
-
 _QTY_SUFFIXES = ("个", "件", "包")
 _PRICE_SUFFIXES = ("元", "块", "￥", "¥")
 
 
 # Part-ID prefix detector: first token looks like a part reference (PJ- prefix).
 _PART_ID_TOKEN_RE = re.compile(r"^PJ-\S+\s+", re.IGNORECASE)
-
-
-def is_purchase_text(text: str) -> bool:
-    """Heuristic dispatch: does this look like a purchase-order message?
-
-    Matches if the first item line either:
-    - starts with any token followed by a digit (quantity-first format), OR
-    - starts with a PJ-prefixed part ID (matches even when qty is malformed).
-    """
-    lines = [ln for ln in (text or "").splitlines() if ln.strip()]
-    if len(lines) < 2:
-        return False
-    second = lines[1].strip()
-    return bool(_ITEM_FIRST_TOKEN_RE.match(second) or _PART_ID_TOKEN_RE.match(second))
 
 
 def _strip_suffix(s: str, suffixes: tuple[str, ...]) -> str:
@@ -79,57 +62,77 @@ def _parse_decimal(raw: str, suffixes: tuple[str, ...]) -> Decimal | None:
         return None
 
 
-def _parse_item(line_no: int, raw_line: str) -> ParsedItem | ParseError:
-    tokens = raw_line.split()
-    # A trailing standalone currency word (e.g. "元") belongs to the price token.
-    # Without this, "<id> <qty> <price> 元" (4 tokens) collides with the
-    # "<id> <qty> <unit> <price>" 4-token form.
+def _glue_trailing_currency(tokens: list[str]) -> list[str]:
+    """A trailing standalone currency word (e.g. "元") belongs to the price token.
+    Without this, "<name> <qty> <price> 元" collides with the unit form."""
     if len(tokens) >= 2 and tokens[-1] and _strip_suffix(tokens[-1], _PRICE_SUFFIXES) == "":
-        tokens = tokens[:-2] + [tokens[-2] + tokens[-1]]
-    if len(tokens) == 3:
-        part_id, qty_raw, price_raw = tokens
-        unit = "个"
-    elif len(tokens) == 4:
-        part_id, qty_raw, unit, price_raw = tokens
-    else:
+        return tokens[:-2] + [tokens[-2] + tokens[-1]]
+    return tokens
+
+
+def _looks_like_item_line(line: str) -> bool:
+    """Heuristic: does this line look like an item ("<name…> <qty> [unit] <price>")?
+
+    True when the line ends with a qty + price pair, OR starts with a PJ- token
+    (so a typo'd-qty id line still routes to the purchase parser and yields a
+    parse-error card instead of falling through to the agent)."""
+    s = line.strip()
+    if _PART_ID_TOKEN_RE.match(s):
+        return True
+    tokens = _glue_trailing_currency(s.split())
+    if len(tokens) < 3:
+        return False
+    qpos = -3 if (len(tokens) >= 4 and tokens[-2] in _QTY_SUFFIXES) else -2
+    price_ok = _parse_decimal(tokens[-1], _PRICE_SUFFIXES) is not None
+    qty_ok = _parse_decimal(tokens[qpos], _QTY_SUFFIXES) is not None
+    return price_ok and qty_ok
+
+
+def is_purchase_text(text: str) -> bool:
+    """Heuristic dispatch: does this look like a purchase-order message?"""
+    lines = [ln for ln in (text or "").splitlines() if ln.strip()]
+    if len(lines) < 2:
+        return False
+    return _looks_like_item_line(lines[1])
+
+
+def _parse_item(line_no: int, raw_line: str) -> ParsedItem | ParseError:
+    tokens = _glue_trailing_currency(raw_line.split())
+    if len(tokens) < 3:
         return ParseError(
             line_no=line_no,
             raw_line=raw_line,
-            reason=f"格式错：每行需要 3 或 4 个 token，实际 {len(tokens)} 个",
+            reason=f"格式错：至少需要 名称 数量 价格，实际 {len(tokens)} 个 token",
         )
+
+    price_raw = tokens[-1]
+    if len(tokens) >= 4 and tokens[-2] in _QTY_SUFFIXES:
+        unit = tokens[-2]
+        qty_raw = tokens[-3]
+        name_tokens = tokens[:-3]
+    else:
+        unit = "个"
+        qty_raw = tokens[-2]
+        name_tokens = tokens[:-2]
+    # name_tokens is always non-empty here: len(tokens) >= 3 guarantees at least
+    # one token before the qty/price tail.
 
     qty = _parse_decimal(qty_raw, _QTY_SUFFIXES)
     if qty is None:
-        return ParseError(
-            line_no=line_no,
-            raw_line=raw_line,
-            reason=f"数量无法识别：'{qty_raw}'",
-        )
+        return ParseError(line_no=line_no, raw_line=raw_line, reason=f"数量无法识别：'{qty_raw}'")
     if qty <= 0:
-        return ParseError(
-            line_no=line_no,
-            raw_line=raw_line,
-            reason=f"数量需大于 0，得到 {qty}",
-        )
+        return ParseError(line_no=line_no, raw_line=raw_line, reason=f"数量需大于 0，得到 {qty}")
 
     price = _parse_decimal(price_raw, _PRICE_SUFFIXES)
     if price is None:
-        return ParseError(
-            line_no=line_no,
-            raw_line=raw_line,
-            reason=f"单价无法识别：'{price_raw}'",
-        )
+        return ParseError(line_no=line_no, raw_line=raw_line, reason=f"单价无法识别：'{price_raw}'")
     if price < 0:
-        return ParseError(
-            line_no=line_no,
-            raw_line=raw_line,
-            reason=f"单价不能为负，得到 {price}",
-        )
+        return ParseError(line_no=line_no, raw_line=raw_line, reason=f"单价不能为负，得到 {price}")
 
     return ParsedItem(
         line_no=line_no,
         raw_line=raw_line,
-        part_id=part_id,
+        part_id=" ".join(name_tokens),
         qty=qty,
         unit=unit,
         price=price,
@@ -152,7 +155,7 @@ def parse_purchase_text(text: str) -> ParsedPurchase | list[ParseError]:
     vendor_name = vendor_raw.strip()
     errors: list[ParseError] = []
 
-    if _ITEM_FIRST_TOKEN_RE.match(vendor_name):
+    if _looks_like_item_line(vendor_name):
         errors.append(ParseError(
             line_no=vendor_line_no,
             raw_line=vendor_raw,

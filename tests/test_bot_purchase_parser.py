@@ -167,3 +167,46 @@ def test_parse_unit_and_trailing_currency_word_5_tokens():
     assert item.qty == Decimal("50")
     assert item.unit == "件"
     assert item.price == Decimal("3.5")
+
+
+def test_parse_multi_keyword_name():
+    result = parse_purchase_text("腾飞\n玫瑰 大 100 5")
+    assert isinstance(result, ParsedPurchase), result
+    item = result.items[0]
+    assert item.part_id == "玫瑰 大"
+    assert item.qty == Decimal("100")
+    assert item.unit == "个"
+    assert item.price == Decimal("5")
+
+
+def test_parse_multi_keyword_with_unit():
+    result = parse_purchase_text("腾飞\n玫瑰吊坠 镂空 50 件 3")
+    assert isinstance(result, ParsedPurchase), result
+    item = result.items[0]
+    assert item.part_id == "玫瑰吊坠 镂空"
+    assert item.unit == "件"
+    assert item.qty == Decimal("50")
+    assert item.price == Decimal("3")
+
+
+def test_parse_name_first_token_is_unit_word():
+    result = parse_purchase_text("腾飞\n包 玫瑰 100 5")
+    assert isinstance(result, ParsedPurchase), result
+    assert result.items[0].part_id == "包 玫瑰"
+    assert result.items[0].unit == "个"
+    assert result.items[0].qty == Decimal("100")
+
+
+def test_parse_qty_position_non_numeric_errors():
+    result = parse_purchase_text("腾飞\n玫瑰 大 5")
+    assert isinstance(result, list)
+    assert result[0].line_no == 2
+    assert "数量" in result[0].reason
+
+
+def test_is_purchase_text_recognises_multi_keyword_line():
+    assert is_purchase_text("腾飞\n玫瑰 大 100 5") is True
+
+
+def test_is_purchase_text_still_rejects_natural_language():
+    assert is_purchase_text("帮我看看玫瑰吊坠\n还有多少库存") is False
