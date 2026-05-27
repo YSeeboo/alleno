@@ -414,3 +414,28 @@ def test_webhook_card_action_with_null_value_is_safe(client, captured_messages):
     r = client.post("/api/feishu/webhook", json=body)
     assert r.status_code == 200
     assert len(captured_messages["card"]) == 0
+
+
+def test_ambiguous_name_sends_disambiguation_card(client, db, captured_messages):
+    create_part(db, {"name": "玫瑰吊坠大", "category": "吊坠"})
+    create_part(db, {"name": "玫瑰吊坠小", "category": "吊坠"})
+    db.commit()
+
+    from bot.handlers import process_feishu_message
+    text = "腾飞\n玫瑰吊坠 10 5"
+    _run(process_feishu_message(chat_id="chat-1", text=text, sender_open_id="open-1"))
+
+    assert len(captured_messages["card"]) == 1
+    s = json.dumps(captured_messages["card"][0]["card"], ensure_ascii=False)
+    assert "需要确认" in s
+    assert "玫瑰吊坠" in s
+    assert "disambiguate" in s
+
+
+def test_unique_name_goes_straight_to_preview(client, db, captured_messages):
+    create_part(db, {"name": "珍珠链条", "category": "链条"})
+    db.commit()
+    from bot.handlers import process_feishu_message
+    _run(process_feishu_message(chat_id="chat-1", text="腾飞\n珍珠链条 10 5", sender_open_id="open-1"))
+    s = json.dumps(captured_messages["card"][0]["card"], ensure_ascii=False)
+    assert "采购单预览" in s

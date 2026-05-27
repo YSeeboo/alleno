@@ -90,13 +90,14 @@ async def process_feishu_message(chat_id: str, text: str, sender_open_id: str) -
 async def _process_purchase_text(chat_id: str, text: str, sender_open_id: str) -> None:
     from database import SessionLocal
     from bot.purchase_parser import parse_purchase_text
-    from bot.purchase_resolver import resolve, ResolveError
+    from bot.purchase_resolver import resolve, ResolveError, NeedsDisambiguation, first_unresolved
     from bot.purchase_draft_store import put
     from bot.feishu_cards import (
         render_preview_card,
         render_parse_error_card,
         render_resolve_error_card,
         render_system_error_card,
+        render_disambiguation_card,
     )
 
     try:
@@ -116,6 +117,13 @@ async def _process_purchase_text(chat_id: str, text: str, sender_open_id: str) -
             return
 
         token = put(result, sender_open_id=sender_open_id)
+
+        if isinstance(result, NeedsDisambiguation):
+            pl, done, total = first_unresolved(result)
+            await send_feishu_card(chat_id, render_disambiguation_card(pl, token, done, total))
+            return
+
+        # ResolvedPurchase
         await send_feishu_card(chat_id, render_preview_card(result, token=token))
     except Exception as exc:
         logger.exception("_process_purchase_text failed: %s", exc)
