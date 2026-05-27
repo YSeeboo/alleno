@@ -202,6 +202,15 @@ def test_parse_qty_position_non_numeric_errors():
     assert isinstance(result, list)
     assert result[0].line_no == 2
     assert "数量" in result[0].reason
+    assert "大" in result[0].reason  # names the offending token
+
+
+def test_is_purchase_text_routes_malformed_pj_line():
+    # a PJ- line with a missing/typo'd qty still dispatches to the parser (which
+    # returns a parse error) rather than falling through to the agent
+    assert is_purchase_text("腾飞\nPJ-DZ-0001 100") is True
+    result = parse_purchase_text("腾飞\nPJ-DZ-0001 100")
+    assert isinstance(result, list)
 
 
 def test_is_purchase_text_recognises_multi_keyword_line():

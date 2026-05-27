@@ -75,7 +75,12 @@ def _looks_like_item_line(line: str) -> bool:
 
     True when the line ends with a qty + price pair, OR starts with a PJ- token
     (so a typo'd-qty id line still routes to the purchase parser and yields a
-    parse-error card instead of falling through to the agent)."""
+    parse-error card instead of falling through to the agent).
+
+    Known, accepted limitation: a natural-language second line that happens to
+    end in two number-ish tokens (e.g. "今天 卖了 100 5") will false-trigger and
+    be treated as a purchase. Rare in practice; the preview/confirm step is the
+    safety net."""
     s = line.strip()
     if _PART_ID_TOKEN_RE.match(s):
         return True
