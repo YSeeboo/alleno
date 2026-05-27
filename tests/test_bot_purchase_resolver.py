@@ -275,3 +275,12 @@ def test_first_unresolved_returns_next_pending_then_none(db):
     assert total == 2 and done == 1 and pl.line_no == 3
     needs.pending[1].chosen_part_id = b1.id
     assert first_unresolved(needs) is None
+
+
+def test_resolve_multi_keyword_narrows_to_unique(db):
+    create_part(db, {"name": "玫瑰吊坠大", "category": "吊坠"})
+    create_part(db, {"name": "玫瑰吊坠小", "category": "吊坠"})
+    db.commit()
+    result = resolve(db, _parsed("店家", ("玫瑰吊坠 大", 1, 1)))
+    assert isinstance(result, ResolvedPurchase)
+    assert result.items[0].part_name == "玫瑰吊坠大"

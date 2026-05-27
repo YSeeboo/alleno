@@ -667,3 +667,15 @@ def test_stale_disambiguate_after_confirm_says_already_created(client, db, captu
     ))
     s = json.dumps(captured_messages["card"][-1]["card"], ensure_ascii=False)
     assert "已建好" in s
+
+
+def test_multi_keyword_message_narrows_to_preview(client, db, captured_messages):
+    create_part(db, {"name": "玫瑰吊坠大", "category": "吊坠"})
+    create_part(db, {"name": "玫瑰吊坠小", "category": "吊坠"})
+    db.commit()
+    from bot.handlers import process_feishu_message
+    _run(process_feishu_message(chat_id="chat-1", text="腾飞\n玫瑰吊坠 大 10 5", sender_open_id="open-1"))
+    s = json.dumps(captured_messages["card"][-1]["card"], ensure_ascii=False)
+    assert "采购单预览" in s
+    assert "玫瑰吊坠大" in s
+    assert "需要确认" not in s
