@@ -151,3 +151,127 @@ def test_resolve_vendor_branch2_unique_longest_still_resolves(db):
     result = resolve(db, _parsed("腾飞贸易公司", (p.id, 1, 1)))
     assert isinstance(result, ResolvedPurchase)
     assert result.vendor_name == "腾飞贸易"
+
+
+# ---------------------------------------------------------------------------
+# Name resolution + three-way result tests
+# ---------------------------------------------------------------------------
+from bot.purchase_resolver import (
+    NeedsDisambiguation,
+    Candidate,
+    assemble_resolved,
+    first_unresolved,
+)
+
+
+def test_resolve_by_name_exact_unique(db):
+    p = create_part(db, {"name": "珍珠链条", "category": "链条"})
+    db.commit()
+    parsed = _parsed("店家", ("珍珠链条", 10, 2))
+    result = resolve(db, parsed)
+    assert isinstance(result, ResolvedPurchase)
+    assert result.items[0].part_id == p.id
+    assert result.items[0].part_name == "珍珠链条"
+
+
+def test_resolve_by_name_fuzzy_unique(db):
+    p = create_part(db, {"name": "玫瑰吊坠大号", "category": "吊坠"})
+    db.commit()
+    result = resolve(db, _parsed("店家", ("玫瑰吊坠", 10, 2)))
+    assert isinstance(result, ResolvedPurchase)
+    assert result.items[0].part_id == p.id
+
+
+def test_resolve_by_name_fuzzy_multiple_needs_disambiguation(db):
+    p1 = create_part(db, {"name": "玫瑰吊坠大", "category": "吊坠"})
+    p2 = create_part(db, {"name": "玫瑰吊坠小", "category": "吊坠"})
+    db.commit()
+    result = resolve(db, _parsed("店家", ("玫瑰吊坠", 10, 2)))
+    assert isinstance(result, NeedsDisambiguation)
+    assert len(result.pending) == 1
+    pend = result.pending[0]
+    assert pend.line_no == 2
+    assert pend.query == "玫瑰吊坠"
+    assert pend.qty == Decimal("10")
+    assert pend.price == Decimal("2")
+    ids = [c.part_id for c in pend.candidates]
+    assert set(ids) == {p1.id, p2.id}
+    assert ids == sorted(ids)
+    assert result.resolved_items == []
+
+
+def test_resolve_name_not_found(db):
+    result = resolve(db, _parsed("店家", ("不存在的名字", 1, 1)))
+    assert isinstance(result, ResolveError)
+    assert result.kind == "part_not_found"
+
+
+def test_resolve_mixed_resolved_and_ambiguous(db):
+    uniq = create_part(db, {"name": "珍珠链条", "category": "链条"})
+    a1 = create_part(db, {"name": "玫瑰吊坠大", "category": "吊坠"})
+    a2 = create_part(db, {"name": "玫瑰吊坠小", "category": "吊坠"})
+    db.commit()
+    result = resolve(db, _parsed("店家", ("珍珠链条", 5, 1), ("玫瑰吊坠", 10, 2)))
+    assert isinstance(result, NeedsDisambiguation)
+    assert [i.part_id for i in result.resolved_items] == [uniq.id]
+    assert len(result.pending) == 1
+    assert result.pending[0].line_no == 3
+
+
+def test_resolve_not_found_takes_precedence_over_ambiguous(db):
+    create_part(db, {"name": "玫瑰吊坠大", "category": "吊坠"})
+    create_part(db, {"name": "玫瑰吊坠小", "category": "吊坠"})
+    db.commit()
+    result = resolve(db, _parsed("店家", ("玫瑰吊坠", 10, 2), ("查无此物", 1, 1)))
+    assert isinstance(result, ResolveError)
+    assert result.kind == "part_not_found"
+
+
+def test_resolve_id_still_works(db):
+    p = create_part(db, {"name": "吊坠A", "category": "吊坠"})
+    db.commit()
+    result = resolve(db, _parsed("店家", (p.id, 3, 4)))
+    assert isinstance(result, ResolvedPurchase)
+    assert result.items[0].part_id == p.id
+
+
+def test_candidate_carries_spec(db):
+    create_part(db, {"name": "玫瑰吊坠大", "category": "吊坠", "spec": "18mm"})
+    create_part(db, {"name": "玫瑰吊坠小", "category": "吊坠", "spec": "12mm"})
+    db.commit()
+    result = resolve(db, _parsed("店家", ("玫瑰吊坠", 1, 1)))
+    assert isinstance(result, NeedsDisambiguation)
+    specs = {c.spec for c in result.pending[0].candidates}
+    assert specs == {"18mm", "12mm"}
+
+
+def test_assemble_resolved_builds_full_purchase(db):
+    uniq = create_part(db, {"name": "珍珠链条", "category": "链条"})
+    a1 = create_part(db, {"name": "玫瑰吊坠大", "category": "吊坠"})
+    create_part(db, {"name": "玫瑰吊坠小", "category": "吊坠"})
+    db.commit()
+    needs = resolve(db, _parsed("店家", ("珍珠链条", 5, 1), ("玫瑰吊坠", 10, 2)))
+    assert isinstance(needs, NeedsDisambiguation)
+    needs.pending[0].chosen_part_id = a1.id
+    resolved = assemble_resolved(db, needs)
+    assert isinstance(resolved, ResolvedPurchase)
+    assert [i.line_no for i in resolved.items] == [2, 3]
+    assert [i.part_id for i in resolved.items] == [uniq.id, a1.id]
+    assert resolved.total_amount == Decimal("25")
+
+
+def test_first_unresolved_returns_next_pending_then_none(db):
+    a1 = create_part(db, {"name": "玫瑰吊坠大", "category": "吊坠"})
+    create_part(db, {"name": "玫瑰吊坠小", "category": "吊坠"})
+    b1 = create_part(db, {"name": "珍珠扣大", "category": "小配件"})
+    create_part(db, {"name": "珍珠扣小", "category": "小配件"})
+    db.commit()
+    needs = resolve(db, _parsed("店家", ("玫瑰吊坠", 1, 1), ("珍珠扣", 1, 1)))
+    assert isinstance(needs, NeedsDisambiguation)
+    pl, done, total = first_unresolved(needs)
+    assert total == 2 and done == 0 and pl.line_no == 2
+    needs.pending[0].chosen_part_id = a1.id
+    pl, done, total = first_unresolved(needs)
+    assert total == 2 and done == 1 and pl.line_no == 3
+    needs.pending[1].chosen_part_id = b1.id
+    assert first_unresolved(needs) is None
