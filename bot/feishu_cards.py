@@ -97,6 +97,12 @@ def render_disambiguation_card(pending: PendingLine, token: str, done: int, tota
                 "part_id": c.part_id,
             },
         })
+    buttons.append({
+        "tag": "button",
+        "text": {"tag": "plain_text", "content": "❌ 取消"},
+        "type": "default",
+        "value": {"action": "cancel", "token": token},
+    })
     elements.append({"tag": "action", "actions": buttons})
     return {"header": _header("需要确认", "orange"), "elements": elements}
 

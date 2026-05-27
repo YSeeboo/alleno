@@ -117,6 +117,12 @@ async def _handle_disambiguate(action_value: dict, sender_open_id: str, chat_id:
     line_no = action_value.get("line_no")
     part_id = action_value.get("part_id")
 
+    # Stale tap after the PO was already built → match the confirm path's reply.
+    already_po = get_consumed_po(token, sender_open_id)
+    if already_po is not None:
+        await _handlers.send_feishu_card(chat_id, render_already_created_card(already_po))
+        return
+
     draft = get_draft(token, sender_open_id)
     if draft is None:
         await _handlers.send_feishu_card(chat_id, render_token_expired_card())
@@ -152,6 +158,7 @@ async def _handle_disambiguate(action_value: dict, sender_open_id: str, chat_id:
         resolved = assemble_resolved(db, draft)
     except Exception:
         logger.exception("assemble_resolved failed for token %s", token)
+        pop_draft(token, sender_open_id)  # clear the poison draft so a re-tap doesn't loop
         await _handlers.send_feishu_card(chat_id, render_system_error_card("系统错误，请稍后重试"))
         return
     finally:

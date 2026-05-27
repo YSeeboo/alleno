@@ -613,3 +613,57 @@ def test_short_name_query_not_fuzzy_matched(client, db, captured_messages):
     _run(process_feishu_message(chat_id="chat-1", text="腾飞\nA 1 1", sender_open_id="open-1"))
     s = json.dumps(captured_messages["card"][-1]["card"], ensure_ascii=False)
     assert "配件不存在" in s
+
+
+def test_disambiguation_card_has_cancel_button(client, db, captured_messages):
+    _seed_ambiguous(db, "玫瑰吊坠", "大", "小")
+    db.commit()
+    token = _send_and_get_disambig_token(db, captured_messages, "腾飞\n玫瑰吊坠 10 5")
+    card = captured_messages["card"][-1]["card"]
+    action = next(e for e in card["elements"] if e.get("tag") == "action")
+    assert any(b["value"].get("action") == "cancel" for b in action["actions"])
+
+
+def test_assemble_failure_clears_poison_draft(client, db, captured_messages, monkeypatch):
+    ids = _seed_ambiguous(db, "玫瑰吊坠", "大", "小")
+    db.commit()
+    token = _send_and_get_disambig_token(db, captured_messages, "腾飞\n玫瑰吊坠 10 5")
+    captured_messages["card"].clear()
+
+    import bot.feishu_card_handler as h
+    def _boom(*a, **k):
+        raise RuntimeError("kaboom")
+    monkeypatch.setattr(h, "assemble_resolved", _boom)
+
+    from bot.feishu_card_handler import handle_card_action
+    _run(handle_card_action(
+        action_value={"action": "disambiguate", "token": token, "line_no": 2, "part_id": ids[0]},
+        sender_open_id="open-1", chat_id="chat-1",
+    ))
+    s = json.dumps(captured_messages["card"][-1]["card"], ensure_ascii=False)
+    assert "系统错误" in s
+    from bot.purchase_draft_store import get_draft
+    assert get_draft(token, "open-1") is None  # poison draft cleared, no infinite loop
+
+
+def test_stale_disambiguate_after_confirm_says_already_created(client, db, captured_messages):
+    ids = _seed_ambiguous(db, "玫瑰吊坠", "大", "小")
+    db.commit()
+    token = _send_and_get_disambig_token(db, captured_messages, "腾飞\n玫瑰吊坠 10 5")
+    from bot.feishu_card_handler import handle_card_action
+    _run(handle_card_action(
+        action_value={"action": "disambiguate", "token": token, "line_no": 2, "part_id": ids[0]},
+        sender_open_id="open-1", chat_id="chat-1",
+    ))
+    _run(handle_card_action(
+        action_value={"action": "confirm", "token": token},
+        sender_open_id="open-1", chat_id="chat-1",
+    ))
+    captured_messages["card"].clear()
+    # stale disambiguation tap after the PO is already built
+    _run(handle_card_action(
+        action_value={"action": "disambiguate", "token": token, "line_no": 2, "part_id": ids[0]},
+        sender_open_id="open-1", chat_id="chat-1",
+    ))
+    s = json.dumps(captured_messages["card"][-1]["card"], ensure_ascii=False)
+    assert "已建好" in s
