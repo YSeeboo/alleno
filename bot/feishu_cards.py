@@ -9,7 +9,7 @@ import json
 from decimal import Decimal
 
 from bot.purchase_parser import ParseError
-from bot.purchase_resolver import ResolvedPurchase, ResolveError
+from bot.purchase_resolver import ResolvedPurchase, ResolveError, PendingLine
 
 
 def _fmt_money(d: Decimal) -> str:
@@ -72,6 +72,33 @@ def render_preview_card(data: ResolvedPurchase, token: str) -> dict:
         ],
     })
     return {"header": _header("采购单预览", "blue"), "elements": elements}
+
+
+def render_disambiguation_card(pending: PendingLine, token: str, done: int, total: int) -> dict:
+    elements: list[dict] = [
+        _md(
+            f"**第 {pending.line_no} 行 “{pending.query}” 命中 {len(pending.candidates)} 个，选哪个？**"
+        ),
+        _md(
+            f"（数量 {_fmt_qty(pending.qty)} × 单价 {_fmt_money(pending.price)}）　进度 {done + 1}/{total}"
+        ),
+    ]
+    buttons = []
+    for c in pending.candidates:
+        spec_part = f"({c.spec})" if c.spec else ""
+        buttons.append({
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": f"{c.part_id} {c.part_name}{spec_part}"},
+            "type": "default",
+            "value": {
+                "action": "disambiguate",
+                "token": token,
+                "line_no": pending.line_no,
+                "part_id": c.part_id,
+            },
+        })
+    elements.append({"tag": "action", "actions": buttons})
+    return {"header": _header("需要确认", "orange"), "elements": elements}
 
 
 def render_success_card(po_id: str, vendor: str, total: Decimal, item_count: int) -> dict:

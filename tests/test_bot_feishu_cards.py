@@ -127,3 +127,46 @@ def test_create_failed_card_is_json_safe_and_contains_message():
     s = json.dumps(card, ensure_ascii=False)
     assert "建单失败" in s
     assert "oops" in s
+
+
+def _pending():
+    from bot.purchase_resolver import PendingLine, Candidate
+    return PendingLine(
+        line_no=2,
+        query="玫瑰吊坠",
+        qty=Decimal("10"),
+        unit="个",
+        price=Decimal("5"),
+        candidates=[
+            Candidate(part_id="PJ-DZ-00001", part_name="玫瑰吊坠大", spec="18mm", part_image=None),
+            Candidate(part_id="PJ-DZ-00002", part_name="玫瑰吊坠小", spec=None, part_image=None),
+        ],
+    )
+
+
+def test_disambiguation_card_json_safe():
+    from bot.feishu_cards import render_disambiguation_card
+    _serializable(render_disambiguation_card(_pending(), token="tk-1", done=0, total=2))
+
+
+def test_disambiguation_card_shows_query_and_progress():
+    from bot.feishu_cards import render_disambiguation_card
+    s = json.dumps(render_disambiguation_card(_pending(), token="tk-1", done=0, total=2), ensure_ascii=False)
+    assert "玫瑰吊坠" in s
+    assert "第 2 行" in s
+    assert "1/2" in s
+
+
+def test_disambiguation_card_buttons_carry_line_no_and_part_id():
+    from bot.feishu_cards import render_disambiguation_card
+    card = render_disambiguation_card(_pending(), token="tk-abc", done=0, total=2)
+    s = json.dumps(card, ensure_ascii=False)
+    assert "tk-abc" in s
+    assert "disambiguate" in s
+    assert "PJ-DZ-00001" in s and "PJ-DZ-00002" in s
+    assert "18mm" in s
+    action = next(e for e in card["elements"] if e.get("tag") == "action")
+    v = action["actions"][0]["value"]
+    assert v["action"] == "disambiguate"
+    assert v["line_no"] == 2
+    assert v["part_id"] in ("PJ-DZ-00001", "PJ-DZ-00002")
