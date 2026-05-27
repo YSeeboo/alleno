@@ -43,6 +43,7 @@ def put(data: Any, sender_open_id: str) -> str:
 
 def put_with_token(token: str, data: Any, sender_open_id: str) -> None:
     with _lock:
+        _gc_locked()
         _drafts[token] = (data, _now(), sender_open_id)
 
 

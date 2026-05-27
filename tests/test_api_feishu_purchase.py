@@ -548,3 +548,68 @@ def test_disambiguate_repeat_pick_is_idempotent(client, db, captured_messages):
     from models.purchase_order import PurchaseOrder
     db.expire_all()
     assert db.query(PurchaseOrder).count() == 1
+
+
+def test_disambiguation_confirm_writes_inventory_log(client, db, captured_messages):
+    ids = _seed_ambiguous(db, "玫瑰吊坠", "大", "小")
+    db.commit()
+    token = _send_and_get_disambig_token(db, captured_messages, "腾飞\n玫瑰吊坠 10 5")
+
+    from bot.feishu_card_handler import handle_card_action
+    _run(handle_card_action(
+        action_value={"action": "disambiguate", "token": token, "line_no": 2, "part_id": ids[0]},
+        sender_open_id="open-1", chat_id="chat-1",
+    ))
+    _run(handle_card_action(
+        action_value={"action": "confirm", "token": token},
+        sender_open_id="open-1", chat_id="chat-1",
+    ))
+    from models.inventory_log import InventoryLog
+    db.expire_all()
+    logs = db.query(InventoryLog).filter_by(item_id=ids[0]).all()
+    assert len(logs) == 1
+    assert logs[0].reason == "采购入库"
+    assert float(logs[0].change_qty) == 10
+
+
+def test_cancel_during_disambiguation_clears_draft(client, db, captured_messages):
+    _seed_ambiguous(db, "玫瑰吊坠", "大", "小")
+    db.commit()
+    token = _send_and_get_disambig_token(db, captured_messages, "腾飞\n玫瑰吊坠 10 5")
+
+    from bot.feishu_card_handler import handle_card_action
+    _run(handle_card_action(
+        action_value={"action": "cancel", "token": token},
+        sender_open_id="open-1", chat_id="chat-1",
+    ))
+    from bot.purchase_draft_store import get_draft
+    assert get_draft(token, "open-1") is None
+
+
+def test_confirm_on_mid_disambiguation_token_restores_draft(client, db, captured_messages):
+    _seed_ambiguous(db, "玫瑰吊坠", "大", "小")
+    db.commit()
+    token = _send_and_get_disambig_token(db, captured_messages, "腾飞\n玫瑰吊坠 10 5")
+    captured_messages["card"].clear()
+
+    from bot.feishu_card_handler import handle_card_action
+    # confirm before finishing picks → nudge, draft preserved
+    _run(handle_card_action(
+        action_value={"action": "confirm", "token": token},
+        sender_open_id="open-1", chat_id="chat-1",
+    ))
+    s = json.dumps(captured_messages["card"][-1]["card"], ensure_ascii=False)
+    assert "先完成选择" in s
+    from bot.purchase_draft_store import get_draft
+    assert get_draft(token, "open-1") is not None  # not destroyed
+
+
+def test_short_name_query_not_fuzzy_matched(client, db, captured_messages):
+    # two parts both contain "A"; a 1-char query must NOT fuzzy-match them → not_found
+    create_part(db, {"name": "A大", "category": "吊坠"})
+    create_part(db, {"name": "A小", "category": "吊坠"})
+    db.commit()
+    from bot.handlers import process_feishu_message
+    _run(process_feishu_message(chat_id="chat-1", text="腾飞\nA 1 1", sender_open_id="open-1"))
+    s = json.dumps(captured_messages["card"][-1]["card"], ensure_ascii=False)
+    assert "配件不存在" in s

@@ -128,6 +128,8 @@ def _candidates_for(db: Session, token: str) -> list[Part]:
     exact = db.query(Part).filter(Part.name == token).all()
     if exact:
         return exact
+    if len(token.strip()) < _MIN_FUZZY_LEN:
+        return []
     clause = keyword_filter(token, Part.name)
     if clause is None:
         return []
@@ -228,6 +230,8 @@ def assemble_resolved(db: Session, needs: NeedsDisambiguation) -> ResolvedPurcha
     items: list[ResolvedItem] = list(needs.resolved_items)
     for pl in needs.pending:
         part = db.get(Part, pl.chosen_part_id)
+        if part is None:
+            raise ValueError(f"配件不存在: {pl.chosen_part_id}")
         amount = pl.qty * pl.price
         items.append(ResolvedItem(
             line_no=pl.line_no,

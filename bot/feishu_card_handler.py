@@ -59,6 +59,12 @@ async def handle_card_action(action_value: dict, sender_open_id: str, chat_id: s
         await _handlers.send_feishu_card(chat_id, render_token_expired_card())
         return
 
+    if not isinstance(data, ResolvedPurchase):
+        # token still mid-disambiguation (forged / replayed confirm) — restore and nudge
+        put_with_token(token, data, sender_open_id)
+        await _handlers.send_feishu_card(chat_id, render_system_error_card("请先完成选择再确认"))
+        return
+
     from database import SessionLocal
     from services.purchase_order import create_purchase_order
 
@@ -144,6 +150,10 @@ async def _handle_disambiguate(action_value: dict, sender_open_id: str, chat_id:
     db = SessionLocal()
     try:
         resolved = assemble_resolved(db, draft)
+    except Exception:
+        logger.exception("assemble_resolved failed for token %s", token)
+        await _handlers.send_feishu_card(chat_id, render_system_error_card("系统错误，请稍后重试"))
+        return
     finally:
         db.close()
     put_with_token(token, resolved, sender_open_id)
