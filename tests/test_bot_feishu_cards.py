@@ -170,3 +170,20 @@ def test_disambiguation_card_buttons_carry_line_no_and_part_id():
     assert v["action"] == "disambiguate"
     assert v["line_no"] == 2
     assert v["part_id"] in ("PJ-DZ-00001", "PJ-DZ-00002")
+
+
+def test_disambiguation_card_image_link_and_no_image():
+    from bot.feishu_cards import render_disambiguation_card
+    from bot.purchase_resolver import PendingLine, Candidate
+    pending = PendingLine(
+        line_no=2, query="玫瑰吊坠", qty=Decimal("1"), unit="个", price=Decimal("1"),
+        candidates=[
+            Candidate(part_id="PJ-DZ-00001", part_name="大", spec=None,
+                      part_image="https://cdn.example.com/a.jpg"),
+            Candidate(part_id="PJ-DZ-00002", part_name="小", spec=None, part_image=None),
+        ],
+    )
+    s = json.dumps(render_disambiguation_card(pending, token="tk", done=0, total=1), ensure_ascii=False)
+    assert "查看图" in s
+    assert "https://cdn.example.com/a.jpg" in s
+    assert "无图" in s

@@ -620,8 +620,8 @@ def test_disambiguation_card_has_cancel_button(client, db, captured_messages):
     db.commit()
     token = _send_and_get_disambig_token(db, captured_messages, "腾飞\n玫瑰吊坠 10 5")
     card = captured_messages["card"][-1]["card"]
-    action = next(e for e in card["elements"] if e.get("tag") == "action")
-    assert any(b["value"].get("action") == "cancel" for b in action["actions"])
+    all_buttons = [b for e in card["elements"] if e.get("tag") == "action" for b in e["actions"]]
+    assert any(b["value"].get("action") == "cancel" for b in all_buttons)
 
 
 def test_assemble_failure_clears_poison_draft(client, db, captured_messages, monkeypatch):

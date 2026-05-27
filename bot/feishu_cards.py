@@ -8,8 +8,21 @@ from __future__ import annotations
 import json
 from decimal import Decimal
 
+from config import settings
 from bot.purchase_parser import ParseError
 from bot.purchase_resolver import ResolvedPurchase, ResolveError, PendingLine
+
+
+def _image_url(image: str | None) -> str | None:
+    """Turn a stored part.image value into a public URL, or None.
+    Already-absolute http(s) URLs pass through; a bare OSS key is prefixed with
+    the public base. Returns None when there's no image or no base to build one."""
+    if not image:
+        return None
+    if image.startswith("http://") or image.startswith("https://"):
+        return image
+    base = settings.oss_public_base_url
+    return f"{base}/{image.lstrip('/')}" if base else None
 
 
 def _fmt_money(d: Decimal) -> str:
@@ -83,27 +96,36 @@ def render_disambiguation_card(pending: PendingLine, token: str, done: int, tota
             f"（数量 {_fmt_qty(pending.qty)} × 单价 {_fmt_money(pending.price)}）　进度 {done + 1}/{total}"
         ),
     ]
-    buttons = []
+    # One block per candidate: a description line (with a 查看图 link) followed by
+    # its own select button, stacked vertically for clarity.
     for c in pending.candidates:
         spec_part = f"({c.spec})" if c.spec else ""
-        buttons.append({
-            "tag": "button",
-            "text": {"tag": "plain_text", "content": f"{c.part_id} {c.part_name}{spec_part}"},
-            "type": "default",
-            "value": {
-                "action": "disambiguate",
-                "token": token,
-                "line_no": pending.line_no,
-                "part_id": c.part_id,
-            },
+        url = _image_url(c.part_image)
+        img_part = f" · [查看图]({url})" if url else " · 无图"
+        elements.append(_md(f"`{c.part_id}` {c.part_name}{spec_part}{img_part}"))
+        elements.append({
+            "tag": "action",
+            "actions": [{
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": f"选 {c.part_id}"},
+                "type": "default",
+                "value": {
+                    "action": "disambiguate",
+                    "token": token,
+                    "line_no": pending.line_no,
+                    "part_id": c.part_id,
+                },
+            }],
         })
-    buttons.append({
-        "tag": "button",
-        "text": {"tag": "plain_text", "content": "❌ 取消"},
-        "type": "default",
-        "value": {"action": "cancel", "token": token},
+    elements.append({
+        "tag": "action",
+        "actions": [{
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "❌ 取消"},
+            "type": "default",
+            "value": {"action": "cancel", "token": token},
+        }],
     })
-    elements.append({"tag": "action", "actions": buttons})
     return {"header": _header("需要确认", "orange"), "elements": elements}
 
 
