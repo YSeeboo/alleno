@@ -62,6 +62,22 @@ def pop_draft(token: str, sender_open_id: str) -> Any | None:
         return data
 
 
+def get_draft(token: str, sender_open_id: str) -> Any | None:
+    """Peek at a draft without removing it. Returns None on miss / expiry / sender mismatch."""
+    with _lock:
+        _gc_locked()
+        entry = _drafts.get(token)
+        if entry is None:
+            return None
+        data, ts, sender = entry
+        if sender != sender_open_id:
+            return None
+        if _now() - ts > _TTL_SECONDS:
+            _drafts.pop(token, None)
+            return None
+        return data
+
+
 def mark_consumed(token: str, po_id: str, sender_open_id: str) -> None:
     with _lock:
         _gc_locked()

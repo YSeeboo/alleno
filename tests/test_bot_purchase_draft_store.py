@@ -85,3 +85,30 @@ def test_consumed_expires():
 def test_unknown_token_returns_none_everywhere():
     assert pop_draft("nope", sender_open_id="open-1") is None
     assert get_consumed_po("nope", sender_open_id="open-1") is None
+
+
+def test_get_draft_peeks_without_removing():
+    from bot.purchase_draft_store import get_draft
+    token = put(_draft(), sender_open_id="open-1")
+    assert get_draft(token, "open-1") == _draft()
+    assert get_draft(token, "open-1") == _draft()  # still there
+    assert pop_draft(token, "open-1") == _draft()   # and still poppable
+
+
+def test_get_draft_wrong_sender_returns_none():
+    from bot.purchase_draft_store import get_draft
+    token = put(_draft(), sender_open_id="open-1")
+    assert get_draft(token, "open-2") is None
+
+
+def test_get_draft_expired_returns_none():
+    from bot.purchase_draft_store import get_draft
+    _set_ttl_for_test(0)
+    token = put(_draft(), sender_open_id="open-1")
+    time.sleep(0.01)
+    assert get_draft(token, "open-1") is None
+
+
+def test_get_draft_unknown_token_returns_none():
+    from bot.purchase_draft_store import get_draft
+    assert get_draft("nope", "open-1") is None
