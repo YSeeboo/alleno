@@ -1,10 +1,21 @@
 <template>
   <n-card v-if="cols.length > 0" :content-style="collapsed ? 'padding: 0' : undefined">
     <template #header>
-      <div class="bm-head" @click="collapsed = !collapsed">
-        <span class="chev">{{ collapsed ? '▸' : '▾' }}</span>
-        <span class="title">客户分拣</span>
-        <span class="status-tag">{{ statusTagText }}</span>
+      <div class="bm-head-wrap">
+        <div class="bm-head" @click="collapsed = !collapsed">
+          <span class="chev">{{ collapsed ? '▸' : '▾' }}</span>
+          <span class="title">客户分拣</span>
+          <span class="status-tag">{{ statusTagText }}</span>
+        </div>
+        <div v-if="!collapsed" class="bm-actions">
+          <template v-if="mode === 'view'">
+            <n-button size="small" :disabled="!canEdit" @click.stop="enterEdit">编辑</n-button>
+          </template>
+          <template v-else>
+            <n-button size="small" :disabled="saving" @click.stop="cancelEdit">取消</n-button>
+            <n-button size="small" type="primary" :loading="saving" @click.stop="save">保存</n-button>
+          </template>
+        </div>
       </div>
     </template>
     <div v-show="!collapsed">
@@ -58,7 +69,7 @@
 
 <script setup>
 import { ref, computed, h, defineComponent } from 'vue'
-import { NCard } from 'naive-ui'
+import { NCard, NButton, useMessage } from 'naive-ui'
 
 const CellReadonly = defineComponent({
   name: 'CellReadonly',
@@ -96,6 +107,51 @@ const props = defineProps({
 const emit = defineEmits(['saved'])
 
 const collapsed = ref(false)
+
+// 'view' = read-only, 'edit' = editing local snapshot
+const mode = ref('view')
+const saving = ref(false)
+const message = useMessage()
+
+// Snapshot rows + placeholder entries when entering edit mode, so we can
+// compute a diff at save time. `entriesIndex` lets the diff look up the
+// per-id (qty, original customer_name) so it can detect "this id moved
+// from a placeholder into a customer row" and emit a single PATCH rather
+// than (ADD + PATCH) double-writes.
+const draft = ref(null)  // { rows: [...], placeholderEntries: [...], entriesIndex: Map<id, {qty, customer_name, is_locked}> }
+
+function enterEdit() {
+  // Deep-clone for safe local mutation. JSON round-trip is fine here:
+  // no Date / Map / function values in this state.
+  const index = new Map()
+  for (const g of props.groups || []) {
+    for (const e of g.entries || []) {
+      index.set(e.hc_jewelry_item_id, {
+        qty: Number(e.qty),
+        customer_name: e.customer_name || null,
+        is_locked: !!e.is_locked,
+      })
+    }
+  }
+  draft.value = {
+    rows: JSON.parse(JSON.stringify(rows.value)),
+    placeholderEntries: JSON.parse(JSON.stringify(placeholderEntries.value)),
+    entriesIndex: index,  // NOT serialized — Maps survive direct assignment fine
+  }
+  mode.value = 'edit'
+}
+
+function cancelEdit() {
+  draft.value = null
+  mode.value = 'view'
+}
+
+async function save() {
+  message.warning('保存逻辑将在后续任务实现')
+  cancelEdit()
+}
+
+const canEdit = computed(() => props.hcStatus !== 'completed')
 
 // --- Transpose backend groups → rows (customer-major) + cols (jewelry-major) ---
 
@@ -288,4 +344,7 @@ function lockedSourceLine(row) {
 .mx__foot-cell.ok { color: #18a058; }
 .mx__foot-cell.warn { color: #d03050; }
 .mx__foot-total { color: #4338ca; }
+
+.bm-head-wrap { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+.bm-actions { display: flex; gap: 6px; }
 </style>
