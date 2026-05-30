@@ -272,44 +272,15 @@
         </div>
       </n-card>
 
-      <n-card
-        v-if="breakdownGroups.length > 0"
+      <BreakdownMatrix
+        v-if="breakdownGroups.length > 0 || items.length > 0"
+        :hc-id="route.params.id"
+        :hc-status="order?.status || 'pending'"
+        :groups="breakdownGroups"
+        @saved="onBreakdownSaved"
         style="margin-top: 16px;"
-        :content-style="collapsed.breakdown ? 'padding: 0' : undefined"
-      >
-        <template #header>
-          <div class="section-header" @click="collapsed.breakdown = !collapsed.breakdown">
-            <span class="section-chevron">{{ collapsed.breakdown ? '▸' : '▾' }}</span>
-            <span>客户分拣</span>
-          </div>
-        </template>
-        <div v-show="!collapsed.breakdown">
-          <div v-for="g in breakdownGroups" :key="`${g.kind}:${g.jewelry_id}`" class="breakdown-group">
-            <div class="breakdown-group__head">
-              <span class="breakdown-group__id">{{ g.jewelry_id }}</span>
-              <span class="breakdown-group__name">{{ g.jewelry_name }}</span>
-              <span class="breakdown-group__qty">
-                <strong>{{ g.total_qty }}</strong> · 已收 {{ g.received_qty }}
-                <n-tag size="small" :bordered="false" style="margin-left: 8px;">{{ g.status }}</n-tag>
-              </span>
-              <n-button size="small" @click="openBreakdownEditor(g)">编辑分拣</n-button>
-            </div>
-            <div class="breakdown-group__chips">
-              <BreakdownChips :entries="g.entries" />
-            </div>
-          </div>
-        </div>
-      </n-card>
+      />
     </n-spin>
-
-    <BreakdownEditModal
-      v-if="editBreakdownGroup"
-      v-model:show="editBreakdownVisible"
-      :hc-id="route.params.id"
-      :hc-status="order?.status || 'pending'"
-      :group="editBreakdownGroup"
-      @saved="onBreakdownSaved"
-    />
 
     <n-modal v-model:show="addModalVisible" preset="card" title="添加配件明细" :style="{ width: isMobile ? '95vw' : '560px' }">
       <n-tabs v-model:value="addModalTab" type="line" animated>
@@ -657,8 +628,7 @@ import {
   getHandcraftPicking,
   getHandcraftJewelryBreakdown,
 } from '@/api/handcraft'
-import BreakdownChips from '@/components/BreakdownChips.vue'
-import BreakdownEditModal from '@/components/BreakdownEditModal.vue'
+import BreakdownMatrix from '@/components/BreakdownMatrix.vue'
 import { tsToDateStr, isoToTs } from '@/utils/date'
 import { confirmHandcraftLoss } from '@/api/productionLoss'
 import { changeOrderStatus } from '@/api/kanban'
@@ -694,7 +664,6 @@ const collapsed = reactive({
   jewelry: false,
   parts: false,
   restock: false,
-  breakdown: false,
 })
 const editingCreatedAt = ref(false)
 const editingCreatedAtTs = ref(null)
@@ -1127,7 +1096,13 @@ const buildExportFilename = (currentOrder, extension) => {
   if (!currentOrder) return ''
   const supplierName = sanitizeFilenamePart(currentOrder.supplier_name) || '未命名手工厂'
   const shortDate = formatShortDate(currentOrder.created_at)
-  return `发出_${supplierName}_${shortDate}.${extension}`
+  // PDF filename gets a `_<receipt_code>` suffix so suppliers can match the
+  // file back to the receipt — mirrors services/plating_export.py
+  // build_export_filename. Excel keeps the old format (backend doesn't pass
+  // receipt_code to it either, by design).
+  const code = (currentOrder.receipt_code || '').trim()
+  const suffix = code && extension === 'pdf' ? `_${code}` : ''
+  return `发出_${supplierName}_${shortDate}${suffix}.${extension}`
 }
 
 const sanitizeFilenamePart = (value) => {
@@ -2217,11 +2192,6 @@ onMounted(async () => {
   }
 })
 
-function openBreakdownEditor(group) {
-  editBreakdownGroup.value = group
-  editBreakdownVisible.value = true
-}
-
 async function onBreakdownSaved() {
   // Await both reloads so the parent's breakdownGroups + jewelryItems are
   // settled before the modal's saving spinner clears — otherwise the user
@@ -2229,8 +2199,7 @@ async function onBreakdownSaved() {
   await Promise.all([loadBreakdown(), loadJewelries()])
 }
 
-const editBreakdownVisible = ref(false)
-const editBreakdownGroup = ref(null)
+
 </script>
 
 <style scoped>
