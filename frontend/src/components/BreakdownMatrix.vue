@@ -19,7 +19,8 @@
       </div>
     </template>
     <div v-show="!collapsed">
-      <table class="mx">
+      <div class="mx-scroll">
+        <table class="mx">
         <thead>
           <tr>
             <th class="mx__col-cust">客户</th>
@@ -141,7 +142,13 @@
             <td class="mx__foot-total">{{ totalAssigned }} / {{ totalAll }}</td>
           </tr>
         </tfoot>
-      </table>
+        </table>
+      </div>
+      <!-- Sticky-bottom save bar appears only in edit mode on narrow screens -->
+      <div v-if="mode === 'edit'" class="mx-sticky-foot">
+        <n-button size="small" :disabled="saving" @click="cancelEdit">取消</n-button>
+        <n-button size="small" type="primary" :loading="saving" @click="save">保存</n-button>
+      </div>
     </div>
   </n-card>
 </template>
@@ -820,4 +827,25 @@ function lockedSourceLine(row) {
 .mx__qty.flash { background: #fffae8; transition: background 1.5s ease-out; }
 .mx__qty.flash::after { content: "✨"; display: inline-block; margin-left: 4px; font-size: 10px; vertical-align: 2px; }
 .mx__qty.flash .cell-input { border-color: #f0c000; box-shadow: 0 0 0 2px rgba(240,192,0,.16); }
+.mx-scroll { overflow-x: auto; }
+.mx thead th.mx__col-cust,
+.mx tbody td.mx__cust,
+.mx tfoot td.mx__foot-label {
+  position: sticky; left: 0; z-index: 2;
+  background: #fafafc;  /* repeat the surface bg so cells don't bleed through */
+}
+.mx tfoot td.mx__foot-label { background: #eef0fe; }
+.mx-sticky-foot {
+  display: none;  /* hidden on wide screens — top-bar buttons suffice */
+}
+@media (max-width: 768px) {
+  .mx-sticky-foot {
+    display: flex; gap: 6px; justify-content: flex-end;
+    position: sticky; bottom: 0; padding: 8px 12px;
+    background: #fff; border-top: 1px solid #eee;
+    box-shadow: 0 -2px 4px rgba(0,0,0,.04);
+    z-index: 3;
+  }
+}
+.mx__col-jw { min-width: 90px; }
 </style>
