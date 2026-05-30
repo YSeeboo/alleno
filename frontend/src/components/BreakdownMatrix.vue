@@ -122,6 +122,11 @@
 import { ref, computed, h, defineComponent } from 'vue'
 import { NCard, NButton, useMessage } from 'naive-ui'
 import CustomerNameSelect from './CustomerNameSelect.vue'
+import {
+  addHandcraftJewelry,
+  updateHandcraftJewelry,
+  deleteHandcraftJewelry,
+} from '@/api/handcraft'
 
 const CellReadonly = defineComponent({
   name: 'CellReadonly',
@@ -290,8 +295,194 @@ function removeDraftRow(idx) {
 }
 
 async function save() {
-  message.warning('保存逻辑将在后续任务实现')
-  cancelEdit()
+  if (saving.value) return
+  saving.value = true
+  let mutated = false
+
+  try {
+    // Compose the operation lists by diffing draft vs original.
+    const operations = computeDiff()
+
+    // Validate: customer name required on every kept row
+    for (const op of [...operations.adds, ...operations.patches]) {
+      if (op.customer_name !== undefined && (!op.customer_name || !op.customer_name.trim())) {
+        message.error('客户名不能为空')
+        saving.value = false
+        return
+      }
+    }
+
+    // 1. DELETE first
+    for (const id of operations.deletes) {
+      await deleteHandcraftJewelry(props.hcId, id)
+      mutated = true
+    }
+    // 2. PATCH next
+    for (const p of operations.patches) {
+      const payload = {}
+      if (p.qty !== undefined) payload.qty = p.qty
+      if (p.customer_name !== undefined) payload.customer_name = p.customer_name
+      if (Object.keys(payload).length === 0) continue
+      await updateHandcraftJewelry(props.hcId, p.id, payload)
+      mutated = true
+    }
+    // 3. POST last
+    for (const a of operations.adds) {
+      const payload = {
+        qty: a.qty,
+        customer_name: a.customer_name,
+      }
+      if (a.jewelry_id) payload.jewelry_id = a.jewelry_id
+      if (a.part_id) payload.part_id = a.part_id
+      await addHandcraftJewelry(props.hcId, payload)
+      mutated = true
+    }
+
+    message.success('已保存')
+    mode.value = 'view'
+    draft.value = null
+  } catch (err) {
+    message.error(err?.response?.data?.detail || '保存失败,请刷新核对')
+  } finally {
+    if (mutated) emit('saved')
+    saving.value = false
+  }
+}
+
+/**
+ * Compute the diff between draft state and original state.
+ * Returns {deletes: [item_id, ...], patches: [...], adds: [...]}.
+ *
+ * Model: each cell in draft.rows has `manualEntryIds` (which IDs back this cell)
+ * and `manualQty` (the displayed total). Bulk-assign (Task 12) moves placeholder
+ * IDs from `draft.placeholderEntries` INTO `cell.manualEntryIds` and bumps
+ * `cell.manualQty` by the placeholder qty. computeDiff detects IDs newly present
+ * in a draft cell (vs the original) and emits PATCH customer_name for each.
+ *
+ * Rules:
+ * - newIds in cell (present in draft but not original) → PATCH(id, customer_name=row.name)
+ *   (covers bulk-assigned placeholder IDs)
+ * - removedIds in cell (in original but not in draft) → DELETE
+ * - cell.manualQty - origCell.manualQty - sum(qty of newIds) = userDelta
+ *     - userDelta > 0 → ADD (qty=userDelta) (only allowed in pending; backend enforces)
+ *     - userDelta < 0 → reduce a retained id, then claimed ids until exhausted
+ *     - userDelta == 0 → no qty op
+ * - row.customer_name changed vs orig → PATCH customer_name on every retained id
+ *   (PATCH-customer-name + PATCH-qty can collapse to one op per id)
+ * - Brand-new customer row (not in original): unified branch — origCell empty,
+ *   newIds = all claimed ids, userDelta handles ADD for typed-in qty
+ * - Customer row removed from draft entirely → DELETE all manualEntryIds (locked rows skipped)
+ *   EXCEPT ids that moved to a different draft row (rename / regroup)
+ */
+function computeDiff() {
+  const deletes = []
+  const patches = []     // [{id, qty?, customer_name?}, ...]
+  const adds = []        // [{customer_name, qty, jewelry_id?, part_id?}, ...]
+  const idx = draft.value.entriesIndex
+
+  // Index original rows by customer_name for fast lookup
+  const originalByName = new Map()
+  for (const r of rows.value) originalByName.set(r.customer_name, r)
+  const draftNames = new Set(draft.value.rows.map((r) => r.customer_name))
+
+  // Helper: merge PATCH ops for the same id (qty + customer_name in one call)
+  const patchById = new Map()
+  function patch(id, fields) {
+    const existing = patchById.get(id) || { id }
+    patchById.set(id, { ...existing, ...fields })
+  }
+
+  // Unified per-row diff: orig may be undefined (brand-new row).
+  // For brand-new rows, origCell is treated as empty — so all draft ids are
+  // newIds and trigger PATCH(customer_name=...). For existing rows, renames
+  // and qty edits flow through the same logic.
+  for (const r of draft.value.rows) {
+    const orig = originalByName.get(r.customer_name)
+    const renameChanged = orig && r.customer_name !== orig.customer_name
+    for (const c of cols.value) {
+      const cell = r.cells[c.key]
+      const origCell = (orig?.cells || {})[c.key] || { manualQty: 0, manualEntryIds: [] }
+      const origIdSet = new Set(origCell.manualEntryIds || [])
+      const draftIdSet = new Set(cell.manualEntryIds || [])
+
+      const newIds = (cell.manualEntryIds || []).filter((id) => !origIdSet.has(id))
+      const removedIds = (origCell.manualEntryIds || []).filter((id) => !draftIdSet.has(id))
+
+      // 1. DELETE removed ids
+      for (const id of removedIds) deletes.push(id)
+
+      // 2. PATCH customer_name for new ids (bulk-claimed placeholders or
+      //    ids moved from a different row). Also PATCH retained ids if
+      //    the customer name was renamed in place.
+      for (const id of newIds) patch(id, { customer_name: r.customer_name })
+      if (renameChanged) {
+        for (const id of cell.manualEntryIds || []) {
+          if (!newIds.includes(id)) patch(id, { customer_name: r.customer_name })
+        }
+      }
+
+      // 3. Qty conservation:
+      //   origCell.manualQty - removedIdsQty + newIdsQty + userDelta = cell.manualQty
+      const newIdsQty = newIds.reduce((s, id) => s + (idx.get(id)?.qty || 0), 0)
+      const removedIdsQty = removedIds.reduce((s, id) => s + (idx.get(id)?.qty || 0), 0)
+      const userDelta = cell.manualQty - origCell.manualQty + removedIdsQty - newIdsQty
+
+      if (userDelta > 0) {
+        adds.push({
+          customer_name: r.customer_name,
+          qty: userDelta,
+          jewelry_id: c.kind === 'jewelry' ? c.jewelry_id : undefined,
+          part_id: c.kind === 'part' ? c.jewelry_id : undefined,
+        })
+      } else if (userDelta < 0) {
+        // Need to reduce by abs(userDelta). Prefer reducing a retained id,
+        // else a newly-claimed id (each backed by `idx`'s qty). Walk through
+        // candidates until the reduction is exhausted.
+        const candidates = [
+          ...(cell.manualEntryIds || []).filter((id) => origIdSet.has(id)),
+          ...newIds,
+        ]
+        let remaining = -userDelta
+        for (const id of candidates) {
+          if (remaining <= 0) break
+          const baseQty = idx.get(id)?.qty || 0
+          if (baseQty === 0) continue
+          if (baseQty <= remaining) {
+            deletes.push(id)
+            remaining -= baseQty
+          } else {
+            patch(id, { qty: baseQty - remaining })
+            remaining = 0
+          }
+        }
+        // remaining > 0 here would mean the user reduced below 0 — guarded
+        // by the input's `min=0`, so this should not be reachable.
+      }
+    }
+  }
+
+  // Customer rows that existed but are now gone from draft → DELETE their manual ids.
+  // EXCEPT ids that moved to a different draft row (rename / regroup) — those will
+  // be PATCHed by the destination row's loop above, so DELETE-ing them here would
+  // either run first and break the PATCH, or run after and undo the rename.
+  const draftAllIds = new Set()
+  for (const r of draft.value.rows) {
+    for (const k of Object.keys(r.cells)) {
+      for (const id of r.cells[k].manualEntryIds || []) draftAllIds.add(id)
+    }
+  }
+  for (const r of rows.value) {
+    if (draftNames.has(r.customer_name)) continue
+    if (r.is_locked_customer) continue
+    for (const k of Object.keys(r.cells)) {
+      for (const id of r.cells[k].manualEntryIds || []) {
+        if (!draftAllIds.has(id)) deletes.push(id)
+      }
+    }
+  }
+
+  patches.push(...patchById.values())
+  return { deletes, patches, adds }
 }
 
 const canEdit = computed(() => props.hcStatus !== 'completed')
