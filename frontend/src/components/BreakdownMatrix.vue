@@ -8,19 +8,85 @@
       </div>
     </template>
     <div v-show="!collapsed">
-      <!-- Render skeleton — real table comes in next task -->
-      <pre class="debug" style="font-size: 11px; background: #f5f5f8; padding: 8px;">
-cols: {{ cols.length }}
-rows: {{ rows.length }}
-placeholder qty: {{ placeholderQtySum }}
-</pre>
+      <table class="mx">
+        <thead>
+          <tr>
+            <th class="mx__col-cust">客户</th>
+            <th v-for="c in cols" :key="c.key" class="mx__col-jw">
+              <span class="jid">{{ c.jewelry_id }}</span>
+              <span class="jname">{{ c.jewelry_name }}</span>
+              <span class="jtot">{{ c.total_qty }} 套</span>
+            </th>
+            <th class="mx__col-sum">合计</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in rows" :key="r.customer_name">
+            <td class="mx__cust">
+              <template v-if="r.is_locked_customer">
+                <div class="lock-name">{{ r.customer_name }}</div>
+                <div v-if="lockedSourceLine(r)" class="lock-src">↗ {{ lockedSourceLine(r) }}</div>
+              </template>
+              <template v-else>
+                <span class="manual-name">{{ r.customer_name }}</span>
+              </template>
+            </td>
+            <td v-for="c in cols" :key="c.key" :class="cellClass(r.cells[c.key])">
+              <CellReadonly :cell="r.cells[c.key]" />
+            </td>
+            <td class="mx__row-sum">{{ r.row_sum }}</td>
+          </tr>
+          <tr v-if="rows.length === 0" class="mx__empty">
+            <td :colspan="cols.length + 2">尚未分配给任何客户</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="mx__foot-label">已分 / 总数</td>
+            <td v-for="c in cols" :key="c.key" :class="footCellClass(c)">
+              {{ colAssigned[c.key] }} / {{ c.total_qty }}
+              <span v-if="colAssigned[c.key] === c.total_qty">✓</span>
+              <span v-else>⚠</span>
+            </td>
+            <td class="mx__foot-total">{{ totalAssigned }} / {{ totalAll }}</td>
+          </tr>
+        </tfoot>
+      </table>
     </div>
   </n-card>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, h, defineComponent } from 'vue'
 import { NCard } from 'naive-ui'
+
+const CellReadonly = defineComponent({
+  name: 'CellReadonly',
+  props: { cell: { type: Object, required: true } },
+  setup(props) {
+    return () => {
+      const c = props.cell
+      if (!c || (c.lockedQty === 0 && c.manualQty === 0)) {
+        return h('span', { class: 'qty-empty' }, '—')
+      }
+      if (c.lockedQty > 0 && c.manualQty === 0) {
+        return h('span', { class: 'qty-locked' }, [
+          String(c.lockedQty),
+          h('span', { class: 'lock-icon' }, ' 🔒'),
+        ])
+      }
+      if (c.lockedQty === 0 && c.manualQty > 0) {
+        return h('span', { class: 'qty-manual' }, String(c.manualQty))
+      }
+      // Mixed
+      return h('span', { class: 'qty-mixed' }, [
+        h('span', { class: 'l' }, `${c.lockedQty}🔒`),
+        h('span', { class: 'plus' }, ' + '),
+        h('span', { class: 'm' }, String(c.manualQty)),
+      ])
+    }
+  },
+})
 
 const props = defineProps({
   hcId: { type: String, required: true },
@@ -151,12 +217,75 @@ const statusTagText = computed(() => {
   if (props.hcStatus === 'completed') return `completed · 只读`
   return props.hcStatus
 })
+
+function cellClass(cell) {
+  if (!cell) return ['mx__qty', 'empty']
+  if (cell.lockedQty === 0 && cell.manualQty === 0) return ['mx__qty', 'empty']
+  if (cell.lockedQty > 0 && cell.manualQty === 0) return ['mx__qty', 'locked']
+  if (cell.lockedQty === 0 && cell.manualQty > 0) return ['mx__qty']
+  return ['mx__qty', 'mixed']
+}
+
+function footCellClass(col) {
+  return [
+    'mx__foot-cell',
+    colAssigned.value[col.key] === col.total_qty ? 'ok' : 'warn',
+  ]
+}
+
+function lockedSourceLine(row) {
+  // Collect first unique source_order_id across this row's cells
+  const sources = new Set()
+  for (const k of Object.keys(row.cells)) {
+    for (const s of row.cells[k].lockedSources || []) sources.add(s)
+  }
+  return sources.size ? Array.from(sources).join(', ') : ''
+}
 </script>
 
 <style scoped>
 .bm-head { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; }
 .chev { color: #888; }
 .title { font-weight: 600; }
-.status-tag { font-size: 11px; color: #b76100; background: #fff5e0; padding: 2px 8px; border-radius: 10px; font-weight: 400; }
-.debug { white-space: pre-wrap; }
+.status-tag {
+  font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 400;
+  background: #fff5e0; color: #b76100;
+}
+
+.mx { width: 100%; border-collapse: collapse; font-size: 12px; }
+.mx th, .mx td { border: 1px solid #e8e8ec; padding: 7px 9px; text-align: center; vertical-align: middle; }
+.mx thead th { background: #fafafc; font-weight: 600; padding: 6px 8px; }
+.mx__col-cust { text-align: left; min-width: 140px; }
+.mx__col-jw .jid { display: block; font-family: "SF Mono", Menlo, monospace; font-size: 10px; color: #999; font-weight: 400; line-height: 1.2; }
+.mx__col-jw .jname { display: block; font-size: 12px; margin-top: 2px; }
+.mx__col-jw .jtot { display: block; font-size: 10px; font-weight: 400; color: #888; font-family: "SF Mono", Menlo, monospace; margin-top: 2px; }
+.mx__col-sum { width: 70px; color: #666; }
+
+.mx__cust { text-align: left; background: #fafafc; padding: 6px 9px; }
+.lock-name { color: rgba(0,0,0,.7); padding-left: 18px; position: relative; font-size: 12px; }
+.lock-name::before { content: "🔒"; position: absolute; left: 0; }
+.lock-src { color: #b76100; font-size: 10px; margin-left: 18px; font-family: "SF Mono", Menlo, monospace; margin-top: 2px; }
+.manual-name { color: #333; }
+
+.mx__qty { font-family: "SF Mono", Menlo, monospace; color: #333; min-width: 86px; height: 38px; }
+.mx__qty.empty { color: #ccc; }
+.mx__qty.locked { background: #fff8e6; color: #8a6500; }
+.mx__qty.mixed { background: linear-gradient(to right, #fff8e6 50%, #ffffff 50%); }
+.qty-empty { color: #ccc; }
+.qty-locked { color: #8a6500; }
+.qty-mixed .l { color: #8a6500; }
+.qty-mixed .plus { color: #888; }
+
+.mx__row-sum { font-family: "SF Mono", Menlo, monospace; background: #fafafc; color: #555; }
+
+.mx__empty td {
+  height: 60px; color: #aaa; font-size: 12px;
+  background: repeating-linear-gradient(45deg, #fafafc 0 6px, #f4f4f8 6px 12px);
+}
+
+.mx tfoot td { background: #eef0fe; font-family: "SF Mono", Menlo, monospace; font-size: 11px; color: #4338ca; padding: 7px 10px; }
+.mx__foot-label { font-family: -apple-system, sans-serif; text-align: left; font-weight: 600; }
+.mx__foot-cell.ok { color: #18a058; }
+.mx__foot-cell.warn { color: #d03050; }
+.mx__foot-total { color: #4338ca; }
 </style>
