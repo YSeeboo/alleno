@@ -1427,3 +1427,37 @@ def list_handcraft_pending_receive_items(
         reverse=True,
     )
     return results
+
+
+def merge_duplicate_part_items(db: Session, order_id: str, part_id: str) -> dict:
+    """Merge all HandcraftPartItem rows in an order that share the same part_id.
+
+    The lowest-id row survives; its qty becomes the sum; other rows are deleted.
+    Caller (API layer) is responsible for surfacing ValueError as HTTP 400 via
+    `service_errors()`.
+
+    Returns: {merged_part_item_id, before_rows, after_rows, merged_qty}.
+    """
+    rows = (
+        db.query(HandcraftPartItem)
+        .filter_by(handcraft_order_id=order_id, part_id=part_id)
+        .order_by(HandcraftPartItem.id)
+        .all()
+    )
+    survivor, *others = rows
+    other_ids = [r.id for r in others]
+
+    total_qty = sum((r.qty for r in rows), Decimal(0))
+    survivor.qty = total_qty
+
+    db.query(HandcraftPartItem).filter(
+        HandcraftPartItem.id.in_(other_ids)
+    ).delete(synchronize_session=False)
+
+    db.flush()
+    return {
+        "merged_part_item_id": survivor.id,
+        "before_rows": len(rows),
+        "after_rows": 1,
+        "merged_qty": float(total_qty),
+    }
