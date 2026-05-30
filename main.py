@@ -30,6 +30,7 @@ from api.supplier import router as supplier_router
 from api.jewelry_template import router as jewelry_template_router
 from api.plating_summary import router as plating_summary_router
 from api.restock import router as restock_router
+from api.customers import router as customers_router
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,7 @@ app.include_router(plating_router, dependencies=[require_permission("plating")])
 app.include_router(plating_summary_router, dependencies=[require_permission("plating")])
 app.include_router(cargo_sorting_router, dependencies=[require_permission("sorting")])
 app.include_router(handcraft_router, dependencies=[require_permission("handcraft")])
+app.include_router(customers_router, dependencies=[require_permission("handcraft")])
 app.include_router(restock_router, dependencies=[require_any_permission("handcraft", "restock")])
 app.include_router(uploads_router, dependencies=[Depends(get_current_user)])
 app.include_router(feishu_router)
