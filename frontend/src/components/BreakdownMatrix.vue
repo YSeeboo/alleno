@@ -31,7 +31,7 @@
             <th class="mx__col-sum">合计</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody v-if="mode === 'view'">
           <tr v-for="r in rows" :key="r.customer_name">
             <td class="mx__cust">
               <template v-if="r.is_locked_customer">
@@ -49,6 +49,57 @@
           </tr>
           <tr v-if="rows.length === 0" class="mx__empty">
             <td :colspan="cols.length + 2">尚未分配给任何客户</td>
+          </tr>
+        </tbody>
+
+        <tbody v-else>
+          <tr v-for="(r, ri) in draft.rows" :key="`${r.customer_name}:${ri}`">
+            <td class="mx__cust">
+              <template v-if="r.is_locked_customer">
+                <div class="lock-name">{{ r.customer_name }}</div>
+                <div v-if="lockedSourceLine(r)" class="lock-src">↗ {{ lockedSourceLine(r) }}</div>
+              </template>
+              <template v-else>
+                <div class="manual-edit">
+                  <div class="manual-edit__name">
+                    <CustomerNameSelect
+                      v-if="canEditCustomerName"
+                      v-model:value="r.customer_name"
+                      :disabled="!canEditCustomerName"
+                    />
+                    <span v-else class="manual-name">{{ r.customer_name }}</span>
+                  </div>
+                  <n-button
+                    v-if="canDeleteRow(r)"
+                    text
+                    type="error"
+                    size="tiny"
+                    @click="removeDraftRow(ri)"
+                  >×</n-button>
+                </div>
+              </template>
+            </td>
+            <td v-for="c in cols" :key="c.key" :class="cellClass(r.cells[c.key])">
+              <CellEditable
+                v-if="!r.is_locked_customer || r.cells[c.key].manualQty > 0 || canAddNewManual"
+                :cell="r.cells[c.key]"
+                :qty-editable="canEditQty"
+                :on-change="(v) => setCellManual(r, c.key, v)"
+              />
+              <CellReadonly v-else :cell="r.cells[c.key]" />
+            </td>
+            <td class="mx__row-sum">{{ draftRowSum(r) }}</td>
+          </tr>
+          <tr v-if="draft.rows.length === 0" class="mx__empty">
+            <td :colspan="cols.length + 2">尚未分配给任何客户</td>
+          </tr>
+          <tr v-if="canAddNewRow" class="mx__add-bar-row">
+            <td :colspan="cols.length + 2">
+              <div class="add-bar">
+                <span class="add-bar__link" @click="addDraftRow">+ 加一行客户</span>
+                <!-- bulk-assign button slot — Task 12 -->
+              </div>
+            </td>
           </tr>
         </tbody>
         <tfoot>
@@ -70,6 +121,7 @@
 <script setup>
 import { ref, computed, h, defineComponent } from 'vue'
 import { NCard, NButton, useMessage } from 'naive-ui'
+import CustomerNameSelect from './CustomerNameSelect.vue'
 
 const CellReadonly = defineComponent({
   name: 'CellReadonly',
@@ -95,6 +147,47 @@ const CellReadonly = defineComponent({
         h('span', { class: 'plus' }, ' + '),
         h('span', { class: 'm' }, String(c.manualQty)),
       ])
+    }
+  },
+})
+
+const CellEditable = defineComponent({
+  name: 'CellEditable',
+  props: {
+    cell: { type: Object, required: true },
+    qtyEditable: { type: Boolean, default: true },  // false when status forbids
+    onChange: { type: Function, required: true },   // (newManualQty: number) => void
+  },
+  setup(props) {
+    return () => {
+      const c = props.cell
+      const showLock = c.lockedQty > 0
+      const input = h('input', {
+        type: 'number',
+        min: 0,
+        value: c.manualQty,
+        disabled: !props.qtyEditable,
+        class: ['cell-input', c.manualQty === 0 ? 'zero' : ''],
+        onInput: (e) => {
+          const v = Number(e.target.value)
+          props.onChange(Number.isFinite(v) && v >= 0 ? v : 0)
+        },
+      })
+      if (showLock && c.manualQty > 0) {
+        return h('span', { class: 'qty-mixed' }, [
+          h('span', { class: 'l' }, `${c.lockedQty}🔒`),
+          h('span', { class: 'plus' }, ' + '),
+          input,
+        ])
+      }
+      if (showLock) {
+        return h('span', { class: 'qty-locked-edit' }, [
+          h('span', { class: 'l' }, `${c.lockedQty}🔒`),
+          h('span', { class: 'plus' }, ' + '),
+          input,
+        ])
+      }
+      return input
     }
   },
 })
@@ -144,6 +237,56 @@ function enterEdit() {
 function cancelEdit() {
   draft.value = null
   mode.value = 'view'
+}
+
+// Status gates (sourced from the spec's state matrix)
+const canAddNewRow = computed(() => props.hcStatus === 'pending')
+const canAddNewManual = computed(() => props.hcStatus === 'pending')  // new manual entry on existing row
+const canEditQty = computed(() => props.hcStatus === 'pending')
+const canEditCustomerName = computed(() => props.hcStatus !== 'completed')
+
+function canDeleteRow(r) {
+  if (r.is_locked_customer) return false
+  if (props.hcStatus === 'completed') return false
+  // processing: only deletable if all manual entries have received_qty == 0
+  // (the spec defers exact check to backend; we let DELETE fail loudly if
+  // backend rejects, but block obviously-bad delete attempts here)
+  if (props.hcStatus === 'processing') {
+    // we don't have received_qty per cell in the matrix; rely on backend
+    // (a refresh on save-failure will surface remaining state)
+  }
+  return true
+}
+
+function draftRowSum(r) {
+  return Object.values(r.cells).reduce((s, c) => s + c.lockedQty + c.manualQty, 0)
+}
+
+function setCellManual(r, colKey, newQty) {
+  // Mutate the draft row's cell.manualQty in place; mark internal flag for diff.
+  const cell = r.cells[colKey]
+  cell.manualQty = Number(newQty) || 0
+  r._dirty = true
+}
+
+function addDraftRow() {
+  // New empty manual row; customer_name empty until user picks
+  const cells = {}
+  for (const c of cols.value) {
+    cells[c.key] = { lockedQty: 0, lockedSources: [], manualQty: 0, manualEntryIds: [] }
+  }
+  draft.value.rows.push({
+    customer_name: '',
+    is_locked_customer: false,
+    cells,
+    row_sum: 0,
+    _new: true,
+    _dirty: true,
+  })
+}
+
+function removeDraftRow(idx) {
+  draft.value.rows.splice(idx, 1)
 }
 
 async function save() {
@@ -347,4 +490,22 @@ function lockedSourceLine(row) {
 
 .bm-head-wrap { display: flex; align-items: center; justify-content: space-between; width: 100%; }
 .bm-actions { display: flex; gap: 6px; }
+
+.manual-edit { display: flex; gap: 6px; align-items: center; }
+.manual-edit__name { flex: 1; }
+.cell-input {
+  width: 56px; padding: 3px 6px; border: 1px solid #d0d0d6;
+  border-radius: 3px; font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px; text-align: center;
+}
+.cell-input:focus { outline: none; border-color: #2080f0; box-shadow: 0 0 0 2px rgba(32,128,240,.12); }
+.cell-input.zero { color: #999; }
+.cell-input:disabled { background: #fafafa; color: #777; }
+.qty-locked-edit { display: inline-flex; align-items: center; gap: 4px; }
+.qty-locked-edit .l { color: #8a6500; }
+.qty-mixed .plus, .qty-locked-edit .plus { color: #888; }
+.mx__add-bar-row td { padding: 6px 10px; background: #f9f9fc; text-align: left; }
+.add-bar { display: flex; gap: 10px; align-items: center; }
+.add-bar__link { color: #4338ca; cursor: pointer; padding: 4px 8px; border-radius: 3px; font-size: 12px; }
+.add-bar__link:hover { background: #eef0fe; }
 </style>
