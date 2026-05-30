@@ -42,7 +42,7 @@
                 <span class="manual-name">{{ r.customer_name }}</span>
               </template>
             </td>
-            <td v-for="c in cols" :key="c.key" :class="cellClass(r.cells[c.key])">
+            <td v-for="c in cols" :key="c.key" :class="cellClass(r.cells[c.key], r.customer_name, c.key)">
               <CellReadonly :cell="r.cells[c.key]" />
             </td>
             <td class="mx__row-sum">{{ r.row_sum }}</td>
@@ -79,7 +79,7 @@
                 </div>
               </template>
             </td>
-            <td v-for="c in cols" :key="c.key" :class="cellClass(r.cells[c.key])">
+            <td v-for="c in cols" :key="c.key" :class="cellClass(r.cells[c.key], r.customer_name, c.key)">
               <CellEditable
                 v-if="!r.is_locked_customer || r.cells[c.key].manualQty > 0 || canAddNewManual"
                 :cell="r.cells[c.key]"
@@ -97,7 +97,35 @@
             <td :colspan="cols.length + 2">
               <div class="add-bar">
                 <span class="add-bar__link" @click="addDraftRow">+ 加一行客户</span>
-                <!-- bulk-assign button slot — Task 12 -->
+                <span class="add-bar__sep">|</span>
+                <n-popover
+                  v-model:show="bulkShow"
+                  :show-arrow="true"
+                  placement="top"
+                  trigger="manual"
+                  :disabled="!canBulkAssign"
+                >
+                  <template #trigger>
+                    <n-button
+                      size="tiny"
+                      :disabled="!canBulkAssign"
+                      class="bulk-btn"
+                      @click="bulkShow = !bulkShow"
+                    >
+                      ⚡ 一键剩余分给…
+                    </n-button>
+                  </template>
+                  <BulkAssignPopover
+                    :preview-items="bulkPreviewItems"
+                    :has-locked="bulkHasLocked"
+                    :has-partial-manual="bulkHasPartialManual"
+                    @confirm="onBulkConfirm"
+                    @cancel="bulkShow = false"
+                  />
+                </n-popover>
+                <span v-if="!canBulkAssign" class="add-bar__hint">
+                  {{ props.hcStatus !== 'pending' ? '仅 pending 状态可用' : '已无剩余可分' }}
+                </span>
               </div>
             </td>
           </tr>
@@ -120,8 +148,9 @@
 
 <script setup>
 import { ref, computed, h, defineComponent } from 'vue'
-import { NCard, NButton, useMessage } from 'naive-ui'
+import { NCard, NButton, NPopover, useMessage } from 'naive-ui'
 import CustomerNameSelect from './CustomerNameSelect.vue'
+import BulkAssignPopover from './BulkAssignPopover.vue'
 import {
   addHandcraftJewelry,
   updateHandcraftJewelry,
@@ -292,6 +321,91 @@ function addDraftRow() {
 
 function removeDraftRow(idx) {
   draft.value.rows.splice(idx, 1)
+}
+
+const bulkShow = ref(false)
+const flashedColKeys = ref(new Set())  // for CSS pulse on newly-filled columns
+
+const bulkPreviewItems = computed(() => {
+  if (!draft.value) return []
+  // For each column, sum the placeholder qty for that column
+  const placeholderByCol = new Map()
+  for (const pe of draft.value.placeholderEntries) {
+    if ((pe.customer_name || '').trim()) continue  // already claimed by previous bulk click
+    const k = pe._col_key
+    placeholderByCol.set(k, (placeholderByCol.get(k) || 0) + Number(pe.qty))
+  }
+  return cols.value
+    .filter((c) => placeholderByCol.get(c.key) > 0)
+    .map((c) => ({
+      jewelry_id: c.jewelry_id,
+      jewelry_name: c.jewelry_name,
+      delta: placeholderByCol.get(c.key),
+    }))
+})
+
+const bulkHasLocked = computed(() => rows.value.some((r) => r.is_locked_customer))
+const bulkHasPartialManual = computed(() => rows.value.some((r) => !r.is_locked_customer))
+
+const canBulkAssign = computed(
+  () => props.hcStatus === 'pending' && bulkPreviewItems.value.length > 0,
+)
+
+function onBulkConfirm(customerName) {
+  const name = (customerName || '').trim()
+  if (!name) return
+
+  // 1. Find or create the destination customer row in draft.
+  let row = draft.value.rows.find((r) => r.customer_name === name)
+  if (!row) {
+    const cells = {}
+    for (const c of cols.value) {
+      cells[c.key] = { lockedQty: 0, lockedSources: [], manualQty: 0, manualEntryIds: [] }
+    }
+    row = {
+      customer_name: name,
+      is_locked_customer: false,
+      cells,
+      row_sum: 0,
+      _new: true,  // brand-new in draft; computeDiff treats it as new-row branch
+      _dirty: true,
+    }
+    draft.value.rows.push(row)
+  }
+
+  // 2. Move all unclaimed placeholder entries INTO the row's cells.
+  //    Their hc_jewelry_item_id is preserved in cell.manualEntryIds — the diff
+  //    will detect these as "newIds" (in draft cell but not in original cell)
+  //    and emit a single PATCH(id, customer_name=name) per id.
+  const stillPending = []
+  for (const pe of draft.value.placeholderEntries) {
+    if ((pe.customer_name || '').trim()) {
+      // already claimed in a previous bulk-click — keep in array but skip
+      stillPending.push(pe)
+      continue
+    }
+    const cell = row.cells[pe._col_key]
+    if (!cell) {
+      stillPending.push(pe)
+      continue
+    }
+    cell.manualEntryIds.push(pe.hc_jewelry_item_id)
+    cell.manualQty += Number(pe.qty)
+    flashedColKeys.value.add(`${name}:${pe._col_key}`)
+    // Mark the placeholder as claimed and remove it from the "pending" array
+    // so subsequent bulk-clicks don't try to re-claim it. We tag it with the
+    // claimer's name purely for symmetry with the bulkPreviewItems filter.
+    pe.customer_name = name
+  }
+  // Rebuild placeholderEntries to only contain still-pending ones
+  draft.value.placeholderEntries = stillPending
+
+  bulkShow.value = false
+
+  // 3. Schedule flash fade-out
+  setTimeout(() => {
+    flashedColKeys.value = new Set()
+  }, 3000)
 }
 
 async function save() {
@@ -608,12 +722,13 @@ const statusTagText = computed(() => {
   return props.hcStatus
 })
 
-function cellClass(cell) {
-  if (!cell) return ['mx__qty', 'empty']
-  if (cell.lockedQty === 0 && cell.manualQty === 0) return ['mx__qty', 'empty']
-  if (cell.lockedQty > 0 && cell.manualQty === 0) return ['mx__qty', 'locked']
-  if (cell.lockedQty === 0 && cell.manualQty > 0) return ['mx__qty']
-  return ['mx__qty', 'mixed']
+function cellClass(cell, rowName, colKey) {
+  const out = []
+  if (!cell || (cell.lockedQty === 0 && cell.manualQty === 0)) out.push('empty')
+  if (cell?.lockedQty > 0 && cell.manualQty === 0) out.push('locked')
+  if (cell?.lockedQty > 0 && cell?.manualQty > 0) out.push('mixed')
+  if (rowName && colKey && flashedColKeys.value.has(`${rowName}:${colKey}`)) out.push('flash')
+  return ['mx__qty', ...out]
 }
 
 function footCellClass(col) {
@@ -699,4 +814,10 @@ function lockedSourceLine(row) {
 .add-bar { display: flex; gap: 10px; align-items: center; }
 .add-bar__link { color: #4338ca; cursor: pointer; padding: 4px 8px; border-radius: 3px; font-size: 12px; }
 .add-bar__link:hover { background: #eef0fe; }
+.add-bar__sep { color: #ccc; }
+.add-bar__hint { color: #999; font-size: 11px; margin-left: 4px; }
+.bulk-btn { color: #4338ca; }
+.mx__qty.flash { background: #fffae8; transition: background 1.5s ease-out; }
+.mx__qty.flash::after { content: "✨"; display: inline-block; margin-left: 4px; font-size: 10px; vertical-align: 2px; }
+.mx__qty.flash .cell-input { border-color: #f0c000; box-shadow: 0 0 0 2px rgba(240,192,0,.16); }
 </style>
