@@ -6,6 +6,8 @@ API tests use the `client` fixture (overrides auth, shared session)."""
 
 from decimal import Decimal
 
+import pytest
+
 from models.handcraft_order import (
     HandcraftOrder,
     HandcraftPartItem,
@@ -141,3 +143,79 @@ def test_merge_clears_picking_weights_for_all_affected_part_items(db):
     merge_duplicate_part_items(db, "HC-M1", "PJ-X-LK")
 
     assert db.query(HandcraftPickingWeight).count() == 0
+
+
+def test_merge_in_processing_raises(db):
+    """Non-pending orders cannot be merged."""
+    _seed_part(db)
+    _seed_order(db, status="processing")
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=100))
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=200))
+    db.flush()
+
+    with pytest.raises(ValueError, match="不在 pending"):
+        merge_duplicate_part_items(db, "HC-M1", "PJ-X-LK")
+
+
+def test_merge_in_completed_raises(db):
+    _seed_part(db)
+    _seed_order(db, status="completed")
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=100))
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=200))
+    db.flush()
+
+    with pytest.raises(ValueError, match="不在 pending"):
+        merge_duplicate_part_items(db, "HC-M1", "PJ-X-LK")
+
+
+def test_merge_with_fewer_than_two_rows_raises(db):
+    """No-op should be explicit — caller asked for a structural change that
+    can't happen with <2 rows."""
+    _seed_part(db)
+    _seed_order(db)
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=100))
+    db.flush()
+
+    with pytest.raises(ValueError, match="没有可合并"):
+        merge_duplicate_part_items(db, "HC-M1", "PJ-X-LK")
+
+
+def test_merge_with_zero_rows_raises(db):
+    _seed_part(db)
+    _seed_order(db)
+    db.flush()
+
+    with pytest.raises(ValueError, match="没有可合并"):
+        merge_duplicate_part_items(db, "HC-M1", "PJ-X-LK")
+
+
+def test_merge_composite_part_raises(db):
+    """Composite parts are out of v1 scope."""
+    _seed_part(db, part_id="PJ-X-SET", is_composite=True)
+    _seed_order(db)
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-SET", qty=5))
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-SET", qty=3))
+    db.flush()
+
+    with pytest.raises(ValueError, match="复合件"):
+        merge_duplicate_part_items(db, "HC-M1", "PJ-X-SET")
+
+
+def test_merge_nonexistent_order_raises(db):
+    _seed_part(db)
+    db.flush()
+
+    with pytest.raises(ValueError, match="订单"):
+        merge_duplicate_part_items(db, "HC-DOES-NOT-EXIST", "PJ-X-LK")
+
+
+def test_merge_nonexistent_part_raises(db):
+    _seed_order(db)
+    db.flush()
+
+    with pytest.raises(ValueError, match="配件"):
+        merge_duplicate_part_items(db, "HC-M1", "PJ-X-NONE")

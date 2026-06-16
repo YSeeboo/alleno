@@ -1438,12 +1438,27 @@ def merge_duplicate_part_items(db: Session, order_id: str, part_id: str) -> dict
 
     Returns: {merged_part_item_id, before_rows, after_rows, merged_qty}.
     """
+    order = db.get(HandcraftOrder, order_id)
+    if order is None:
+        raise ValueError(f"订单 {order_id} 不存在")
+    if order.status != "pending":
+        raise ValueError(f"订单 {order_id} 不在 pending 状态，不可合并")
+
+    part = db.get(Part, part_id)
+    if part is None:
+        raise ValueError(f"配件 {part_id} 不存在")
+    if part.is_composite:
+        raise ValueError("复合件暂不支持自动合并")
+
     rows = (
         db.query(HandcraftPartItem)
         .filter_by(handcraft_order_id=order_id, part_id=part_id)
         .order_by(HandcraftPartItem.id)
         .all()
     )
+    if len(rows) < 2:
+        raise ValueError(f"订单 {order_id} 中 {part_id} 没有可合并的 part_item 行")
+
     survivor, *others = rows
     other_ids = [r.id for r in others]
     all_ids = [r.id for r in rows]
