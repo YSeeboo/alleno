@@ -14,6 +14,7 @@ import {
   deleteHandcraftPickingWeight,
   upsertHandcraftPickingActualQty,
   deleteHandcraftPickingActualQty,
+  mergeHandcraftDuplicateParts,
 } from '@/api/handcraft'
 import { createRestock, deleteRestock } from '@/api/restock'
 import { useIsMobile } from '@/composables/useIsMobile'
@@ -50,6 +51,45 @@ const displayGroups = computed(() => {
     .map((g) => ({ ...g, rows: g.rows.filter((r) => !r.picked) }))
     .filter((g) => g.rows.length > 0)
 })
+
+// True when this atom group can be persistently merged at the part_item level:
+// - readonly off (i.e., order is pending)
+// - at least 2 distinct part_item_id values among g.rows
+// - NO row is a composite expansion (v1 scope: simple parts only)
+function groupMergeable(g) {
+  if (readonly.value) return false
+  if (g.rows.some((r) => r.is_composite_expansion)) return false
+  const ids = new Set(g.rows.map((r) => r.part_item_id))
+  return ids.size >= 2
+}
+
+function distinctPartItemCount(g) {
+  return new Set(g.rows.map((r) => r.part_item_id)).size
+}
+
+function groupTotalQty(g) {
+  // Sum unique-by-part_item_id (avoid double-counting composite expansion,
+  // though groupMergeable already excludes that case — defense in depth).
+  const seen = new Set()
+  let total = 0
+  for (const r of g.rows) {
+    if (seen.has(r.part_item_id)) continue
+    seen.add(r.part_item_id)
+    total += Number(r.qty) || 0
+  }
+  return total
+}
+
+async function doMergeGroup(g) {
+  try {
+    const res = await mergeHandcraftDuplicateParts(props.orderId, g.atom_part_id)
+    const { before_rows, after_rows } = res.data || {}
+    message.success(`已合并 ${before_rows} 行 → ${after_rows} 行`)
+    await load()
+  } catch (err) {
+    message.error(err.response?.data?.detail || '合并失败')
+  }
+}
 
 async function load() {
   loading.value = true
@@ -415,17 +455,32 @@ const WEIGHT_UNIT_OPTIONS = [
                 >
                   <td class="col-source">
                     <div class="group-cell">
-                      <img v-if="g.atom_part_image" :src="g.atom_part_image" class="group-img" />
-                      <div v-else class="group-img placeholder" />
-                      <div class="group-meta">
-                        <div class="group-name-line">
-                          <span class="group-name">{{ g.atom_part_name }}</span>
-                          <n-tag size="tiny" type="default" :bordered="false" style="margin-left: 6px;">
-                            {{ SIZE_TIER_LABEL[g.size_tier] || '小件' }}
-                          </n-tag>
+                      <div class="group-cell-left">
+                        <img v-if="g.atom_part_image" :src="g.atom_part_image" class="group-img" />
+                        <div v-else class="group-img placeholder" />
+                        <div class="group-meta">
+                          <div class="group-name-line">
+                            <span class="group-name">{{ g.atom_part_name }}</span>
+                            <n-tag size="tiny" type="default" :bordered="false" style="margin-left: 6px;">
+                              {{ SIZE_TIER_LABEL[g.size_tier] || '小件' }}
+                            </n-tag>
+                          </div>
+                          <div class="group-id">{{ g.atom_part_id }}</div>
                         </div>
-                        <div class="group-id">{{ g.atom_part_id }}</div>
                       </div>
+                      <n-popconfirm
+                        v-if="groupMergeable(g)"
+                        @positive-click="doMergeGroup(g)"
+                        positive-text="确认合并"
+                        negative-text="取消"
+                      >
+                        <template #trigger>
+                          <n-button text size="tiny" class="inline-merge" @click.stop>合并</n-button>
+                        </template>
+                        合并 {{ g.atom_part_name }}（{{ distinctPartItemCount(g) }} 行 → 1 行 · qty {{ fmtQty(groupTotalQty(g)) }}）？
+                        <br />已有的勾选 / 重量记录会被清空。
+                        <br /><b>不可撤销。</b>
+                      </n-popconfirm>
                     </div>
                   </td>
                   <td class="col-weight"></td>
@@ -626,7 +681,24 @@ const WEIGHT_UNIT_OPTIONS = [
 .group-cell {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.group-cell-left {
+  display: flex;
+  align-items: center;
   gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+.inline-merge {
+  color: #047857 !important;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+.inline-merge:hover {
+  background: #ecfdf5;
 }
 .group-img {
   width: 40px;
