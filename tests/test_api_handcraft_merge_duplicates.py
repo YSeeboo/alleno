@@ -67,3 +67,27 @@ def test_merge_three_duplicate_part_items_sums_qty(db):
     remaining = db.query(HandcraftPartItem).filter_by(handcraft_order_id="HC-M1").all()
     assert len(remaining) == 1
     assert remaining[0].qty == 6
+
+
+def test_merge_clears_weight_weight_unit_and_bom_qty_on_survivor(db):
+    """Merging wipes weight/weight_unit/bom_qty on the survivor row, since the
+    per-jewelry meaning is lost after consolidation."""
+    _seed_part(db)
+    _seed_order(db)
+    db.flush()
+    db.add(HandcraftPartItem(
+        handcraft_order_id="HC-M1", part_id="PJ-X-LK",
+        qty=100, weight=Decimal("80"), weight_unit="g", bom_qty=1,
+    ))
+    db.add(HandcraftPartItem(
+        handcraft_order_id="HC-M1", part_id="PJ-X-LK",
+        qty=200, weight=Decimal("160"), weight_unit="g", bom_qty=1,
+    ))
+    db.flush()
+
+    merge_duplicate_part_items(db, "HC-M1", "PJ-X-LK")
+
+    survivor = db.query(HandcraftPartItem).filter_by(handcraft_order_id="HC-M1").one()
+    assert survivor.weight is None
+    assert survivor.weight_unit is None
+    assert survivor.bom_qty is None

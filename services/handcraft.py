@@ -1449,6 +1449,9 @@ def merge_duplicate_part_items(db: Session, order_id: str, part_id: str) -> dict
 
     total_qty = sum((r.qty for r in rows), Decimal(0))
     survivor.qty = total_qty
+    survivor.weight = None
+    survivor.weight_unit = None
+    survivor.bom_qty = None
 
     db.query(HandcraftPartItem).filter(
         HandcraftPartItem.id.in_(other_ids)
