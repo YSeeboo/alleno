@@ -51,6 +51,7 @@ from services.handcraft import (
     get_handcraft_parts,
     list_handcraft_orders,
     list_handcraft_pending_receive_items,
+    merge_duplicate_part_items,
     send_handcraft_order,
     suggest_handcraft_parts,
     supplement_and_send_handcraft_order,
@@ -596,3 +597,15 @@ def api_handcraft_picking_pdf(order_id: str, db: Session = Depends(get_db)):
             )
         },
     )
+
+
+@router.post("/{order_id}/parts/{part_id}/merge-duplicates")
+def api_merge_handcraft_duplicate_parts(
+    order_id: str,
+    part_id: str,
+    db: Session = Depends(get_db),
+):
+    """Persistently merge all HandcraftPartItem rows in this order that share
+    the same part_id. ValueError → 400 via service_errors."""
+    with service_errors():
+        return merge_duplicate_part_items(db, order_id, part_id)

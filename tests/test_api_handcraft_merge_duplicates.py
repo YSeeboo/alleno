@@ -219,3 +219,78 @@ def test_merge_nonexistent_part_raises(db):
 
     with pytest.raises(ValueError, match="配件"):
         merge_duplicate_part_items(db, "HC-M1", "PJ-X-NONE")
+
+
+# --- API layer tests ---
+
+
+def test_api_merge_two_duplicate_rows_returns_200_summary(client, db):
+    db.add(Part(id="PJ-X-LK", name="龙虾扣", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-M1", supplier_name="S", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=100))
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=200))
+    db.flush()
+
+    resp = client.post("/api/handcraft/HC-M1/parts/PJ-X-LK/merge-duplicates")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["before_rows"] == 2
+    assert body["after_rows"] == 1
+    assert body["merged_qty"] == 300.0
+
+
+def test_api_merge_processing_returns_400(client, db):
+    db.add(Part(id="PJ-X-LK", name="龙虾扣", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-M1", supplier_name="S", status="processing"))
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=100))
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=200))
+    db.flush()
+
+    resp = client.post("/api/handcraft/HC-M1/parts/PJ-X-LK/merge-duplicates")
+    assert resp.status_code == 400
+    assert "pending" in resp.json()["detail"]
+
+
+def test_api_merge_no_duplicates_returns_400(client, db):
+    db.add(Part(id="PJ-X-LK", name="龙虾扣", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-M1", supplier_name="S", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=100))
+    db.flush()
+
+    resp = client.post("/api/handcraft/HC-M1/parts/PJ-X-LK/merge-duplicates")
+    assert resp.status_code == 400
+    assert "没有可合并" in resp.json()["detail"]
+
+
+def test_api_merge_composite_returns_400(client, db):
+    db.add(Part(id="PJ-X-SET", name="套链", category="小配件", size_tier="small", is_composite=True))
+    db.add(HandcraftOrder(id="HC-M1", supplier_name="S", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-SET", qty=5))
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-SET", qty=3))
+    db.flush()
+
+    resp = client.post("/api/handcraft/HC-M1/parts/PJ-X-SET/merge-duplicates")
+    assert resp.status_code == 400
+    assert "复合件" in resp.json()["detail"]
+
+
+def test_api_merge_nonexistent_order_returns_400(client, db):
+    db.add(Part(id="PJ-X-LK", name="龙虾扣", category="小配件", size_tier="small"))
+    db.flush()
+
+    resp = client.post("/api/handcraft/HC-NONE/parts/PJ-X-LK/merge-duplicates")
+    assert resp.status_code == 400  # service_errors maps ValueError → 400
+    assert "订单" in resp.json()["detail"]
+
+
+def test_api_merge_nonexistent_part_returns_400(client, db):
+    db.add(HandcraftOrder(id="HC-M1", supplier_name="S", status="pending"))
+    db.flush()
+
+    resp = client.post("/api/handcraft/HC-M1/parts/PJ-X-NONE/merge-duplicates")
+    assert resp.status_code == 400
+    assert "配件" in resp.json()["detail"]
