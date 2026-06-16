@@ -1446,6 +1446,16 @@ def merge_duplicate_part_items(db: Session, order_id: str, part_id: str) -> dict
     )
     survivor, *others = rows
     other_ids = [r.id for r in others]
+    all_ids = [r.id for r in rows]
+
+    # Wipe all picking state for these part_items — both survivor and others.
+    # The restructure invalidates per-jewelry-source picks/weights.
+    db.query(HandcraftPickingRecord).filter(
+        HandcraftPickingRecord.handcraft_part_item_id.in_(all_ids)
+    ).delete(synchronize_session=False)
+    db.query(HandcraftPickingWeight).filter(
+        HandcraftPickingWeight.part_item_id.in_(all_ids)
+    ).delete(synchronize_session=False)
 
     total_qty = sum((r.qty for r in rows), Decimal(0))
     survivor.qty = total_qty

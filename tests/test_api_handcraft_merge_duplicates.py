@@ -91,3 +91,53 @@ def test_merge_clears_weight_weight_unit_and_bom_qty_on_survivor(db):
     assert survivor.weight is None
     assert survivor.weight_unit is None
     assert survivor.bom_qty is None
+
+
+def test_merge_clears_picking_records_for_all_affected_part_items(db):
+    """All HandcraftPickingRecord rows for affected part_item_ids are deleted —
+    including the survivor's, because the merge restructures what 'picking'
+    means at this scope."""
+    _seed_part(db)
+    _seed_order(db)
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=100))
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=200))
+    db.flush()
+    items = db.query(HandcraftPartItem).filter_by(handcraft_order_id="HC-M1").all()
+    for it in items:
+        db.add(HandcraftPickingRecord(
+            handcraft_order_id="HC-M1",
+            handcraft_part_item_id=it.id,
+            part_id="PJ-X-LK",
+        ))
+    db.flush()
+    assert db.query(HandcraftPickingRecord).count() == 2
+
+    merge_duplicate_part_items(db, "HC-M1", "PJ-X-LK")
+
+    assert db.query(HandcraftPickingRecord).count() == 0
+
+
+def test_merge_clears_picking_weights_for_all_affected_part_items(db):
+    """All HandcraftPickingWeight rows for affected part_item_ids are deleted."""
+    _seed_part(db)
+    _seed_order(db)
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=100))
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=200))
+    db.flush()
+    items = db.query(HandcraftPartItem).filter_by(handcraft_order_id="HC-M1").all()
+    for it in items:
+        db.add(HandcraftPickingWeight(
+            handcraft_order_id="HC-M1",
+            part_item_id=it.id,
+            atom_part_id="PJ-X-LK",
+            weight=Decimal("80"),
+            weight_unit="g",
+        ))
+    db.flush()
+    assert db.query(HandcraftPickingWeight).count() == 2
+
+    merge_duplicate_part_items(db, "HC-M1", "PJ-X-LK")
+
+    assert db.query(HandcraftPickingWeight).count() == 0
