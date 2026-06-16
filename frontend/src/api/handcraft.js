@@ -67,6 +67,10 @@ export const resetHandcraftPicking = (id) =>
 export const downloadHandcraftPickingPdf = (id) =>
   api.post(`/handcraft/${id}/picking/pdf`, {}, { responseType: 'blob' })
 
+// Persistently merge all part_item rows in an order sharing the same part_id.
+export const mergeHandcraftDuplicateParts = (id, partId) =>
+  api.post(`/handcraft/${id}/parts/${encodeURIComponent(partId)}/merge-duplicates`)
+
 export const upsertHandcraftPickingWeight = (id, partItemId, atomPartId, weight, weightUnit = 'kg') =>
   api.put(`/handcraft/${id}/picking/weight`, {
     part_item_id: partItemId,
