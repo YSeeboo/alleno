@@ -56,4 +56,7 @@ class JewelryResponse(BaseModel):
     retail_price: Optional[float] = None
     wholesale_price: Optional[float] = None
     handcraft_cost: Optional[float] = None
+    material_cost: Optional[float] = None
+    total_cost: Optional[float] = None
+    has_incomplete_cost: Optional[bool] = None
     status: str
