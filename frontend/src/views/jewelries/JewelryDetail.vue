@@ -45,6 +45,16 @@
           <n-descriptions-item label="零售价">{{ jewelry.retail_price != null ? fmtMoney(jewelry.retail_price) : '-' }}</n-descriptions-item>
           <n-descriptions-item label="批发价">{{ jewelry.wholesale_price != null ? fmtMoney(jewelry.wholesale_price) : '-' }}</n-descriptions-item>
           <n-descriptions-item label="手工费">{{ jewelry.handcraft_cost != null ? fmtMoney(jewelry.handcraft_cost) : '-' }}</n-descriptions-item>
+          <n-descriptions-item label="物料成本">{{ jewelry.material_cost != null ? fmtMoney(jewelry.material_cost) : '-' }}</n-descriptions-item>
+          <n-descriptions-item label="总成本">
+            <span>{{ jewelry.total_cost != null ? fmtMoney(jewelry.total_cost) : '-' }}</span>
+            <n-tooltip v-if="jewelry.has_incomplete_cost" trigger="hover">
+              <template #trigger>
+                <span style="color:#f0a020; margin-left:4px; cursor:help;">⚠️</span>
+              </template>
+              成本不完整：部分配件未录入成本，或饰品缺少 BOM
+            </n-tooltip>
+          </n-descriptions-item>
           <n-descriptions-item label="状态">{{ jewelry.status }}</n-descriptions-item>
           <n-descriptions-item label="当前库存">{{ stock }}</n-descriptions-item>
         </n-descriptions>
@@ -117,7 +127,7 @@ import { useIsMobile } from '@/composables/useIsMobile'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NEmpty, NDivider, NSelect, NInputNumber, NPopconfirm, NImage,
-  NModal, NAlert,
+  NModal, NAlert, NTooltip,
 } from 'naive-ui'
 import { getJewelry, updateJewelry } from '@/api/jewelries'
 import { getBom, setBom, deleteBom } from '@/api/bom'
