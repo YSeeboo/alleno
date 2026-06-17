@@ -10,6 +10,7 @@ from services.jewelry import (
     delete_jewelry, set_status, copy_jewelry,
 )
 from api._errors import service_errors
+from services.jewelry_cost import attach_jewelry_costs
 
 router = APIRouter(prefix="/api/jewelries", tags=["jewelries"])
 
@@ -24,7 +25,9 @@ def api_create_jewelry(body: JewelryCreate, db: Session = Depends(get_db)):
 @router.get("/", response_model=List[JewelryResponse])
 def api_list_jewelries(status: Optional[str] = None, category: Optional[str] = None, name: Optional[str] = None, db: Session = Depends(get_db)):
     with service_errors():
-        return list_jewelries(db, status=status, category=category, name=name)
+        jewelries = list_jewelries(db, status=status, category=category, name=name)
+    attach_jewelry_costs(db, jewelries)
+    return jewelries
 
 
 @router.get("/{jewelry_id}", response_model=JewelryResponse)
@@ -32,6 +35,7 @@ def api_get_jewelry(jewelry_id: str, db: Session = Depends(get_db)):
     jewelry = get_jewelry(db, jewelry_id)
     if jewelry is None:
         raise HTTPException(status_code=404, detail=f"Jewelry {jewelry_id} not found")
+    attach_jewelry_costs(db, [jewelry])
     return jewelry
 
 
