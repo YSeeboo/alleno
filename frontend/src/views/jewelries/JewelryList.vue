@@ -116,7 +116,7 @@ import { useMessage, useDialog } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
 import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
-  NModal, NDataTable, NSpin, NEmpty, NImage, NDropdown, NAlert,
+  NModal, NDataTable, NSpin, NEmpty, NImage, NDropdown, NAlert, NTooltip,
 } from 'naive-ui'
 import { listJewelries, createJewelry, updateJewelry, updateJewelryStatus, deleteJewelry, copyJewelry } from '@/api/jewelries'
 import { batchGetStock } from '@/api/inventory'
@@ -421,6 +421,24 @@ const columns = [
   { title: '单位', key: 'unit', width: 60 },
   { title: '零售价', key: 'retail_price', render: (r) => renderInlinePrice(r, 'retail_price') },
   { title: '批发价', key: 'wholesale_price', render: (r) => renderInlinePrice(r, 'wholesale_price') },
+  {
+    title: '总成本',
+    key: 'total_cost',
+    width: 120,
+    render: (r) => {
+      if (r.total_cost == null) return '-'
+      const main = h('span', {}, fmtMoney(r.total_cost))
+      const warn = r.has_incomplete_cost
+        ? h('span', { style: 'color:#f0a020; margin-left:4px; cursor:help;' }, '⚠️')
+        : null
+      const breakdown = `物料 ${fmtMoney(r.material_cost ?? 0)} ＋ 手工费 ${fmtMoney(r.handcraft_cost ?? 0)}`
+        + (r.has_incomplete_cost ? '（成本不完整）' : '')
+      return h(NTooltip, { trigger: 'hover' }, {
+        trigger: () => h('span', { style: 'cursor:help;' }, [main, warn]),
+        default: () => breakdown,
+      })
+    },
+  },
   { title: '当前库存', key: 'stock' },
   {
     title: '状态',
