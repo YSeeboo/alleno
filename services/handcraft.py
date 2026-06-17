@@ -1459,6 +1459,20 @@ def merge_duplicate_part_items(db: Session, order_id: str, part_id: str) -> dict
     if len(rows) < 2:
         raise ValueError(f"订单 {order_id} 中 {part_id} 没有可合并的 part_item 行")
 
+    # Order-linked rows carry customer-order provenance and are referenced by a
+    # cascade-less unique FK (OrderItemLink.handcraft_part_item_id). Deleting one
+    # during merge would raise IntegrityError → a misleading 409. Refuse up front
+    # with an actionable error, matching delete_handcraft_part — the user must
+    # unlink at the source order first.
+    from models.order import OrderItemLink
+
+    row_ids = [r.id for r in rows]
+    has_order_link = db.query(OrderItemLink.id).filter(
+        OrderItemLink.handcraft_part_item_id.in_(row_ids)
+    ).first() is not None
+    if has_order_link:
+        raise ValueError("订单来源行不能合并；请先在订单详情解除关联")
+
     survivor, *others = rows
     other_ids = [r.id for r in others]
     all_ids = [r.id for r in rows]

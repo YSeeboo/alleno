@@ -194,7 +194,25 @@ def test_get_picking_atomic_single_item(client, db):
     assert row["is_composite_expansion"] is False
     assert row["needed_qty"] == 8.0  # bom_qty drives suggested calc
     assert row["picked"] is False
+    assert row["is_order_linked"] is False
     assert body["progress"] == {"total": 1, "picked": 0}
+
+
+def test_picking_marks_order_linked_rows(client, db):
+    """Rows whose part_item is tied to a customer order (OrderItemLink) are
+    flagged is_order_linked, so the UI can disable structural merges on them."""
+    from models.order import OrderItemLink
+
+    _setup_atomic(db)
+    body = client.get("/api/handcraft/HC-TEST-1/picking").json()
+    assert body["groups"][0]["rows"][0]["is_order_linked"] is False
+
+    pi_id = body["groups"][0]["rows"][0]["part_item_id"]
+    db.add(OrderItemLink(handcraft_part_item_id=pi_id))
+    db.flush()
+
+    body = client.get("/api/handcraft/HC-TEST-1/picking").json()
+    assert body["groups"][0]["rows"][0]["is_order_linked"] is True
 
 
 def test_get_picking_atomic_zero_stock(client, db):

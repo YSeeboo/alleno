@@ -90,6 +90,7 @@ def get_handcraft_picking_simulation(
     picked_keys = _load_picked_keys(db, handcraft_order_id)
     restock_by_part = _load_restock_by_part(db, handcraft_order_id, atom_ids)
     weights_by_key = bulk_load_for_picking(db, handcraft_order_id)
+    order_linked_ids = _load_order_linked_part_item_ids(db, [pi.id for pi in part_items])
 
     atom_first_seen: dict[str, int] = {}
     rows_by_atom: dict[str, list[PickingSourceRow]] = defaultdict(list)
@@ -122,6 +123,7 @@ def get_handcraft_picking_simulation(
                 weight_unit=(weight_row.weight_unit if weight_row and weight_row.weight is not None else None),
                 actual_qty=(float(weight_row.actual_qty) if weight_row and weight_row.actual_qty is not None else None),
                 picked=is_picked,
+                is_order_linked=pi.id in order_linked_ids,
                 restock_status=restock[0] if restock else None,
                 restock_request_id=restock[1] if restock else None,
                 restock_shortfall_qty=restock[2] if restock else None,
@@ -228,6 +230,24 @@ def _load_picked_keys(
         .all()
     )
     return {(pi_id, atom_id) for pi_id, atom_id in rows}
+
+
+def _load_order_linked_part_item_ids(
+    db: Session, part_item_ids: list[int]
+) -> set[int]:
+    """Part_item ids referenced by an OrderItemLink (customer-order provenance).
+    The UI uses this to disable structural merge on order-linked rows, matching
+    the backend merge guard."""
+    from models.order import OrderItemLink
+
+    if not part_item_ids:
+        return set()
+    rows = (
+        db.query(OrderItemLink.handcraft_part_item_id)
+        .filter(OrderItemLink.handcraft_part_item_id.in_(part_item_ids))
+        .all()
+    )
+    return {pi_id for (pi_id,) in rows}
 
 
 def _load_restock_by_part(

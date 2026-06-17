@@ -221,6 +221,36 @@ def test_merge_nonexistent_part_raises(db):
         merge_duplicate_part_items(db, "HC-M1", "PJ-X-NONE")
 
 
+def test_merge_blocked_when_a_row_has_order_link(db):
+    """A part_item row tied to a customer order (via OrderItemLink, a
+    cascade-less unique FK) must not be deleted by merge — that would raise a
+    PostgreSQL IntegrityError. Mirror delete_handcraft_part: refuse with a
+    clear ValueError instead, and delete nothing."""
+    from models.order import OrderItemLink
+
+    _seed_part(db)
+    _seed_order(db)
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=100))
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=200))
+    db.flush()
+    rows = (
+        db.query(HandcraftPartItem)
+        .filter_by(handcraft_order_id="HC-M1")
+        .order_by(HandcraftPartItem.id)
+        .all()
+    )
+    # Link the non-survivor (highest id) row to an order.
+    db.add(OrderItemLink(handcraft_part_item_id=rows[-1].id))
+    db.flush()
+
+    with pytest.raises(ValueError, match="订单来源"):
+        merge_duplicate_part_items(db, "HC-M1", "PJ-X-LK")
+
+    # Nothing was deleted — both rows survive untouched.
+    assert db.query(HandcraftPartItem).filter_by(handcraft_order_id="HC-M1").count() == 2
+
+
 # --- API layer tests ---
 
 
@@ -294,3 +324,28 @@ def test_api_merge_nonexistent_part_returns_400(client, db):
     resp = client.post("/api/handcraft/HC-M1/parts/PJ-X-NONE/merge-duplicates")
     assert resp.status_code == 400
     assert "配件" in resp.json()["detail"]
+
+
+def test_api_merge_with_order_link_returns_400(client, db):
+    """Order-linked row → clean 400 with actionable detail, not the generic 409
+    that a raw IntegrityError would surface."""
+    from models.order import OrderItemLink
+
+    db.add(Part(id="PJ-X-LK", name="龙虾扣", category="小配件", size_tier="small"))
+    db.add(HandcraftOrder(id="HC-M1", supplier_name="S", status="pending"))
+    db.flush()
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=100))
+    db.add(HandcraftPartItem(handcraft_order_id="HC-M1", part_id="PJ-X-LK", qty=200))
+    db.flush()
+    rows = (
+        db.query(HandcraftPartItem)
+        .filter_by(handcraft_order_id="HC-M1")
+        .order_by(HandcraftPartItem.id)
+        .all()
+    )
+    db.add(OrderItemLink(handcraft_part_item_id=rows[-1].id))
+    db.flush()
+
+    resp = client.post("/api/handcraft/HC-M1/parts/PJ-X-LK/merge-duplicates")
+    assert resp.status_code == 400
+    assert "订单来源" in resp.json()["detail"]

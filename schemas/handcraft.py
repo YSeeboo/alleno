@@ -152,6 +152,7 @@ class PickingSourceRow(BaseModel):
     weight_unit: Optional[str] = None
     actual_qty: Optional[float] = None
     picked: bool
+    is_order_linked: bool = False  # part_item tied to a customer order (OrderItemLink); blocks structural merge
     restock_status: Optional[str] = None  # None | "pending" | "done"
     restock_request_id: Optional[int] = None
     restock_shortfall_qty: Optional[float] = None  # surfaces 差额 so the modal can confirm before discarding it

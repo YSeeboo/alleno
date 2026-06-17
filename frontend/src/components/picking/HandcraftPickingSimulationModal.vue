@@ -56,9 +56,12 @@ const displayGroups = computed(() => {
 // - readonly off (i.e., order is pending)
 // - at least 2 distinct part_item_id values among g.rows
 // - NO row is a composite expansion (v1 scope: simple parts only)
+// - NO row is order-linked (deleting one would hit the cascade-less OrderItemLink
+//   FK; the backend guard rejects it, so don't offer the button either)
 function groupMergeable(g) {
   if (readonly.value) return false
   if (g.rows.some((r) => r.is_composite_expansion)) return false
+  if (g.rows.some((r) => r.is_order_linked)) return false
   const ids = new Set(g.rows.map((r) => r.part_item_id))
   return ids.size >= 2
 }
