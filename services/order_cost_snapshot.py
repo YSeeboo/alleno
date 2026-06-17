@@ -9,6 +9,7 @@ from models.jewelry import Jewelry
 from models.order import Order, OrderItem
 from models.order_cost_snapshot import OrderCostSnapshot, OrderCostSnapshotItem
 from models.part import Part
+from services.jewelry_cost import compute_jewelry_cost
 
 _Q7 = Decimal("0.0000001")
 
@@ -59,25 +60,10 @@ def generate_cost_snapshot(db: Session, order_id: str) -> OrderCostSnapshot:
     for item in jewelry_items:
         jewelry = jewelry_map.get(item.jewelry_id)
         bom_rows = bom_by_jewelry.get(item.jewelry_id, [])
-        bom_cost = Decimal(0)
-        bom_details = []
-        for row in bom_rows:
-            part = part_map.get(row.part_id)
-            part_unit_cost = Decimal(str(part.unit_cost or 0)) if part else Decimal(0)
-            if part and part.unit_cost is None:
-                has_incomplete = True
-            qty_per_unit = Decimal(str(row.qty_per_unit))
-            subtotal = (part_unit_cost * qty_per_unit).quantize(_Q7, rounding=ROUND_HALF_UP)
-            bom_cost += subtotal
-            bom_details.append({
-                "part_id": row.part_id,
-                "part_name": part.name if part else None,
-                "unit_cost": float(part_unit_cost),
-                "qty_per_unit": float(qty_per_unit),
-                "subtotal": float(subtotal),
-            })
-        hc_cost = Decimal(str(jewelry.handcraft_cost or 0)) if jewelry else Decimal(0)
-        jewelry_unit_cost = (bom_cost + hc_cost).quantize(_Q7, rounding=ROUND_HALF_UP)
+        cost = compute_jewelry_cost(jewelry, bom_rows, part_map)
+        if cost["has_incomplete_cost"]:
+            has_incomplete = True
+        jewelry_unit_cost = cost["total_cost"]  # Decimal
         jewelry_total_cost = (jewelry_unit_cost * item.quantity).quantize(_Q7, rounding=ROUND_HALF_UP)
         total_cost += jewelry_total_cost
         snapshot_items.append({
@@ -87,10 +73,10 @@ def generate_cost_snapshot(db: Session, order_id: str) -> OrderCostSnapshot:
             "part_name": None,
             "quantity": item.quantity,
             "unit_price": float(item.unit_price) if item.unit_price is not None else None,
-            "handcraft_cost": float(hc_cost),
+            "handcraft_cost": float(cost["handcraft_cost"]),
             "jewelry_unit_cost": float(jewelry_unit_cost),
             "jewelry_total_cost": float(jewelry_total_cost),
-            "bom_details": bom_details,
+            "bom_details": cost["bom_details"],
         })
 
     # Part rows
