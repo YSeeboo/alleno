@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
 
+from sqlalchemy.orm import Session
+
+from models.bom import Bom
+from models.part import Part
+
 _Q7 = Decimal("0.0000001")
 
 
@@ -52,3 +57,32 @@ def compute_jewelry_cost(jewelry, bom_rows, part_map) -> dict:
         "has_incomplete_cost": has_incomplete,
         "bom_details": bom_details,
     }
+
+
+def attach_jewelry_costs(db: Session, jewelries: list) -> list:
+    """批量给饰品 ORM 实例挂上 material_cost / total_cost / has_incomplete_cost
+    三个非持久化属性（不写库）。一次性聚合查 BOM 与配件，避免逐饰品 N+1。"""
+    if not jewelries:
+        return jewelries
+
+    jewelry_ids = [j.id for j in jewelries]
+    boms = db.query(Bom).filter(Bom.jewelry_id.in_(jewelry_ids)).all()
+    bom_by_jewelry: dict[str, list] = {}
+    part_ids = set()
+    for b in boms:
+        bom_by_jewelry.setdefault(b.jewelry_id, []).append(b)
+        part_ids.add(b.part_id)
+
+    part_map = {}
+    if part_ids:
+        part_map = {
+            p.id: p
+            for p in db.query(Part).filter(Part.id.in_(list(part_ids))).all()
+        }
+
+    for j in jewelries:
+        cost = compute_jewelry_cost(j, bom_by_jewelry.get(j.id, []), part_map)
+        j.material_cost = float(cost["material_cost"])
+        j.total_cost = float(cost["total_cost"])
+        j.has_incomplete_cost = cost["has_incomplete_cost"]
+    return jewelries
