@@ -5,31 +5,68 @@
       <n-h2 style="margin: 0;">新建手工回收单</n-h2>
     </n-space>
 
-    <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="100" style="margin-bottom: 16px;">
-      <n-form-item label="手工商家">
+    <!-- 头部双列布局：桌面 grid 2-col，移动端单列 -->
+    <div
+      :style="{
+        display: 'grid',
+        gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+        gap: '12px 18px',
+        marginBottom: '16px',
+      }"
+    >
+      <!-- 第一列：手工商家 -->
+      <div>
+        <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 500;">手工商家</div>
         <n-select
           v-model:value="supplierName"
           :options="supplierOptions"
           filterable
           tag
           placeholder="选择或输入商家名称"
-          :style="{ width: isMobile ? '100%' : '300px' }"
+          :disabled="supplierLocked"
+          style="width: 100%;"
           @update:value="onSupplierChange"
         />
-      </n-form-item>
-      <n-form-item label="备注">
-        <n-input v-model:value="note" type="textarea" :rows="2" :style="{ width: isMobile ? '100%' : '300px' }" />
-      </n-form-item>
-      <n-form-item label="创建时间">
+      </div>
+
+      <!-- 第二列：回执编码 -->
+      <div>
+        <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 500;">回执编码</div>
+        <n-input
+          v-model:value="receiptCode"
+          placeholder="扫码或输入 5 位编码"
+          clearable
+          style="width: 100%; --n-border: 1px solid #bcc0f3; --n-border-hover: 1px solid #6366F1; --n-border-focus: 1px solid #6366F1; --n-caret-color: #6366F1;"
+          @keyup.enter="applyReceiptCode"
+          @blur="applyReceiptCode"
+        >
+          <template #prefix>
+            <span style="color: #6366F1;">⌗</span>
+          </template>
+        </n-input>
+        <div style="font-size: 11px; color: #9ca3af; margin-top: 4px;">
+          填入后仅展示该单待回收项；也可只填编码查询
+        </div>
+      </div>
+
+      <!-- 第三列：创建时间 -->
+      <div>
+        <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 500;">创建时间</div>
         <n-date-picker
           v-model:value="createdAtTs"
           type="date"
           clearable
           placeholder="不填则使用当前时间"
-          :style="{ width: isMobile ? '100%' : '300px' }"
+          style="width: 100%;"
         />
-      </n-form-item>
-    </n-form>
+      </div>
+
+      <!-- 第四列：备注 -->
+      <div>
+        <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 500;">备注</div>
+        <n-input v-model:value="note" placeholder="选填" style="width: 100%;" />
+      </div>
+    </div>
 
     <n-card title="待回收项目" style="margin-bottom: 16px;">
       <template #header-extra>
@@ -38,7 +75,20 @@
           <n-radio-button value="jewelry">产出</n-radio-button>
         </n-radio-group>
       </template>
-      <div v-if="supplierName" style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
+
+      <!-- Scope banner：仅在回执码模式下显示 -->
+      <div
+        v-if="scopeCode"
+        style="margin-bottom: 10px; background: #eef6ff; border: 1px solid #cfe3f7; border-radius: 7px; padding: 8px 12px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #2a5d8f;"
+      >
+        <span>仅显示回执单 <strong>{{ scopeCode }}</strong> 的待回收项</span>
+        <span
+          style="margin-left: auto; cursor: pointer; opacity: 0.7;"
+          @click="clearReceiptScope"
+        >✕ 清除</span>
+      </div>
+
+      <div v-if="supplierName || scopeCode" style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
         <n-input
           v-model:value="filterKeyword"
           placeholder="编号/名称搜索"
@@ -58,7 +108,7 @@
       <n-spin :show="loadingItems">
         <n-empty
           v-if="!loadingItems && currentPendingItems.length === 0"
-          :description="fetchError ? '加载失败，请重试' : supplierName ? `该商家暂无待回收${activeTab === 'part' ? '配件' : '产出项'}` : '请先选择商家'"
+          :description="fetchError ? '加载失败，请重试' : (supplierName || scopeCode) ? `该商家暂无待回收${activeTab === 'part' ? '配件' : '产出项'}` : '请先选择商家或输入回执编码'"
           style="margin-top: 16px;"
         />
         <n-data-table
@@ -126,7 +176,7 @@ import {
   NCard, NH2, NRadioGroup, NRadio, NRadioButton, NDataTable, NSpin, NEmpty, NImage, NModal, NDatePicker,
 } from 'naive-ui'
 import { listHandcraftPendingReceiveItems, createHandcraftReceipt } from '@/api/handcraftReceipts'
-import { getHandcraftSuppliers } from '@/api/handcraft'
+import { getHandcraftSuppliers, getHandcraftByReceiptCode } from '@/api/handcraft'
 import { batchUpdatePartCosts } from '@/api/parts'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import { tsToDateStr } from '@/utils/date'
@@ -143,6 +193,11 @@ const submitting = ref(false)
 const loadingItems = ref(false)
 const supplierOptions = ref([])
 const activeTab = ref('part')
+
+// Receipt code scoped query state
+const receiptCode = ref('')
+const scopeCode = ref(null)       // 已生效的回执码过滤；null = 商家模式
+const supplierLocked = ref(false) // 回执码模式下锁定商家选择
 
 // Pending items separated by type
 const pendingPartItems = ref([])
@@ -201,7 +256,7 @@ const totalAmount = computed(() => {
 
 const fetchPendingItems = async () => {
   const seq = ++fetchSeq
-  if (!supplierName.value) {
+  if (!supplierName.value && !scopeCode.value) {
     pendingPartItems.value = []
     pendingJewelryItems.value = []
     loadingItems.value = false
@@ -211,7 +266,9 @@ const fetchPendingItems = async () => {
   loadingItems.value = true
   fetchError.value = false
   try {
-    const params = { supplier_name: supplierName.value }
+    const params = {}
+    if (supplierName.value) params.supplier_name = supplierName.value
+    if (scopeCode.value) params.receipt_code = scopeCode.value
     if (filterKeyword.value) params.keyword = filterKeyword.value
     if (filterDateOn.value) {
       const d = new Date(filterDateOn.value)
@@ -245,6 +302,33 @@ const fetchPendingItems = async () => {
   } finally {
     if (seq === fetchSeq) loadingItems.value = false
   }
+}
+
+// Receipt code query logic
+const applyReceiptCode = async () => {
+  const code = receiptCode.value.trim().toUpperCase()
+  if (!code) return
+  // Don't re-apply if already the active scope
+  if (code === scopeCode.value) return
+  if (code.length !== 5) { message.warning('请输入 5 位回执编号'); return }
+  try {
+    const { data: order } = await getHandcraftByReceiptCode(code)
+    supplierName.value = order.supplier_name
+    supplierLocked.value = true
+    scopeCode.value = code
+    partCheckedKeys.value = []
+    jewelryCheckedKeys.value = []
+    await fetchPendingItems()
+  } catch (_) {
+    message.error(`无此回执编号：${code}`)
+  }
+}
+
+const clearReceiptScope = async () => {
+  scopeCode.value = null
+  supplierLocked.value = false
+  receiptCode.value = ''
+  await fetchPendingItems()
 }
 
 const onSupplierChange = async (val) => {
