@@ -105,27 +105,31 @@ def _check_handcraft_order_completion(db: Session, handcraft_order_id: str) -> N
             order.completed_at = None
 
 
-def _apply_receive(db: Session, order_item, item_type: str, qty: float) -> None:
+def _apply_receive(db: Session, order_item, item_type: str, qty: float) -> dict:
     """Add qty to received_qty, update item status, add stock.
 
-    For jewelry items, also auto-consume corresponding parts via BOM.
-    For part output items (jewelry_item with part_id), auto-consume child parts via part_bom.
+    For part items (direct surplus return): also bump returned_qty.
+    For jewelry/part-output items: add stock and auto-consume the sent parts
+    via BOM (which bumps the parts' consumed_qty). Returns the BOM shortfall
+    dict {part_id: qty} from auto-consume (empty when fully covered / N/A).
     """
     order_item.received_qty = float(order_item.received_qty or 0) + qty
+    shortfall: dict[str, float] = {}
     if item_type == "part":
+        order_item.returned_qty = float(order_item.returned_qty or 0) + qty
         add_stock(db, "part", order_item.part_id, qty, "手工收回")
     else:
-        # "jewelry" item_type covers both jewelry output and part output
         if order_item.jewelry_id:
             add_stock(db, "jewelry", order_item.jewelry_id, qty, "手工收回")
-            _auto_consume_parts(db, order_item.handcraft_order_id, order_item.jewelry_id, qty)
+            shortfall = _auto_consume_parts(db, order_item.handcraft_order_id, order_item.jewelry_id, qty)
         elif order_item.part_id:
             add_stock(db, "part", order_item.part_id, qty, "手工收回")
-            _auto_consume_child_parts(db, order_item.handcraft_order_id, order_item.part_id, qty)
+            shortfall = _auto_consume_child_parts(db, order_item.handcraft_order_id, order_item.part_id, qty)
     if float(order_item.received_qty) >= _effective_qty(db, order_item, item_type):
         order_item.status = "已收回"
     else:
         order_item.status = "制作中"
+    return shortfall
 
 
 def _auto_consume_parts(db: Session, handcraft_order_id: str, jewelry_id: str, jewelry_qty: float) -> None:
