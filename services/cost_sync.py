@@ -218,28 +218,3 @@ def detect_handcraft_assembly_cost_diffs(db: Session, receipt) -> list[dict]:
                 "new_value": new_price,
             })
     return diffs
-
-
-def detect_handcraft_bead_cost_diffs(db: Session, receipt) -> list[dict]:
-    """Detect bead_cost diffs for part items in a handcraft receipt."""
-    price_map: Dict[str, Optional[float]] = {}
-    for ri in receipt.items:
-        if ri.item_type != "part" or ri.price is None:
-            continue
-        price_map[ri.item_id] = float(ri.price)
-
-    diffs = []
-    for part_id, new_price in price_map.items():
-        part = db.get(Part, part_id)
-        if part is None:
-            continue
-        current = float(part.bead_cost) if part.bead_cost is not None else None
-        if _compare(current, new_price):
-            diffs.append({
-                "part_id": part_id,
-                "part_name": part.name,
-                "field": "bead_cost",
-                "current_value": current,
-                "new_value": new_price,
-            })
-    return diffs

@@ -10,7 +10,6 @@ from services.cost_sync import (
     auto_set_initial_assembly_cost,
     auto_set_initial_handcraft_cost,
     detect_handcraft_assembly_cost_diffs,
-    detect_handcraft_bead_cost_diffs,
     detect_handcraft_jewelry_cost_diffs,
 )
 from schemas.handcraft_receipt import (
@@ -65,8 +64,8 @@ def api_create_handcraft_receipt(body: HandcraftReceiptCreate, db: Session = Dep
             created_at=body.created_at,
         )
     # Detect diffs BEFORE auto-setting (so old values are still visible)
-    cost_diffs = detect_handcraft_bead_cost_diffs(db, receipt)
-    cost_diffs += detect_handcraft_jewelry_cost_diffs(db, receipt)
+    # A方案: part receipts = pure surplus return; no bead_cost sync
+    cost_diffs = detect_handcraft_jewelry_cost_diffs(db, receipt)
     cost_diffs += detect_handcraft_assembly_cost_diffs(db, receipt)
     # Then sync handcraft_cost for jewelry items, assembly_cost for part output items
     for item in receipt.items:
@@ -107,8 +106,8 @@ def api_add_handcraft_receipt_items(receipt_id: str, body: HandcraftReceiptAddIt
         def __init__(self, items):
             self.items = items
     new_items_view = _NewItemsView(new_items)
-    cost_diffs = detect_handcraft_bead_cost_diffs(db, new_items_view)
-    cost_diffs += detect_handcraft_jewelry_cost_diffs(db, new_items_view)
+    # A方案: part receipts = pure surplus return; no bead_cost sync
+    cost_diffs = detect_handcraft_jewelry_cost_diffs(db, new_items_view)
     cost_diffs += detect_handcraft_assembly_cost_diffs(db, new_items_view)
     # Then sync — only new items
     for item in new_items:

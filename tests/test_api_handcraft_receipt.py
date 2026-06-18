@@ -290,6 +290,7 @@ def test_update_item_price_recalcs_amount(client, db):
 
 
 def test_cost_diffs_returned_on_create(client, db):
+    # A方案: part receipts no longer produce bead_cost diffs; only jewelry/assembly diffs remain.
     part, jewelry, order, pi, ji = _create_sent_handcraft(db)
     resp = client.post("/api/handcraft-receipts/", json={
         "supplier_name": "测试手工商",
@@ -297,10 +298,32 @@ def test_cost_diffs_returned_on_create(client, db):
     })
     assert resp.status_code == 201
     data = resp.json()
-    # Part has no bead_cost set, so there should be a diff
-    assert len(data["cost_diffs"]) == 1
-    assert data["cost_diffs"][0]["field"] == "bead_cost"
-    assert data["cost_diffs"][0]["new_value"] == pytest.approx(2.5)
+    # No bead_cost diff: part receipt = pure surplus return, no cost sync
+    assert all(d.get("field") != "bead_cost" for d in data.get("cost_diffs", []))
+
+
+def test_part_receive_does_not_sync_bead_cost(client, db):
+    from services.part import create_part
+    from services.inventory import add_stock
+    from services.handcraft import create_handcraft_order, send_handcraft_order
+    from models.handcraft_order import HandcraftPartItem
+    from models.part import Part
+
+    part = create_part(db, {"name": "穿珠件", "category": "小配件"})
+    add_stock(db, "part", part.id, 500, "入库")
+    order = create_handcraft_order(db, "商家B", parts=[{"part_id": part.id, "qty": 50}])
+    send_handcraft_order(db, order.id)
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order.id).first()
+
+    resp = client.post("/api/handcraft-receipts/", json={
+        "supplier_name": "商家B",
+        "items": [{"handcraft_part_item_id": pi.id, "qty": 20, "price": 3.3}],
+    })
+    assert resp.status_code == 201
+    # A方案：配件回收纯退料，不写 bead_cost；也不在 cost_diffs 里冒出 bead_cost
+    assert all(d.get("field") != "bead_cost" for d in resp.json().get("cost_diffs", []))
+    db.expire(db.get(Part, part.id))
+    assert db.get(Part, part.id).bead_cost is None
 
 
 # ── Partial receive ────────────────────────────────────────────────────
