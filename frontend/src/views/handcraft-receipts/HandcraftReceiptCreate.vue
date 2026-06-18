@@ -137,8 +137,98 @@
           :description="fetchError ? '加载失败，请重试' : (supplierName || scopeCode) ? '该商家暂无待回收产出项' : '请先选择商家或输入回执编码'"
           style="margin-top: 16px;"
         />
+
+        <!-- Mobile: card list -->
+        <div
+          v-if="isMobile && pendingJewelryItems.length > 0"
+          style="max-height: 420px; overflow-y: auto;"
+        >
+          <div
+            v-for="row in pendingJewelryItems"
+            :key="rowKey(row)"
+            :style="{
+              border: '1px solid ' + (jewelryCheckedKeys.includes(rowKey(row)) ? '#c7cbf5' : '#e5e7eb'),
+              background: jewelryCheckedKeys.includes(rowKey(row)) ? '#f3f4fe' : '#fff',
+              borderRadius: '9px',
+              padding: '11px',
+              marginBottom: '9px',
+            }"
+          >
+            <!-- top row: checkbox + thumbnail + name/id + 剩余 + 手工单 link -->
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <n-checkbox
+                :checked="jewelryCheckedKeys.includes(rowKey(row))"
+                @update:checked="(v) => toggleMobileCard(rowKey(row), v)"
+              />
+              <n-image
+                :src="row.item_image || ''"
+                width="38"
+                height="38"
+                object-fit="cover"
+                style="border-radius: 7px; flex: none; background: linear-gradient(135deg, #f3d9b1, #d9a441);"
+                :fallback-src="''"
+                :preview-disabled="!row.item_image"
+              />
+              <div style="flex: 1; min-width: 0;">
+                <div style="font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                  {{ row.item_name }}
+                  <span v-if="row.is_composite" style="font-size: 11px; padding: 1px 7px; border-radius: 4px; background: #fef3e8; color: #c2700d; font-weight: 500; margin-left: 4px;">组合</span>
+                  <span v-else style="font-size: 11px; padding: 1px 7px; border-radius: 4px; background: #eef2ff; color: #4f5bd5; font-weight: 500; margin-left: 4px;">饰品</span>
+                </div>
+                <div style="font-size: 11px; color: #9ca3af; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                  <span>{{ row.item_id }}</span>
+                  <span>· 剩余 {{ getRemaining(row) }}</span>
+                  <span
+                    style="color: #6366F1; font-weight: 600; cursor: pointer; border-bottom: 1px dashed #c7cbf5; padding-bottom: 1px;"
+                    @click.stop="openOrderPeek(row.handcraft_order_id)"
+                  >{{ row.handcraft_order_id }} 🗗</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- inputs row: shown when checked -->
+            <div
+              v-if="jewelryCheckedKeys.includes(rowKey(row))"
+              style="display: flex; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e5e7eb;"
+            >
+              <div style="flex: 1;">
+                <div style="font-size: 11px; color: #9ca3af; margin-bottom: 3px;">本次回收</div>
+                <n-input-number
+                  :value="getInput(rowKey(row)).qty"
+                  :min="1"
+                  :max="getRemaining(row)"
+                  :precision="0"
+                  :step="1"
+                  style="width: 100%;"
+                  @update:value="(v) => { getInput(rowKey(row)).qty = v }"
+                />
+              </div>
+              <div style="flex: 1;">
+                <div style="font-size: 11px; color: #9ca3af; margin-bottom: 3px;">单价</div>
+                <n-input-number
+                  :value="getInput(rowKey(row)).price"
+                  :min="0"
+                  :precision="7"
+                  :format="fmtPrice"
+                  :parse="parseNum"
+                  :step="0.1"
+                  style="width: 100%;"
+                  @update:value="(v) => { getInput(rowKey(row)).price = v }"
+                />
+              </div>
+              <div style="flex: 1;">
+                <div style="font-size: 11px; color: #9ca3af; margin-bottom: 3px;">金额</div>
+                <div style="height: 34px; display: flex; align-items: center; font-weight: 600; font-variant-numeric: tabular-nums; font-size: 13px;">
+                  {{ fmtMoney((getInput(rowKey(row)).qty || 0) * (getInput(rowKey(row)).price || 0)) }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Desktop: data table -->
         <n-data-table
-          v-if="pendingJewelryItems.length > 0"
+          v-if="!isMobile && pendingJewelryItems.length > 0"
           :columns="jewelryPendingColumns"
           :data="pendingJewelryItems"
           :bordered="false"
@@ -158,51 +248,65 @@
         marginTop: '14px',
         background: '#fff',
         borderTop: '1px solid #e5e7eb',
-        padding: isMobile ? '10px 14px calc(10px + env(safe-area-inset-bottom))' : '12px 18px',
-        display: 'flex',
-        alignItems: isMobile ? 'stretch' : 'center',
-        flexDirection: isMobile ? 'column' : 'row',
-        gap: isMobile ? '10px' : '16px',
+        padding: isMobile ? '10px 14px calc(10px + env(safe-area-inset-bottom, 0px))' : '12px 18px',
         boxShadow: '0 -6px 16px rgba(0,0,0,.04)',
         zIndex: 10,
       }"
     >
-      <!-- 合计金额 -->
-      <div :style="{ display: 'flex', flexDirection: 'column', ...(isMobile ? { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' } : {}) }">
-        <span style="font-size: 11px; color: #9ca3af;">合计金额</span>
-        <span style="font-size: 26px; font-weight: 700; color: #6366F1; line-height: 1.1; font-variant-numeric: tabular-nums;">
-          <small style="font-size: 14px; font-weight: 600; margin-right: 2px;">¥</small>{{ totalAmount }}
-        </span>
-      </div>
+      <!-- Mobile layout: row1 (total + payment), row2 (submit) -->
+      <template v-if="isMobile">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px;">
+          <div style="display: flex; flex-direction: column;">
+            <span style="font-size: 11px; color: #9ca3af;">合计金额</span>
+            <span style="font-size: 22px; font-weight: 700; color: #6366F1; font-variant-numeric: tabular-nums;">
+              ¥ {{ totalAmount }}
+            </span>
+          </div>
+          <n-radio-group v-model:value="status" size="small">
+            <n-radio-button value="未付款">未付款</n-radio-button>
+            <n-radio-button value="已付款">已付款</n-radio-button>
+          </n-radio-group>
+        </div>
+        <n-button
+          type="primary"
+          :loading="submitting"
+          style="width: 100%; height: 46px; font-size: 15.5px; font-weight: 600; border-radius: 10px; box-shadow: 0 4px 12px rgba(99,102,241,.3);"
+          @click="submit"
+        >
+          提交回收单 →
+        </n-button>
+      </template>
 
-      <!-- 付款状态 -->
-      <div style="display: flex; flex-direction: column; gap: 5px;">
-        <span style="font-size: 11px; color: #9ca3af;">付款状态</span>
-        <n-radio-group v-model:value="status" size="small">
-          <n-radio-button value="未付款">未付款</n-radio-button>
-          <n-radio-button value="已付款">已付款</n-radio-button>
-        </n-radio-group>
-      </div>
-
-      <div v-if="!isMobile" style="flex: 1;" />
-
-      <!-- 提交按钮 -->
-      <n-button
-        type="primary"
-        :loading="submitting"
-        :style="{
-          height: isMobile ? '46px' : '42px',
-          padding: isMobile ? '0' : '0 30px',
-          fontSize: isMobile ? '15.5px' : '15px',
-          fontWeight: 600,
-          borderRadius: '8px',
-          boxShadow: '0 4px 12px rgba(99,102,241,.28)',
-          width: isMobile ? '100%' : 'auto',
-        }"
-        @click="submit"
-      >
-        提交回收单 →
-      </n-button>
+      <!-- Desktop layout: flex row -->
+      <template v-else>
+        <div style="display: flex; align-items: center; gap: 16px;">
+          <!-- 合计金额 -->
+          <div style="display: flex; flex-direction: column;">
+            <span style="font-size: 11px; color: #9ca3af;">合计金额</span>
+            <span style="font-size: 26px; font-weight: 700; color: #6366F1; line-height: 1.1; font-variant-numeric: tabular-nums;">
+              <small style="font-size: 14px; font-weight: 600; margin-right: 2px;">¥</small>{{ totalAmount }}
+            </span>
+          </div>
+          <!-- 付款状态 -->
+          <div style="display: flex; flex-direction: column; gap: 5px;">
+            <span style="font-size: 11px; color: #9ca3af;">付款状态</span>
+            <n-radio-group v-model:value="status" size="small">
+              <n-radio-button value="未付款">未付款</n-radio-button>
+              <n-radio-button value="已付款">已付款</n-radio-button>
+            </n-radio-group>
+          </div>
+          <div style="flex: 1;" />
+          <!-- 提交按钮 -->
+          <n-button
+            type="primary"
+            :loading="submitting"
+            style="height: 42px; padding: 0 30px; font-size: 15px; font-weight: 600; border-radius: 8px; box-shadow: 0 4px 12px rgba(99,102,241,.28);"
+            @click="submit"
+          >
+            提交回收单 →
+          </n-button>
+        </div>
+      </template>
     </div>
 
     <!-- Part Return Modal -->
@@ -256,7 +360,7 @@ import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
-  NCard, NH2, NRadioGroup, NRadio, NRadioButton, NDataTable, NSpin, NEmpty, NImage, NModal, NDatePicker, NBadge,
+  NCard, NH2, NRadioGroup, NRadio, NRadioButton, NDataTable, NSpin, NEmpty, NImage, NModal, NDatePicker, NBadge, NCheckbox,
 } from 'naive-ui'
 import { listHandcraftPendingReceiveItems, createHandcraftReceipt } from '@/api/handcraftReceipts'
 import { getHandcraftSuppliers, getHandcraftByReceiptCode } from '@/api/handcraft'
@@ -456,6 +560,14 @@ const onFilterDateChange = () => {
 
 const onCheck = (keys) => {
   jewelryCheckedKeys.value = keys
+}
+
+const toggleMobileCard = (key, checked) => {
+  if (checked) {
+    if (!jewelryCheckedKeys.value.includes(key)) jewelryCheckedKeys.value = [...jewelryCheckedKeys.value, key]
+  } else {
+    jewelryCheckedKeys.value = jewelryCheckedKeys.value.filter((k) => k !== key)
+  }
 }
 
 const partPendingColumns = [
