@@ -187,3 +187,28 @@ def test_reverse_auto_consume_does_not_go_negative(db):
     assert float(pi.returned_qty or 0) == 30.0
     # invariant: received >= returned (consumed can be 0 but not negative)
     assert float(pi.received_qty) >= float(pi.returned_qty or 0)
+
+
+# ── C2: jewelry loss must auto-consume BOM parts ───────────────────────────
+
+def test_jewelry_loss_auto_consumes_bom_parts(db):
+    from services.production_loss import confirm_handcraft_loss
+    from services.jewelry import create_jewelry
+    from services.bom import set_bom
+    from models.handcraft_order import HandcraftJewelryItem
+    part = create_part(db, {"name": "珠", "category": "小配件"})
+    add_stock(db, "part", part.id, 1000, "入库")
+    jewelry = create_jewelry(db, {"name": "项链", "category": "单件"})
+    set_bom(db, jewelry.id, part.id, 2)  # 每条 2 珠
+    order = create_handcraft_order(db, "商家L",
+        parts=[{"part_id": part.id, "qty": 200}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 100}])
+    send_handcraft_order(db, order.id)
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order.id).first()
+    ji = db.query(HandcraftJewelryItem).filter_by(handcraft_order_id=order.id).first()
+    # 损耗 10 条成品 → 应核销 20 珠进 consumed
+    confirm_handcraft_loss(db, order.id, ji.id, item_type="jewelry", loss_qty=10, deduct_amount=None, reason="测试成品损耗")
+    db.expire(pi)
+    assert float(pi.consumed_qty) == 20.0
+    assert float(pi.returned_qty or 0) == 0.0
+    assert float(pi.received_qty) == 20.0

@@ -38,9 +38,10 @@ def backfill_handcraft_part_counters(conn):
                     (direct surplus returns).
     consumed_qty := max(received_qty - returned_qty, 0)  (the rest = auto-consumed).
 
-    Idempotent: recomputes both columns from receipts each run, so re-running
-    after more receipts land stays correct. Only rewrites rows where the split
-    is stale, to avoid churn.
+    Invoked once from ensure_schema_compat when the returned_qty/consumed_qty
+    columns are first added (guarded by added_split). The UPDATEs are absolute
+    (not additive), so the function is safe to re-run, but it is NOT called on
+    every startup.
     """
     conn.execute(text("""
         WITH ret AS (

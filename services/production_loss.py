@@ -8,7 +8,12 @@ from models.plating_order import PlatingOrder, PlatingOrderItem
 from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
 from models.inventory_log import InventoryLog
 from services.plating_receipt import _check_plating_order_completion
-from services.handcraft_receipt import _check_handcraft_order_completion, _effective_qty
+from services.handcraft_receipt import (
+    _check_handcraft_order_completion,
+    _effective_qty,
+    _auto_consume_parts,
+    _auto_consume_child_parts,
+)
 from time_utils import now_beijing
 
 
@@ -154,6 +159,10 @@ def confirm_handcraft_loss(
     # Increment received_qty
     if item_type == "jewelry":
         item.received_qty = int(item.received_qty or 0) + int(loss_qty)
+        if item.jewelry_id:
+            _auto_consume_parts(db, order_id, item.jewelry_id, float(loss_qty))
+        elif item.part_id:
+            _auto_consume_child_parts(db, order_id, item.part_id, float(loss_qty))
     else:
         item.received_qty = Decimal(str(float(item.received_qty or 0) + loss_qty))
         item.consumed_qty = Decimal(str(float(item.consumed_qty or 0) + loss_qty))
