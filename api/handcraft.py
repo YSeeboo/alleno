@@ -144,6 +144,7 @@ def api_list_handcraft_pending_receive_items(
     date_on: date_type = None,
     exclude_part_item_ids: list[int] = Query(None),
     exclude_jewelry_item_ids: list[int] = Query(None),
+    receipt_code: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     with service_errors():
@@ -152,6 +153,7 @@ def api_list_handcraft_pending_receive_items(
             date_on=date_on,
             exclude_part_item_ids=exclude_part_item_ids or None,
             exclude_jewelry_item_ids=exclude_jewelry_item_ids or None,
+            receipt_code=receipt_code,
         )
 
 

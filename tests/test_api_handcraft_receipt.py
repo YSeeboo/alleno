@@ -766,3 +766,28 @@ def test_receipt_response_reports_parts_shortfall(client, db):
     assert resp.status_code == 201
     sf = resp.json()["parts_shortfall"]
     assert any(x["part_id"] == part.id and abs(x["shortfall_qty"] - 95.0) < 1e-6 for x in sf)
+
+
+def test_pending_receive_filter_by_receipt_code(client, db):
+    from datetime import date
+    from services.part import create_part
+    from services.inventory import add_stock
+    from services.handcraft import create_handcraft_order, send_handcraft_order
+
+    p = create_part(db, {"name": "珠", "category": "小配件"})
+    add_stock(db, "part", p.id, 1000, "入库")
+    # o1: today (will get a receipt_code)
+    o1 = create_handcraft_order(db, "商家R", parts=[{"part_id": p.id, "qty": 10}])
+    send_handcraft_order(db, o1.id)
+    # o2: historic date forces a separate order (no auto-merge)
+    o2 = create_handcraft_order(db, "商家R", parts=[{"part_id": p.id, "qty": 20}], created_at=date(2020, 1, 1))
+    send_handcraft_order(db, o2.id)
+
+    from models.handcraft_order import HandcraftOrder
+    code1 = db.query(HandcraftOrder).filter_by(id=o1.id).first().receipt_code
+
+    resp = client.get(f"/api/handcraft/items/pending-receive?receipt_code={code1}")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert rows, "should return items for that order"
+    assert all(r["handcraft_order_id"] == o1.id for r in rows)

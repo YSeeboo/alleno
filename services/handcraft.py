@@ -1290,6 +1290,7 @@ def list_handcraft_pending_receive_items(
     date_on: date_type = None,
     exclude_part_item_ids: list[int] = None,
     exclude_jewelry_item_ids: list[int] = None,
+    receipt_code: str = None,
 ) -> list:
     """Return part items and jewelry items from processing handcraft orders
     that still have remaining qty to receive."""
@@ -1322,6 +1323,8 @@ def list_handcraft_pending_receive_items(
     )
     if supplier_name:
         pq = pq.filter(HandcraftOrder.supplier_name == supplier_name)
+    if receipt_code:
+        pq = pq.filter(HandcraftOrder.receipt_code == receipt_code.upper())
     if date_on:
         pq = pq.filter(func.cast(HandcraftOrder.created_at, Date) == date_on)
     if exclude_part_item_ids:
@@ -1377,6 +1380,8 @@ def list_handcraft_pending_receive_items(
     )
     if supplier_name:
         jq = jq.filter(HandcraftOrder.supplier_name == supplier_name)
+    if receipt_code:
+        jq = jq.filter(HandcraftOrder.receipt_code == receipt_code.upper())
     if date_on:
         jq = jq.filter(func.cast(HandcraftOrder.created_at, Date) == date_on)
     if exclude_jewelry_item_ids:
