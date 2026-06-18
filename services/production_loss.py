@@ -156,6 +156,7 @@ def confirm_handcraft_loss(
         item.received_qty = int(item.received_qty or 0) + int(loss_qty)
     else:
         item.received_qty = Decimal(str(float(item.received_qty or 0) + loss_qty))
+        item.consumed_qty = Decimal(str(float(item.consumed_qty or 0) + loss_qty))
 
     if float(item.received_qty) >= effective:
         item.status = "已收回"

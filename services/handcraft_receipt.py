@@ -280,15 +280,14 @@ def _reverse_auto_consume_parts(db: Session, handcraft_order_id: str, jewelry_id
         # Reverse from rows (last first to undo in order)
         for pi in reversed(rows):
             current = float(pi.received_qty or 0)
-            reverse_amount = min(total_to_reverse, current)
+            consumed = float(pi.consumed_qty or 0)
+            reverse_amount = min(total_to_reverse, consumed)
             if reverse_amount <= 0:
                 continue
             pi.received_qty = current - reverse_amount
-            pi.consumed_qty = float(pi.consumed_qty or 0) - reverse_amount
-            if float(pi.received_qty) >= float(pi.qty):
+            pi.consumed_qty = consumed - reverse_amount
+            if float(pi.received_qty) >= _effective_qty(db, pi, "part"):
                 pi.status = "已收回"
-            elif float(pi.received_qty) > 0:
-                pi.status = "制作中"
             else:
                 pi.status = "制作中"
             total_to_reverse -= reverse_amount
@@ -319,12 +318,13 @@ def _reverse_auto_consume_child_parts(db: Session, handcraft_order_id: str, pare
         total_to_reverse = bom_map[part_id] * parent_qty
         for pi in reversed(rows):
             current = float(pi.received_qty or 0)
-            reverse_amount = min(total_to_reverse, current)
+            consumed = float(pi.consumed_qty or 0)
+            reverse_amount = min(total_to_reverse, consumed)
             if reverse_amount <= 0:
                 continue
             pi.received_qty = current - reverse_amount
-            pi.consumed_qty = float(pi.consumed_qty or 0) - reverse_amount
-            if float(pi.received_qty) >= float(pi.qty):
+            pi.consumed_qty = consumed - reverse_amount
+            if float(pi.received_qty) >= _effective_qty(db, pi, "part"):
                 pi.status = "已收回"
             else:
                 pi.status = "制作中"

@@ -133,3 +133,57 @@ def test_auto_consume_reports_shortfall_when_parts_insufficient(db):
         s["part_id"] == part.id and abs(s["shortfall_qty"] - 95.0) < 1e-6
         for s in receipt.parts_shortfall
     )
+
+
+# ── C1: production loss on a part item must bump consumed_qty ──────────────
+
+def test_part_loss_keeps_received_invariant(db):
+    from services.production_loss import confirm_handcraft_loss
+    part, order, pi = _send_order_with_part(db, qty=100, stock=1000)
+    confirm_handcraft_loss(db, order.id, pi.id, item_type="part", loss_qty=15, deduct_amount=None, reason="测试损耗")
+    db.expire(pi)
+    assert float(pi.consumed_qty) == 15.0
+    assert float(pi.returned_qty or 0) == 0.0
+    assert float(pi.received_qty) == 15.0
+    # invariant: received == returned + consumed
+    assert abs(float(pi.received_qty) - (float(pi.returned_qty or 0) + float(pi.consumed_qty or 0))) < 1e-9
+
+
+# ── I1: reverse auto-consume must not drive consumed_qty negative ──────────
+
+def test_reverse_auto_consume_does_not_go_negative(db):
+    from services.handcraft_receipt import create_handcraft_receipt, delete_handcraft_receipt
+    from services.bom import set_bom
+    from services.jewelry import create_jewelry
+    from models.handcraft_order import HandcraftJewelryItem
+
+    part = create_part(db, {"name": "珠", "category": "小配件"})
+    add_stock(db, "part", part.id, 1000, "入库")
+    jewelry = create_jewelry(db, {"name": "项链", "category": "单件"})
+    set_bom(db, jewelry.id, part.id, 2)  # 10 件 → 消耗 20
+    order = create_handcraft_order(
+        db, "商家A",
+        parts=[{"part_id": part.id, "qty": 100}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 10}],
+    )
+    send_handcraft_order(db, order.id)
+    pi = db.query(HandcraftPartItem).filter_by(handcraft_order_id=order.id).first()
+    ji = db.query(HandcraftJewelryItem).filter_by(handcraft_order_id=order.id).first()
+
+    # direct return 30 (returned=30) + jewelry receive (consumed=20) → received=50
+    create_handcraft_receipt(db, "商家A", items=[{"handcraft_part_item_id": pi.id, "qty": 30}])
+    jr = create_handcraft_receipt(db, "商家A", items=[{"handcraft_jewelry_item_id": ji.id, "qty": 10}])
+    db.expire(pi)
+    assert float(pi.consumed_qty) == 20.0
+
+    # Inflate BOM demand so reversal would naively try to reverse 60 (> consumed 20)
+    set_bom(db, jewelry.id, part.id, 6)  # 10 件 → demand 60 at reverse time
+
+    delete_handcraft_receipt(db, jr.id)
+    db.expire(pi)
+    # consumed_qty must never go below 0
+    assert float(pi.consumed_qty) >= 0.0
+    # returned_qty must remain intact (30 returned, not touched by jewelry reversal)
+    assert float(pi.returned_qty or 0) == 30.0
+    # invariant: received >= returned (consumed can be 0 but not negative)
+    assert float(pi.received_qty) >= float(pi.returned_qty or 0)
