@@ -216,6 +216,13 @@
       @update:show="partModalShow = $event"
     />
 
+    <!-- Handcraft Order Peek Modal -->
+    <handcraft-order-peek-modal
+      :show="peekShow"
+      :order-id="peekOrderId"
+      @update:show="peekShow = $event"
+    />
+
     <!-- Cost Diff Modal -->
     <n-modal v-model:show="costDiffVisible" :mask-closable="false" preset="card" title="手工费成本变动确认" :style="{ width: isMobile ? '95vw' : '550px' }">
       <div style="margin-bottom: 12px; color: #333;">
@@ -253,6 +260,7 @@ import {
 } from 'naive-ui'
 import { listHandcraftPendingReceiveItems, createHandcraftReceipt } from '@/api/handcraftReceipts'
 import { getHandcraftSuppliers, getHandcraftByReceiptCode } from '@/api/handcraft'
+import HandcraftOrderPeekModal from '@/components/HandcraftOrderPeekModal.vue'
 import { batchUpdatePartCosts } from '@/api/parts'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import { tsToDateStr } from '@/utils/date'
@@ -533,7 +541,9 @@ const partPendingColumns = [
   },
 ]
 
-const openOrderPeek = (orderId) => {}
+const peekShow = ref(false)
+const peekOrderId = ref(null)
+const openOrderPeek = (orderId) => { peekOrderId.value = orderId; peekShow.value = true }
 
 const jewelryPendingColumns = [
   { type: 'selection' },
