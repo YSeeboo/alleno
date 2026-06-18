@@ -68,12 +68,10 @@
       </div>
     </div>
 
-    <n-card title="待回收项目" style="margin-bottom: 16px;">
-      <template #header-extra>
-        <n-radio-group v-model:value="activeTab" size="small">
-          <n-radio-button value="part">配件</n-radio-button>
-          <n-radio-button value="jewelry">产出</n-radio-button>
-        </n-radio-group>
+    <n-card style="margin-bottom: 16px;">
+      <template #header>
+        <span style="font-weight: 600;">待回收饰品</span>
+        <span style="font-size: 12px; color: #9ca3af; margin-left: 8px; font-weight: 400;">该商家制作中的产出项</span>
       </template>
 
       <!-- Scope banner：仅在回执码模式下显示 -->
@@ -107,17 +105,18 @@
       </div>
       <n-spin :show="loadingItems">
         <n-empty
-          v-if="!loadingItems && currentPendingItems.length === 0"
-          :description="fetchError ? '加载失败，请重试' : (supplierName || scopeCode) ? `该商家暂无待回收${activeTab === 'part' ? '配件' : '产出项'}` : '请先选择商家或输入回执编码'"
+          v-if="!loadingItems && pendingJewelryItems.length === 0"
+          :description="fetchError ? '加载失败，请重试' : (supplierName || scopeCode) ? '该商家暂无待回收产出项' : '请先选择商家或输入回执编码'"
           style="margin-top: 16px;"
         />
         <n-data-table
-          v-if="currentPendingItems.length > 0"
-          :columns="currentColumns"
-          :data="currentPendingItems"
+          v-if="pendingJewelryItems.length > 0"
+          :columns="jewelryPendingColumns"
+          :data="pendingJewelryItems"
           :bordered="false"
           :row-key="(row) => rowKey(row)"
-          :checked-row-keys="currentCheckedKeys"
+          :checked-row-keys="jewelryCheckedKeys"
+          :max-height="280"
           @update:checked-row-keys="onCheck"
         />
       </n-spin>
@@ -173,7 +172,7 @@ import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
-  NCard, NH2, NRadioGroup, NRadio, NRadioButton, NDataTable, NSpin, NEmpty, NImage, NModal, NDatePicker,
+  NCard, NH2, NRadioGroup, NRadio, NDataTable, NSpin, NEmpty, NImage, NModal, NDatePicker,
 } from 'naive-ui'
 import { listHandcraftPendingReceiveItems, createHandcraftReceipt } from '@/api/handcraftReceipts'
 import { getHandcraftSuppliers, getHandcraftByReceiptCode } from '@/api/handcraft'
@@ -192,8 +191,6 @@ const createdAtTs = ref(null)
 const submitting = ref(false)
 const loadingItems = ref(false)
 const supplierOptions = ref([])
-const activeTab = ref('part')
-
 // Receipt code scoped query state
 const receiptCode = ref('')
 const scopeCode = ref(null)       // 已生效的回执码过滤；null = 商家模式
@@ -231,10 +228,6 @@ const unitOptions = [
 
 const rowKey = (row) => `${row.is_output ? 'output' : row.item_type}_${row.id}`
 const getRemaining = (item) => item.qty - (item.received_qty || 0)
-
-const currentPendingItems = computed(() => activeTab.value === 'part' ? pendingPartItems.value : pendingJewelryItems.value)
-const currentCheckedKeys = computed(() => activeTab.value === 'part' ? partCheckedKeys.value : jewelryCheckedKeys.value)
-const currentColumns = computed(() => activeTab.value === 'part' ? partPendingColumns : jewelryPendingColumns)
 
 const getInput = (key) => {
   if (!itemInputs[key]) {
@@ -356,11 +349,7 @@ const onFilterDateChange = () => {
 }
 
 const onCheck = (keys) => {
-  if (activeTab.value === 'part') {
-    partCheckedKeys.value = keys
-  } else {
-    jewelryCheckedKeys.value = keys
-  }
+  jewelryCheckedKeys.value = keys
 }
 
 const partPendingColumns = [
@@ -446,9 +435,10 @@ const partPendingColumns = [
   },
 ]
 
+const openOrderPeek = (orderId) => {}
+
 const jewelryPendingColumns = [
   { type: 'selection' },
-  { title: '手工单号', key: 'handcraft_order_id', width: 110 },
   {
     title: '产出项',
     key: 'item_name',
@@ -525,6 +515,15 @@ const jewelryPendingColumns = [
         'onUpdate:value': (v) => { input.price = v },
       })
     },
+  },
+  {
+    title: '手工单',
+    key: 'handcraft_order_id',
+    width: 110,
+    render: (row) => h('span', {
+      style: 'color:#6366F1; font-weight:600; cursor:pointer; border-bottom:1px dashed #c7cbf5;',
+      onClick: () => openOrderPeek(row.handcraft_order_id),
+    }, [row.handcraft_order_id, ' 🗗']),
   },
 ]
 
