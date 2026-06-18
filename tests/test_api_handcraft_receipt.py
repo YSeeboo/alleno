@@ -714,3 +714,32 @@ def test_order_auto_completes_when_all_effective_qty_received(client, db):
     assert order.status == "completed", (
         f"order should auto-complete (all effective qty received), got {order.status}"
     )
+
+
+def test_receipt_response_reports_parts_shortfall(client, db):
+    from services.part import create_part
+    from services.jewelry import create_jewelry
+    from services.bom import set_bom
+    from services.inventory import add_stock
+    from services.handcraft import create_handcraft_order, send_handcraft_order
+    from models.handcraft_order import HandcraftJewelryItem
+
+    part = create_part(db, {"name": "珠", "category": "小配件"})
+    add_stock(db, "part", part.id, 1000, "入库")
+    jewelry = create_jewelry(db, {"name": "项链", "category": "单件"})
+    set_bom(db, jewelry.id, part.id, 10)
+    order = create_handcraft_order(
+        db, "商家S",
+        parts=[{"part_id": part.id, "qty": 5}],
+        jewelries=[{"jewelry_id": jewelry.id, "qty": 10}],
+    )
+    send_handcraft_order(db, order.id)
+    ji = db.query(HandcraftJewelryItem).filter_by(handcraft_order_id=order.id).first()
+
+    resp = client.post("/api/handcraft-receipts/", json={
+        "supplier_name": "商家S",
+        "items": [{"handcraft_jewelry_item_id": ji.id, "qty": 10}],
+    })
+    assert resp.status_code == 201
+    sf = resp.json()["parts_shortfall"]
+    assert any(x["part_id"] == part.id and abs(x["shortfall_qty"] - 95.0) < 1e-6 for x in sf)

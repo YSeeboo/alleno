@@ -106,3 +106,4 @@ class HandcraftReceiptResponse(BaseModel):
     delivery_images: list[str] = Field(default_factory=list)
     items: list[HandcraftReceiptItemResponse] = Field(default_factory=list)
     cost_diffs: list[CostDiffItem] = Field(default_factory=list)
+    parts_shortfall: list[dict] = []

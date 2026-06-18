@@ -78,6 +78,7 @@ def api_create_handcraft_receipt(body: HandcraftReceiptCreate, db: Session = Dep
                 auto_set_initial_handcraft_cost(db, item.item_id, float(item.price))
     resp = HandcraftReceiptResponse.model_validate(receipt)
     resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]
+    resp.parts_shortfall = getattr(receipt, "parts_shortfall", []) or []
     return resp
 
 
@@ -119,6 +120,7 @@ def api_add_handcraft_receipt_items(receipt_id: str, body: HandcraftReceiptAddIt
                 auto_set_initial_handcraft_cost(db, item.item_id, float(item.price))
     resp = HandcraftReceiptResponse.model_validate(receipt)
     resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]
+    resp.parts_shortfall = getattr(receipt, "parts_shortfall", []) or []
     return resp
 
 
