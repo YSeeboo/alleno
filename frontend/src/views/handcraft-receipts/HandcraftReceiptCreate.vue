@@ -73,6 +73,17 @@
         <span style="font-weight: 600;">待回收饰品</span>
         <span style="font-size: 12px; color: #9ca3af; margin-left: 8px; font-weight: 400;">该商家制作中的产出项</span>
       </template>
+      <template #header-extra>
+        <n-badge :value="partReturnCount" :max="99" :show="partReturnCount > 0">
+          <n-button
+            size="small"
+            style="color: #6366F1; border-color: #c7cbf5; background: #fff;"
+            @click="partModalShow = true"
+          >
+            ＋ 配件回收
+          </n-button>
+        </n-badge>
+      </template>
 
       <!-- Scope banner：仅在回执码模式下显示 -->
       <div
@@ -84,6 +95,23 @@
           style="margin-left: auto; cursor: pointer; opacity: 0.7;"
           @click="clearReceiptScope"
         >✕ 清除</span>
+      </div>
+
+      <!-- 配件回收回执条：常驻 -->
+      <div
+        :class="partReturnCount === 0 ? 'parts-recap parts-recap-empty' : 'parts-recap'"
+        style="margin-bottom: 10px; background: #eef1fe; border: 1px solid #d6dafb; border-radius: 7px; padding: 9px 12px; display: flex; align-items: center; gap: 10px; font-size: 12.5px;"
+      >
+        <span style="color: #6366F1; font-weight: 600; white-space: nowrap;">
+          {{ partReturnCount > 0 ? `配件回收 · ${partReturnCount} 项` : '配件回收' }}
+        </span>
+        <span :style="{ flex: 1, color: partReturnCount > 0 ? '#6b7280' : '#9ca3af' }">
+          {{ partReturnCount > 0 ? partReturnSummary : '未选配件退料' }}
+        </span>
+        <span
+          style="color: #6366F1; font-size: 12px; cursor: pointer; white-space: nowrap;"
+          @click="partModalShow = true"
+        >编辑</span>
       </div>
 
       <div v-if="supplierName || scopeCode" style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
@@ -139,6 +167,17 @@
       <n-button type="primary" :loading="submitting" @click="submit">提交</n-button>
     </n-space>
 
+    <!-- Part Return Modal -->
+    <part-return-modal
+      :show="partModalShow"
+      :parts="pendingPartItems"
+      :selections="partReturnSel"
+      :is-mobile="isMobile"
+      @confirm="onPartConfirm"
+      @cancel="partModalShow = false"
+      @update:show="partModalShow = $event"
+    />
+
     <!-- Cost Diff Modal -->
     <n-modal v-model:show="costDiffVisible" :mask-closable="false" preset="card" title="手工费成本变动确认" :style="{ width: isMobile ? '95vw' : '550px' }">
       <div style="margin-bottom: 12px; color: #333;">
@@ -172,7 +211,7 @@ import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
-  NCard, NH2, NRadioGroup, NRadio, NDataTable, NSpin, NEmpty, NImage, NModal, NDatePicker,
+  NCard, NH2, NRadioGroup, NRadio, NDataTable, NSpin, NEmpty, NImage, NModal, NDatePicker, NBadge,
 } from 'naive-ui'
 import { listHandcraftPendingReceiveItems, createHandcraftReceipt } from '@/api/handcraftReceipts'
 import { getHandcraftSuppliers, getHandcraftByReceiptCode } from '@/api/handcraft'
@@ -180,6 +219,7 @@ import { batchUpdatePartCosts } from '@/api/parts'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import { tsToDateStr } from '@/utils/date'
 import { useIsMobile } from '@/composables/useIsMobile'
+import PartReturnModal from './PartReturnModal.vue'
 
 const router = useRouter()
 const message = useMessage()
@@ -211,6 +251,17 @@ const filterDateOn = ref(null)
 let debounceTimer = null
 let fetchSeq = 0
 const fetchError = ref(false)
+
+// Part return modal
+const partModalShow = ref(false)
+const partReturnSel = reactive({})   // {partItemId (string): qty}
+const partReturnCount = computed(() => Object.keys(partReturnSel).length)
+const onPartConfirm = (sel) => {
+  // Replace all with new selection
+  Object.keys(partReturnSel).forEach((k) => delete partReturnSel[k])
+  Object.entries(sel).forEach(([k, v]) => { if (v > 0) partReturnSel[k] = v })
+  partModalShow.value = false
+}
 
 // Cost diff modal
 const costDiffVisible = ref(false)
@@ -245,6 +296,17 @@ const totalAmount = computed(() => {
     }
   }
   return fmtMoney(sum)
+})
+
+// Recap chip: summarize selected part returns
+const partReturnSummary = computed(() => {
+  const entries = Object.entries(partReturnSel)
+  if (entries.length === 0) return ''
+  return entries.map(([id, qty]) => {
+    const part = pendingPartItems.value.find((p) => String(p.id) === String(id))
+    const name = part ? part.item_name : `ID:${id}`
+    return `${name} ×${qty}`
+  }).join('、')
 })
 
 const fetchPendingItems = async () => {
