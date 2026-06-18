@@ -234,13 +234,15 @@ def _resolve_parts_shortfall(db: Session, shortfall_acc: dict) -> list:
 
 
 def _reverse_receive(db: Session, order_item, item_type: str, qty: float) -> None:
-    """Reverse qty from received_qty, update item status, deduct stock.
+    """Reverse qty from received_qty; mirror of _apply_receive.
 
-    For jewelry items, also reverse the auto-consumed parts.
-    For part output items, reverse the auto-consumed child parts.
+    Part (direct return): decrement returned_qty + deduct stock.
+    Jewelry/part-output: deduct stock + reverse auto-consumed parts (which
+    decrement consumed_qty).
     """
     order_item.received_qty = float(order_item.received_qty or 0) - qty
     if item_type == "part":
+        order_item.returned_qty = float(order_item.returned_qty or 0) - qty
         deduct_stock(db, "part", order_item.part_id, qty, "手工收回撤回")
     else:
         if order_item.jewelry_id:
@@ -282,6 +284,7 @@ def _reverse_auto_consume_parts(db: Session, handcraft_order_id: str, jewelry_id
             if reverse_amount <= 0:
                 continue
             pi.received_qty = current - reverse_amount
+            pi.consumed_qty = float(pi.consumed_qty or 0) - reverse_amount
             if float(pi.received_qty) >= float(pi.qty):
                 pi.status = "已收回"
             elif float(pi.received_qty) > 0:
@@ -320,6 +323,7 @@ def _reverse_auto_consume_child_parts(db: Session, handcraft_order_id: str, pare
             if reverse_amount <= 0:
                 continue
             pi.received_qty = current - reverse_amount
+            pi.consumed_qty = float(pi.consumed_qty or 0) - reverse_amount
             if float(pi.received_qty) >= float(pi.qty):
                 pi.status = "已收回"
             else:
