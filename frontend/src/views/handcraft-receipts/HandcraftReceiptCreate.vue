@@ -38,7 +38,7 @@
           clearable
           style="width: 100%; --n-border: 1px solid #bcc0f3; --n-border-hover: 1px solid #6366F1; --n-border-focus: 1px solid #6366F1; --n-caret-color: #6366F1;"
           @keyup.enter="applyReceiptCode"
-          @blur="applyReceiptCode"
+          @blur="onReceiptBlur"
         >
           <template #prefix>
             <span style="color: #6366F1;">⌗</span>
@@ -359,7 +359,7 @@ import { ref, reactive, computed, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
-  NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
+  NSpace, NButton, NSelect, NInput, NInputNumber,
   NCard, NH2, NRadioGroup, NRadio, NRadioButton, NDataTable, NSpin, NEmpty, NImage, NModal, NDatePicker, NBadge, NCheckbox,
 } from 'naive-ui'
 import { listHandcraftPendingReceiveItems, createHandcraftReceipt } from '@/api/handcraftReceipts'
@@ -389,7 +389,6 @@ const supplierLocked = ref(false) // 回执码模式下锁定商家选择
 // Pending items separated by type
 const pendingPartItems = ref([])
 const pendingJewelryItems = ref([])
-const partCheckedKeys = ref([])
 const jewelryCheckedKeys = ref([])
 
 // Store user input for qty and price per item key
@@ -498,7 +497,6 @@ const fetchPendingItems = async () => {
     if (seq !== fetchSeq) return
     pendingPartItems.value = []
     pendingJewelryItems.value = []
-    partCheckedKeys.value = []
     jewelryCheckedKeys.value = []
     fetchError.value = true
     message.error('加载待回收项目失败')
@@ -519,7 +517,7 @@ const applyReceiptCode = async () => {
     supplierName.value = order.supplier_name
     supplierLocked.value = true
     scopeCode.value = code
-    partCheckedKeys.value = []
+    Object.keys(partReturnSel).forEach((k) => delete partReturnSel[k])
     jewelryCheckedKeys.value = []
     await fetchPendingItems()
   } catch (_) {
@@ -527,16 +525,23 @@ const applyReceiptCode = async () => {
   }
 }
 
+const onReceiptBlur = () => {
+  const code = receiptCode.value.trim()
+  if (code.length === 5) applyReceiptCode()
+}
+
 const clearReceiptScope = async () => {
   scopeCode.value = null
   supplierLocked.value = false
   receiptCode.value = ''
+  Object.keys(partReturnSel).forEach((k) => delete partReturnSel[k])
+  jewelryCheckedKeys.value = []
   await fetchPendingItems()
 }
 
 const onSupplierChange = async (val) => {
   supplierName.value = val
-  partCheckedKeys.value = []
+  Object.keys(partReturnSel).forEach((k) => delete partReturnSel[k])
   jewelryCheckedKeys.value = []
   filterKeyword.value = ''
   filterDateOn.value = null
@@ -546,14 +551,12 @@ const onSupplierChange = async (val) => {
 const onFilterKeywordChange = () => {
   clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
-    partCheckedKeys.value = []
     jewelryCheckedKeys.value = []
     fetchPendingItems()
   }, 300)
 }
 
 const onFilterDateChange = () => {
-  partCheckedKeys.value = []
   jewelryCheckedKeys.value = []
   fetchPendingItems()
 }
@@ -569,89 +572,6 @@ const toggleMobileCard = (key, checked) => {
     jewelryCheckedKeys.value = jewelryCheckedKeys.value.filter((k) => k !== key)
   }
 }
-
-const partPendingColumns = [
-  { type: 'selection' },
-  { title: '手工单号', key: 'handcraft_order_id', width: 110 },
-  {
-    title: '配件',
-    key: 'item_name',
-    minWidth: 160,
-    render: (row) => renderNamedImage(row.item_name, row.item_image, row.item_name, 40, row.is_composite ? '组合' : null),
-  },
-  { title: '颜色', key: 'color', width: 80, render: (r) => r.color || '-' },
-  {
-    title: '发出日期',
-    key: 'created_at',
-    width: 100,
-    render: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString('zh-CN') : '-',
-  },
-  { title: '总数量', key: 'qty', width: 80 },
-  { title: '已回收', key: 'received_qty', width: 80, render: (r) => r.received_qty ?? 0 },
-  { title: '剩余', key: 'remaining', width: 80, render: (r) => getRemaining(r) },
-  {
-    title: '本次回收',
-    key: 'input_qty',
-    width: 120,
-    render: (row) => {
-      const input = getInput(rowKey(row))
-      return h(NInputNumber, {
-        value: input.qty,
-        min: 0.0001,
-        max: getRemaining(row),
-        precision: 4,
-        step: 1,
-        size: 'small',
-        style: 'width: 110px;',
-        'onUpdate:value': (v) => { input.qty = v },
-      })
-    },
-  },
-  {
-    title: '重量',
-    key: 'input_weight',
-    width: 140,
-    render: (row) => {
-      const input = getInput(rowKey(row))
-      return h('div', { style: 'display:flex;gap:4px;align-items:center' }, [
-        h(NInputNumber, {
-          value: input.weight,
-          size: 'small',
-          style: 'width:80px',
-          min: 0,
-          placeholder: '重量',
-          'onUpdate:value': (v) => { input.weight = v },
-        }),
-        h(NSelect, {
-          value: input.weight_unit || 'g',
-          size: 'small',
-          style: 'width:55px',
-          options: [{ label: 'g', value: 'g' }, { label: 'kg', value: 'kg' }],
-          'onUpdate:value': (v) => { input.weight_unit = v },
-        }),
-      ])
-    },
-  },
-  {
-    title: '手工费单价',
-    key: 'input_price',
-    width: 120,
-    render: (row) => {
-      const input = getInput(rowKey(row))
-      return h(NInputNumber, {
-        value: input.price,
-        min: 0,
-        precision: 7,
-        format: fmtPrice,
-        parse: parseNum,
-        step: 0.1,
-        size: 'small',
-        style: 'width: 110px;',
-        'onUpdate:value': (v) => { input.price = v },
-      })
-    },
-  },
-]
 
 const peekShow = ref(false)
 const peekOrderId = ref(null)
