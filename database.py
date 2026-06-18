@@ -31,6 +31,45 @@ def _ensure_indexes(conn, inspector):
                 logger.warning("Created missing index %s on %s", idx.name, table.name)
 
 
+def backfill_handcraft_part_counters(conn):
+    """One-time split of handcraft_part_item.received_qty into returned/consumed.
+
+    returned_qty := Σ qty of this part_item's item_type='part' receipt rows
+                    (direct surplus returns).
+    consumed_qty := max(received_qty - returned_qty, 0)  (the rest = auto-consumed).
+
+    Idempotent: recomputes both columns from receipts each run, so re-running
+    after more receipts land stays correct. Only rewrites rows where the split
+    is stale, to avoid churn.
+    """
+    conn.execute(text("""
+        WITH ret AS (
+            SELECT hri.handcraft_part_item_id AS pid,
+                   COALESCE(SUM(hri.qty), 0) AS returned
+            FROM handcraft_receipt_item hri
+            WHERE hri.item_type = 'part'
+              AND hri.handcraft_part_item_id IS NOT NULL
+            GROUP BY hri.handcraft_part_item_id
+        )
+        UPDATE handcraft_part_item p
+        SET returned_qty = COALESCE(ret.returned, 0),
+            consumed_qty = GREATEST(COALESCE(p.received_qty, 0) - COALESCE(ret.returned, 0), 0)
+        FROM ret
+        WHERE p.id = ret.pid
+    """))
+    # Part items with received_qty but no part receipts → all consumed.
+    conn.execute(text("""
+        UPDATE handcraft_part_item p
+        SET returned_qty = 0,
+            consumed_qty = COALESCE(p.received_qty, 0)
+        WHERE COALESCE(p.received_qty, 0) > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM handcraft_receipt_item hri
+            WHERE hri.handcraft_part_item_id = p.id AND hri.item_type = 'part'
+          )
+    """))
+
+
 def ensure_schema_compat(target_engine=None):
     target_engine = target_engine or engine
     with target_engine.begin() as conn:
@@ -216,6 +255,19 @@ def ensure_schema_compat(target_engine=None):
                     "UPDATE handcraft_part_item SET status = '已收回' "
                     "WHERE handcraft_order_id IN (SELECT id FROM handcraft_order WHERE status = 'completed')"
                 ))
+            cols2 = {col["name"] for col in inspector.get_columns("handcraft_part_item")}
+            added_split = False
+            if "returned_qty" not in cols2:
+                conn.execute(text("ALTER TABLE handcraft_part_item ADD COLUMN returned_qty NUMERIC(10,4) DEFAULT 0"))
+                logger.warning("Added missing handcraft_part_item.returned_qty column")
+                added_split = True
+            if "consumed_qty" not in cols2:
+                conn.execute(text("ALTER TABLE handcraft_part_item ADD COLUMN consumed_qty NUMERIC(10,4) DEFAULT 0"))
+                logger.warning("Added missing handcraft_part_item.consumed_qty column")
+                added_split = True
+            if added_split:
+                backfill_handcraft_part_counters(conn)
+                logger.warning("Backfilled handcraft_part_item returned_qty/consumed_qty")
 
         # Migrate historical supplier/vendor names into supplier table
         if inspector.has_table("supplier"):
