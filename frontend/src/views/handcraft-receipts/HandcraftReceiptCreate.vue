@@ -150,22 +150,60 @@
       </n-spin>
     </n-card>
 
-    <div style="margin-bottom: 16px; font-size: 15px; font-weight: 600;">
-      总金额：¥ {{ totalAmount }}
-    </div>
+    <!-- 底部常驻操作栏 -->
+    <div
+      :style="{
+        position: 'sticky',
+        bottom: 0,
+        marginTop: '14px',
+        background: '#fff',
+        borderTop: '1px solid #e5e7eb',
+        padding: isMobile ? '10px 14px calc(10px + env(safe-area-inset-bottom))' : '12px 18px',
+        display: 'flex',
+        alignItems: isMobile ? 'stretch' : 'center',
+        flexDirection: isMobile ? 'column' : 'row',
+        gap: isMobile ? '10px' : '16px',
+        boxShadow: '0 -6px 16px rgba(0,0,0,.04)',
+        zIndex: 10,
+      }"
+    >
+      <!-- 合计金额 -->
+      <div :style="{ display: 'flex', flexDirection: 'column', ...(isMobile ? { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' } : {}) }">
+        <span style="font-size: 11px; color: #9ca3af;">合计金额</span>
+        <span style="font-size: 26px; font-weight: 700; color: #6366F1; line-height: 1.1; font-variant-numeric: tabular-nums;">
+          <small style="font-size: 14px; font-weight: 600; margin-right: 2px;">¥</small>{{ totalAmount }}
+        </span>
+      </div>
 
-    <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="100" style="margin-bottom: 16px;">
-      <n-form-item label="付款状态">
-        <n-radio-group v-model:value="status">
-          <n-radio value="未付款">未付款</n-radio>
-          <n-radio value="已付款">已付款</n-radio>
+      <!-- 付款状态 -->
+      <div style="display: flex; flex-direction: column; gap: 5px;">
+        <span style="font-size: 11px; color: #9ca3af;">付款状态</span>
+        <n-radio-group v-model:value="status" size="small">
+          <n-radio-button value="未付款">未付款</n-radio-button>
+          <n-radio-button value="已付款">已付款</n-radio-button>
         </n-radio-group>
-      </n-form-item>
-    </n-form>
+      </div>
 
-    <n-space justify="end">
-      <n-button type="primary" :loading="submitting" @click="submit">提交</n-button>
-    </n-space>
+      <div v-if="!isMobile" style="flex: 1;" />
+
+      <!-- 提交按钮 -->
+      <n-button
+        type="primary"
+        :loading="submitting"
+        :style="{
+          height: isMobile ? '46px' : '42px',
+          padding: isMobile ? '0' : '0 30px',
+          fontSize: isMobile ? '15.5px' : '15px',
+          fontWeight: 600,
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(99,102,241,.28)',
+          width: isMobile ? '100%' : 'auto',
+        }"
+        @click="submit"
+      >
+        提交回收单 →
+      </n-button>
+    </div>
 
     <!-- Part Return Modal -->
     <part-return-modal
@@ -211,7 +249,7 @@ import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
-  NCard, NH2, NRadioGroup, NRadio, NDataTable, NSpin, NEmpty, NImage, NModal, NDatePicker, NBadge,
+  NCard, NH2, NRadioGroup, NRadio, NRadioButton, NDataTable, NSpin, NEmpty, NImage, NModal, NDatePicker, NBadge,
 } from 'naive-ui'
 import { listHandcraftPendingReceiveItems, createHandcraftReceipt } from '@/api/handcraftReceipts'
 import { getHandcraftSuppliers, getHandcraftByReceiptCode } from '@/api/handcraft'
@@ -289,11 +327,9 @@ const getInput = (key) => {
 
 const totalAmount = computed(() => {
   let sum = 0
-  for (const key of [...partCheckedKeys.value, ...jewelryCheckedKeys.value]) {
+  for (const key of jewelryCheckedKeys.value) {
     const input = itemInputs[key]
-    if (input) {
-      sum += (input.qty || 0) * (input.price || 0)
-    }
+    if (input) sum += (input.qty || 0) * (input.price || 0)
   }
   return fmtMoney(sum)
 })
@@ -627,38 +663,40 @@ const skipCostUpdate = () => {
 
 const submit = async () => {
   if (!supplierName.value?.trim()) { message.warning('请输入商家名称'); return }
-  const allCheckedKeys = [...partCheckedKeys.value, ...jewelryCheckedKeys.value]
-  if (allCheckedKeys.length === 0) { message.warning('请至少勾选一条待回收项目'); return }
-
   const items = []
-  for (const key of allCheckedKeys) {
-    const [type, idStr] = key.split('_')
-    const id = parseInt(idStr, 10)
-    const allItems = type === 'part' ? pendingPartItems.value : pendingJewelryItems.value
-    const pending = allItems.find((p) => p.id === id)
+
+  // 产出项（勾选的待回收饰品）
+  for (const key of jewelryCheckedKeys.value) {
+    const id = parseInt(key.split('_')[1], 10)
+    const pending = pendingJewelryItems.value.find((p) => p.id === id)
     if (!pending) continue
     const input = itemInputs[key]
     if (!input?.qty || input.qty <= 0) {
       message.warning(`请填写「${pending.item_name}」的回收数量`)
       return
     }
-
-    const item = {
+    items.push({
+      handcraft_jewelry_item_id: pending.id,
       qty: input.qty,
       weight: input.weight != null ? input.weight : null,
       weight_unit: input.weight != null ? (input.weight_unit || 'g') : null,
       price: input.price != null ? input.price : null,
       unit: input.unit || '个',
-    }
-    if (type === 'output') {
-      // Output items (jewelry or part output) use handcraft_jewelry_item_id
-      item.handcraft_jewelry_item_id = pending.id
-    } else {
-      // Regular part items
-      item.handcraft_part_item_id = pending.id
-    }
-    items.push(item)
+    })
   }
+
+  // 配件退料（弹窗选择，无价格）
+  for (const [pidStr, qty] of Object.entries(partReturnSel)) {
+    if (!qty || qty <= 0) continue
+    const pending = pendingPartItems.value.find((p) => String(p.id) === String(pidStr))
+    items.push({
+      handcraft_part_item_id: parseInt(pidStr, 10),
+      qty,
+      unit: pending?.unit || '个',
+    })
+  }
+
+  if (items.length === 0) { message.warning('请至少选择一项待回收饰品或配件退料'); return }
 
   submitting.value = true
   try {
@@ -671,6 +709,11 @@ const submit = async () => {
     const createdAt = tsToDateStr(createdAtTs.value)
     if (createdAt) payload.created_at = createdAt
     const { data } = await createHandcraftReceipt(payload)
+    // 配件不足提示
+    if (Array.isArray(data.parts_shortfall) && data.parts_shortfall.length) {
+      const lines = data.parts_shortfall.map((s) => `${s.part_name}：缺 ${s.shortfall_qty}`).join('；')
+      message.warning(`部分产出项所需配件不足：${lines}`, { duration: 8000 })
+    }
     message.success('创建成功')
     handleCostDiffs(data)
   } finally {
