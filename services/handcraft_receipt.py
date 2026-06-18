@@ -132,82 +132,105 @@ def _apply_receive(db: Session, order_item, item_type: str, qty: float) -> dict:
     return shortfall
 
 
-def _auto_consume_parts(db: Session, handcraft_order_id: str, jewelry_id: str, jewelry_qty: float) -> None:
-    """When jewelry is received, auto-consume parts in the same handcraft order based on BOM.
+def _auto_consume_parts(db: Session, handcraft_order_id: str, jewelry_id: str, jewelry_qty: float) -> dict:
+    """When jewelry is received, auto-consume the order's sent parts per BOM.
 
-    Total consumption per part_id = BOM qty_per_unit × jewelry_qty,
-    distributed across rows (if same part_id appears multiple times), capped at each row's remaining qty.
+    Consumption per part_id = BOM qty_per_unit × jewelry_qty, distributed across
+    that part's rows, each capped at its remaining capacity
+    `_effective_qty(pi) - received_qty` (effective = picking actual_qty override
+    when set — fixes the old pi.qty cap). Writes consumed_qty (NOT returned_qty)
+    and bumps received_qty; moves NO stock. Returns {part_id: unmet_qty} for
+    parts whose BOM demand exceeded what was sent.
     """
     from models.bom import Bom
     from collections import defaultdict
 
     bom_rows = db.query(Bom).filter_by(jewelry_id=jewelry_id).all()
     if not bom_rows:
-        return
-
+        return {}
     bom_map = {b.part_id: float(b.qty_per_unit) for b in bom_rows}
     part_items = db.query(HandcraftPartItem).filter_by(handcraft_order_id=handcraft_order_id).all()
-
-    # Group by part_id to distribute consumption correctly
     by_part: dict[str, list] = defaultdict(list)
     for pi in part_items:
         if pi.part_id in bom_map:
             by_part[pi.part_id].append(pi)
 
-    for part_id, rows in by_part.items():
-        total_consumption = bom_map[part_id] * jewelry_qty
-        # Distribute across rows, filling each up to its remaining capacity
-        for pi in rows:
+    shortfall: dict[str, float] = {}
+    for part_id, qty_per in bom_map.items():
+        total_consumption = qty_per * jewelry_qty
+        for pi in by_part.get(part_id, []):
             if total_consumption <= 0:
                 break
-            remaining = float(pi.qty) - float(pi.received_qty or 0)
-            actual = min(total_consumption, remaining)
+            available = _effective_qty(db, pi, "part") - float(pi.received_qty or 0)
+            actual = min(total_consumption, available)
             if actual <= 0:
                 continue
+            pi.consumed_qty = float(pi.consumed_qty or 0) + actual
             pi.received_qty = float(pi.received_qty or 0) + actual
-            if float(pi.received_qty) >= float(pi.qty):
+            if float(pi.received_qty) >= _effective_qty(db, pi, "part"):
                 pi.status = "已收回"
             else:
                 pi.status = "制作中"
             total_consumption -= actual
-
+        if total_consumption > 1e-9:
+            shortfall[part_id] = total_consumption
     db.flush()
+    return shortfall
 
 
-def _auto_consume_child_parts(db: Session, handcraft_order_id: str, parent_part_id: str, parent_qty: float) -> None:
-    """When a composite part is received, auto-consume child parts based on part_bom."""
+def _auto_consume_child_parts(db: Session, handcraft_order_id: str, parent_part_id: str, parent_qty: float) -> dict:
+    """When a composite part output is received, auto-consume its child parts
+    per part_bom. Same semantics as _auto_consume_parts: writes consumed_qty,
+    effective cap, no stock move, returns {child_part_id: unmet_qty}."""
     from models.part_bom import PartBom
+    from collections import defaultdict
 
     bom_rows = db.query(PartBom).filter_by(parent_part_id=parent_part_id).all()
     if not bom_rows:
-        return
-
+        return {}
     bom_map = {b.child_part_id: float(b.qty_per_unit) for b in bom_rows}
     part_items = db.query(HandcraftPartItem).filter_by(handcraft_order_id=handcraft_order_id).all()
-
-    from collections import defaultdict
     by_part: dict[str, list] = defaultdict(list)
     for pi in part_items:
         if pi.part_id in bom_map:
             by_part[pi.part_id].append(pi)
 
-    for part_id, rows in by_part.items():
-        total_consumption = bom_map[part_id] * parent_qty
-        for pi in rows:
+    shortfall: dict[str, float] = {}
+    for part_id, qty_per in bom_map.items():
+        total_consumption = qty_per * parent_qty
+        for pi in by_part.get(part_id, []):
             if total_consumption <= 0:
                 break
-            remaining = float(pi.qty) - float(pi.received_qty or 0)
-            actual = min(total_consumption, remaining)
+            available = _effective_qty(db, pi, "part") - float(pi.received_qty or 0)
+            actual = min(total_consumption, available)
             if actual <= 0:
                 continue
+            pi.consumed_qty = float(pi.consumed_qty or 0) + actual
             pi.received_qty = float(pi.received_qty or 0) + actual
-            if float(pi.received_qty) >= float(pi.qty):
+            if float(pi.received_qty) >= _effective_qty(db, pi, "part"):
                 pi.status = "已收回"
             else:
                 pi.status = "制作中"
             total_consumption -= actual
-
+        if total_consumption > 1e-9:
+            shortfall[part_id] = total_consumption
     db.flush()
+    return shortfall
+
+
+def _resolve_parts_shortfall(db: Session, shortfall_acc: dict) -> list:
+    """Turn {part_id: unmet_qty} into [{part_id, part_name, shortfall_qty}]."""
+    if not shortfall_acc:
+        return []
+    parts = {p.id: p for p in db.query(Part).filter(Part.id.in_(list(shortfall_acc.keys()))).all()}
+    return [
+        {
+            "part_id": pid,
+            "part_name": parts[pid].name if pid in parts else pid,
+            "shortfall_qty": float(qty),
+        }
+        for pid, qty in shortfall_acc.items()
+    ]
 
 
 def _reverse_receive(db: Session, order_item, item_type: str, qty: float) -> None:
@@ -399,6 +422,7 @@ def create_handcraft_receipt(
     db.flush()
 
     affected_orders = set()
+    shortfall_acc: dict[str, float] = {}
     total = Decimal(0)
 
     for item_data in items:
@@ -439,7 +463,9 @@ def create_handcraft_receipt(
             note=item_data.get("note"),
         ))
 
-        _apply_receive(db, order_item, item_type, qty)
+        sf = _apply_receive(db, order_item, item_type, qty)
+        for pid, q in (sf or {}).items():
+            shortfall_acc[pid] = shortfall_acc.get(pid, 0.0) + q
         affected_orders.add(hc_order_id)
 
     receipt.total_amount = total
@@ -449,6 +475,7 @@ def create_handcraft_receipt(
         _check_handcraft_order_completion(db, order_id)
     db.flush()
 
+    receipt.parts_shortfall = _resolve_parts_shortfall(db, shortfall_acc)
     _enrich_receipt(db, receipt)
     return receipt
 
@@ -465,6 +492,7 @@ def add_handcraft_receipt_items(
         raise ValueError("已付款的回收单不能添加明细")
 
     affected_orders = set()
+    shortfall_acc: dict[str, float] = {}
 
     for item_data in items:
         order_item, item_id, item_type, hc_order_id = _resolve_order_item(db, item_data)
@@ -502,7 +530,9 @@ def add_handcraft_receipt_items(
             note=item_data.get("note"),
         ))
 
-        _apply_receive(db, order_item, item_type, qty)
+        sf = _apply_receive(db, order_item, item_type, qty)
+        for pid, q in (sf or {}).items():
+            shortfall_acc[pid] = shortfall_acc.get(pid, 0.0) + q
         affected_orders.add(hc_order_id)
 
     _recalc_total(db, receipt)
@@ -512,6 +542,7 @@ def add_handcraft_receipt_items(
         _check_handcraft_order_completion(db, order_id)
     db.flush()
 
+    receipt.parts_shortfall = _resolve_parts_shortfall(db, shortfall_acc)
     db.expire(receipt, ["items"])
     _enrich_receipt(db, receipt)
     return receipt
