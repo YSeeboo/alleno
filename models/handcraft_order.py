@@ -48,6 +48,11 @@ class HandcraftPartItem(Base):
     weight = Column(Numeric(10, 4), nullable=True)
     weight_unit = Column(String, nullable=True, default="g")
     received_qty = Column(Numeric(10, 4), nullable=True, default=0)
+    # Split sources of received_qty (received_qty == returned_qty + consumed_qty):
+    #   returned_qty — surplus parts physically returned to stock (moves inventory)
+    #   consumed_qty — parts embodied into received outputs via BOM auto-consume (no inventory move)
+    returned_qty = Column(Numeric(10, 4), nullable=True, default=0)
+    consumed_qty = Column(Numeric(10, 4), nullable=True, default=0)
     status = Column(String, nullable=False, default="未送出")
     bom_qty = Column(Numeric(10, 4), nullable=True)
     unit = Column(String, nullable=True, default="个")
