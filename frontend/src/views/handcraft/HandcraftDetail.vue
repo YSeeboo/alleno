@@ -1,6 +1,7 @@
 <template>
   <div>
     <!-- ── Page header ─────────────────────────────────────── -->
+    <n-button text size="small" class="page-back" @click="router.back()">← 返回</n-button>
     <div class="page-breadcrumb">生产 / 手工单 / {{ order?.id || '…' }}</div>
 
     <div class="hc-head">
@@ -15,9 +16,6 @@
             'hc-status-pill--gray':    order.status === 'pending',
           }"
         >{{ statusLabel[order.status] }}</span>
-      </div>
-      <div class="hc-head__right">
-        <n-button text @click="router.back()">← 返回</n-button>
       </div>
     </div>
 
@@ -2489,11 +2487,12 @@ async function copyReceiptCode() {
   gap: 12px;
 }
 
-.hc-head__right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.page-back {
+  margin-bottom: 2px;
+  font-size: 13px;
 }
+.page-back :deep(.n-button__content) { color: #8B9096; transition: color 0.15s; }
+.page-back:hover :deep(.n-button__content) { color: #1E7A5A; }
 
 .hc-status-pill {
   font-size: 12px;
