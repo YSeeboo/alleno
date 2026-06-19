@@ -1,9 +1,143 @@
 <template>
   <div>
-    <n-space align="center" style="margin-bottom: 16px;">
-      <n-button text @click="router.back()">← 返回</n-button>
-      <n-h2 style="margin: 0;">手工单详情</n-h2>
-    </n-space>
+    <!-- ── Page header ─────────────────────────────────────── -->
+    <div class="page-breadcrumb">生产 / 手工单 / {{ order?.id || '…' }}</div>
+
+    <div class="hc-head">
+      <div class="hc-head__left">
+        <h2 class="page-title" style="margin-bottom: 0;">手工单 {{ order?.id || '…' }}</h2>
+        <span
+          v-if="order"
+          class="hc-status-pill"
+          :class="{
+            'hc-status-pill--emerald': order.status === 'completed',
+            'hc-status-pill--amber':   order.status === 'processing',
+            'hc-status-pill--gray':    order.status === 'pending',
+          }"
+        >{{ statusLabel[order.status] }}</span>
+      </div>
+      <div class="hc-head__right">
+        <n-button text @click="router.back()">← 返回</n-button>
+      </div>
+    </div>
+
+    <!-- ── Status stepper ──────────────────────────────────── -->
+    <div v-if="order" class="hc-stepper">
+      <div class="hc-step" :class="stepClass('pending')">
+        <span class="hc-step__dot">{{ order.status !== 'pending' ? '✓' : '1' }}</span>
+        <div>
+          <div class="hc-step__lab">待发出</div>
+          <div class="hc-step__sub">{{ fmt(order.created_at) }}</div>
+        </div>
+      </div>
+      <div class="hc-bar" :class="order.status !== 'pending' ? 'hc-bar--on' : 'hc-bar--off'"></div>
+      <div class="hc-step" :class="stepClass('processing')">
+        <span class="hc-step__dot">{{ order.status === 'completed' ? '✓' : '2' }}</span>
+        <div>
+          <div class="hc-step__lab">进行中</div>
+          <div class="hc-step__sub">{{ order.status !== 'pending' ? '已发出' : '待发出' }}</div>
+        </div>
+      </div>
+      <div class="hc-bar" :class="order.status === 'completed' ? 'hc-bar--on' : 'hc-bar--off'"></div>
+      <div class="hc-step" :class="stepClass('completed')">
+        <span class="hc-step__dot">3</span>
+        <div>
+          <div class="hc-step__lab">已完成</div>
+          <div class="hc-step__sub">{{ order.status === 'completed' ? (order.completed_at ? fmt(order.completed_at) : '已完成') : '待产出全部收回' }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Summary stat cards ──────────────────────────────── -->
+    <div v-if="order" class="hc-stats">
+      <div class="hc-stat">
+        <div class="hc-stat__k">产出项</div>
+        <div class="hc-stat__v">
+          {{ jewelryItems.length }}<small> 种 · {{ totalJewelryQty }} 件</small>
+        </div>
+      </div>
+      <div class="hc-stat">
+        <div class="hc-stat__k">发出配件</div>
+        <div class="hc-stat__v">
+          {{ items.length }}<small> 种</small>
+        </div>
+      </div>
+      <div class="hc-stat">
+        <div class="hc-stat__k">产出已收回</div>
+        <div class="hc-stat__v">
+          {{ totalReceivedQty }}<small> / {{ totalJewelryQty }}</small>
+        </div>
+      </div>
+      <div class="hc-stat">
+        <div class="hc-stat__k">差额 / 损耗</div>
+        <div class="hc-stat__v">{{ totalLossQty }}</div>
+      </div>
+      <div v-if="order.receipt_code" class="hc-stat">
+        <div class="hc-stat__k">回执码</div>
+        <div class="hc-stat__v hc-stat__v--mono" style="font-size: 20px; letter-spacing: 1px;">{{ order.receipt_code }}</div>
+      </div>
+    </div>
+
+    <!-- ── Meta strip ──────────────────────────────────────── -->
+    <div v-if="order" class="hc-meta">
+      <div class="hc-meta__item">
+        <div class="hc-meta__k">手工商家</div>
+        <div class="hc-meta__v">
+          <template v-if="editingSupplier && order.status === 'pending'">
+            <n-space align="center" size="small">
+              <n-select
+                v-model:value="editingSupplierName"
+                :options="supplierOptions"
+                filterable
+                tag
+                placeholder="选择或输入手工商家名称"
+                size="small"
+                style="width: 180px;"
+              />
+              <n-button size="small" type="primary" :loading="savingSupplier" @click="saveSupplier">确认</n-button>
+              <n-button size="small" :disabled="savingSupplier" @click="editingSupplier = false">取消</n-button>
+            </n-space>
+          </template>
+          <template v-else>
+            {{ order.supplier_name }}
+            <n-button v-if="order.status === 'pending'" text type="primary" size="small" style="margin-left: 4px;" @click="startEditSupplier">
+              <template #icon><n-icon :component="CreateOutline" /></template>
+            </n-button>
+          </template>
+        </div>
+      </div>
+      <div class="hc-meta__item">
+        <div class="hc-meta__k">创建时间</div>
+        <div class="hc-meta__v">
+          <template v-if="editingCreatedAt">
+            <n-space align="center" size="small">
+              <n-date-picker
+                v-model:value="editingCreatedAtTs"
+                type="date"
+                size="small"
+                style="width: 150px;"
+              />
+              <n-button size="small" type="primary" :loading="savingCreatedAt" @click="saveCreatedAt">确认</n-button>
+              <n-button size="small" :disabled="savingCreatedAt" @click="editingCreatedAt = false">取消</n-button>
+            </n-space>
+          </template>
+          <template v-else>
+            {{ fmt(order.created_at) }}
+            <n-button text type="primary" size="small" style="margin-left: 4px;" @click="startEditCreatedAt">
+              <template #icon><n-icon :component="CreateOutline" /></template>
+            </n-button>
+          </template>
+        </div>
+      </div>
+      <div v-if="order.completed_at" class="hc-meta__item">
+        <div class="hc-meta__k">完成时间</div>
+        <div class="hc-meta__v">{{ fmt(order.completed_at) }}</div>
+      </div>
+      <div v-if="order.note" class="hc-meta__item">
+        <div class="hc-meta__k">备注</div>
+        <div class="hc-meta__v">{{ order.note }}</div>
+      </div>
+    </div>
 
     <n-spin :show="loading">
       <n-card
@@ -767,6 +901,30 @@ const doConfirmLoss = async () => {
 
 const statusType = { pending: 'default', processing: 'info', completed: 'success' }
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
+
+// ── Stepper helper ─────────────────────────────────────────────
+// Returns the CSS modifier class for each stepper step based on order.status.
+// Status order: pending → processing → completed
+const STATUS_ORDER = ['pending', 'processing', 'completed']
+const stepClass = (step) => {
+  if (!order.value) return 'hc-step--todo'
+  const cur = STATUS_ORDER.indexOf(order.value.status)
+  const idx = STATUS_ORDER.indexOf(step)
+  if (idx < cur) return 'hc-step--done'
+  if (idx === cur) return 'hc-step--cur'
+  return 'hc-step--todo'
+}
+
+// ── Stat-card computeds ────────────────────────────────────────
+const totalJewelryQty = computed(() =>
+  jewelryItems.value.reduce((s, j) => s + Number(j.qty || 0), 0),
+)
+const totalReceivedQty = computed(() =>
+  jewelryItems.value.reduce((s, j) => s + (Number(j.received_qty || 0) - Number(j.loss_qty || 0)), 0),
+)
+const totalLossQty = computed(() =>
+  jewelryItems.value.reduce((s, j) => s + Number(j.loss_qty || 0), 0),
+)
 const deliveryImages = computed(() => order.value?.delivery_images || [])
 const totalDeliveryImageCount = computed(() => deliveryImages.value.length + pendingDeliveryImages.value.length)
 const canAddDeliveryImage = computed(() => totalDeliveryImageCount.value < 10)
@@ -2376,5 +2534,181 @@ async function onBreakdownSaved() {
   width: 12px;
   text-align: center;
   color: #999;
+}
+
+/* ── Page header ──────────────────────────────────────────────── */
+.hc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.hc-head__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hc-head__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hc-status-pill {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 12px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.hc-status-pill--emerald {
+  background: #E6F2EC;
+  color: #1E7A5A;
+}
+
+.hc-status-pill--amber {
+  background: #FBF0DC;
+  color: #B7791F;
+}
+
+.hc-status-pill--gray {
+  background: #F1F2F4;
+  color: #6B7280;
+}
+
+/* ── Status stepper ───────────────────────────────────────────── */
+.hc-stepper {
+  display: flex;
+  align-items: center;
+  margin: 20px 0 4px;
+}
+
+.hc-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.hc-step__dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.hc-step--done .hc-step__dot {
+  background: #1E7A5A;
+  color: #fff;
+}
+
+.hc-step--cur .hc-step__dot {
+  background: #1E7A5A;
+  color: #fff;
+  box-shadow: 0 0 0 4px #E6F2EC;
+}
+
+.hc-step--todo .hc-step__dot {
+  background: #EDEFF1;
+  color: #AEB3B8;
+}
+
+.hc-step__lab {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hc-step--todo .hc-step__lab {
+  color: #AEB3B8;
+  font-weight: 500;
+}
+
+.hc-step__sub {
+  font-size: 11px;
+  color: #8B9096;
+  margin-top: 1px;
+}
+
+.hc-bar {
+  flex: 1;
+  height: 2px;
+  margin: 0 14px;
+  border-radius: 1px;
+}
+
+.hc-bar--on { background: #1E7A5A; }
+.hc-bar--off { background: #EDEFF1; }
+
+/* ── Summary stat cards ───────────────────────────────────────── */
+.hc-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  border: 1px solid #ECEDEF;
+  border-radius: 10px;
+  margin: 18px 0 4px;
+  overflow: hidden;
+}
+
+.hc-stat {
+  padding: 13px 16px;
+  border-right: 1px solid #ECEDEF;
+}
+
+.hc-stat:last-child {
+  border-right: 0;
+}
+
+.hc-stat__k {
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #8B9096;
+  font-weight: 600;
+}
+
+.hc-stat__v {
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  margin-top: 5px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.hc-stat__v small {
+  font-size: 13px;
+  color: #8B9096;
+  font-weight: 600;
+}
+
+.hc-stat__v--mono {
+  font-family: "SF Mono", Menlo, monospace;
+}
+
+/* ── Meta strip ───────────────────────────────────────────────── */
+.hc-meta {
+  display: flex;
+  gap: 26px;
+  flex-wrap: wrap;
+  padding: 14px 0 16px;
+  font-size: 13px;
+}
+
+.hc-meta__k {
+  font-size: 11px;
+  color: #8B9096;
+}
+
+.hc-meta__v {
+  font-weight: 500;
+  margin-top: 2px;
 }
 </style>
