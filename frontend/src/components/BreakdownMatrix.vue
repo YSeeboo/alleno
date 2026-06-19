@@ -23,8 +23,10 @@
             <th class="mx__col-cust">客户</th>
             <th v-for="c in cols" :key="c.key" :class="['mx__col-jw', colAssigned[c.key] === c.total_qty ? 'full' : 'under']">
               <div class="oh">
-                <span class="nm">{{ c.jewelry_name }}</span>
-                <span class="id">{{ c.jewelry_id }}</span>
+                <span class="oh-top">
+                  <span class="nm">{{ c.jewelry_name }}</span>
+                  <span class="id">{{ c.jewelry_id }}</span>
+                </span>
                 <span class="alloc">
                   <span class="n">{{ colAssigned[c.key] }}/{{ c.total_qty }}</span>
                   <span class="track">
@@ -841,7 +843,7 @@ function lockedSourceLine(row) {
   z-index: 2;
   background: #fff;
   text-align: left;
-  min-width: 150px;
+  min-width: 110px;
   box-shadow: 1px 0 0 #ECEDEF;
 }
 .mx thead .mx__col-cust { z-index: 4; }
@@ -852,8 +854,9 @@ function lockedSourceLine(row) {
 
 /* ── Output column header: allocation progress ── */
 .mx__col-jw { min-width: 120px; }
-.oh { display: flex; flex-direction: column; gap: 4px; }
-.oh .nm { font-weight: 600; font-size: 12.5px; text-align: left; }
+.oh { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.oh-top { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
+.oh .nm { font-weight: 600; font-size: 12.5px; text-align: left; line-height: 1.3; }
 .oh .id { font-size: 10.5px; color: #AEB3B8; font-weight: 400; text-align: left; }
 .oh .alloc { display: flex; align-items: center; gap: 6px; }
 .oh .alloc .n { font-size: 11px; font-variant-numeric: tabular-nums; }
