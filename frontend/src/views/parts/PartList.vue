@@ -63,71 +63,103 @@
     </n-spin>
 
     <!-- Create / Edit Modal -->
-    <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑配件' : '新增配件'" :style="{ width: isMobile ? '95vw' : '480px' }">
+    <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑配件' : '新增配件'" :style="{ width: isMobile ? '95vw' : '540px' }">
       <form @submit.prevent="save">
-      <n-form ref="formRef" :model="form" label-placement="left" label-width="100">
-        <n-form-item label="名称" path="name" :rule="{ required: true, message: '请输入名称' }">
-          <n-input v-model:value="form.name" />
-        </n-form-item>
-        <n-form-item label="图片">
-          <n-space vertical style="width: 100%;">
-            <n-space align="center" style="width: 100%;">
-              <n-input v-model:value="form.image" placeholder="上传后自动填充，也可手动输入 URL" />
-              <n-button @click="openImageModal(editingId)">上传图片</n-button>
-            </n-space>
+      <n-form ref="formRef" :model="form" label-placement="top">
+
+        <!-- 基本信息 -->
+        <div class="modal-sec-h">基本信息</div>
+        <div class="modal-grid2">
+          <!-- 名称 — full width -->
+          <div class="modal-full">
+            <n-form-item label="名称" path="name" :rule="{ required: true, message: '请输入名称' }">
+              <n-input v-model:value="form.name" />
+            </n-form-item>
+          </div>
+
+          <!-- 类目 pill selector — full width -->
+          <div class="modal-full">
+            <n-form-item
+              label="类目"
+              path="category"
+              :rule="editingId ? undefined : { required: true, message: '请选择类目', trigger: 'change' }"
+            >
+              <div class="modal-pills" :class="{ 'modal-pills-disabled': !!editingId }">
+                <button
+                  v-for="opt in categoryOptions"
+                  :key="opt.value"
+                  type="button"
+                  class="modal-pill"
+                  :class="{ 'modal-pill-on': form.category === opt.value }"
+                  :disabled="!!editingId"
+                  @click="!editingId && (form.category = opt.value)"
+                >{{ opt.label }}</button>
+              </div>
+              <span v-if="!!editingId" class="modal-note">类目不可修改</span>
+            </n-form-item>
+          </div>
+
+          <!-- 颜色 | 单位 — half width each -->
+          <n-form-item label="颜色">
+            <n-input v-model:value="form.color" :disabled="editingIsVariant" />
+            <span v-if="editingIsVariant" class="modal-note">变体不可修改</span>
+          </n-form-item>
+          <n-form-item label="单位">
+            <n-select v-model:value="form.unit" :options="unitOptions" placeholder="请选择单位" />
+          </n-form-item>
+
+          <!-- 规格 | 单件成本 — half width each -->
+          <n-form-item label="规格">
+            <n-input v-model:value="form.spec" placeholder="如 45cm" />
+          </n-form-item>
+          <n-form-item label="单件成本">
+            <n-input-number v-model:value="form.unit_cost" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" style="width: 100%;" />
+          </n-form-item>
+        </div>
+
+        <!-- 图片 -->
+        <div class="modal-sec-h">图片</div>
+        <n-form-item label="">
+          <div class="modal-img-row">
             <n-image
               v-if="form.image"
               :src="form.image"
               alt="配件图片"
-              :width="72"
-              :height="72"
+              :width="48"
+              :height="48"
               object-fit="cover"
-              style="border-radius: 12px; border: 1px solid #ffd6d6; overflow: hidden; display: block; cursor: zoom-in;"
+              class="modal-img-preview"
             />
-          </n-space>
+            <div v-else class="modal-img-placeholder"></div>
+            <n-input v-model:value="form.image" placeholder="上传后自动填充，也可手动粘贴 URL" style="flex: 1;" />
+            <n-button @click="openImageModal(editingId)" class="modal-upload-btn">上传图片</n-button>
+          </div>
         </n-form-item>
-        <n-form-item
-          label="类目"
-          path="category"
-          :rule="editingId ? undefined : { required: true, message: '请选择类目', trigger: 'change' }"
-        >
-          <n-select v-model:value="form.category" :options="categoryOptions" clearable placeholder="请选择类目" :disabled="!!editingId" />
-          <span v-if="!!editingId" style="color: #999; font-size: 12px; margin-left: 8px;">类目不可修改</span>
-        </n-form-item>
-        <n-form-item label="颜色">
-          <n-input v-model:value="form.color" :disabled="editingIsVariant" />
-          <span v-if="editingIsVariant" style="color: #999; font-size: 12px; margin-left: 8px;">变体不可修改</span>
-        </n-form-item>
-        <n-form-item label="单位">
-          <n-select v-model:value="form.unit" :options="unitOptions" placeholder="请选择单位" />
-        </n-form-item>
-        <n-form-item label="单件成本">
-          <n-input-number v-model:value="form.unit_cost" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" style="width: 100%;" />
-        </n-form-item>
+
+        <!-- 关联 -->
+        <div class="modal-sec-h">关联</div>
         <n-form-item label="关联原色配件">
           <n-select
             v-model:value="form.parent_part_id"
             :options="parentPartOptions"
             filterable
             clearable
-            placeholder="选填，选择原色配件"
+            placeholder="选填，选择原色配件（变体归并用）"
             :disabled="editingIsVariant"
           />
-          <span v-if="editingIsVariant" style="color: #999; font-size: 12px; margin-left: 8px;">变体不可修改</span>
-        </n-form-item>
-        <n-form-item label="规格">
-          <n-input v-model:value="form.spec" placeholder="如 45cm" />
+          <span v-if="editingIsVariant" class="modal-note">变体不可修改</span>
         </n-form-item>
 
-        <n-collapse style="margin: 8px 0 12px 0;">
+        <!-- 手工加量规则 collapse -->
+        <n-collapse class="modal-collapse">
           <n-collapse-item name="buffer-rules">
             <template #header>
-              <span style="font-size: 13px; font-weight: 500; margin-right: 12px;">手工加量规则</span>
-              <span style="color: #888; font-size: 12px; font-variant-numeric: tabular-nums;">{{ effectiveRulePreview }}</span>
+              <span class="modal-collapse-title">手工加量规则</span>
+              <span class="modal-collapse-preview">{{ effectiveRulePreview }}</span>
             </template>
             <template #header-extra>
               <n-tag :type="bufferIsCustom ? 'warning' : 'success'" size="small" round>
-                {{ bufferIsCustom ? '自定义' : '默认' }}
+                {{ bufferIsCustom ? '自定义' : '默认 · 按类目' }}
               </n-tag>
             </template>
             <n-form-item label="配件大小">
@@ -138,7 +170,7 @@
                 clearable
                 style="width: 160px;"
               />
-              <span style="color: #999; font-size: 12px; margin-left: 8px;">决定加量规则的默认值</span>
+              <span class="modal-note">决定加量规则的默认值</span>
             </n-form-item>
             <n-form-item label="自定义比例">
               <n-input-number
@@ -148,7 +180,7 @@
                 clearable
                 style="width: 100%;"
               />
-              <span style="color: #999; font-size: 12px; margin-left: 8px;">小数，如 0.025 = 2.5%</span>
+              <span class="modal-note">小数，如 0.025 = 2.5%</span>
             </n-form-item>
             <n-form-item label="自定义最低">
               <n-input-number
@@ -158,47 +190,52 @@
                 clearable
                 style="width: 100%;"
               />
-              <span style="color: #999; font-size: 12px; margin-left: 8px;">最少要发的件数</span>
+              <span class="modal-note">最少要发的件数</span>
             </n-form-item>
           </n-collapse-item>
         </n-collapse>
 
-        <n-form-item v-if="editingId" label="创建颜色变体">
-          <n-space>
-            <n-button
-              v-for="vc in variantColorOptions"
-              :key="vc.code"
-              size="small"
-              :disabled="vc.exists || creatingVariant || loadingVariants"
-              :type="vc.exists ? 'default' : 'primary'"
-              secondary
-              @click="doCreateVariant(vc.code)"
-            >
-              {{ vc.label }}{{ vc.exists ? ' ✓' : '' }}
-            </n-button>
-          </n-space>
-        </n-form-item>
-        <n-form-item v-if="editingId" label="创建规格变体">
-          <n-space align="center">
-            <n-select
-              v-model:value="specVariantColor"
-              :options="specVariantColorOptions"
-              clearable
-              placeholder="颜色（可选）"
-              style="width: 120px;"
-            />
-            <n-input v-model:value="specVariantInput" placeholder="规格，如 45cm" style="width: 140px;" />
-            <n-button
-              size="small"
-              type="primary"
-              secondary
-              :disabled="!specVariantInput || creatingVariant || loadingVariants"
-              @click="doCreateSpecVariant"
-            >
-              创建
-            </n-button>
-          </n-space>
-        </n-form-item>
+        <!-- 变体（编辑时显示） -->
+        <template v-if="editingId">
+          <div class="modal-sec-h" style="margin-top: 18px;">变体</div>
+          <n-form-item label="创建颜色变体">
+            <n-space>
+              <n-button
+                v-for="vc in variantColorOptions"
+                :key="vc.code"
+                size="small"
+                :disabled="vc.exists || creatingVariant || loadingVariants"
+                :type="vc.exists ? 'default' : 'primary'"
+                secondary
+                @click="doCreateVariant(vc.code)"
+              >
+                {{ vc.label }}{{ vc.exists ? ' ✓' : '' }}
+              </n-button>
+            </n-space>
+          </n-form-item>
+          <n-form-item label="创建规格变体">
+            <n-space align="center">
+              <n-select
+                v-model:value="specVariantColor"
+                :options="specVariantColorOptions"
+                clearable
+                placeholder="颜色（可选）"
+                style="width: 120px;"
+              />
+              <n-input v-model:value="specVariantInput" placeholder="规格，如 45cm" style="width: 140px;" />
+              <n-button
+                size="small"
+                type="primary"
+                secondary
+                :disabled="!specVariantInput || creatingVariant || loadingVariants"
+                @click="doCreateSpecVariant"
+              >
+                创建
+              </n-button>
+            </n-space>
+          </n-form-item>
+        </template>
+
       </n-form>
       </form>
       <template #footer>
@@ -1097,5 +1134,126 @@ onMounted(() => {
   background: #efe1c7;
   border-color: #c89b5a;
   color: #603d15;
+}
+
+/* ── Create/Edit modal layout ── */
+
+/* Eyebrow section headers */
+.modal-sec-h {
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #8B9096;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+
+/* 2-column grid for short fields */
+.modal-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+}
+
+.modal-full {
+  grid-column: 1 / -1;
+}
+
+/* Category pill selector */
+.modal-pills {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.modal-pill {
+  height: 36px;
+  flex: 1;
+  border: 1px solid #DFE2E6;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #4b5158;
+  cursor: pointer;
+  background: #fff;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.modal-pill:hover:not(:disabled) {
+  border-color: #c8cdd4;
+}
+
+.modal-pill.modal-pill-on {
+  background: #1A1D21;
+  border-color: #1A1D21;
+  color: #fff;
+  font-weight: 500;
+}
+
+.modal-pills-disabled .modal-pill {
+  cursor: default;
+  opacity: 0.65;
+}
+
+/* Inline note/hint text */
+.modal-note {
+  color: #8B9096;
+  font-size: 12px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+/* Image inline row */
+.modal-img-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.modal-img-preview {
+  width: 48px;
+  height: 48px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid #ECEDEF;
+  display: block;
+}
+
+.modal-img-placeholder {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #f2cdbf, #cf8f7d);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+.modal-upload-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Collapse for buffer rules */
+.modal-collapse {
+  margin: 4px 0 14px;
+  border: 1px solid #ECEDEF;
+  border-radius: 11px;
+  overflow: hidden;
+}
+
+.modal-collapse-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-right: 12px;
+}
+
+.modal-collapse-preview {
+  font-size: 12px;
+  color: #8B9096;
+  font-variant-numeric: tabular-nums;
 }
 </style>
