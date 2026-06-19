@@ -441,39 +441,25 @@
       </template>
     </n-modal>
 
-    <n-card
-      v-if="order"
-      style="margin-top: 16px;"
-      :content-style="collapsed.restock ? 'padding: 0' : undefined"
-    >
-      <template #header>
-        <div class="section-header" @click="collapsed.restock = !collapsed.restock">
-          <span class="section-chevron">{{ collapsed.restock ? '▸' : '▾' }}</span>
-          <span>补货清单</span>
-        </div>
-      </template>
-      <template #header-extra>
-        <n-space size="small">
-          <n-tag size="small" type="warning" :bordered="false">
-            待补 {{ pendingRestockCount }}
-          </n-tag>
-          <n-tag size="small" type="default" :bordered="false">
-            已补 {{ doneRestockCount }}
-          </n-tag>
-          <n-button size="small" type="primary" @click="openManualRestockModal">+ 手动添加</n-button>
-        </n-space>
-      </template>
-      <div v-show="!collapsed.restock">
-        <n-data-table
-          :columns="restockColumns"
-          :data="restockRows"
-          :loading="restockLoading"
-          :bordered="false"
-          size="small"
-          :row-class-name="restockRowClass"
-        />
+    <!-- ── 补货清单 section ───────────────────────────────────── -->
+    <div v-if="order" class="hc-sec">
+      <div class="hc-sec-h">
+        <span class="t">补货清单</span>
+        <span class="acts">
+          <n-tag size="small" type="warning" :bordered="false">待补 {{ pendingRestockCount }}</n-tag>
+          <n-tag size="small" type="default" :bordered="false">已补 {{ doneRestockCount }}</n-tag>
+          <button class="hc-sbtn hc-sbtn--primary" @click="openManualRestockModal">＋ 手动添加</button>
+        </span>
       </div>
-    </n-card>
+      <n-data-table
+        :columns="restockColumns"
+        :data="restockRows"
+        :loading="restockLoading"
+        :bordered="false"
+        size="small"
+        :row-class-name="restockRowClass"
+      />
+    </div>
 
     <!-- ── 发货图片 section ──────────────────────────────────────── -->
     <div v-if="order" class="hc-sec">
