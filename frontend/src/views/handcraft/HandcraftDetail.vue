@@ -74,7 +74,12 @@
       </div>
       <div v-if="order.receipt_code" class="hc-stat">
         <div class="hc-stat__k">回执码</div>
-        <div class="hc-stat__v hc-stat__v--mono" style="font-size: 20px; letter-spacing: 1px;">{{ order.receipt_code }}</div>
+        <div
+          class="hc-stat__v hc-stat__v--mono hc-receipt-copy"
+          style="font-size: 20px; letter-spacing: 1px;"
+          title="点击复制"
+          @click="copyReceiptCode"
+        >{{ order.receipt_code }}</div>
       </div>
     </div>
 
@@ -155,6 +160,113 @@
         <n-data-table :columns="jewelryColumns" :data="jewelryItems" :bordered="false" />
       </div>
 
+      <!-- ── 客户分拣 — BreakdownMatrix has its own "客户分拣" header, no wrapper title needed ── -->
+      <div
+        v-if="breakdownGroups.length > 0 || items.length > 0"
+        class="hc-sec hc-sec--no-title"
+      >
+        <BreakdownMatrix
+          :hc-id="route.params.id"
+          :hc-status="order?.status || 'pending'"
+          :groups="breakdownGroups"
+          @saved="onBreakdownSaved"
+        />
+      </div>
+
+      <!-- ── 发货图片 section ──────────────────────────────────────── -->
+      <div v-if="order" class="hc-sec">
+        <div class="hc-sec-h"><span class="t">发货图片</span></div>
+        <div class="delivery-images-block">
+          <div v-if="pendingDeliveryImages.length > 0" class="delivery-images-warning">
+            <div class="delivery-images-warning-title">
+              有 {{ pendingDeliveryImages.length }} 张图片已上传，但还没保存到手工单
+            </div>
+            <div class="delivery-images-pending-list">
+              <div
+                v-for="image in pendingDeliveryImages"
+                :key="`pending-${image}`"
+                class="delivery-pending-item"
+              >
+                <n-image
+                  :src="image"
+                  alt="待保存发货图片"
+                  :width="56"
+                  :height="56"
+                  object-fit="cover"
+                  class="delivery-pending-preview"
+                />
+                <div class="delivery-pending-actions">
+                  <n-button
+                    size="tiny"
+                    type="warning"
+                    ghost
+                    :loading="retryingPendingImage === image"
+                    :disabled="deliveryImagesSaving"
+                    @click="retryPendingDeliveryImage(image)"
+                  >
+                    重试保存
+                  </n-button>
+                  <n-button
+                    size="tiny"
+                    quaternary
+                    :disabled="deliveryImagesSaving || retryingPendingImage === image"
+                    @click="dropPendingDeliveryImage(image)"
+                  >
+                    移除记录
+                  </n-button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-if="deliveryImages.length > 0" class="delivery-images-grid">
+            <div
+              v-for="(image, index) in deliveryImages"
+              :key="`${image}-${index}`"
+              class="delivery-image-card"
+            >
+              <n-image
+                :src="image"
+                alt="发货图片"
+                :width="88"
+                :height="88"
+                object-fit="cover"
+                class="delivery-image-preview"
+              />
+              <n-button
+                class="delivery-image-delete"
+                size="tiny"
+                type="error"
+                circle
+                :disabled="deliveryImagesSaving"
+                @click="removeDeliveryImage(index)"
+              >
+                ×
+              </n-button>
+            </div>
+            <button
+              v-if="canAddDeliveryImage"
+              class="delivery-image-add"
+              :disabled="deliveryImagesSaving"
+              @click="openDeliveryImageModal"
+            >
+              +
+            </button>
+          </div>
+          <button
+            v-else
+            class="delivery-image-add"
+            :disabled="deliveryImagesSaving"
+            @click="openDeliveryImageModal"
+          >
+            +
+          </button>
+          <div class="delivery-images-meta">
+            {{ totalDeliveryImageCount }}/10 张
+            <span v-if="pendingDeliveryImages.length > 0">（待保存 {{ pendingDeliveryImages.length }} 张）</span>
+          </div>
+        </div>
+      </div>
+
       <!-- ── 发出配件 section ───────────────────────────────────── -->
       <div class="hc-sec">
         <div class="hc-sec-h">
@@ -183,16 +295,23 @@
         <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
       </div>
 
-      <!-- ── 客户分拣 — BreakdownMatrix has its own "客户分拣" header, no wrapper title needed ── -->
-      <div
-        v-if="breakdownGroups.length > 0 || items.length > 0"
-        class="hc-sec hc-sec--no-title"
-      >
-        <BreakdownMatrix
-          :hc-id="route.params.id"
-          :hc-status="order?.status || 'pending'"
-          :groups="breakdownGroups"
-          @saved="onBreakdownSaved"
+      <!-- ── 补货配件 section ───────────────────────────────────── -->
+      <div v-if="order" class="hc-sec">
+        <div class="hc-sec-h">
+          <span class="t">补货配件</span>
+          <span class="acts">
+            <n-tag size="small" type="warning" :bordered="false">待补 {{ pendingRestockCount }}</n-tag>
+            <n-tag size="small" type="default" :bordered="false">已补 {{ doneRestockCount }}</n-tag>
+            <button class="hc-sbtn hc-sbtn--primary" @click="openManualRestockModal">＋ 手动添加</button>
+          </span>
+        </div>
+        <n-data-table
+          :columns="restockColumns"
+          :data="restockRows"
+          :loading="restockLoading"
+          :bordered="false"
+          size="small"
+          :row-class-name="restockRowClass"
         />
       </div>
     </n-spin>
@@ -441,120 +560,6 @@
       </template>
     </n-modal>
 
-    <!-- ── 补货清单 section ───────────────────────────────────── -->
-    <div v-if="order" class="hc-sec">
-      <div class="hc-sec-h">
-        <span class="t">补货清单</span>
-        <span class="acts">
-          <n-tag size="small" type="warning" :bordered="false">待补 {{ pendingRestockCount }}</n-tag>
-          <n-tag size="small" type="default" :bordered="false">已补 {{ doneRestockCount }}</n-tag>
-          <button class="hc-sbtn hc-sbtn--primary" @click="openManualRestockModal">＋ 手动添加</button>
-        </span>
-      </div>
-      <n-data-table
-        :columns="restockColumns"
-        :data="restockRows"
-        :loading="restockLoading"
-        :bordered="false"
-        size="small"
-        :row-class-name="restockRowClass"
-      />
-    </div>
-
-    <!-- ── 发货图片 section ──────────────────────────────────────── -->
-    <div v-if="order" class="hc-sec">
-      <div class="hc-sec-h"><span class="t">发货图片</span></div>
-      <div class="delivery-images-block">
-        <div v-if="pendingDeliveryImages.length > 0" class="delivery-images-warning">
-          <div class="delivery-images-warning-title">
-            有 {{ pendingDeliveryImages.length }} 张图片已上传，但还没保存到手工单
-          </div>
-          <div class="delivery-images-pending-list">
-            <div
-              v-for="image in pendingDeliveryImages"
-              :key="`pending-${image}`"
-              class="delivery-pending-item"
-            >
-              <n-image
-                :src="image"
-                alt="待保存发货图片"
-                :width="56"
-                :height="56"
-                object-fit="cover"
-                class="delivery-pending-preview"
-              />
-              <div class="delivery-pending-actions">
-                <n-button
-                  size="tiny"
-                  type="warning"
-                  ghost
-                  :loading="retryingPendingImage === image"
-                  :disabled="deliveryImagesSaving"
-                  @click="retryPendingDeliveryImage(image)"
-                >
-                  重试保存
-                </n-button>
-                <n-button
-                  size="tiny"
-                  quaternary
-                  :disabled="deliveryImagesSaving || retryingPendingImage === image"
-                  @click="dropPendingDeliveryImage(image)"
-                >
-                  移除记录
-                </n-button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div v-if="deliveryImages.length > 0" class="delivery-images-grid">
-          <div
-            v-for="(image, index) in deliveryImages"
-            :key="`${image}-${index}`"
-            class="delivery-image-card"
-          >
-            <n-image
-              :src="image"
-              alt="发货图片"
-              :width="88"
-              :height="88"
-              object-fit="cover"
-              class="delivery-image-preview"
-            />
-            <n-button
-              class="delivery-image-delete"
-              size="tiny"
-              type="error"
-              circle
-              :disabled="deliveryImagesSaving"
-              @click="removeDeliveryImage(index)"
-            >
-              ×
-            </n-button>
-          </div>
-          <button
-            v-if="canAddDeliveryImage"
-            class="delivery-image-add"
-            :disabled="deliveryImagesSaving"
-            @click="openDeliveryImageModal"
-          >
-            +
-          </button>
-        </div>
-        <button
-          v-else
-          class="delivery-image-add"
-          :disabled="deliveryImagesSaving"
-          @click="openDeliveryImageModal"
-        >
-          +
-        </button>
-        <div class="delivery-images-meta">
-          {{ totalDeliveryImageCount }}/10 张
-          <span v-if="pendingDeliveryImages.length > 0">（待保存 {{ pendingDeliveryImages.length }} 张）</span>
-        </div>
-      </div>
-    </div>
-
     <n-modal v-model:show="manualRestockShow" preset="card" title="手动添加补货项" style="max-width: 480px;">
       <n-form>
         <n-form-item label="配件" required>
@@ -607,6 +612,7 @@
       </n-button>
       <n-button
         quaternary
+        class="hc-export-btn--excel"
         style="color:#C0C6CD"
         :loading="downloadingExcel"
         @click="doDownloadExcel"
@@ -615,6 +621,7 @@
       </n-button>
       <n-button
         quaternary
+        class="hc-export-btn--pdf"
         style="color:#C0C6CD"
         :loading="downloadingPdf"
         @click="doDownloadPdf"
@@ -2148,7 +2155,7 @@ const jewelryColumns = [
       const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0
       const barColor = pct >= 100 ? '#1E7A5A' : (pct > 0 ? '#4CAF8A' : '#ECEDEF')
       return h('div', { style: 'min-width: 90px;' }, [
-        h('div', { style: 'display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; font-size: 12px; margin-bottom: 3px;' }, [
+        h('div', { style: 'display: flex; justify-content: flex-start; font-variant-numeric: tabular-nums; font-size: 12px; margin-bottom: 3px;' }, [
           h('span', { style: 'color: #1A1D21; font-weight: 600;' }, String(received)),
           h('span', { style: 'color: #8B9096;' }, `/${total}`),
         ]),
@@ -2262,6 +2269,16 @@ async function onBreakdownSaved() {
   await Promise.all([loadBreakdown(), loadJewelries()])
 }
 
+async function copyReceiptCode() {
+  const code = order.value?.receipt_code
+  if (!code) return
+  try {
+    await navigator.clipboard.writeText(code)
+    message.success(`已复制回执码 ${code}`)
+  } catch {
+    message.error('复制失败')
+  }
+}
 
 </script>
 
@@ -2702,4 +2719,12 @@ async function onBreakdownSaved() {
   background: #D2EBDF;
   border-color: #1E7A5A;
 }
+
+.hc-export-btn--excel:hover { background-color: #1E7A5A !important; color: #fff !important; }
+.hc-export-btn--pdf:hover   { background-color: #E5484D !important; color: #fff !important; }
+.hc-export-btn--excel:hover :deep(.n-button__content),
+.hc-export-btn--pdf:hover :deep(.n-button__content) { color: #fff !important; }
+
+.hc-receipt-copy { cursor: pointer; transition: color 0.15s; }
+.hc-receipt-copy:hover { color: #1E7A5A; }
 </style>
