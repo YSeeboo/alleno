@@ -25,7 +25,7 @@
     >
       <!-- brand (top) -->
       <div class="side-brand" :class="{ collapsed }">
-        <span class="brand-icon" @click="collapsed = !collapsed">◈</span>
+        <img class="brand-logo" :src="logoWhite" alt="AL" @click="collapsed = !collapsed" />
         <span v-if="!collapsed" class="brand-en">ALLENOP</span>
       </div>
 
@@ -77,6 +77,7 @@ import PlatingSummaryIcon from '@/components/icons/PlatingSummaryIcon.vue'
 import InventoryLogIcon from '@/components/icons/InventoryLogIcon.vue'
 import RestockIcon from '@/components/icons/RestockIcon.vue'
 import { useAuthStore } from '@/stores/auth'
+import logoWhite from '@/assets/logo-white.png'
 
 const router = useRouter()
 const route = useRoute()
@@ -213,10 +214,10 @@ const handleSelect = (key) => {
   justify-content: center;
   padding: 0;
 }
-.brand-icon {
-  color: #3FBF8F;
-  font-size: 18px;
-  line-height: 1;
+.brand-logo {
+  height: 22px;
+  width: auto;
+  display: block;
   cursor: pointer;
 }
 .brand-en {
