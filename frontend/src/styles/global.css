@@ -17,11 +17,11 @@
   white-space: nowrap;
 }
 
-.badge-amber  { background: #FEF3C7; color: #92400E; }
-.badge-indigo { background: #EEF2FF; color: #3730A3; }
-.badge-green  { background: #D1FAE5; color: #065F46; }
-.badge-red    { background: #FEE2E2; color: #991B1B; }
-.badge-gray   { background: #F1F5F9; color: #475569; }
+.badge-amber  { background: #FBF0DC; color: #B7791F; }
+.badge-indigo { background: #EEF1F4; color: #475569; }
+.badge-green  { background: #E6F2EC; color: #1E7A5A; }
+.badge-red    { background: #FDECEC; color: #E5484D; }
+.badge-gray   { background: #F1F2F4; color: #6B7280; }
 
 /* ─── Page Header ────────────────────────────────────── */
 .page-header {
@@ -30,21 +30,21 @@
 
 .page-breadcrumb {
   font-size: 12px;
-  color: #94A3B8;
-  margin-bottom: 4px;
+  color: #8B9096;
+  margin-bottom: 6px;
 }
 
 .page-title {
   margin: 0 0 16px;
-  font-size: 18px;
-  font-weight: 600;
-  color: #0F172A;
-  letter-spacing: -0.01em;
+  font-size: 26px;
+  font-weight: 700;
+  color: #1A1D21;
+  letter-spacing: -0.02em;
 }
 
 .page-divider {
   height: 1px;
-  background: #E2E8F0;
+  background: #ECEDEF;
   margin-bottom: 16px;
 }
 
