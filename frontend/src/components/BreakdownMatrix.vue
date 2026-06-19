@@ -877,7 +877,7 @@ function lockedSourceLine(row) {
 
 /* ── Customer cell ── */
 .mx__cust { padding: 8px 12px; }
-.cust-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cust-line { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; }
 .cust-line .src { margin-top: 0; }
 .cust-nm { font-weight: 600; font-size: 13px; color: #1A1D21; }
 .src {
