@@ -140,208 +140,6 @@
     </div>
 
     <n-spin :show="loading">
-      <n-card
-        v-if="order"
-        style="margin-bottom: 16px;"
-        :content-style="collapsed.basic ? 'padding: 0' : undefined"
-      >
-        <template #header>
-          <div class="section-header" @click="collapsed.basic = !collapsed.basic">
-            <span class="section-chevron">{{ collapsed.basic ? '▸' : '▾' }}</span>
-            <span>基本信息</span>
-          </div>
-        </template>
-        <template #header-extra>
-          <n-space size="small">
-            <n-button
-              @click="router.push(`/handcraft-receipts?supplier_name=${encodeURIComponent(order.supplier_name)}`)"
-            >
-              查看回收单
-            </n-button>
-            <n-button
-              :loading="downloadingExcel"
-              class="export-excel-btn"
-              @click="doDownloadExcel"
-            >
-              导出Excel
-            </n-button>
-            <n-button
-              :loading="downloadingPdf"
-              class="export-pdf-btn"
-              @click="doDownloadPdf"
-            >
-              导出PDF
-            </n-button>
-          </n-space>
-        </template>
-        <div v-show="!collapsed.basic">
-        <n-descriptions :column="isMobile ? 1 : 3" bordered>
-          <n-descriptions-item label="手工单号">{{ order.id }}</n-descriptions-item>
-          <n-descriptions-item label="回执编号" v-if="order.receipt_code">
-            <span class="receipt-code">{{ order.receipt_code }}</span>
-            <span class="receipt-code__hint">（对外打印用）</span>
-          </n-descriptions-item>
-          <n-descriptions-item label="手工商家">
-            <template v-if="editingSupplier && order.status === 'pending'">
-              <n-space align="center" size="small">
-                <n-select
-                  v-model:value="editingSupplierName"
-                  :options="supplierOptions"
-                  filterable
-                  tag
-                  placeholder="选择或输入手工商家名称"
-                  size="small"
-                  :style="{ width: isMobile ? '100%' : '200px' }"
-                />
-                <n-button size="small" type="primary" :loading="savingSupplier" @click="saveSupplier">确认</n-button>
-                <n-button size="small" :disabled="savingSupplier" @click="editingSupplier = false">取消</n-button>
-              </n-space>
-            </template>
-            <template v-else>
-              {{ order.supplier_name }}
-              <n-button v-if="order.status === 'pending'" text type="primary" size="small" style="margin-left: 6px;" @click="startEditSupplier">
-                <template #icon><n-icon :component="CreateOutline" /></template>
-              </n-button>
-            </template>
-          </n-descriptions-item>
-          <n-descriptions-item label="状态">
-            <n-popselect
-              :value="order?.status"
-              :options="statusOptions"
-              trigger="click"
-              :disabled="statusOptions.length === 0"
-              @update:value="doChangeStatus"
-            >
-              <n-tag
-                :type="statusType[order.status]"
-                :style="statusOptions.length > 0 ? 'cursor: pointer;' : ''"
-              >
-                {{ statusLabel[order.status] }}{{ statusOptions.length > 0 ? ' ▾' : '' }}
-              </n-tag>
-            </n-popselect>
-          </n-descriptions-item>
-          <n-descriptions-item label="创建时间">
-            <template v-if="editingCreatedAt">
-              <n-space align="center" size="small">
-                <n-date-picker
-                  v-model:value="editingCreatedAtTs"
-                  type="date"
-                  size="small"
-                  :style="{ width: isMobile ? '100%' : '160px' }"
-                />
-                <n-button size="small" type="primary" :loading="savingCreatedAt" @click="saveCreatedAt">确认</n-button>
-                <n-button size="small" :disabled="savingCreatedAt" @click="editingCreatedAt = false">取消</n-button>
-              </n-space>
-            </template>
-            <template v-else>
-              {{ fmt(order.created_at) }}
-              <n-button text type="primary" size="small" style="margin-left: 6px;" @click="startEditCreatedAt">
-                <template #icon><n-icon :component="CreateOutline" /></template>
-              </n-button>
-            </template>
-          </n-descriptions-item>
-          <n-descriptions-item label="完成时间">{{ order.completed_at ? fmt(order.completed_at) : '-' }}</n-descriptions-item>
-          <n-descriptions-item label="备注">{{ order.note || '-' }}</n-descriptions-item>
-          <n-descriptions-item label="发货图片" :span="2">
-            <div class="delivery-images-block">
-              <div v-if="pendingDeliveryImages.length > 0" class="delivery-images-warning">
-                <div class="delivery-images-warning-title">
-                  有 {{ pendingDeliveryImages.length }} 张图片已上传，但还没保存到手工单
-                </div>
-                <div class="delivery-images-pending-list">
-                  <div
-                    v-for="image in pendingDeliveryImages"
-                    :key="`pending-${image}`"
-                    class="delivery-pending-item"
-                  >
-                    <n-image
-                      :src="image"
-                      alt="待保存发货图片"
-                      :width="56"
-                      :height="56"
-                      object-fit="cover"
-                      class="delivery-pending-preview"
-                    />
-                    <div class="delivery-pending-actions">
-                      <n-button
-                        size="tiny"
-                        type="warning"
-                        ghost
-                        :loading="retryingPendingImage === image"
-                        :disabled="deliveryImagesSaving"
-                        @click="retryPendingDeliveryImage(image)"
-                      >
-                        重试保存
-                      </n-button>
-                      <n-button
-                        size="tiny"
-                        quaternary
-                        :disabled="deliveryImagesSaving || retryingPendingImage === image"
-                        @click="dropPendingDeliveryImage(image)"
-                      >
-                        移除记录
-                      </n-button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div v-if="deliveryImages.length > 0" class="delivery-images-grid">
-                <div
-                  v-for="(image, index) in deliveryImages"
-                  :key="`${image}-${index}`"
-                  class="delivery-image-card"
-                >
-                  <n-image
-                    :src="image"
-                    alt="发货图片"
-                    :width="88"
-                    :height="88"
-                    object-fit="cover"
-                    class="delivery-image-preview"
-                  />
-                  <n-button
-                    class="delivery-image-delete"
-                    size="tiny"
-                    type="error"
-                    circle
-                    :disabled="deliveryImagesSaving"
-                    @click="removeDeliveryImage(index)"
-                  >
-                    ×
-                  </n-button>
-                </div>
-                <button
-                  v-if="canAddDeliveryImage"
-                  class="delivery-image-add"
-                  :disabled="deliveryImagesSaving"
-                  @click="openDeliveryImageModal"
-                >
-                  +
-                </button>
-              </div>
-              <button
-                v-else
-                class="delivery-image-add"
-                :disabled="deliveryImagesSaving"
-                @click="openDeliveryImageModal"
-              >
-                +
-              </button>
-              <div class="delivery-images-meta">
-                {{ totalDeliveryImageCount }}/10 张
-                <span v-if="pendingDeliveryImages.length > 0">（待保存 {{ pendingDeliveryImages.length }} 张）</span>
-              </div>
-            </div>
-          </n-descriptions-item>
-        </n-descriptions>
-        <n-space style="margin-top: 12px;">
-          <n-button v-if="order.status === 'pending'" type="primary" :loading="sending" @click="doSend">
-            确认发出
-          </n-button>
-        </n-space>
-        </div>
-      </n-card>
-
       <!-- ── 产出项 section ────────────────────────────────────── -->
       <div v-if="jewelryItems.length > 0" class="hc-sec">
         <div class="hc-sec-h">
@@ -677,6 +475,100 @@
       </div>
     </n-card>
 
+    <!-- ── 发货图片 section ──────────────────────────────────────── -->
+    <div v-if="order" class="hc-sec">
+      <div class="hc-sec-h"><span class="t">发货图片</span></div>
+      <div class="delivery-images-block">
+        <div v-if="pendingDeliveryImages.length > 0" class="delivery-images-warning">
+          <div class="delivery-images-warning-title">
+            有 {{ pendingDeliveryImages.length }} 张图片已上传，但还没保存到手工单
+          </div>
+          <div class="delivery-images-pending-list">
+            <div
+              v-for="image in pendingDeliveryImages"
+              :key="`pending-${image}`"
+              class="delivery-pending-item"
+            >
+              <n-image
+                :src="image"
+                alt="待保存发货图片"
+                :width="56"
+                :height="56"
+                object-fit="cover"
+                class="delivery-pending-preview"
+              />
+              <div class="delivery-pending-actions">
+                <n-button
+                  size="tiny"
+                  type="warning"
+                  ghost
+                  :loading="retryingPendingImage === image"
+                  :disabled="deliveryImagesSaving"
+                  @click="retryPendingDeliveryImage(image)"
+                >
+                  重试保存
+                </n-button>
+                <n-button
+                  size="tiny"
+                  quaternary
+                  :disabled="deliveryImagesSaving || retryingPendingImage === image"
+                  @click="dropPendingDeliveryImage(image)"
+                >
+                  移除记录
+                </n-button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-if="deliveryImages.length > 0" class="delivery-images-grid">
+          <div
+            v-for="(image, index) in deliveryImages"
+            :key="`${image}-${index}`"
+            class="delivery-image-card"
+          >
+            <n-image
+              :src="image"
+              alt="发货图片"
+              :width="88"
+              :height="88"
+              object-fit="cover"
+              class="delivery-image-preview"
+            />
+            <n-button
+              class="delivery-image-delete"
+              size="tiny"
+              type="error"
+              circle
+              :disabled="deliveryImagesSaving"
+              @click="removeDeliveryImage(index)"
+            >
+              ×
+            </n-button>
+          </div>
+          <button
+            v-if="canAddDeliveryImage"
+            class="delivery-image-add"
+            :disabled="deliveryImagesSaving"
+            @click="openDeliveryImageModal"
+          >
+            +
+          </button>
+        </div>
+        <button
+          v-else
+          class="delivery-image-add"
+          :disabled="deliveryImagesSaving"
+          @click="openDeliveryImageModal"
+        >
+          +
+        </button>
+        <div class="delivery-images-meta">
+          {{ totalDeliveryImageCount }}/10 张
+          <span v-if="pendingDeliveryImages.length > 0">（待保存 {{ pendingDeliveryImages.length }} 张）</span>
+        </div>
+      </div>
+    </div>
+
     <n-modal v-model:show="manualRestockShow" preset="card" title="手动添加补货项" style="max-width: 480px;">
       <n-form>
         <n-form-item label="配件" required>
@@ -717,6 +609,41 @@
       @update:show="(v) => { pickingModalShow = v; if (!v) loadData() }"
       @restock-changed="loadRestock"
     />
+
+    <!-- ── Floating action bar ────────────────────────────────── -->
+    <floating-action-bar v-if="order">
+      <n-button
+        quaternary
+        style="color:#C0C6CD"
+        @click="router.push(`/handcraft-receipts?supplier_name=${encodeURIComponent(order.supplier_name)}`)"
+      >
+        查看回收单
+      </n-button>
+      <n-button
+        quaternary
+        style="color:#C0C6CD"
+        :loading="downloadingExcel"
+        @click="doDownloadExcel"
+      >
+        导出Excel
+      </n-button>
+      <n-button
+        quaternary
+        style="color:#C0C6CD"
+        :loading="downloadingPdf"
+        @click="doDownloadPdf"
+      >
+        导出PDF
+      </n-button>
+      <n-button
+        v-if="order.status === 'pending'"
+        type="primary"
+        :loading="sending"
+        @click="doSend"
+      >
+        确认发出
+      </n-button>
+    </floating-action-bar>
 
   </div>
 </template>
@@ -763,6 +690,7 @@ import { listOrders, getTodo, createLink, batchLink } from '@/api/orders'
 import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 import HandcraftPickingSimulationModal from '@/components/picking/HandcraftPickingSimulationModal.vue'
+import FloatingActionBar from '@/components/FloatingActionBar.vue'
 import RecentImportsPicker from '@/components/RecentImportsPicker.vue'
 import { attachPartsToOrder } from '@/api/handcraftActions'
 
