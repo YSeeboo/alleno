@@ -12,38 +12,39 @@
 import { NConfigProvider, NMessageProvider, NDialogProvider } from 'naive-ui'
 
 const themeOverrides = {
+  // UI refresh: monochrome (near-black) + single emerald accent.
   common: {
-    primaryColor: '#6366F1',
-    primaryColorHover: '#4F46E5',
-    primaryColorPressed: '#4338CA',
-    primaryColorSuppl: '#6366F1',
+    primaryColor: '#1E7A5A',
+    primaryColorHover: '#1A6B4F',
+    primaryColorPressed: '#155C43',
+    primaryColorSuppl: '#1E7A5A',
     borderRadius: '8px',
     borderRadiusMedium: '8px',
     borderRadiusSmall: '6px',
   },
   Layout: {
-    color: '#F8FAFC',
-    headerColor: '#0F172A',
-    headerBorderColor: '#0F172A',
-    siderColor: '#0F172A',
-    siderBorderColor: '#1E293B',
+    color: '#F6F7F8',
+    headerColor: '#10141A',
+    headerBorderColor: '#10141A',
+    siderColor: '#10141A',
+    siderBorderColor: '#20262E',
   },
   Menu: {
     color: 'transparent',
     colorInverted: 'transparent',
-    itemTextColor: '#94A3B8',
-    itemTextColorActive: '#6366F1',
-    itemTextColorActiveHover: '#4F46E5',
-    itemTextColorHover: '#E2E8F0',
-    itemTextColorChildActive: '#6366F1',
-    itemIconColor: '#F2F5F9',
-    itemIconColorActive: '#6366F1',
-    itemIconColorHover: '#E2E8F0',
-    itemIconColorChildActive: '#6366F1',
-    itemColorActive: 'rgba(99,102,241,0.12)',
-    itemColorActiveHover: 'rgba(99,102,241,0.16)',
-    itemColorHover: 'rgba(255,255,255,0.08)',
-    dividerColor: '#1E293B',
+    itemTextColor: '#C0C6CD',
+    itemTextColorActive: '#3FBF8F',
+    itemTextColorActiveHover: '#5BD0A4',
+    itemTextColorHover: '#E7EAEE',
+    itemTextColorChildActive: '#3FBF8F',
+    itemIconColor: '#AEB4BC',
+    itemIconColorActive: '#3FBF8F',
+    itemIconColorHover: '#E7EAEE',
+    itemIconColorChildActive: '#3FBF8F',
+    itemColorActive: 'rgba(30,122,90,0.18)',
+    itemColorActiveHover: 'rgba(30,122,90,0.24)',
+    itemColorHover: 'rgba(255,255,255,0.06)',
+    dividerColor: '#20262E',
   },
   DataTable: {
     thColor: '#F8FAFC',
@@ -71,5 +72,5 @@ const themeOverrides = {
 
 <style>
 * { box-sizing: border-box; }
-body { margin: 0; background: #F8FAFC; }
+body { margin: 0; background: #F6F7F8; }
 </style>
