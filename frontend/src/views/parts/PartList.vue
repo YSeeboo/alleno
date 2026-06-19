@@ -1,32 +1,65 @@
 <template>
-  <div>
-    <div class="page-header">
-      <div class="page-breadcrumb">商品 / 配件管理</div>
-      <h2 class="page-title">配件管理</h2>
-      <div class="page-divider"></div>
-    </div>
-
-    <div class="filter-bar">
-      <n-input v-model:value="searchName" placeholder="搜索配件名称" clearable :style="{ width: isMobile ? '100%' : '200px' }" @update:value="debouncedLoad" />
-      <n-select
-        v-model:value="searchCategory"
-        :options="categoryOptions"
-        clearable
-        placeholder="筛选类目"
-        :style="{ width: isMobile ? '100%' : '160px' }"
-        @update:value="load"
-      />
-      <div class="filter-bar-end">
-        <n-space>
-          <n-button @click="openImportModal">导入配件</n-button>
-          <n-button type="primary" @click="openCreate">新增配件</n-button>
-        </n-space>
+  <div class="parts-page">
+    <!-- Page Header -->
+    <div class="page-top">
+      <div class="page-crumbs">商品 / 配件管理</div>
+      <div class="title-row">
+        <h1 class="page-title">
+          配件管理<span class="title-count">共 {{ rows.length }} 个配件</span>
+        </h1>
+        <div class="top-actions">
+          <n-button class="btn-outline" @click="openImportModal">导入配件</n-button>
+          <n-button class="btn-ink" @click="openCreate">新增配件</n-button>
+        </div>
       </div>
     </div>
 
+    <!-- Stat Strip -->
+    <div class="stat-strip">
+      <div class="stat-card">
+        <div class="stat-label">配件总数</div>
+        <div class="stat-value mono">{{ rows.length }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">组合件</div>
+        <div class="stat-value mono">{{ compositeCount }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">低库存预警</div>
+        <div class="stat-value mono" :class="{ 'stat-danger': lowStockCount > 0 }">{{ lowStockCount }}</div>
+      </div>
+    </div>
+
+    <!-- Filter Row -->
+    <div class="filter-row">
+      <div class="chip-group">
+        <button
+          v-for="chip in categoryChips"
+          :key="chip.value ?? '__all__'"
+          class="chip"
+          :class="{ 'chip-active': searchCategory === chip.value }"
+          @click="selectCategory(chip.value)"
+        >
+          {{ chip.label }}
+        </button>
+      </div>
+      <div class="search-wrap">
+        <n-input
+          v-model:value="searchName"
+          placeholder="搜索配件名称 / 编号"
+          clearable
+          :style="{ width: isMobile ? '100%' : '240px' }"
+          @update:value="debouncedLoad"
+        />
+      </div>
+    </div>
+
+    <!-- Table -->
     <n-spin :show="loading">
-      <n-data-table v-if="rows.length > 0" :columns="columns" :data="rows" :bordered="false" />
-      <n-empty v-else-if="!loading" description="暂无数据" style="margin-top: 24px;" />
+      <div class="table-wrap" v-if="rows.length > 0 || loading">
+        <n-data-table :columns="columns" :data="rows" :bordered="false" />
+      </div>
+      <n-empty v-else-if="!loading" description="暂无数据" style="margin: 40px 0;" />
     </n-spin>
 
     <!-- Create / Edit Modal -->
@@ -282,6 +315,22 @@ const categoryOptions = [
   { label: '链条', value: '链条' },
   { label: '小配件', value: '小配件' },
 ]
+
+const categoryChips = [
+  { label: '全部', value: null },
+  { label: '吊坠', value: '吊坠' },
+  { label: '链条', value: '链条' },
+  { label: '小配件', value: '小配件' },
+]
+
+const selectCategory = (value) => {
+  searchCategory.value = value
+  load()
+}
+
+// Stat strip — computed from loaded row data only
+const compositeCount = computed(() => rows.value.filter((r) => r.is_composite).length)
+const lowStockCount = computed(() => rows.value.filter((r) => r.stock < 10).length)
 
 const unitOptions = [
   { label: '个', value: '个' },
@@ -684,26 +733,83 @@ const confirmDelete = (row) => {
   })
 }
 
+// Color dot map for known color names
+const COLOR_DOT_MAP = {
+  '金色': '#d9b24a',
+  '白K': '#a9b0b8',
+  '玫瑰金': '#cf8f7d',
+  '古银': '#8a9a8e',
+  '银色': '#a9b0b8',
+}
+
 const columns = [
-  { title: '编号', key: 'id', width: 100 },
+  {
+    title: '编号',
+    key: 'id',
+    width: 130,
+    render: (row) => h('span', { class: 'cell-id mono' }, row.id),
+  },
   {
     title: '配件',
     key: 'name',
-    minWidth: 180,
-    render: (row) => renderNamedImage(row.name, row.image, row.name, 40, row.is_composite ? '组合' : null),
+    minWidth: 200,
+    render: (row) => {
+      const children = [
+        renderNamedImage(row.name, row.image, row.name, 36),
+      ]
+      if (row.is_composite) {
+        children.push(h('span', { class: 'tag-combo' }, '组合'))
+      }
+      return h('div', { class: 'cell-name-wrap' }, children)
+    },
   },
   { title: '类目', key: 'category' },
-  { title: '颜色', key: 'color' },
+  {
+    title: '颜色',
+    key: 'color',
+    render: (row) => {
+      if (!row.color) return '-'
+      const dotColor = COLOR_DOT_MAP[row.color] || '#c0c6cd'
+      return h('span', { class: 'cell-color' }, [
+        h('span', {
+          class: 'color-dot',
+          style: { background: dotColor },
+        }),
+        row.color,
+      ])
+    },
+  },
   { title: '规格', key: 'spec' },
   { title: '单位', key: 'unit', width: 60 },
-  { title: '单件成本', key: 'unit_cost', width: 100, render: (r) => r.unit_cost != null ? fmtMoney(r.unit_cost) : '-' },
+  {
+    title: '单件成本',
+    key: 'unit_cost',
+    width: 110,
+    titleAlign: 'right',
+    align: 'right',
+    render: (r) => r.unit_cost != null
+      ? h('span', { class: 'mono' }, [
+          h('small', { class: 'currency-sym' }, '¥'),
+          ' ',
+          fmtMoney(r.unit_cost),
+        ])
+      : h('span', { style: { color: '#8B9096' } }, '-'),
+  },
   {
     title: '当前库存',
     key: 'stock',
-    width: 90,
-    render: (r) => r.stock < 10
-      ? h('span', { class: 'badge badge-red' }, ['• ', r.stock])
-      : r.stock,
+    width: 100,
+    titleAlign: 'right',
+    align: 'right',
+    render: (r) => {
+      if (r.stock < 10) {
+        return h('span', { class: 'stock-low mono' }, [
+          String(r.stock),
+          h('span', { class: 'pill-low' }, '低'),
+        ])
+      }
+      return h('span', { class: 'stock-ok mono' }, String(r.stock))
+    },
   },
   { title: '默认电镀', key: 'plating_process' },
   {
@@ -745,6 +851,242 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* ── Page shell ── */
+.parts-page {
+  padding: 0;
+}
+
+/* ── Header ── */
+.page-top {
+  padding: 24px 28px 0;
+}
+
+.page-crumbs {
+  font-size: 12px;
+  color: #8B9096;
+  margin-bottom: 10px;
+  letter-spacing: 0.1px;
+}
+
+.title-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.page-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  margin: 0;
+  color: #1A1D21;
+  line-height: 1.2;
+}
+
+.title-count {
+  font-size: 14px;
+  font-weight: 500;
+  color: #8B9096;
+  margin-left: 10px;
+}
+
+.top-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Override Naive UI button styles for the ink/outline variants */
+.btn-outline {
+  height: 36px !important;
+  border-radius: 9px !important;
+  border: 1px solid #ECEDEF !important;
+  background: #fff !important;
+  color: #1A1D21 !important;
+  font-size: 13.5px !important;
+  font-weight: 500 !important;
+}
+
+.btn-ink {
+  height: 36px !important;
+  border-radius: 9px !important;
+  background: #1A1D21 !important;
+  border-color: #1A1D21 !important;
+  color: #fff !important;
+  font-size: 13.5px !important;
+  font-weight: 500 !important;
+}
+
+/* ── Stat strip ── */
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border: 1px solid #ECEDEF;
+  border-radius: 10px;
+  margin: 20px 28px 0;
+  background: #fff;
+  overflow: hidden;
+}
+
+.stat-card {
+  padding: 14px 20px;
+  border-right: 1px solid #ECEDEF;
+}
+
+.stat-card:last-child {
+  border-right: 0;
+}
+
+.stat-label {
+  font-size: 10.5px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: #8B9096;
+  font-weight: 600;
+}
+
+.stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  margin-top: 5px;
+  line-height: 1;
+  color: #1A1D21;
+}
+
+.stat-danger {
+  color: #E5484D;
+}
+
+/* ── Filter row ── */
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 28px 14px;
+  flex-wrap: wrap;
+}
+
+.chip-group {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  height: 32px;
+  border-radius: 16px;
+  border: 1px solid #ECEDEF;
+  background: #fff;
+  padding: 0 14px;
+  font-size: 13px;
+  color: #4b5158;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.chip:hover {
+  border-color: #c8cdd4;
+}
+
+.chip-active {
+  background: #1A1D21;
+  border-color: #1A1D21;
+  color: #fff;
+  font-weight: 500;
+}
+
+.search-wrap {
+  margin-left: auto;
+}
+
+/* ── Table wrap ── */
+.table-wrap {
+  margin: 0 28px 28px;
+  border: 1px solid #ECEDEF;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* ── Table cell styles ── */
+.cell-id {
+  font-size: 12.5px;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tag-combo {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: #E6F2EC;
+  color: #1E7A5A;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.cell-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.color-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.mono {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.currency-sym {
+  color: #8B9096;
+  font-size: 11px;
+}
+
+.stock-ok {
+  font-weight: 600;
+  color: #1A1D21;
+}
+
+.stock-low {
+  font-weight: 700;
+  color: #E5484D;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pill-low {
+  font-size: 10px;
+  background: #fdecec;
+  color: #E5484D;
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
+
+/* ── Template download button ── */
 .template-download-btn {
   background: #f6efe2;
   border-color: #d6b98d;
