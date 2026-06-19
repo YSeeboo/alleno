@@ -323,13 +323,23 @@ const handleSelect = (key) => {
 </style>
 
 <style>
+/* Menu items as inset rounded pills (closer to the mockup's nav) */
+.n-layout-sider .n-menu .n-menu-item-content {
+  margin: 2px 10px;
+  border-radius: 8px;
+}
 .n-layout-sider .n-menu-item-content__icon {
   color: #AEB4BC !important;
+  margin-right: 10px !important;
 }
 .n-layout-sider .n-menu-item-content--selected .n-menu-item-content__icon {
   color: #3FBF8F !important;
 }
 .n-layout-sider .n-menu-item-content:hover .n-menu-item-content__icon {
   color: #FFFFFF !important;
+}
+/* Collapsed: icon-only items stay centered, no inset margin */
+.n-layout-sider.n-layout-sider--collapsed .n-menu .n-menu-item-content {
+  margin: 2px 6px;
 }
 </style>
