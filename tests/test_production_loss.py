@@ -119,17 +119,18 @@ def test_confirm_plating_loss_with_deduction(client, db):
     assert data["reason"] == "品质不良"
 
 
-def test_confirm_handcraft_part_loss(client, db):
-    """Confirm loss on handcraft part item."""
+def test_confirm_handcraft_part_loss_rejected(client, db):
+    """Confirm loss on handcraft part item is now forbidden."""
     part, jewelry, hc, hc_part, hc_jewelry = _setup_handcraft_with_partial_receive(db)
     resp = client.post(
         f"/api/handcraft/{hc.id}/items/{hc_part.id}/confirm-loss",
         json={"loss_qty": 10, "item_type": "part"},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 400
+    assert "配件不支持损耗确认" in resp.json()["detail"]
+    # Part item must be unmodified
     db.refresh(hc_part)
-    assert float(hc_part.received_qty) == 50
-    assert hc_part.status == "已收回"
+    assert float(hc_part.received_qty) == 40
 
 
 def test_confirm_handcraft_jewelry_loss(client, db):
@@ -270,11 +271,8 @@ def test_confirm_handcraft_loss_nonexistent_order_returns_404(client, db):
     assert resp.status_code == 404
 
 
-def test_confirm_handcraft_part_loss_capped_by_effective_qty(client, db):
-    """When picking actual_qty=8 < pi.qty=10, only (effective - received) is
-    the loss gap. Supplier returned all 8 → gap is 0; any loss_qty must reject.
-    Pre-fix bug: gap was 10-8=2, allowing user to inflate received_qty up to 10
-    with phantom loss entries."""
+def test_confirm_handcraft_part_loss_always_rejected(client, db):
+    """Part loss is now unconditionally forbidden regardless of gap/qty."""
     from models.handcraft_order import HandcraftPickingRecord, HandcraftPickingWeight
 
     part = Part(id="PJ-X-LOSSAQ", name="损耗 actual_qty", category="小配件")
@@ -312,4 +310,4 @@ def test_confirm_handcraft_part_loss_capped_by_effective_qty(client, db):
         json={"loss_qty": 1, "item_type": "part"},
     )
     assert resp.status_code == 400
-    assert "超过差额 0" in resp.json()["detail"]
+    assert "配件不支持损耗确认" in resp.json()["detail"]

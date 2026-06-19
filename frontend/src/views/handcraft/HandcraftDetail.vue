@@ -1928,13 +1928,6 @@ const itemColumns = [
       })
     },
   },
-  { title: '已回收', key: 'received_qty', width: 80, render: (r) => (r.received_qty ?? 0) - (r.loss_qty ?? 0) },
-  {
-    title: '损耗',
-    key: 'loss_qty',
-    width: 60,
-    render: (r) => r.loss_qty ? h(NTag, { type: 'warning', size: 'small' }, { default: () => r.loss_qty }) : null,
-  },
   {
     title: '状态',
     key: 'status',
@@ -2065,15 +2058,6 @@ const itemColumns = [
         },
       )
       const btns = [editBtn, deleteBtn]
-      // Confirm loss button for part items
-      const gap = row.qty - (row.received_qty || 0)
-      if (gap > 0 && row.status === '制作中') {
-        btns.push(h(NButton, {
-          size: 'small',
-          type: 'warning',
-          onClick: () => openLossModal(row, 'part'),
-        }, { default: () => '确认损耗' }))
-      }
       return h(NSpace, { size: 'small' }, { default: () => btns })
     },
   },

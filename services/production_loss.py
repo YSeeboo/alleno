@@ -92,14 +92,7 @@ def confirm_handcraft_loss(
         raise ValueError(f"手工单 {order_id} 不存在")
 
     if item_type == "part":
-        item = db.query(HandcraftPartItem).filter_by(id=item_id, handcraft_order_id=order_id).first()
-        if not item:
-            raise ValueError(f"手工单配件项 {item_id} 不存在")
-        loss_item_type = "handcraft_part"
-        part_id = item.part_id
-        jewelry_id = None
-        inv_item_type = "part"
-        inv_item_id = item.part_id
+        raise ValueError("配件不支持损耗确认")
     elif item_type == "jewelry":
         item = db.query(HandcraftJewelryItem).filter_by(id=item_id, handcraft_order_id=order_id).first()
         if not item:
@@ -157,15 +150,11 @@ def confirm_handcraft_loss(
     db.add(log)
 
     # Increment received_qty
-    if item_type == "jewelry":
-        item.received_qty = int(item.received_qty or 0) + int(loss_qty)
-        if item.jewelry_id:
-            _auto_consume_parts(db, order_id, item.jewelry_id, float(loss_qty))
-        elif item.part_id:
-            _auto_consume_child_parts(db, order_id, item.part_id, float(loss_qty))
-    else:
-        item.received_qty = Decimal(str(float(item.received_qty or 0) + loss_qty))
-        item.consumed_qty = Decimal(str(float(item.consumed_qty or 0) + loss_qty))
+    item.received_qty = int(item.received_qty or 0) + int(loss_qty)
+    if item.jewelry_id:
+        _auto_consume_parts(db, order_id, item.jewelry_id, float(loss_qty))
+    elif item.part_id:
+        _auto_consume_child_parts(db, order_id, item.part_id, float(loss_qty))
 
     if float(item.received_qty) >= effective:
         item.status = "已收回"
