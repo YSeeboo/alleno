@@ -1,24 +1,21 @@
 <template>
-  <n-card v-if="cols.length > 0" :content-style="collapsed ? 'padding: 0' : undefined">
-    <template #header>
-      <div class="bm-head-wrap">
-        <div class="bm-head" @click="collapsed = !collapsed">
-          <span class="chev">{{ collapsed ? '▸' : '▾' }}</span>
-          <span class="title">客户分拣</span>
-          <span :class="['status-tag', allFull ? 'full' : 'under']">{{ statusTagText }}</span>
-        </div>
-        <div v-if="!collapsed" class="bm-actions">
-          <template v-if="mode === 'view'">
-            <n-button size="small" :disabled="!canEdit" @click.stop="enterEdit">编辑</n-button>
-          </template>
-          <template v-else>
-            <n-button size="small" :disabled="saving" @click.stop="cancelEdit">取消</n-button>
-            <n-button size="small" type="primary" :loading="saving" @click.stop="save">保存</n-button>
-          </template>
-        </div>
+  <div v-if="cols.length > 0" class="bm-root">
+    <div class="bm-head-wrap">
+      <span class="bm-head-left">
+        <span class="bm-title">客户分拣</span>
+        <span :class="['status-tag', allFull ? 'full' : 'under']">{{ statusTagText }}</span>
+      </span>
+      <div class="bm-actions">
+        <template v-if="mode === 'view'">
+          <n-button size="small" :disabled="!canEdit" @click="enterEdit">编辑</n-button>
+        </template>
+        <template v-else>
+          <n-button size="small" :disabled="saving" @click="cancelEdit">取消</n-button>
+          <n-button size="small" type="primary" :loading="saving" @click="save">保存</n-button>
+        </template>
       </div>
-    </template>
-    <div v-show="!collapsed">
+    </div>
+    <div class="bm-body">
       <div class="mx-scroll">
         <table class="mx">
         <thead>
@@ -158,12 +155,12 @@
         <n-button size="small" type="primary" :loading="saving" @click="save">保存</n-button>
       </div>
     </div>
-  </n-card>
+  </div>
 </template>
 
 <script setup>
 import { ref, computed, h, defineComponent } from 'vue'
-import { NCard, NButton, NPopover, useMessage } from 'naive-ui'
+import { NButton, NPopover, useMessage } from 'naive-ui'
 import CustomerNameSelect from './CustomerNameSelect.vue'
 import BulkAssignPopover from './BulkAssignPopover.vue'
 import {
@@ -247,8 +244,6 @@ const props = defineProps({
   groups: { type: Array, required: true },  // backend breakdown response
 })
 const emit = defineEmits(['saved'])
-
-const collapsed = ref(false)
 
 // 'view' = read-only, 'edit' = editing local snapshot
 const mode = ref('view')
@@ -784,17 +779,30 @@ function lockedSourceLine(row) {
   --sub: #F6F7F8;
 }
 
-/* ── Header ── */
-.bm-head { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; }
-.chev { color: var(--muted, #8B9096); }
-.title { font-weight: 600; color: var(--ink, #1A1D21); }
+/* ── Header — eyebrow section, matches sibling .hc-sec-h ── */
+.bm-root { width: 100%; }
+.bm-head-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 0 8px;
+  border-bottom: 1px solid #ECEDEF;
+  margin-bottom: 12px;
+}
+.bm-head-left { display: flex; align-items: center; gap: 8px; }
+.bm-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #8B9096;
+}
 .status-tag {
   font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 11px;
 }
 .status-tag.full { background: #E6F2EC; color: #1E7A5A; }
 .status-tag.under { background: #FBF0DC; color: #B7791F; }
-
-.bm-head-wrap { display: flex; align-items: center; justify-content: space-between; width: 100%; }
 .bm-actions { display: flex; gap: 6px; }
 
 /* ── Table shell — hairline grid ── */
