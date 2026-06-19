@@ -1,49 +1,66 @@
 <template>
-  <n-layout style="height: 100vh">
-    <n-layout-header bordered :style="{ height: '52px', padding: isMobile ? '0 12px' : '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }">
-      <div class="brand">
-        <span class="brand-icon" @click="collapsed = !collapsed" style="cursor: pointer;">◈</span>
-        <span v-if="!isMobile" class="brand-en">ALLENOP</span>
+  <n-layout has-sider style="height: 100vh">
+    <div v-if="isMobile && !collapsed" class="sidebar-overlay" @click="collapsed = true" />
+
+    <!-- No top header: provide a floating trigger so mobile can open the nav -->
+    <button
+      v-if="isMobile && collapsed"
+      class="mobile-menu-btn"
+      aria-label="打开菜单"
+      @click="collapsed = false"
+    >☰</button>
+
+    <n-layout-sider
+      v-if="!isMobile || !collapsed"
+      bordered
+      collapse-mode="width"
+      :collapsed-width="60"
+      :width="240"
+      :collapsed="collapsed"
+      :show-trigger="!isMobile"
+      content-style="display: flex; flex-direction: column; height: 100%;"
+      v-bind="isMobile ? { collapsedWidth: 0, nativeScrollbar: false, style: { height: '100vh', position: 'fixed', top: '0', left: '0', zIndex: 1000 } } : {}"
+      @collapse="collapsed = true"
+      @expand="collapsed = false"
+    >
+      <!-- brand (top) -->
+      <div class="side-brand" :class="{ collapsed }">
+        <span class="brand-icon" @click="collapsed = !collapsed">◈</span>
+        <span v-if="!collapsed" class="brand-en">ALLENOP</span>
       </div>
-      <div class="header-right">
-        <span class="username-text">{{ authStore.user?.owner || authStore.user?.username }}</span>
-        <n-button text style="color: #94A3B8; font-size: 13px;" @click="authStore.logout()">退出登录</n-button>
-      </div>
-    </n-layout-header>
-    <n-layout has-sider style="height: calc(100vh - 52px)">
-      <div v-if="isMobile && !collapsed" class="sidebar-overlay" @click="collapsed = true" />
-      <n-layout-sider
-        v-if="!isMobile || !collapsed"
-        bordered
-        collapse-mode="width"
-        :collapsed-width="52"
-        :width="240"
-        :collapsed="collapsed"
-        show-trigger
-        v-bind="isMobile ? { collapsedWidth: 0, showTrigger: false, nativeScrollbar: false, style: { height: 'calc(100vh - 52px)', position: 'fixed', top: '52px', left: '0', zIndex: 1000 } } : {}"
-        @collapse="collapsed = true"
-        @expand="collapsed = false"
-      >
+
+      <!-- nav (scrolls) -->
+      <div class="side-menu">
         <n-menu
           :collapsed="collapsed"
-          :collapsed-width="52"
+          :collapsed-width="60"
           :collapsed-icon-size="22"
           :options="menuOptions"
           :value="activeKey"
           @update:value="handleSelect"
         />
-      </n-layout-sider>
-      <n-layout-content :content-style="`padding: ${isMobile ? '12px' : '28px'}; overflow-y: auto;`">
-        <router-view />
-      </n-layout-content>
-    </n-layout>
+      </div>
+
+      <!-- user (bottom-left) -->
+      <div class="side-user" :class="{ collapsed }">
+        <div class="side-user-av">{{ userInitial }}</div>
+        <div v-if="!collapsed" class="side-user-meta">
+          <div class="side-user-name">{{ username }}</div>
+          <button class="side-user-logout" @click="authStore.logout()">退出登录</button>
+        </div>
+      </div>
+    </n-layout-sider>
+
+    <n-layout-content :content-style="`padding: ${isMobile ? '16px' : '28px'}; overflow-y: auto;`">
+      <router-view />
+    </n-layout-content>
   </n-layout>
 </template>
 
 <script setup>
 import { ref, computed, h, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NLayout, NLayoutHeader, NLayoutSider, NLayoutContent, NMenu, NButton } from 'naive-ui'
+import { NLayout, NLayoutSider, NLayoutContent, NMenu } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
 import {
   HomeOutline, ExtensionPuzzleOutline, DiamondOutline,
@@ -70,6 +87,9 @@ const { isMobile } = useIsMobile()
 watch(isMobile, (mobile) => {
   collapsed.value = mobile
 }, { immediate: true })
+
+const username = computed(() => authStore.user?.owner || authStore.user?.username || '')
+const userInitial = computed(() => (username.value || '?').trim().charAt(0).toUpperCase())
 
 const icon = (Comp) => () => h(Comp)
 
@@ -181,41 +201,109 @@ const handleSelect = (key) => {
 </script>
 
 <style scoped>
-.brand {
+.side-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
+  height: 56px;
+  padding: 0 18px;
+  flex: none;
 }
-
+.side-brand.collapsed {
+  justify-content: center;
+  padding: 0;
+}
 .brand-icon {
-  color: #6366F1;
+  color: #3FBF8F;
   font-size: 18px;
   line-height: 1;
+  cursor: pointer;
 }
-
 .brand-en {
-  color: #F1F5F9;
+  color: #FFFFFF;
   font-size: 15px;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
 }
 
-.header-right {
+.side-menu {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.side-user {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 9px;
+  padding: 10px 16px;
+  border-top: 1px solid #20262E;
+}
+.side-user.collapsed {
+  justify-content: center;
+  padding: 12px 0;
+}
+.side-user-av {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2AA177, #155C43);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  flex: none;
+}
+.side-user-meta {
+  min-width: 0;
+}
+.side-user-name {
+  color: #E7EAEE;
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.side-user-logout {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 2px;
+  color: #7E858E;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.side-user-logout:hover {
+  color: #3FBF8F;
 }
 
-.username-text {
-  color: #CBD5E1;
-  font-size: 13px;
+.mobile-menu-btn {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 1001;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  background: #10141A;
+  color: #FFFFFF;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 :deep(.n-menu-item-group-title) {
   font-size: 10px !important;
   text-transform: uppercase;
   font-weight: 600 !important;
-  color: #475569 !important;
+  color: #5B6470 !important;
   padding-top: 16px !important;
 }
 
@@ -225,22 +313,21 @@ const handleSelect = (key) => {
 
 .sidebar-overlay {
   position: fixed;
-  top: 52px;
+  top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.45);
   z-index: 999;
 }
-
 </style>
 
 <style>
 .n-layout-sider .n-menu-item-content__icon {
-  color: rgb(242, 245, 249) !important;
+  color: #AEB4BC !important;
 }
 .n-layout-sider .n-menu-item-content--selected .n-menu-item-content__icon {
-  color: #6366F1 !important;
+  color: #3FBF8F !important;
 }
 .n-layout-sider .n-menu-item-content:hover .n-menu-item-content__icon {
   color: #FFFFFF !important;
