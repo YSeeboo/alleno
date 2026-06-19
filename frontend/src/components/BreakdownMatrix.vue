@@ -868,7 +868,7 @@ function lockedSourceLine(row) {
 .oh .alloc { display: flex; align-items: center; gap: 6px; }
 .oh .alloc .n { font-size: 11px; font-variant-numeric: tabular-nums; }
 .oh .alloc .track { width: 46px; height: 4px; border-radius: 2px; background: #EDEFF1; overflow: hidden; flex-shrink: 0; }
-.oh .alloc .fill { height: 100%; }
+.oh .alloc .fill { display: block; height: 100%; }
 /* full = emerald, under = amber — driven by parent th class */
 .mx__col-jw.full .fill { background: #1E7A5A; }
 .mx__col-jw.full .n { color: #1E7A5A; font-weight: 600; }
