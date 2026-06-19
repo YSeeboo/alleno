@@ -852,6 +852,13 @@ function lockedSourceLine(row) {
 /* ── Sum column ── */
 .mx__col-sum { text-align: right; min-width: 64px; background: #F6F7F8; }
 
+/* 客户 / 合计 表头标签：水平 + 垂直居中（覆盖 sticky 左对齐、sum 右对齐与 thead 的 bottom 对齐） */
+.mx thead .mx__col-cust,
+.mx thead .mx__col-sum {
+  text-align: center;
+  vertical-align: middle;
+}
+
 /* ── Output column header: allocation progress ── */
 .mx__col-jw { min-width: 120px; }
 .oh { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
