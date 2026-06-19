@@ -41,13 +41,11 @@
         <tbody v-if="mode === 'view'">
           <tr v-for="r in rows" :key="r.customer_name">
             <td class="mx__cust">
-              <div class="cust-nm">{{ r.customer_name }}</div>
-              <template v-if="r.is_locked_customer">
-                <span class="src order">订单{{ lockedSourceLine(r) ? ' ' + lockedSourceLine(r) : '' }} ↗</span>
-              </template>
-              <template v-else>
-                <span class="src manual">手填</span>
-              </template>
+              <div class="cust-line">
+                <span class="cust-nm">{{ r.customer_name }}</span>
+                <span v-if="r.is_locked_customer" class="src order">订单{{ lockedSourceLine(r) ? ' ' + lockedSourceLine(r) : '' }} ↗</span>
+                <span v-else class="src manual">手填</span>
+              </div>
             </td>
             <td v-for="c in cols" :key="c.key" :class="cellClass(r.cells[c.key], r.customer_name, c.key)">
               <CellReadonly :cell="r.cells[c.key]" />
@@ -63,8 +61,10 @@
           <tr v-for="(r, ri) in draft.rows" :key="`${r.customer_name}:${ri}`">
             <td class="mx__cust">
               <template v-if="r.is_locked_customer">
-                <div class="cust-nm">{{ r.customer_name }}</div>
-                <span class="src order">订单{{ lockedSourceLine(r) ? ' ' + lockedSourceLine(r) : '' }} ↗</span>
+                <div class="cust-line">
+                  <span class="cust-nm">{{ r.customer_name }}</span>
+                  <span class="src order">订单{{ lockedSourceLine(r) ? ' ' + lockedSourceLine(r) : '' }} ↗</span>
+                </div>
               </template>
               <template v-else>
                 <div class="manual-edit">
@@ -877,6 +877,8 @@ function lockedSourceLine(row) {
 
 /* ── Customer cell ── */
 .mx__cust { padding: 8px 12px; }
+.cust-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cust-line .src { margin-top: 0; }
 .cust-nm { font-weight: 600; font-size: 13px; color: #1A1D21; }
 .src {
   font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 5px;
