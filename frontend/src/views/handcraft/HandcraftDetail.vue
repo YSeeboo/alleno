@@ -342,78 +342,61 @@
         </div>
       </n-card>
 
-      <n-card
-        v-if="jewelryItems.length > 0"
-        style="margin-bottom: 16px;"
-        :content-style="collapsed.jewelry ? 'padding: 0' : undefined"
-      >
-        <template #header>
-          <div class="section-header" @click="collapsed.jewelry = !collapsed.jewelry">
-            <span class="section-chevron">{{ collapsed.jewelry ? '▸' : '▾' }}</span>
-            <span>产出明细</span>
-          </div>
-        </template>
-        <div v-show="!collapsed.jewelry">
-          <n-data-table :columns="jewelryColumns" :data="jewelryItems" :bordered="false" />
-        </div>
-      </n-card>
-
-      <n-card style="margin-bottom: 16px;" :content-style="collapsed.parts ? 'padding: 0' : undefined">
-        <template #header>
-          <div class="section-header" @click="collapsed.parts = !collapsed.parts">
-            <span class="section-chevron">{{ collapsed.parts ? '▸' : '▾' }}</span>
-            <span>配件明细</span>
-          </div>
-        </template>
-        <template #header-extra>
-          <n-space size="small">
-            <n-button
-              v-if="items.length > 0"
-              size="small"
-              :loading="cuttingStatsLoading"
-              @click="openCuttingStatsModal"
-            >
-              裁剪统计
-            </n-button>
-            <n-button
-              v-if="items.length > 0"
-              size="small"
-              :type="order?.status === 'pending' ? 'primary' : 'default'"
-              @click="openPickingSimulation"
-            >
-              配货模拟
-            </n-button>
-            <n-button
-              v-if="items.length > 0"
-              size="small"
-              @click="openBatchLinkModal"
-            >
-              批量关联订单
-            </n-button>
-            <n-button
+      <!-- ── 产出项 section ────────────────────────────────────── -->
+      <div v-if="jewelryItems.length > 0" class="hc-sec">
+        <div class="hc-sec-h">
+          <span class="t">产出项</span>
+          <span class="acts">
+            <button
               v-if="order?.status === 'pending'"
-              type="primary"
-              size="small"
-              @click="openAddModal"
-            >
-              + 添加配件
-            </n-button>
-          </n-space>
-        </template>
-        <div v-show="!collapsed.parts">
-          <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" />
-          <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
+              class="hc-sbtn hc-sbtn--primary"
+              @click="openBatchLinkModal"
+            >🔗 批量关联订单</button>
+          </span>
         </div>
-      </n-card>
+        <n-data-table :columns="jewelryColumns" :data="jewelryItems" :bordered="false" />
+      </div>
 
-      <BreakdownMatrix
+      <!-- ── 发出配件 section ───────────────────────────────────── -->
+      <div class="hc-sec">
+        <div class="hc-sec-h">
+          <span class="t">发出配件</span>
+          <span class="acts">
+            <button
+              v-if="items.length > 0"
+              class="hc-sbtn"
+              :disabled="cuttingStatsLoading"
+              @click="openCuttingStatsModal"
+            >裁剪统计</button>
+            <button
+              v-if="items.length > 0"
+              class="hc-sbtn"
+              :class="order?.status === 'pending' ? 'hc-sbtn--primary' : ''"
+              @click="openPickingSimulation"
+            >配货模拟</button>
+            <button
+              v-if="order?.status === 'pending'"
+              class="hc-sbtn hc-sbtn--primary"
+              @click="openAddModal"
+            >＋ 添加配件</button>
+          </span>
+        </div>
+        <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" />
+        <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
+      </div>
+
+      <!-- ── 客户分拣 — BreakdownMatrix has its own "客户分拣" header, no wrapper title needed ── -->
+      <div
         v-if="breakdownGroups.length > 0 || items.length > 0"
-        :hc-id="route.params.id"
-        :hc-status="order?.status || 'pending'"
-        :groups="breakdownGroups"
-        @saved="onBreakdownSaved"
-        style="margin-top: 16px;"
-      />
+        class="hc-sec hc-sec--no-title"
+      >
+        <BreakdownMatrix
+          :hc-id="route.params.id"
+          :hc-status="order?.status || 'pending'"
+          :groups="breakdownGroups"
+          @saved="onBreakdownSaved"
+        />
+      </div>
     </n-spin>
 
     <n-modal v-model:show="addModalVisible" preset="card" title="添加配件明细" :style="{ width: isMobile ? '95vw' : '560px' }">
@@ -2235,8 +2218,32 @@ const jewelryColumns = [
     minWidth: 180,
     render: (row) => renderNamedImage(row.display_name, row.display_image, row.display_name, 40, row.output_type === '配件' && partMap.value[row.part_id]?.is_composite ? '组合' : null),
   },
-  { title: '数量', key: 'qty' },
-  { title: '已回收', key: 'received_qty', width: 80, render: (r) => (r.received_qty ?? 0) - (r.loss_qty ?? 0) },
+  {
+    title: '数量',
+    key: 'qty',
+    width: 70,
+    render: (r) => h('span', { style: 'font-variant-numeric: tabular-nums; display: block; text-align: right; padding-right: 4px;' }, String(r.qty ?? 0)),
+  },
+  {
+    title: '已收回',
+    key: 'received_qty',
+    width: 110,
+    render: (r) => {
+      const received = (r.received_qty ?? 0) - (r.loss_qty ?? 0)
+      const total = r.qty ?? 0
+      const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0
+      const barColor = pct >= 100 ? '#1E7A5A' : (pct > 0 ? '#4CAF8A' : '#ECEDEF')
+      return h('div', { style: 'min-width: 90px;' }, [
+        h('div', { style: 'display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; font-size: 12px; margin-bottom: 3px;' }, [
+          h('span', { style: 'color: #1A1D21; font-weight: 600;' }, String(received)),
+          h('span', { style: 'color: #8B9096;' }, `/${total}`),
+        ]),
+        h('div', { style: 'height: 4px; background: #ECEDEF; border-radius: 2px; overflow: hidden;' }, [
+          h('div', { style: `height: 100%; width: ${pct}%; background: ${barColor}; border-radius: 2px; transition: width 0.3s;` }),
+        ]),
+      ])
+    },
+  },
   {
     title: '损耗',
     key: 'loss_qty',
@@ -2710,5 +2717,75 @@ async function onBreakdownSaved() {
 .hc-meta__v {
   font-weight: 500;
   margin-top: 2px;
+}
+
+/* ── Eyebrow section blocks ───────────────────────────────────── */
+.hc-sec {
+  margin-bottom: 20px;
+}
+
+.hc-sec--no-title {
+  margin-top: 4px;
+}
+
+.hc-sec-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 8px;
+  border-bottom: 1px solid #ECEDEF;
+  margin-bottom: 12px;
+}
+
+.hc-sec-h .t {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #8B9096;
+}
+
+.hc-sec-h .acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Small bordered action buttons in section headers */
+.hc-sbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #1A1D21;
+  background: #fff;
+  border: 1px solid #ECEDEF;
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.hc-sbtn:hover {
+  background: #F4F5F7;
+  border-color: #C8CDD3;
+}
+
+.hc-sbtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hc-sbtn--primary {
+  color: #1E7A5A;
+  border-color: #B5D9CA;
+  background: #E6F2EC;
+}
+
+.hc-sbtn--primary:hover {
+  background: #D2EBDF;
+  border-color: #1E7A5A;
 }
 </style>
