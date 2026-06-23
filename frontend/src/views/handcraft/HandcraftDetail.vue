@@ -1941,6 +1941,7 @@ const buildSuggestedTooltip = (row) => {
 }
 
 const itemColumns = [
+  { title: '#', key: '_index', width: 56, align: 'center', render: (_row, index) => `#${index + 1}` },
   { title: '配件编号', key: 'part_id', width: 160 },
   {
     title: '配件',
