@@ -1,285 +1,317 @@
 <template>
   <div>
-    <n-space align="center" style="margin-bottom: 16px;">
-      <n-button text @click="router.back()">← 返回</n-button>
-      <n-h2 style="margin: 0;">手工单详情</n-h2>
-    </n-space>
+    <!-- ── Page header ─────────────────────────────────────── -->
+    <n-button text size="small" class="page-back" @click="router.back()">← 返回</n-button>
+    <div class="page-breadcrumb">生产 / 手工单 / {{ order?.id || '…' }}</div>
+
+    <div class="hc-head">
+      <div class="hc-head__left">
+        <h2 class="page-title" style="margin-bottom: 0;">手工单 {{ order?.id || '…' }}</h2>
+        <span
+          v-if="order"
+          class="hc-status-pill"
+          :class="{
+            'hc-status-pill--emerald': order.status === 'completed',
+            'hc-status-pill--amber':   order.status === 'processing',
+            'hc-status-pill--gray':    order.status === 'pending',
+          }"
+        >{{ statusLabel[order.status] }}</span>
+      </div>
+    </div>
+
+    <!-- ── Status stepper ──────────────────────────────────── -->
+    <div v-if="order" class="hc-stepper">
+      <div class="hc-step" :class="stepClass('pending')">
+        <span class="hc-step__dot">{{ order.status !== 'pending' ? '✓' : '1' }}</span>
+        <div>
+          <div class="hc-step__lab">待发出</div>
+          <div class="hc-step__sub">{{ fmt(order.created_at) }}</div>
+        </div>
+      </div>
+      <div class="hc-bar" :class="order.status !== 'pending' ? 'hc-bar--on' : 'hc-bar--off'"></div>
+      <div class="hc-step" :class="stepClass('processing')">
+        <span class="hc-step__dot">{{ order.status === 'completed' ? '✓' : '2' }}</span>
+        <div>
+          <div class="hc-step__lab">进行中</div>
+          <div class="hc-step__sub">{{ order.status !== 'pending' ? '已发出' : '待发出' }}</div>
+        </div>
+      </div>
+      <div class="hc-bar" :class="order.status === 'completed' ? 'hc-bar--on' : 'hc-bar--off'"></div>
+      <div class="hc-step" :class="stepClass('completed')">
+        <span class="hc-step__dot">3</span>
+        <div>
+          <div class="hc-step__lab">已完成</div>
+          <div class="hc-step__sub">{{ order.status === 'completed' ? (order.completed_at ? fmt(order.completed_at) : '已完成') : '待产出全部收回' }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Summary stat cards ──────────────────────────────── -->
+    <div v-if="order" class="hc-stats">
+      <div class="hc-stat">
+        <div class="hc-stat__k">产出项</div>
+        <div class="hc-stat__v">
+          {{ jewelryItems.length }}<small> 种 · {{ totalJewelryQty }} 件</small>
+        </div>
+      </div>
+      <div class="hc-stat">
+        <div class="hc-stat__k">发出配件</div>
+        <div class="hc-stat__v">
+          {{ items.length }}<small> 种</small>
+        </div>
+      </div>
+      <div class="hc-stat">
+        <div class="hc-stat__k">产出已收回</div>
+        <div class="hc-stat__v">
+          {{ totalReceivedQty }}<small> / {{ totalJewelryQty }}</small>
+        </div>
+      </div>
+      <div class="hc-stat">
+        <div class="hc-stat__k">差额 / 损耗</div>
+        <div class="hc-stat__v">{{ totalLossQty }}</div>
+      </div>
+      <div v-if="order.receipt_code" class="hc-stat">
+        <div class="hc-stat__k">回执码</div>
+        <div
+          class="hc-stat__v hc-stat__v--mono hc-receipt-copy"
+          style="font-size: 20px; letter-spacing: 1px;"
+          title="点击复制"
+          @click="copyReceiptCode"
+        >{{ order.receipt_code }}</div>
+      </div>
+    </div>
+
+    <!-- ── Meta strip ──────────────────────────────────────── -->
+    <div v-if="order" class="hc-meta">
+      <div class="hc-meta__item">
+        <div class="hc-meta__k">手工商家</div>
+        <div class="hc-meta__v">
+          <template v-if="editingSupplier && order.status === 'pending'">
+            <n-space align="center" size="small">
+              <n-select
+                v-model:value="editingSupplierName"
+                :options="supplierOptions"
+                filterable
+                tag
+                placeholder="选择或输入手工商家名称"
+                size="small"
+                style="width: 180px;"
+              />
+              <n-button size="small" type="primary" :loading="savingSupplier" @click="saveSupplier">确认</n-button>
+              <n-button size="small" :disabled="savingSupplier" @click="editingSupplier = false">取消</n-button>
+            </n-space>
+          </template>
+          <template v-else>
+            {{ order.supplier_name }}
+            <n-button v-if="order.status === 'pending'" text type="primary" size="small" style="margin-left: 4px;" @click="startEditSupplier">
+              <template #icon><n-icon :component="CreateOutline" /></template>
+            </n-button>
+          </template>
+        </div>
+      </div>
+      <div class="hc-meta__item">
+        <div class="hc-meta__k">创建时间</div>
+        <div class="hc-meta__v">
+          <template v-if="editingCreatedAt">
+            <n-space align="center" size="small">
+              <n-date-picker
+                v-model:value="editingCreatedAtTs"
+                type="date"
+                size="small"
+                style="width: 150px;"
+              />
+              <n-button size="small" type="primary" :loading="savingCreatedAt" @click="saveCreatedAt">确认</n-button>
+              <n-button size="small" :disabled="savingCreatedAt" @click="editingCreatedAt = false">取消</n-button>
+            </n-space>
+          </template>
+          <template v-else>
+            {{ fmt(order.created_at) }}
+            <n-button text type="primary" size="small" style="margin-left: 4px;" @click="startEditCreatedAt">
+              <template #icon><n-icon :component="CreateOutline" /></template>
+            </n-button>
+          </template>
+        </div>
+      </div>
+      <div v-if="order.completed_at" class="hc-meta__item">
+        <div class="hc-meta__k">完成时间</div>
+        <div class="hc-meta__v">{{ fmt(order.completed_at) }}</div>
+      </div>
+      <div v-if="order.note" class="hc-meta__item">
+        <div class="hc-meta__k">备注</div>
+        <div class="hc-meta__v">{{ order.note }}</div>
+      </div>
+    </div>
 
     <n-spin :show="loading">
-      <n-card
-        v-if="order"
-        style="margin-bottom: 16px;"
-        :content-style="collapsed.basic ? 'padding: 0' : undefined"
+      <!-- ── 产出项 section ────────────────────────────────────── -->
+      <div v-if="jewelryItems.length > 0" class="hc-sec">
+        <div class="hc-sec-h">
+          <span class="t">产出项</span>
+          <span class="acts">
+            <button
+              v-if="order?.status === 'pending'"
+              class="hc-sbtn hc-sbtn--primary"
+              @click="openBatchLinkModal"
+            >🔗 批量关联订单</button>
+          </span>
+        </div>
+        <n-data-table :columns="jewelryColumns" :data="jewelryItems" :bordered="false" />
+      </div>
+
+      <!-- ── 客户分拣 — BreakdownMatrix has its own "客户分拣" header, no wrapper title needed ── -->
+      <div
+        v-if="breakdownGroups.length > 0 || items.length > 0"
+        class="hc-sec hc-sec--no-title"
       >
-        <template #header>
-          <div class="section-header" @click="collapsed.basic = !collapsed.basic">
-            <span class="section-chevron">{{ collapsed.basic ? '▸' : '▾' }}</span>
-            <span>基本信息</span>
-          </div>
-        </template>
-        <template #header-extra>
-          <n-space size="small">
-            <n-button
-              @click="router.push(`/handcraft-receipts?supplier_name=${encodeURIComponent(order.supplier_name)}`)"
-            >
-              查看回收单
-            </n-button>
-            <n-button
-              :loading="downloadingExcel"
-              class="export-excel-btn"
-              @click="doDownloadExcel"
-            >
-              导出Excel
-            </n-button>
-            <n-button
-              :loading="downloadingPdf"
-              class="export-pdf-btn"
-              @click="doDownloadPdf"
-            >
-              导出PDF
-            </n-button>
-          </n-space>
-        </template>
-        <div v-show="!collapsed.basic">
-        <n-descriptions :column="isMobile ? 1 : 3" bordered>
-          <n-descriptions-item label="手工单号">{{ order.id }}</n-descriptions-item>
-          <n-descriptions-item label="回执编号" v-if="order.receipt_code">
-            <span class="receipt-code">{{ order.receipt_code }}</span>
-            <span class="receipt-code__hint">（对外打印用）</span>
-          </n-descriptions-item>
-          <n-descriptions-item label="手工商家">
-            <template v-if="editingSupplier && order.status === 'pending'">
-              <n-space align="center" size="small">
-                <n-select
-                  v-model:value="editingSupplierName"
-                  :options="supplierOptions"
-                  filterable
-                  tag
-                  placeholder="选择或输入手工商家名称"
-                  size="small"
-                  :style="{ width: isMobile ? '100%' : '200px' }"
-                />
-                <n-button size="small" type="primary" :loading="savingSupplier" @click="saveSupplier">确认</n-button>
-                <n-button size="small" :disabled="savingSupplier" @click="editingSupplier = false">取消</n-button>
-              </n-space>
-            </template>
-            <template v-else>
-              {{ order.supplier_name }}
-              <n-button v-if="order.status === 'pending'" text type="primary" size="small" style="margin-left: 6px;" @click="startEditSupplier">
-                <template #icon><n-icon :component="CreateOutline" /></template>
-              </n-button>
-            </template>
-          </n-descriptions-item>
-          <n-descriptions-item label="状态">
-            <n-popselect
-              :value="order?.status"
-              :options="statusOptions"
-              trigger="click"
-              :disabled="statusOptions.length === 0"
-              @update:value="doChangeStatus"
-            >
-              <n-tag
-                :type="statusType[order.status]"
-                :style="statusOptions.length > 0 ? 'cursor: pointer;' : ''"
+        <BreakdownMatrix
+          :hc-id="route.params.id"
+          :hc-status="order?.status || 'pending'"
+          :groups="breakdownGroups"
+          @saved="onBreakdownSaved"
+        />
+      </div>
+
+      <!-- ── 发货图片 section ──────────────────────────────────────── -->
+      <div v-if="order" class="hc-sec">
+        <div class="hc-sec-h"><span class="t">发货图片</span></div>
+        <div class="delivery-images-block">
+          <div v-if="pendingDeliveryImages.length > 0" class="delivery-images-warning">
+            <div class="delivery-images-warning-title">
+              有 {{ pendingDeliveryImages.length }} 张图片已上传，但还没保存到手工单
+            </div>
+            <div class="delivery-images-pending-list">
+              <div
+                v-for="image in pendingDeliveryImages"
+                :key="`pending-${image}`"
+                class="delivery-pending-item"
               >
-                {{ statusLabel[order.status] }}{{ statusOptions.length > 0 ? ' ▾' : '' }}
-              </n-tag>
-            </n-popselect>
-          </n-descriptions-item>
-          <n-descriptions-item label="创建时间">
-            <template v-if="editingCreatedAt">
-              <n-space align="center" size="small">
-                <n-date-picker
-                  v-model:value="editingCreatedAtTs"
-                  type="date"
-                  size="small"
-                  :style="{ width: isMobile ? '100%' : '160px' }"
+                <n-image
+                  :src="image"
+                  alt="待保存发货图片"
+                  :width="56"
+                  :height="56"
+                  object-fit="cover"
+                  class="delivery-pending-preview"
                 />
-                <n-button size="small" type="primary" :loading="savingCreatedAt" @click="saveCreatedAt">确认</n-button>
-                <n-button size="small" :disabled="savingCreatedAt" @click="editingCreatedAt = false">取消</n-button>
-              </n-space>
-            </template>
-            <template v-else>
-              {{ fmt(order.created_at) }}
-              <n-button text type="primary" size="small" style="margin-left: 6px;" @click="startEditCreatedAt">
-                <template #icon><n-icon :component="CreateOutline" /></template>
-              </n-button>
-            </template>
-          </n-descriptions-item>
-          <n-descriptions-item label="完成时间">{{ order.completed_at ? fmt(order.completed_at) : '-' }}</n-descriptions-item>
-          <n-descriptions-item label="备注">{{ order.note || '-' }}</n-descriptions-item>
-          <n-descriptions-item label="发货图片" :span="2">
-            <div class="delivery-images-block">
-              <div v-if="pendingDeliveryImages.length > 0" class="delivery-images-warning">
-                <div class="delivery-images-warning-title">
-                  有 {{ pendingDeliveryImages.length }} 张图片已上传，但还没保存到手工单
-                </div>
-                <div class="delivery-images-pending-list">
-                  <div
-                    v-for="image in pendingDeliveryImages"
-                    :key="`pending-${image}`"
-                    class="delivery-pending-item"
-                  >
-                    <n-image
-                      :src="image"
-                      alt="待保存发货图片"
-                      :width="56"
-                      :height="56"
-                      object-fit="cover"
-                      class="delivery-pending-preview"
-                    />
-                    <div class="delivery-pending-actions">
-                      <n-button
-                        size="tiny"
-                        type="warning"
-                        ghost
-                        :loading="retryingPendingImage === image"
-                        :disabled="deliveryImagesSaving"
-                        @click="retryPendingDeliveryImage(image)"
-                      >
-                        重试保存
-                      </n-button>
-                      <n-button
-                        size="tiny"
-                        quaternary
-                        :disabled="deliveryImagesSaving || retryingPendingImage === image"
-                        @click="dropPendingDeliveryImage(image)"
-                      >
-                        移除记录
-                      </n-button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div v-if="deliveryImages.length > 0" class="delivery-images-grid">
-                <div
-                  v-for="(image, index) in deliveryImages"
-                  :key="`${image}-${index}`"
-                  class="delivery-image-card"
-                >
-                  <n-image
-                    :src="image"
-                    alt="发货图片"
-                    :width="88"
-                    :height="88"
-                    object-fit="cover"
-                    class="delivery-image-preview"
-                  />
+                <div class="delivery-pending-actions">
                   <n-button
-                    class="delivery-image-delete"
                     size="tiny"
-                    type="error"
-                    circle
+                    type="warning"
+                    ghost
+                    :loading="retryingPendingImage === image"
                     :disabled="deliveryImagesSaving"
-                    @click="removeDeliveryImage(index)"
+                    @click="retryPendingDeliveryImage(image)"
                   >
-                    ×
+                    重试保存
+                  </n-button>
+                  <n-button
+                    size="tiny"
+                    quaternary
+                    :disabled="deliveryImagesSaving || retryingPendingImage === image"
+                    @click="dropPendingDeliveryImage(image)"
+                  >
+                    移除记录
                   </n-button>
                 </div>
-                <button
-                  v-if="canAddDeliveryImage"
-                  class="delivery-image-add"
-                  :disabled="deliveryImagesSaving"
-                  @click="openDeliveryImageModal"
-                >
-                  +
-                </button>
-              </div>
-              <button
-                v-else
-                class="delivery-image-add"
-                :disabled="deliveryImagesSaving"
-                @click="openDeliveryImageModal"
-              >
-                +
-              </button>
-              <div class="delivery-images-meta">
-                {{ totalDeliveryImageCount }}/10 张
-                <span v-if="pendingDeliveryImages.length > 0">（待保存 {{ pendingDeliveryImages.length }} 张）</span>
               </div>
             </div>
-          </n-descriptions-item>
-        </n-descriptions>
-        <n-space style="margin-top: 12px;">
-          <n-button v-if="order.status === 'pending'" type="primary" :loading="sending" @click="doSend">
-            确认发出
-          </n-button>
-        </n-space>
-        </div>
-      </n-card>
-
-      <n-card
-        v-if="jewelryItems.length > 0"
-        style="margin-bottom: 16px;"
-        :content-style="collapsed.jewelry ? 'padding: 0' : undefined"
-      >
-        <template #header>
-          <div class="section-header" @click="collapsed.jewelry = !collapsed.jewelry">
-            <span class="section-chevron">{{ collapsed.jewelry ? '▸' : '▾' }}</span>
-            <span>产出明细</span>
           </div>
-        </template>
-        <div v-show="!collapsed.jewelry">
-          <n-data-table :columns="jewelryColumns" :data="jewelryItems" :bordered="false" />
-        </div>
-      </n-card>
-
-      <n-card style="margin-bottom: 16px;" :content-style="collapsed.parts ? 'padding: 0' : undefined">
-        <template #header>
-          <div class="section-header" @click="collapsed.parts = !collapsed.parts">
-            <span class="section-chevron">{{ collapsed.parts ? '▸' : '▾' }}</span>
-            <span>配件明细</span>
+          <div v-if="deliveryImages.length > 0" class="delivery-images-grid">
+            <div
+              v-for="(image, index) in deliveryImages"
+              :key="`${image}-${index}`"
+              class="delivery-image-card"
+            >
+              <n-image
+                :src="image"
+                alt="发货图片"
+                :width="88"
+                :height="88"
+                object-fit="cover"
+                class="delivery-image-preview"
+              />
+              <n-button
+                class="delivery-image-delete"
+                size="tiny"
+                type="error"
+                circle
+                :disabled="deliveryImagesSaving"
+                @click="removeDeliveryImage(index)"
+              >
+                ×
+              </n-button>
+            </div>
+            <button
+              v-if="canAddDeliveryImage"
+              class="delivery-image-add"
+              :disabled="deliveryImagesSaving"
+              @click="openDeliveryImageModal"
+            >
+              +
+            </button>
           </div>
-        </template>
-        <template #header-extra>
-          <n-space size="small">
-            <n-button
+          <button
+            v-else
+            class="delivery-image-add"
+            :disabled="deliveryImagesSaving"
+            @click="openDeliveryImageModal"
+          >
+            +
+          </button>
+          <div class="delivery-images-meta">
+            {{ totalDeliveryImageCount }}/10 张
+            <span v-if="pendingDeliveryImages.length > 0">（待保存 {{ pendingDeliveryImages.length }} 张）</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 发出配件 section ───────────────────────────────────── -->
+      <div class="hc-sec">
+        <div class="hc-sec-h">
+          <span class="t">发出配件</span>
+          <span class="acts">
+            <button
               v-if="items.length > 0"
-              size="small"
-              :loading="cuttingStatsLoading"
+              class="hc-sbtn"
+              :disabled="cuttingStatsLoading"
               @click="openCuttingStatsModal"
-            >
-              裁剪统计
-            </n-button>
-            <n-button
+            >裁剪统计</button>
+            <button
               v-if="items.length > 0"
-              size="small"
-              :type="order?.status === 'pending' ? 'primary' : 'default'"
+              class="hc-sbtn"
+              :class="order?.status === 'pending' ? 'hc-sbtn--primary' : ''"
               @click="openPickingSimulation"
-            >
-              配货模拟
-            </n-button>
-            <n-button
-              v-if="items.length > 0"
-              size="small"
-              @click="openBatchLinkModal"
-            >
-              批量关联订单
-            </n-button>
-            <n-button
+            >配货模拟</button>
+            <button
               v-if="order?.status === 'pending'"
-              type="primary"
-              size="small"
+              class="hc-sbtn hc-sbtn--primary"
               @click="openAddModal"
-            >
-              + 添加配件
-            </n-button>
-          </n-space>
-        </template>
-        <div v-show="!collapsed.parts">
-          <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" />
-          <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
+            >＋ 添加配件</button>
+          </span>
         </div>
-      </n-card>
+        <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" />
+        <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
+      </div>
 
-      <BreakdownMatrix
-        v-if="breakdownGroups.length > 0 || items.length > 0"
-        :hc-id="route.params.id"
-        :hc-status="order?.status || 'pending'"
-        :groups="breakdownGroups"
-        @saved="onBreakdownSaved"
-        style="margin-top: 16px;"
-      />
+      <!-- ── 补货配件 section ───────────────────────────────────── -->
+      <div v-if="order" class="hc-sec">
+        <div class="hc-sec-h">
+          <span class="t">补货配件</span>
+          <span class="acts">
+            <n-tag size="small" type="warning" :bordered="false">待补 {{ pendingRestockCount }}</n-tag>
+            <n-tag size="small" type="default" :bordered="false">已补 {{ doneRestockCount }}</n-tag>
+            <button class="hc-sbtn hc-sbtn--primary" @click="openManualRestockModal">＋ 手动添加</button>
+          </span>
+        </div>
+        <n-data-table
+          :columns="restockColumns"
+          :data="restockRows"
+          :loading="restockLoading"
+          :bordered="false"
+          size="small"
+          :row-class-name="restockRowClass"
+        />
+      </div>
     </n-spin>
 
     <n-modal v-model:show="addModalVisible" preset="card" title="添加配件明细" :style="{ width: isMobile ? '95vw' : '560px' }">
@@ -526,40 +558,6 @@
       </template>
     </n-modal>
 
-    <n-card
-      v-if="order"
-      style="margin-top: 16px;"
-      :content-style="collapsed.restock ? 'padding: 0' : undefined"
-    >
-      <template #header>
-        <div class="section-header" @click="collapsed.restock = !collapsed.restock">
-          <span class="section-chevron">{{ collapsed.restock ? '▸' : '▾' }}</span>
-          <span>补货清单</span>
-        </div>
-      </template>
-      <template #header-extra>
-        <n-space size="small">
-          <n-tag size="small" type="warning" :bordered="false">
-            待补 {{ pendingRestockCount }}
-          </n-tag>
-          <n-tag size="small" type="default" :bordered="false">
-            已补 {{ doneRestockCount }}
-          </n-tag>
-          <n-button size="small" type="primary" @click="openManualRestockModal">+ 手动添加</n-button>
-        </n-space>
-      </template>
-      <div v-show="!collapsed.restock">
-        <n-data-table
-          :columns="restockColumns"
-          :data="restockRows"
-          :loading="restockLoading"
-          :bordered="false"
-          size="small"
-          :row-class-name="restockRowClass"
-        />
-      </div>
-    </n-card>
-
     <n-modal v-model:show="manualRestockShow" preset="card" title="手动添加补货项" style="max-width: 480px;">
       <n-form>
         <n-form-item label="配件" required>
@@ -600,6 +598,43 @@
       @update:show="(v) => { pickingModalShow = v; if (!v) loadData() }"
       @restock-changed="loadRestock"
     />
+
+    <!-- ── Floating action bar ────────────────────────────────── -->
+    <floating-action-bar v-if="order">
+      <n-button
+        quaternary
+        style="color:#C0C6CD"
+        @click="router.push(`/handcraft-receipts?supplier_name=${encodeURIComponent(order.supplier_name)}`)"
+      >
+        查看回收单
+      </n-button>
+      <n-button
+        quaternary
+        class="hc-export-btn--excel"
+        style="color:#C0C6CD"
+        :loading="downloadingExcel"
+        @click="doDownloadExcel"
+      >
+        导出Excel
+      </n-button>
+      <n-button
+        quaternary
+        class="hc-export-btn--pdf"
+        style="color:#C0C6CD"
+        :loading="downloadingPdf"
+        @click="doDownloadPdf"
+      >
+        导出PDF
+      </n-button>
+      <n-button
+        v-if="order.status === 'pending'"
+        type="primary"
+        :loading="sending"
+        @click="doSend"
+      >
+        确认发出
+      </n-button>
+    </floating-action-bar>
 
   </div>
 </template>
@@ -646,6 +681,7 @@ import { listOrders, getTodo, createLink, batchLink } from '@/api/orders'
 import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 import HandcraftPickingSimulationModal from '@/components/picking/HandcraftPickingSimulationModal.vue'
+import FloatingActionBar from '@/components/FloatingActionBar.vue'
 import RecentImportsPicker from '@/components/RecentImportsPicker.vue'
 import { attachPartsToOrder } from '@/api/handcraftActions'
 
@@ -767,6 +803,30 @@ const doConfirmLoss = async () => {
 
 const statusType = { pending: 'default', processing: 'info', completed: 'success' }
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
+
+// ── Stepper helper ─────────────────────────────────────────────
+// Returns the CSS modifier class for each stepper step based on order.status.
+// Status order: pending → processing → completed
+const STATUS_ORDER = ['pending', 'processing', 'completed']
+const stepClass = (step) => {
+  if (!order.value) return 'hc-step--todo'
+  const cur = STATUS_ORDER.indexOf(order.value.status)
+  const idx = STATUS_ORDER.indexOf(step)
+  if (idx < cur) return 'hc-step--done'
+  if (idx === cur) return 'hc-step--cur'
+  return 'hc-step--todo'
+}
+
+// ── Stat-card computeds ────────────────────────────────────────
+const totalJewelryQty = computed(() =>
+  jewelryItems.value.reduce((s, j) => s + Number(j.qty || 0), 0),
+)
+const totalReceivedQty = computed(() =>
+  jewelryItems.value.reduce((s, j) => s + (Number(j.received_qty || 0) - Number(j.loss_qty || 0)), 0),
+)
+const totalLossQty = computed(() =>
+  jewelryItems.value.reduce((s, j) => s + Number(j.loss_qty || 0), 0),
+)
 const deliveryImages = computed(() => order.value?.delivery_images || [])
 const totalDeliveryImageCount = computed(() => deliveryImages.value.length + pendingDeliveryImages.value.length)
 const canAddDeliveryImage = computed(() => totalDeliveryImageCount.value < 10)
@@ -1881,6 +1941,7 @@ const buildSuggestedTooltip = (row) => {
 }
 
 const itemColumns = [
+  { title: '#', key: '_index', width: 56, align: 'center', render: (_row, index) => `#${index + 1}` },
   { title: '配件编号', key: 'part_id', width: 160 },
   {
     title: '配件',
@@ -1927,13 +1988,6 @@ const itemColumns = [
         default: () => buildSuggestedTooltip(row),
       })
     },
-  },
-  { title: '已回收', key: 'received_qty', width: 80, render: (r) => (r.received_qty ?? 0) - (r.loss_qty ?? 0) },
-  {
-    title: '损耗',
-    key: 'loss_qty',
-    width: 60,
-    render: (r) => r.loss_qty ? h(NTag, { type: 'warning', size: 'small' }, { default: () => r.loss_qty }) : null,
   },
   {
     title: '状态',
@@ -2065,15 +2119,6 @@ const itemColumns = [
         },
       )
       const btns = [editBtn, deleteBtn]
-      // Confirm loss button for part items
-      const gap = row.qty - (row.received_qty || 0)
-      if (gap > 0 && row.status === '制作中') {
-        btns.push(h(NButton, {
-          size: 'small',
-          type: 'warning',
-          onClick: () => openLossModal(row, 'part'),
-        }, { default: () => '确认损耗' }))
-      }
       return h(NSpace, { size: 'small' }, { default: () => btns })
     },
   },
@@ -2093,8 +2138,32 @@ const jewelryColumns = [
     minWidth: 180,
     render: (row) => renderNamedImage(row.display_name, row.display_image, row.display_name, 40, row.output_type === '配件' && partMap.value[row.part_id]?.is_composite ? '组合' : null),
   },
-  { title: '数量', key: 'qty' },
-  { title: '已回收', key: 'received_qty', width: 80, render: (r) => (r.received_qty ?? 0) - (r.loss_qty ?? 0) },
+  {
+    title: '数量',
+    key: 'qty',
+    width: 70,
+    render: (r) => h('span', { style: 'font-variant-numeric: tabular-nums; display: block; text-align: right; padding-right: 4px;' }, String(r.qty ?? 0)),
+  },
+  {
+    title: '已收回',
+    key: 'received_qty',
+    width: 110,
+    render: (r) => {
+      const received = (r.received_qty ?? 0) - (r.loss_qty ?? 0)
+      const total = r.qty ?? 0
+      const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0
+      const barColor = pct >= 100 ? '#1E7A5A' : (pct > 0 ? '#4CAF8A' : '#ECEDEF')
+      return h('div', { style: 'min-width: 90px;' }, [
+        h('div', { style: 'display: flex; justify-content: flex-start; font-variant-numeric: tabular-nums; font-size: 12px; margin-bottom: 3px;' }, [
+          h('span', { style: 'color: #1A1D21; font-weight: 600;' }, String(received)),
+          h('span', { style: 'color: #8B9096;' }, `/${total}`),
+        ]),
+        h('div', { style: 'height: 4px; background: #ECEDEF; border-radius: 2px; overflow: hidden;' }, [
+          h('div', { style: `height: 100%; width: ${pct}%; background: ${barColor}; border-radius: 2px; transition: width 0.3s;` }),
+        ]),
+      ])
+    },
+  },
   {
     title: '损耗',
     key: 'loss_qty',
@@ -2199,6 +2268,16 @@ async function onBreakdownSaved() {
   await Promise.all([loadBreakdown(), loadJewelries()])
 }
 
+async function copyReceiptCode() {
+  const code = order.value?.receipt_code
+  if (!code) return
+  try {
+    await navigator.clipboard.writeText(code)
+    message.success(`已复制回执码 ${code}`)
+  } catch {
+    message.error('复制失败')
+  }
+}
 
 </script>
 
@@ -2393,4 +2472,259 @@ async function onBreakdownSaved() {
   text-align: center;
   color: #999;
 }
+
+/* ── Page header ──────────────────────────────────────────────── */
+.hc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.hc-head__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.page-back {
+  margin-bottom: 2px;
+  font-size: 13px;
+}
+.page-back :deep(.n-button__content) { color: #8B9096; transition: color 0.15s; }
+.page-back:hover :deep(.n-button__content) { color: #1E7A5A; }
+
+.hc-status-pill {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 12px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.hc-status-pill--emerald {
+  background: #E6F2EC;
+  color: #1E7A5A;
+}
+
+.hc-status-pill--amber {
+  background: #FBF0DC;
+  color: #B7791F;
+}
+
+.hc-status-pill--gray {
+  background: #F1F2F4;
+  color: #6B7280;
+}
+
+/* ── Status stepper ───────────────────────────────────────────── */
+.hc-stepper {
+  display: flex;
+  align-items: center;
+  margin: 20px 0 4px;
+}
+
+.hc-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.hc-step__dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.hc-step--done .hc-step__dot {
+  background: #1E7A5A;
+  color: #fff;
+}
+
+.hc-step--cur .hc-step__dot {
+  background: #1E7A5A;
+  color: #fff;
+  box-shadow: 0 0 0 4px #E6F2EC;
+}
+
+.hc-step--todo .hc-step__dot {
+  background: #EDEFF1;
+  color: #AEB3B8;
+}
+
+.hc-step__lab {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hc-step--todo .hc-step__lab {
+  color: #AEB3B8;
+  font-weight: 500;
+}
+
+.hc-step__sub {
+  font-size: 11px;
+  color: #8B9096;
+  margin-top: 1px;
+}
+
+.hc-bar {
+  flex: 1;
+  height: 2px;
+  margin: 0 14px;
+  border-radius: 1px;
+}
+
+.hc-bar--on { background: #1E7A5A; }
+.hc-bar--off { background: #EDEFF1; }
+
+/* ── Summary stat cards ───────────────────────────────────────── */
+.hc-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  border: 1px solid #ECEDEF;
+  border-radius: 10px;
+  margin: 18px 0 4px;
+  overflow: hidden;
+}
+
+.hc-stat {
+  padding: 13px 16px;
+  border-right: 1px solid #ECEDEF;
+}
+
+.hc-stat:last-child {
+  border-right: 0;
+}
+
+.hc-stat__k {
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #8B9096;
+  font-weight: 600;
+}
+
+.hc-stat__v {
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  margin-top: 5px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.hc-stat__v small {
+  font-size: 13px;
+  color: #8B9096;
+  font-weight: 600;
+}
+
+.hc-stat__v--mono {
+  font-family: "SF Mono", Menlo, monospace;
+}
+
+/* ── Meta strip ───────────────────────────────────────────────── */
+.hc-meta {
+  display: flex;
+  gap: 26px;
+  flex-wrap: wrap;
+  padding: 14px 0 16px;
+  font-size: 13px;
+}
+
+.hc-meta__k {
+  font-size: 11px;
+  color: #8B9096;
+}
+
+.hc-meta__v {
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+/* ── Eyebrow section blocks ───────────────────────────────────── */
+.hc-sec {
+  margin-bottom: 20px;
+}
+
+.hc-sec--no-title {
+  margin-top: 4px;
+}
+
+.hc-sec-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 8px;
+  border-bottom: 1px solid #ECEDEF;
+  margin-bottom: 12px;
+}
+
+.hc-sec-h .t {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #8B9096;
+}
+
+.hc-sec-h .acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Small bordered action buttons in section headers */
+.hc-sbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #1A1D21;
+  background: #fff;
+  border: 1px solid #ECEDEF;
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.hc-sbtn:hover {
+  background: #F4F5F7;
+  border-color: #C8CDD3;
+}
+
+.hc-sbtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hc-sbtn--primary {
+  color: #1E7A5A;
+  border-color: #B5D9CA;
+  background: #E6F2EC;
+}
+
+.hc-sbtn--primary:hover {
+  background: #D2EBDF;
+  border-color: #1E7A5A;
+}
+
+.hc-export-btn--excel:hover { background-color: #1E7A5A !important; color: #fff !important; }
+.hc-export-btn--pdf:hover   { background-color: #E5484D !important; color: #fff !important; }
+.hc-export-btn--excel:hover :deep(.n-button__content),
+.hc-export-btn--pdf:hover :deep(.n-button__content) { color: #fff !important; }
+
+.hc-receipt-copy { cursor: pointer; transition: color 0.15s; }
+.hc-receipt-copy:hover { color: #1E7A5A; }
 </style>

@@ -1,26 +1,53 @@
 <template>
-  <div :style="{ maxWidth: isMobile ? '100%' : '900px' }">
-    <n-space align="center" style="margin-bottom: 16px;">
-      <n-button text @click="router.back()">← 返回</n-button>
-      <n-h2 style="margin: 0;">新建饰品模板</n-h2>
-    </n-space>
+  <div class="create-page">
+    <!-- Header -->
+    <div style="margin-bottom: 6px;">
+      <n-button text @click="router.back()" style="color: #8B9096; font-size: 13px;">← 返回</n-button>
+    </div>
+    <div class="page-breadcrumb" style="margin-bottom: 10px;">商品 / 饰品模板 / 新建</div>
+    <h1 class="page-title" style="margin-bottom: 24px;">新建饰品模板</h1>
 
-    <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="100" style="margin-bottom: 16px;">
-      <n-form-item label="模板名称">
-        <n-input v-model:value="form.name" placeholder="输入模板名称" :style="{ width: isMobile ? '100%' : '300px' }" />
-      </n-form-item>
-      <n-form-item label="图片">
-        <n-space align="center">
-          <n-input v-model:value="form.image" placeholder="上传后自动填充，也可手动输入 URL" :style="{ width: isMobile ? '100%' : '300px' }" />
-          <n-button @click="showImageModal = true">上传图片</n-button>
-        </n-space>
-      </n-form-item>
-      <n-form-item label="备注">
-        <n-input v-model:value="form.note" type="textarea" :rows="2" :style="{ width: isMobile ? '100%' : '300px' }" />
-      </n-form-item>
-    </n-form>
+    <!-- Basic info form -->
+    <div class="form-wrap">
+      <n-form label-placement="top" style="margin-bottom: 24px;">
+        <div class="form-sec-h">基本信息</div>
 
-    <n-card title="配件列表" style="margin-bottom: 16px;">
+        <n-form-item label="模板名称">
+          <n-input v-model:value="form.name" placeholder="输入模板名称" style="width: 100%;" />
+        </n-form-item>
+
+        <n-form-item label="备注">
+          <n-input v-model:value="form.note" type="textarea" :rows="2" style="width: 100%;" />
+        </n-form-item>
+
+        <div class="form-sec-h" style="margin-top: 20px;">图片</div>
+
+        <n-form-item label="">
+          <div class="image-row">
+            <div class="image-preview">
+              <n-image
+                v-if="form.image"
+                :src="form.image"
+                width="56"
+                height="56"
+                object-fit="cover"
+                style="border-radius: 8px; display: block;"
+              />
+              <div v-else class="image-placeholder"></div>
+            </div>
+            <n-input
+              v-model:value="form.image"
+              placeholder="上传后自动填充，也可手动输入 URL"
+              style="flex: 1;"
+            />
+            <n-button @click="showImageModal = true">上传图片</n-button>
+          </div>
+        </n-form-item>
+      </n-form>
+    </div>
+
+    <!-- Parts list -->
+    <n-card title="配件列表" style="margin-bottom: 16px; max-width: 560px;">
       <div v-for="(item, idx) in items" :key="idx" style="margin-bottom: 10px;">
         <n-space align="center">
           <n-select
@@ -41,9 +68,11 @@
       </n-button>
     </n-card>
 
-    <n-space justify="end">
+    <!-- Floating action bar -->
+    <floating-action-bar>
+      <n-button quaternary style="color: #C0C6CD;" @click="router.back()">取消</n-button>
       <n-button type="primary" :loading="submitting" @click="submit">提交</n-button>
-    </n-space>
+    </floating-action-bar>
 
     <ImageUploadModal
       v-model:show="showImageModal"
@@ -58,11 +87,12 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
-import { NSpace, NButton, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NSelect } from 'naive-ui'
+import { NSpace, NButton, NInput, NInputNumber, NForm, NFormItem, NCard, NSelect, NImage } from 'naive-ui'
 import { listParts } from '@/api/parts'
 import { createTemplate } from '@/api/jewelryTemplates'
 import { renderOptionWithImage } from '@/utils/ui'
 import ImageUploadModal from '../../components/ImageUploadModal.vue'
+import FloatingActionBar from '@/components/FloatingActionBar.vue'
 import { useIsMobile } from '@/composables/useIsMobile'
 
 const router = useRouter()
@@ -105,3 +135,55 @@ onMounted(async () => {
   }))
 })
 </script>
+
+<style scoped>
+.create-page {
+  padding: 24px 20px 0;
+}
+
+.page-breadcrumb {
+  font-size: 12px;
+  color: #8B9096;
+}
+
+.page-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  margin: 0;
+  color: #1A1D21;
+  line-height: 1.2;
+}
+
+.form-wrap {
+  max-width: 560px;
+}
+
+.form-sec-h {
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #8B9096;
+  font-weight: 600;
+  margin: 0 0 11px;
+}
+
+.image-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.image-preview {
+  flex-shrink: 0;
+}
+
+.image-placeholder {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  background: #ECEDEF;
+  border: 1px dashed #C0C6CD;
+}
+</style>

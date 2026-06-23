@@ -1,100 +1,165 @@
 <template>
-  <div>
-    <div class="page-header">
-      <div class="page-breadcrumb">商品 / 配件管理</div>
-      <h2 class="page-title">配件管理</h2>
-      <div class="page-divider"></div>
-    </div>
-
-    <div class="filter-bar">
-      <n-input v-model:value="searchName" placeholder="搜索配件名称" clearable :style="{ width: isMobile ? '100%' : '200px' }" @update:value="debouncedLoad" />
-      <n-select
-        v-model:value="searchCategory"
-        :options="categoryOptions"
-        clearable
-        placeholder="筛选类目"
-        :style="{ width: isMobile ? '100%' : '160px' }"
-        @update:value="load"
-      />
-      <div class="filter-bar-end">
-        <n-space>
-          <n-button @click="openImportModal">导入配件</n-button>
-          <n-button type="primary" @click="openCreate">新增配件</n-button>
-        </n-space>
+  <div class="parts-page">
+    <!-- Page Header -->
+    <div class="page-top">
+      <div class="page-crumbs">商品 / 配件管理</div>
+      <div class="title-row">
+        <h1 class="page-title">
+          配件管理<span class="title-count">共 {{ rows.length }} 个配件</span>
+        </h1>
+        <div class="top-actions">
+          <n-button class="btn-outline" @click="openImportModal">导入配件</n-button>
+          <n-button class="btn-ink" @click="openCreate">新增配件</n-button>
+        </div>
       </div>
     </div>
 
+    <!-- Stat Strip -->
+    <div class="stat-strip">
+      <div class="stat-card">
+        <div class="stat-label">配件总数</div>
+        <div class="stat-value mono">{{ rows.length }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">组合件</div>
+        <div class="stat-value mono">{{ compositeCount }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">低库存预警</div>
+        <div class="stat-value mono" :class="{ 'stat-danger': lowStockCount > 0 }">{{ lowStockCount }}</div>
+      </div>
+    </div>
+
+    <!-- Filter Row -->
+    <div class="filter-row">
+      <div class="chip-group">
+        <button
+          v-for="chip in categoryChips"
+          :key="chip.value ?? '__all__'"
+          class="chip"
+          :class="{ 'chip-active': searchCategory === chip.value }"
+          @click="selectCategory(chip.value)"
+        >
+          {{ chip.label }}
+        </button>
+      </div>
+      <div class="search-wrap">
+        <n-input
+          v-model:value="searchName"
+          placeholder="搜索配件名称 / 编号"
+          clearable
+          :style="{ width: isMobile ? '100%' : '240px' }"
+          @update:value="debouncedLoad"
+        />
+      </div>
+    </div>
+
+    <!-- Table -->
     <n-spin :show="loading">
-      <n-data-table v-if="rows.length > 0" :columns="columns" :data="rows" :bordered="false" />
-      <n-empty v-else-if="!loading" description="暂无数据" style="margin-top: 24px;" />
+      <div class="table-wrap" v-if="rows.length > 0 || loading">
+        <n-data-table :columns="columns" :data="rows" :bordered="false" />
+      </div>
+      <n-empty v-else-if="!loading" description="暂无数据" style="margin: 40px 0;" />
     </n-spin>
 
     <!-- Create / Edit Modal -->
-    <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑配件' : '新增配件'" :style="{ width: isMobile ? '95vw' : '480px' }">
+    <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑配件' : '新增配件'" :style="{ width: isMobile ? '95vw' : '540px' }">
       <form @submit.prevent="save">
-      <n-form ref="formRef" :model="form" label-placement="left" label-width="100">
-        <n-form-item label="名称" path="name" :rule="{ required: true, message: '请输入名称' }">
-          <n-input v-model:value="form.name" />
-        </n-form-item>
-        <n-form-item label="图片">
-          <n-space vertical style="width: 100%;">
-            <n-space align="center" style="width: 100%;">
-              <n-input v-model:value="form.image" placeholder="上传后自动填充，也可手动输入 URL" />
-              <n-button @click="openImageModal(editingId)">上传图片</n-button>
-            </n-space>
+      <n-form ref="formRef" :model="form" label-placement="top">
+
+        <!-- 基本信息 -->
+        <div class="modal-sec-h">基本信息</div>
+        <div class="modal-grid2">
+          <!-- 名称 — full width -->
+          <div class="modal-full">
+            <n-form-item label="名称" path="name" :rule="{ required: true, message: '请输入名称' }">
+              <n-input v-model:value="form.name" />
+            </n-form-item>
+          </div>
+
+          <!-- 类目 pill selector — full width -->
+          <div class="modal-full">
+            <n-form-item
+              label="类目"
+              path="category"
+              :rule="editingId ? undefined : { required: true, message: '请选择类目', trigger: 'change' }"
+            >
+              <div class="modal-pills" :class="{ 'modal-pills-disabled': !!editingId }">
+                <button
+                  v-for="opt in categoryOptions"
+                  :key="opt.value"
+                  type="button"
+                  class="modal-pill"
+                  :class="{ 'modal-pill-on': form.category === opt.value }"
+                  :disabled="!!editingId"
+                  @click="!editingId && (form.category = opt.value)"
+                >{{ opt.label }}</button>
+              </div>
+              <span v-if="!!editingId" class="modal-note">类目不可修改</span>
+            </n-form-item>
+          </div>
+
+          <!-- 颜色 | 单位 — half width each -->
+          <n-form-item label="颜色">
+            <n-input v-model:value="form.color" :disabled="editingIsVariant" />
+            <span v-if="editingIsVariant" class="modal-note">变体不可修改</span>
+          </n-form-item>
+          <n-form-item label="单位">
+            <n-select v-model:value="form.unit" :options="unitOptions" placeholder="请选择单位" />
+          </n-form-item>
+
+          <!-- 规格 | 单件成本 — half width each -->
+          <n-form-item label="规格">
+            <n-input v-model:value="form.spec" placeholder="如 45cm" />
+          </n-form-item>
+          <n-form-item label="单件成本">
+            <n-input-number v-model:value="form.unit_cost" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" style="width: 100%;" />
+          </n-form-item>
+        </div>
+
+        <!-- 图片 -->
+        <div class="modal-sec-h">图片</div>
+        <n-form-item label="">
+          <div class="modal-img-row">
             <n-image
               v-if="form.image"
               :src="form.image"
               alt="配件图片"
-              :width="72"
-              :height="72"
+              :width="48"
+              :height="48"
               object-fit="cover"
-              style="border-radius: 12px; border: 1px solid #ffd6d6; overflow: hidden; display: block; cursor: zoom-in;"
+              class="modal-img-preview"
             />
-          </n-space>
+            <div v-else class="modal-img-placeholder"></div>
+            <n-input v-model:value="form.image" placeholder="上传后自动填充，也可手动粘贴 URL" style="flex: 1;" />
+            <n-button @click="openImageModal(editingId)" class="modal-upload-btn">上传图片</n-button>
+          </div>
         </n-form-item>
-        <n-form-item
-          label="类目"
-          path="category"
-          :rule="editingId ? undefined : { required: true, message: '请选择类目', trigger: 'change' }"
-        >
-          <n-select v-model:value="form.category" :options="categoryOptions" clearable placeholder="请选择类目" :disabled="!!editingId" />
-          <span v-if="!!editingId" style="color: #999; font-size: 12px; margin-left: 8px;">类目不可修改</span>
-        </n-form-item>
-        <n-form-item label="颜色">
-          <n-input v-model:value="form.color" :disabled="editingIsVariant" />
-          <span v-if="editingIsVariant" style="color: #999; font-size: 12px; margin-left: 8px;">变体不可修改</span>
-        </n-form-item>
-        <n-form-item label="单位">
-          <n-select v-model:value="form.unit" :options="unitOptions" placeholder="请选择单位" />
-        </n-form-item>
-        <n-form-item label="单件成本">
-          <n-input-number v-model:value="form.unit_cost" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" style="width: 100%;" />
-        </n-form-item>
+
+        <!-- 关联 -->
+        <div class="modal-sec-h">关联</div>
         <n-form-item label="关联原色配件">
           <n-select
             v-model:value="form.parent_part_id"
             :options="parentPartOptions"
             filterable
             clearable
-            placeholder="选填，选择原色配件"
+            placeholder="选填，选择原色配件（变体归并用）"
             :disabled="editingIsVariant"
           />
-          <span v-if="editingIsVariant" style="color: #999; font-size: 12px; margin-left: 8px;">变体不可修改</span>
-        </n-form-item>
-        <n-form-item label="规格">
-          <n-input v-model:value="form.spec" placeholder="如 45cm" />
+          <span v-if="editingIsVariant" class="modal-note">变体不可修改</span>
         </n-form-item>
 
-        <n-collapse style="margin: 8px 0 12px 0;">
+        <!-- 手工加量规则 collapse -->
+        <n-collapse class="modal-collapse">
           <n-collapse-item name="buffer-rules">
             <template #header>
-              <span style="font-size: 13px; font-weight: 500; margin-right: 12px;">手工加量规则</span>
-              <span style="color: #888; font-size: 12px; font-variant-numeric: tabular-nums;">{{ effectiveRulePreview }}</span>
+              <span class="modal-collapse-title">手工加量规则</span>
+              <span class="modal-collapse-preview">{{ effectiveRulePreview }}</span>
             </template>
             <template #header-extra>
               <n-tag :type="bufferIsCustom ? 'warning' : 'success'" size="small" round>
-                {{ bufferIsCustom ? '自定义' : '默认' }}
+                {{ bufferIsCustom ? '自定义' : '默认 · 按类目' }}
               </n-tag>
             </template>
             <n-form-item label="配件大小">
@@ -105,7 +170,7 @@
                 clearable
                 style="width: 160px;"
               />
-              <span style="color: #999; font-size: 12px; margin-left: 8px;">决定加量规则的默认值</span>
+              <span class="modal-note">决定加量规则的默认值</span>
             </n-form-item>
             <n-form-item label="自定义比例">
               <n-input-number
@@ -115,7 +180,7 @@
                 clearable
                 style="width: 100%;"
               />
-              <span style="color: #999; font-size: 12px; margin-left: 8px;">小数，如 0.025 = 2.5%</span>
+              <span class="modal-note">小数，如 0.025 = 2.5%</span>
             </n-form-item>
             <n-form-item label="自定义最低">
               <n-input-number
@@ -125,47 +190,52 @@
                 clearable
                 style="width: 100%;"
               />
-              <span style="color: #999; font-size: 12px; margin-left: 8px;">最少要发的件数</span>
+              <span class="modal-note">最少要发的件数</span>
             </n-form-item>
           </n-collapse-item>
         </n-collapse>
 
-        <n-form-item v-if="editingId" label="创建颜色变体">
-          <n-space>
-            <n-button
-              v-for="vc in variantColorOptions"
-              :key="vc.code"
-              size="small"
-              :disabled="vc.exists || creatingVariant || loadingVariants"
-              :type="vc.exists ? 'default' : 'primary'"
-              secondary
-              @click="doCreateVariant(vc.code)"
-            >
-              {{ vc.label }}{{ vc.exists ? ' ✓' : '' }}
-            </n-button>
-          </n-space>
-        </n-form-item>
-        <n-form-item v-if="editingId" label="创建规格变体">
-          <n-space align="center">
-            <n-select
-              v-model:value="specVariantColor"
-              :options="specVariantColorOptions"
-              clearable
-              placeholder="颜色（可选）"
-              style="width: 120px;"
-            />
-            <n-input v-model:value="specVariantInput" placeholder="规格，如 45cm" style="width: 140px;" />
-            <n-button
-              size="small"
-              type="primary"
-              secondary
-              :disabled="!specVariantInput || creatingVariant || loadingVariants"
-              @click="doCreateSpecVariant"
-            >
-              创建
-            </n-button>
-          </n-space>
-        </n-form-item>
+        <!-- 变体（编辑时显示） -->
+        <template v-if="editingId">
+          <div class="modal-sec-h" style="margin-top: 18px;">变体</div>
+          <n-form-item label="创建颜色变体">
+            <n-space>
+              <n-button
+                v-for="vc in variantColorOptions"
+                :key="vc.code"
+                size="small"
+                :disabled="vc.exists || creatingVariant || loadingVariants"
+                :type="vc.exists ? 'default' : 'primary'"
+                secondary
+                @click="doCreateVariant(vc.code)"
+              >
+                {{ vc.label }}{{ vc.exists ? ' ✓' : '' }}
+              </n-button>
+            </n-space>
+          </n-form-item>
+          <n-form-item label="创建规格变体">
+            <n-space align="center">
+              <n-select
+                v-model:value="specVariantColor"
+                :options="specVariantColorOptions"
+                clearable
+                placeholder="颜色（可选）"
+                style="width: 120px;"
+              />
+              <n-input v-model:value="specVariantInput" placeholder="规格，如 45cm" style="width: 140px;" />
+              <n-button
+                size="small"
+                type="primary"
+                secondary
+                :disabled="!specVariantInput || creatingVariant || loadingVariants"
+                @click="doCreateSpecVariant"
+              >
+                创建
+              </n-button>
+            </n-space>
+          </n-form-item>
+        </template>
+
       </n-form>
       </form>
       <template #footer>
@@ -282,6 +352,22 @@ const categoryOptions = [
   { label: '链条', value: '链条' },
   { label: '小配件', value: '小配件' },
 ]
+
+const categoryChips = [
+  { label: '全部', value: null },
+  { label: '吊坠', value: '吊坠' },
+  { label: '链条', value: '链条' },
+  { label: '小配件', value: '小配件' },
+]
+
+const selectCategory = (value) => {
+  searchCategory.value = value
+  load()
+}
+
+// Stat strip — computed from loaded row data only
+const compositeCount = computed(() => rows.value.filter((r) => r.is_composite).length)
+const lowStockCount = computed(() => rows.value.filter((r) => r.stock < 10).length)
 
 const unitOptions = [
   { label: '个', value: '个' },
@@ -684,26 +770,83 @@ const confirmDelete = (row) => {
   })
 }
 
+// Color dot map for known color names
+const COLOR_DOT_MAP = {
+  '金色': '#d9b24a',
+  '白K': '#a9b0b8',
+  '玫瑰金': '#cf8f7d',
+  '古银': '#8a9a8e',
+  '银色': '#a9b0b8',
+}
+
 const columns = [
-  { title: '编号', key: 'id', width: 100 },
+  {
+    title: '编号',
+    key: 'id',
+    width: 130,
+    render: (row) => h('span', { class: 'cell-id mono' }, row.id),
+  },
   {
     title: '配件',
     key: 'name',
-    minWidth: 180,
-    render: (row) => renderNamedImage(row.name, row.image, row.name, 40, row.is_composite ? '组合' : null),
+    minWidth: 200,
+    render: (row) => {
+      const children = [
+        renderNamedImage(row.name, row.image, row.name, 36),
+      ]
+      if (row.is_composite) {
+        children.push(h('span', { class: 'tag-combo' }, '组合'))
+      }
+      return h('div', { class: 'cell-name-wrap' }, children)
+    },
   },
   { title: '类目', key: 'category' },
-  { title: '颜色', key: 'color' },
+  {
+    title: '颜色',
+    key: 'color',
+    render: (row) => {
+      if (!row.color) return '-'
+      const dotColor = COLOR_DOT_MAP[row.color] || '#c0c6cd'
+      return h('span', { class: 'cell-color' }, [
+        h('span', {
+          class: 'color-dot',
+          style: { background: dotColor },
+        }),
+        row.color,
+      ])
+    },
+  },
   { title: '规格', key: 'spec' },
   { title: '单位', key: 'unit', width: 60 },
-  { title: '单件成本', key: 'unit_cost', width: 100, render: (r) => r.unit_cost != null ? fmtMoney(r.unit_cost) : '-' },
+  {
+    title: '单件成本',
+    key: 'unit_cost',
+    width: 110,
+    titleAlign: 'right',
+    align: 'right',
+    render: (r) => r.unit_cost != null
+      ? h('span', { class: 'mono' }, [
+          h('small', { class: 'currency-sym' }, '¥'),
+          ' ',
+          fmtMoney(r.unit_cost),
+        ])
+      : h('span', { style: { color: '#8B9096' } }, '-'),
+  },
   {
     title: '当前库存',
     key: 'stock',
-    width: 90,
-    render: (r) => r.stock < 10
-      ? h('span', { class: 'badge badge-red' }, ['• ', r.stock])
-      : r.stock,
+    width: 100,
+    titleAlign: 'right',
+    align: 'right',
+    render: (r) => {
+      if (r.stock < 10) {
+        return h('span', { class: 'stock-low mono' }, [
+          String(r.stock),
+          h('span', { class: 'pill-low' }, '低'),
+        ])
+      }
+      return h('span', { class: 'stock-ok mono' }, String(r.stock))
+    },
   },
   { title: '默认电镀', key: 'plating_process' },
   {
@@ -745,6 +888,242 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* ── Page shell ── */
+.parts-page {
+  padding: 0;
+}
+
+/* ── Header ── */
+.page-top {
+  padding: 24px 28px 0;
+}
+
+.page-crumbs {
+  font-size: 12px;
+  color: #8B9096;
+  margin-bottom: 10px;
+  letter-spacing: 0.1px;
+}
+
+.title-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.page-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  margin: 0;
+  color: #1A1D21;
+  line-height: 1.2;
+}
+
+.title-count {
+  font-size: 14px;
+  font-weight: 500;
+  color: #8B9096;
+  margin-left: 10px;
+}
+
+.top-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Override Naive UI button styles for the ink/outline variants */
+.btn-outline {
+  height: 36px !important;
+  border-radius: 9px !important;
+  border: 1px solid #ECEDEF !important;
+  background: #fff !important;
+  color: #1A1D21 !important;
+  font-size: 13.5px !important;
+  font-weight: 500 !important;
+}
+
+.btn-ink {
+  height: 36px !important;
+  border-radius: 9px !important;
+  background: #1A1D21 !important;
+  border-color: #1A1D21 !important;
+  color: #fff !important;
+  font-size: 13.5px !important;
+  font-weight: 500 !important;
+}
+
+/* ── Stat strip ── */
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border: 1px solid #ECEDEF;
+  border-radius: 10px;
+  margin: 20px 28px 0;
+  background: #fff;
+  overflow: hidden;
+}
+
+.stat-card {
+  padding: 14px 20px;
+  border-right: 1px solid #ECEDEF;
+}
+
+.stat-card:last-child {
+  border-right: 0;
+}
+
+.stat-label {
+  font-size: 10.5px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: #8B9096;
+  font-weight: 600;
+}
+
+.stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  margin-top: 5px;
+  line-height: 1;
+  color: #1A1D21;
+}
+
+.stat-danger {
+  color: #E5484D;
+}
+
+/* ── Filter row ── */
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 28px 14px;
+  flex-wrap: wrap;
+}
+
+.chip-group {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  height: 32px;
+  border-radius: 16px;
+  border: 1px solid #ECEDEF;
+  background: #fff;
+  padding: 0 14px;
+  font-size: 13px;
+  color: #4b5158;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.chip:hover {
+  border-color: #c8cdd4;
+}
+
+.chip-active {
+  background: #1A1D21;
+  border-color: #1A1D21;
+  color: #fff;
+  font-weight: 500;
+}
+
+.search-wrap {
+  margin-left: auto;
+}
+
+/* ── Table wrap ── */
+.table-wrap {
+  margin: 0 28px 28px;
+  border: 1px solid #ECEDEF;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* ── Table cell styles ── */
+.cell-id {
+  font-size: 12.5px;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tag-combo {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: #E6F2EC;
+  color: #1E7A5A;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.cell-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.color-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.mono {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.currency-sym {
+  color: #8B9096;
+  font-size: 11px;
+}
+
+.stock-ok {
+  font-weight: 600;
+  color: #1A1D21;
+}
+
+.stock-low {
+  font-weight: 700;
+  color: #E5484D;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pill-low {
+  font-size: 10px;
+  background: #fdecec;
+  color: #E5484D;
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
+
+/* ── Template download button ── */
 .template-download-btn {
   background: #f6efe2;
   border-color: #d6b98d;
@@ -755,5 +1134,126 @@ onMounted(() => {
   background: #efe1c7;
   border-color: #c89b5a;
   color: #603d15;
+}
+
+/* ── Create/Edit modal layout ── */
+
+/* Eyebrow section headers */
+.modal-sec-h {
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #8B9096;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+
+/* 2-column grid for short fields */
+.modal-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+}
+
+.modal-full {
+  grid-column: 1 / -1;
+}
+
+/* Category pill selector */
+.modal-pills {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.modal-pill {
+  height: 36px;
+  flex: 1;
+  border: 1px solid #DFE2E6;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #4b5158;
+  cursor: pointer;
+  background: #fff;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.modal-pill:hover:not(:disabled) {
+  border-color: #c8cdd4;
+}
+
+.modal-pill.modal-pill-on {
+  background: #1A1D21;
+  border-color: #1A1D21;
+  color: #fff;
+  font-weight: 500;
+}
+
+.modal-pills-disabled .modal-pill {
+  cursor: default;
+  opacity: 0.65;
+}
+
+/* Inline note/hint text */
+.modal-note {
+  color: #8B9096;
+  font-size: 12px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+/* Image inline row */
+.modal-img-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.modal-img-preview {
+  width: 48px;
+  height: 48px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid #ECEDEF;
+  display: block;
+}
+
+.modal-img-placeholder {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #f2cdbf, #cf8f7d);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+.modal-upload-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Collapse for buffer rules */
+.modal-collapse {
+  margin: 4px 0 14px;
+  border: 1px solid #ECEDEF;
+  border-radius: 11px;
+  overflow: hidden;
+}
+
+.modal-collapse-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-right: 12px;
+}
+
+.modal-collapse-preview {
+  font-size: 12px;
+  color: #8B9096;
+  font-variant-numeric: tabular-nums;
 }
 </style>

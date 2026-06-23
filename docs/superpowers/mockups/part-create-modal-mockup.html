@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>新增配件弹窗 — 新设计语言 mockup v3</title>
+<style>
+  :root{
+    --ink:#1A1D21; --accent:#1E7A5A; --accent-soft:#E6F2EC; --danger:#E5484D;
+    --line:#ECEDEF; --line-2:#F2F3F5; --muted:#8B9096; --muted-2:#AEB3B8;
+    --sub:#F6F7F8; --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;min-height:100vh;background:#E9EBEE;
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--ink);display:flex;align-items:flex-start;justify-content:center;padding:40px 20px;
+    -webkit-font-smoothing:antialiased;}
+  .lead{position:fixed;top:14px;left:0;right:0;text-align:center;color:#878d96;font-size:12.5px;}
+
+  .stage{position:relative;width:540px;}
+  .scrim{position:absolute;inset:-40px -200px;background:rgba(16,20,26,.28);border-radius:20px;}
+
+  .modal{position:relative;background:#fff;border-radius:14px;box-shadow:0 24px 60px rgba(16,20,26,.28);overflow:hidden;}
+  .m-head{display:flex;align-items:center;justify-content:space-between;padding:18px 22px 16px;border-bottom:1px solid var(--line);}
+  .m-head h2{font-size:18px;font-weight:700;letter-spacing:-.2px;margin:0;}
+  .m-head .x{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:15px;cursor:pointer;}
+  .m-head .x:hover{background:var(--sub);}
+
+  .m-body{padding:18px 22px 6px;max-height:64vh;overflow-y:auto;}
+
+  .sec{margin-bottom:18px;}
+  .sec-h{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);font-weight:600;margin:0 0 11px;}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:13px 14px;}
+  .full{grid-column:1 / -1;}
+  .field{display:flex;flex-direction:column;}
+  .field .lab{font-size:12.5px;font-weight:500;color:#3f454c;margin-bottom:6px;}
+  .field .lab .req{color:var(--danger);margin-left:3px;}
+
+  .inp{height:38px;border:1px solid #DFE2E6;border-radius:9px;background:#fff;padding:0 12px;font-size:14px;color:var(--ink);display:flex;align-items:center;gap:6px;}
+  .inp .ph{color:#B6BBC2;}
+  .inp .arr{margin-left:auto;color:var(--muted-2);font-size:12px;}
+  .inp .cur{color:var(--muted);font-size:12px;}
+  .inp.focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+
+  /* 类目 pill 选择 */
+  .pills{display:flex;gap:8px;}
+  .pill{height:38px;flex:1;border:1px solid #DFE2E6;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;color:#4b5158;cursor:pointer;}
+  .pill.on{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:500;}
+
+  /* 图片：框 + 缩略图 + 上传按钮 + URL（去掉拖拽与描述文字）*/
+  .img-row{display:flex;gap:12px;align-items:center;}
+  .img-row .prev{width:48px;height:48px;border-radius:9px;flex:none;background:linear-gradient(135deg,#f2cdbf,#cf8f7d);box-shadow:inset 0 0 0 1px rgba(0,0,0,.05);}
+  .img-row .inp{flex:1;}
+  .img-row .up{height:38px;border:1px solid #DFE2E6;border-radius:9px;padding:0 14px;background:#fff;font-size:13px;display:flex;align-items:center;white-space:nowrap;cursor:pointer;}
+
+  .adv{border:1px solid var(--line);border-radius:11px;overflow:hidden;}
+  .adv-h{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;}
+  .adv-h .car{color:var(--muted-2);font-size:11px;}
+  .adv-h .t{font-size:13.5px;font-weight:600;}
+  .adv-h .preview{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .adv-h .badge{margin-left:auto;font-size:11px;font-weight:600;padding:2px 9px;border-radius:11px;background:var(--accent-soft);color:var(--accent);}
+
+  .m-foot{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:14px 22px;border-top:1px solid var(--line);background:#fff;}
+  .btn{height:38px;border-radius:9px;border:1px solid #DFE2E6;background:#fff;padding:0 18px;font-size:14px;font-weight:500;color:var(--ink);cursor:pointer;}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 4px 12px rgba(30,122,90,.24);}
+
+  .note{position:fixed;bottom:14px;left:0;right:0;text-align:center;color:#6b7280;font-size:12px;padding:0 20px;line-height:1.7;}
+  .note b{color:var(--ink);}
+</style>
+</head>
+<body>
+<div class="lead">新增配件弹窗 v3 · 回到 2 列等宽 + 类目胶囊选择 + 图片去拖拽</div>
+
+<div class="stage">
+  <div class="scrim"></div>
+  <div class="modal">
+    <div class="m-head">
+      <h2>新增配件</h2>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="m-body">
+      <!-- 基本信息 -->
+      <div class="sec">
+        <div class="sec-h">基本信息</div>
+        <div class="grid2">
+          <div class="field full">
+            <span class="lab">名称<span class="req">*</span></span>
+            <div class="inp focus"><span>玫瑰金弹簧扣</span></div>
+          </div>
+
+          <div class="field full">
+            <span class="lab">类目<span class="req">*</span></span>
+            <div class="pills">
+              <span class="pill">吊坠</span>
+              <span class="pill">链条</span>
+              <span class="pill on">小配件</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <span class="lab">颜色</span>
+            <div class="inp"><span>玫瑰金</span></div>
+          </div>
+          <div class="field">
+            <span class="lab">单位</span>
+            <div class="inp"><span>个</span><span class="arr">▾</span></div>
+          </div>
+
+          <div class="field">
+            <span class="lab">规格</span>
+            <div class="inp"><span class="ph">如 45cm</span></div>
+          </div>
+          <div class="field">
+            <span class="lab">单件成本</span>
+            <div class="inp"><span class="cur">¥</span><span>0.3200000</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 图片：框 + 上传 + URL，去掉拖拽与描述 -->
+      <div class="sec">
+        <div class="sec-h">图片</div>
+        <div class="img-row">
+          <span class="prev"></span>
+          <div class="inp"><span class="ph">上传后自动填充，也可手动粘贴 URL</span></div>
+          <span class="up">上传图片</span>
+        </div>
+      </div>
+
+      <!-- 关联 -->
+      <div class="sec">
+        <div class="sec-h">关联</div>
+        <div class="grid2">
+          <div class="field full">
+            <span class="lab">关联原色配件</span>
+            <div class="inp"><span class="ph">选填，选择原色配件（变体归并用）</span><span class="arr">▾</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 进阶折叠 -->
+      <div class="adv">
+        <div class="adv-h">
+          <span class="car">▸</span>
+          <span class="t">手工加量规则</span>
+          <span class="preview">ceil + max(floor 50, ×2.5%)</span>
+          <span class="badge">默认 · 按类目</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="m-foot">
+      <span class="btn">取消</span>
+      <span class="btn primary">保存</span>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <b>v3 调整：</b>① 类目用<b>胶囊选择</b>（吊坠/链条/小配件）；② 短字段回到 <b>2 列等宽栅格</b>（颜色·单位、规格·成本各占半列）；③ 图片用<b>一行框</b>（缩略图 + URL 输入 + 上传按钮），去掉拖拽功能与文字描述。其余：分区 eyebrow、进阶规则折叠、祖母绿保存按钮。
+</div>
+
+</body>
+</html>

@@ -1,3 +1,4 @@
+import pytest
 from services.part import create_part
 from services.inventory import add_stock
 from services.handcraft import create_handcraft_order, send_handcraft_order
@@ -135,18 +136,13 @@ def test_auto_consume_reports_shortfall_when_parts_insufficient(db):
     )
 
 
-# ── C1: production loss on a part item must bump consumed_qty ──────────────
+# ── C1: production loss on a part item is now forbidden ────────────────────
 
-def test_part_loss_keeps_received_invariant(db):
+def test_part_loss_is_rejected(db):
     from services.production_loss import confirm_handcraft_loss
     part, order, pi = _send_order_with_part(db, qty=100, stock=1000)
-    confirm_handcraft_loss(db, order.id, pi.id, item_type="part", loss_qty=15, deduct_amount=None, reason="测试损耗")
-    db.expire(pi)
-    assert float(pi.consumed_qty) == 15.0
-    assert float(pi.returned_qty or 0) == 0.0
-    assert float(pi.received_qty) == 15.0
-    # invariant: received == returned + consumed
-    assert abs(float(pi.received_qty) - (float(pi.returned_qty or 0) + float(pi.consumed_qty or 0))) < 1e-9
+    with pytest.raises(ValueError, match="配件不支持损耗确认"):
+        confirm_handcraft_loss(db, order.id, pi.id, item_type="part", loss_qty=15, deduct_amount=None, reason="测试损耗")
 
 
 # ── I1: reverse auto-consume must not drive consumed_qty negative ──────────

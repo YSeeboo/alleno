@@ -1,33 +1,39 @@
 <template>
-  <n-card v-if="cols.length > 0" :content-style="collapsed ? 'padding: 0' : undefined">
-    <template #header>
-      <div class="bm-head-wrap">
-        <div class="bm-head" @click="collapsed = !collapsed">
-          <span class="chev">{{ collapsed ? '▸' : '▾' }}</span>
-          <span class="title">客户分拣</span>
-          <span class="status-tag">{{ statusTagText }}</span>
-        </div>
-        <div v-if="!collapsed" class="bm-actions">
-          <template v-if="mode === 'view'">
-            <n-button size="small" :disabled="!canEdit" @click.stop="enterEdit">编辑</n-button>
-          </template>
-          <template v-else>
-            <n-button size="small" :disabled="saving" @click.stop="cancelEdit">取消</n-button>
-            <n-button size="small" type="primary" :loading="saving" @click.stop="save">保存</n-button>
-          </template>
-        </div>
+  <div v-if="cols.length > 0" class="bm-root">
+    <div class="bm-head-wrap">
+      <span class="bm-head-left">
+        <span class="bm-title">客户分拣</span>
+        <span :class="['status-tag', allFull ? 'full' : 'under']">{{ statusTagText }}</span>
+      </span>
+      <div class="bm-actions">
+        <template v-if="mode === 'view'">
+          <n-button size="small" :disabled="!canEdit" @click="enterEdit">编辑</n-button>
+        </template>
+        <template v-else>
+          <n-button size="small" :disabled="saving" @click="cancelEdit">取消</n-button>
+          <n-button size="small" type="primary" :loading="saving" @click="save">保存</n-button>
+        </template>
       </div>
-    </template>
-    <div v-show="!collapsed">
+    </div>
+    <div class="bm-body">
       <div class="mx-scroll">
         <table class="mx">
         <thead>
           <tr>
             <th class="mx__col-cust">客户</th>
-            <th v-for="c in cols" :key="c.key" class="mx__col-jw">
-              <span class="jid">{{ c.jewelry_id }}</span>
-              <span class="jname">{{ c.jewelry_name }}</span>
-              <span class="jtot">{{ c.total_qty }} 套</span>
+            <th v-for="c in cols" :key="c.key" :class="['mx__col-jw', colAssigned[c.key] === c.total_qty ? 'full' : 'under']">
+              <div class="oh">
+                <span class="oh-top">
+                  <span class="nm">{{ c.jewelry_name }}</span>
+                  <span class="id">{{ c.jewelry_id }}</span>
+                </span>
+                <span class="alloc">
+                  <span class="n">{{ colAssigned[c.key] }}/{{ c.total_qty }}</span>
+                  <span class="track">
+                    <span class="fill" :style="{ width: c.total_qty > 0 ? Math.min(100, Math.round(colAssigned[c.key] / c.total_qty * 100)) + '%' : '0%' }"></span>
+                  </span>
+                </span>
+              </div>
             </th>
             <th class="mx__col-sum">合计</th>
           </tr>
@@ -35,13 +41,11 @@
         <tbody v-if="mode === 'view'">
           <tr v-for="r in rows" :key="r.customer_name">
             <td class="mx__cust">
-              <template v-if="r.is_locked_customer">
-                <div class="lock-name">{{ r.customer_name }}</div>
-                <div v-if="lockedSourceLine(r)" class="lock-src">↗ {{ lockedSourceLine(r) }}</div>
-              </template>
-              <template v-else>
-                <span class="manual-name">{{ r.customer_name }}</span>
-              </template>
+              <div class="cust-line">
+                <span class="cust-nm">{{ r.customer_name }}</span>
+                <span v-if="r.is_locked_customer" class="src order">订单{{ lockedSourceLine(r) ? ' ' + lockedSourceLine(r) : '' }} ↗</span>
+                <span v-else class="src manual">手填</span>
+              </div>
             </td>
             <td v-for="c in cols" :key="c.key" :class="cellClass(r.cells[c.key], r.customer_name, c.key)">
               <CellReadonly :cell="r.cells[c.key]" />
@@ -57,8 +61,10 @@
           <tr v-for="(r, ri) in draft.rows" :key="`${r.customer_name}:${ri}`">
             <td class="mx__cust">
               <template v-if="r.is_locked_customer">
-                <div class="lock-name">{{ r.customer_name }}</div>
-                <div v-if="lockedSourceLine(r)" class="lock-src">↗ {{ lockedSourceLine(r) }}</div>
+                <div class="cust-line">
+                  <span class="cust-nm">{{ r.customer_name }}</span>
+                  <span class="src order">订单{{ lockedSourceLine(r) ? ' ' + lockedSourceLine(r) : '' }} ↗</span>
+                </div>
               </template>
               <template v-else>
                 <div class="manual-edit">
@@ -68,7 +74,7 @@
                       v-model:value="r.customer_name"
                       :disabled="!canEditCustomerName"
                     />
-                    <span v-else class="manual-name">{{ r.customer_name }}</span>
+                    <span v-else class="cust-nm">{{ r.customer_name }}</span>
                   </div>
                   <n-button
                     v-if="canDeleteRow(r)"
@@ -78,6 +84,7 @@
                     @click="removeDraftRow(ri)"
                   >×</n-button>
                 </div>
+                <span class="src manual">手填</span>
               </template>
             </td>
             <td v-for="c in cols" :key="c.key" :class="cellClass(r.cells[c.key], r.customer_name, c.key)">
@@ -132,12 +139,12 @@
           </tr>
         </tbody>
         <tfoot>
-          <tr>
+          <tr class="totrow">
             <td class="mx__foot-label">已分 / 总数</td>
             <td v-for="c in cols" :key="c.key" :class="footCellClass(c)">
-              {{ colAssigned[c.key] }} / {{ c.total_qty }}
-              <span v-if="colAssigned[c.key] === c.total_qty">✓</span>
-              <span v-else>⚠</span>
+              <span :class="colAssigned[c.key] === c.total_qty ? 'tot-ok' : 'tot-bad'">{{ colAssigned[c.key] }} / {{ c.total_qty }}</span>
+              <div v-if="colAssigned[c.key] === c.total_qty" class="tot-sub">已分满</div>
+              <div v-else class="tot-sub">缺 {{ c.total_qty - colAssigned[c.key] }}</div>
             </td>
             <td class="mx__foot-total">{{ totalAssigned }} / {{ totalAll }}</td>
           </tr>
@@ -150,12 +157,12 @@
         <n-button size="small" type="primary" :loading="saving" @click="save">保存</n-button>
       </div>
     </div>
-  </n-card>
+  </div>
 </template>
 
 <script setup>
 import { ref, computed, h, defineComponent } from 'vue'
-import { NCard, NButton, NPopover, useMessage } from 'naive-ui'
+import { NButton, NPopover, useMessage } from 'naive-ui'
 import CustomerNameSelect from './CustomerNameSelect.vue'
 import BulkAssignPopover from './BulkAssignPopover.vue'
 import {
@@ -239,8 +246,6 @@ const props = defineProps({
   groups: { type: Array, required: true },  // backend breakdown response
 })
 const emit = defineEmits(['saved'])
-
-const collapsed = ref(false)
 
 // 'view' = read-only, 'edit' = editing local snapshot
 const mode = ref('view')
@@ -719,14 +724,20 @@ const totalAll = computed(() =>
   cols.value.reduce((s, c) => s + c.total_qty, 0),
 )
 
+// Overall allocation status
+const allFull = computed(() =>
+  cols.value.length > 0 && cols.value.every((c) => colAssigned.value[c.key] === c.total_qty),
+)
+
+// Total shortfall across all columns
+const totalShortfall = computed(() =>
+  cols.value.reduce((s, c) => s + Math.max(0, c.total_qty - (colAssigned.value[c.key] || 0)), 0),
+)
+
 const statusTagText = computed(() => {
-  if (rows.value.length === 0) {
-    return `未分拣 · ${totalAssigned.value}/${totalAll.value}`
-  }
-  if (props.hcStatus === 'pending') return `pending · 可编辑`
-  if (props.hcStatus === 'processing') return `processing · 仅可改客户名 / 删未发出行`
-  if (props.hcStatus === 'completed') return `completed · 只读`
-  return props.hcStatus
+  if (cols.value.length === 0) return ''
+  if (allFull.value) return '已分满'
+  return `未分满 · 缺 ${totalShortfall.value}`
 })
 
 function cellClass(cell, rowName, colKey) {
@@ -756,96 +767,226 @@ function lockedSourceLine(row) {
 </script>
 
 <style scoped>
-.bm-head { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; }
-.chev { color: #888; }
-.title { font-weight: 600; }
+/* ── Design tokens ── */
+:root {
+  --ink: #1A1D21;
+  --accent: #1E7A5A;
+  --accent-soft: #E6F2EC;
+  --danger: #E5484D;
+  --amber: #B7791F;
+  --line: #ECEDEF;
+  --line-2: #F4F5F6;
+  --muted: #8B9096;
+  --muted-2: #AEB3B8;
+  --sub: #F6F7F8;
+}
+
+/* ── Header — eyebrow section, matches sibling .hc-sec-h ── */
+.bm-root { width: 100%; }
+.bm-head-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 0 8px;
+  border-bottom: 1px solid #ECEDEF;
+  margin-bottom: 12px;
+}
+.bm-head-left { display: flex; align-items: center; gap: 8px; }
+.bm-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #8B9096;
+}
 .status-tag {
-  font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 400;
-  background: #fff5e0; color: #b76100;
+  font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 11px;
 }
-
-.mx { width: 100%; border-collapse: collapse; font-size: 12px; }
-.mx th, .mx td { border: 1px solid #e8e8ec; padding: 7px 9px; text-align: center; vertical-align: middle; }
-.mx thead th { background: #fafafc; font-weight: 600; padding: 6px 8px; }
-.mx__col-cust { text-align: left; min-width: 140px; }
-.mx__col-jw .jid { display: block; font-family: "SF Mono", Menlo, monospace; font-size: 10px; color: #999; font-weight: 400; line-height: 1.2; }
-.mx__col-jw .jname { display: block; font-size: 12px; margin-top: 2px; }
-.mx__col-jw .jtot { display: block; font-size: 10px; font-weight: 400; color: #888; font-family: "SF Mono", Menlo, monospace; margin-top: 2px; }
-.mx__col-sum { width: 70px; color: #666; }
-
-.mx__cust { text-align: left; background: #fafafc; padding: 6px 9px; }
-.lock-name { color: rgba(0,0,0,.7); padding-left: 18px; position: relative; font-size: 12px; }
-.lock-name::before { content: "🔒"; position: absolute; left: 0; }
-.lock-src { color: #b76100; font-size: 10px; margin-left: 18px; font-family: "SF Mono", Menlo, monospace; margin-top: 2px; }
-.manual-name { color: #333; }
-
-.mx__qty { font-family: "SF Mono", Menlo, monospace; color: #333; min-width: 86px; height: 38px; }
-.mx__qty.empty { color: #ccc; }
-.mx__qty.locked { background: #fff8e6; color: #8a6500; }
-.mx__qty.mixed { background: linear-gradient(to right, #fff8e6 50%, #ffffff 50%); }
-.qty-empty { color: #ccc; }
-.qty-locked { color: #8a6500; }
-.qty-mixed .l { color: #8a6500; }
-.qty-mixed .plus { color: #888; }
-
-.mx__row-sum { font-family: "SF Mono", Menlo, monospace; background: #fafafc; color: #555; }
-
-.mx__empty td {
-  height: 60px; color: #aaa; font-size: 12px;
-  background: repeating-linear-gradient(45deg, #fafafc 0 6px, #f4f4f8 6px 12px);
-}
-
-.mx tfoot td { background: #eef0fe; font-family: "SF Mono", Menlo, monospace; font-size: 11px; color: #4338ca; padding: 7px 10px; }
-.mx__foot-label { font-family: -apple-system, sans-serif; text-align: left; font-weight: 600; }
-.mx__foot-cell.ok { color: #18a058; }
-.mx__foot-cell.warn { color: #d03050; }
-.mx__foot-total { color: #4338ca; }
-
-.bm-head-wrap { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+.status-tag.full { background: #E6F2EC; color: #1E7A5A; }
+.status-tag.under { background: #FBF0DC; color: #B7791F; }
 .bm-actions { display: flex; gap: 6px; }
 
-.manual-edit { display: flex; gap: 6px; align-items: center; }
-.manual-edit__name { flex: 1; }
-.cell-input {
-  width: 56px; padding: 3px 6px; border: 1px solid #d0d0d6;
-  border-radius: 3px; font-family: "SF Mono", Menlo, monospace;
-  font-size: 12px; text-align: center;
+/* ── Table shell — hairline grid ── */
+.mx-scroll { overflow-x: auto; }
+.mx {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
-.cell-input:focus { outline: none; border-color: #2080f0; box-shadow: 0 0 0 2px rgba(32,128,240,.12); }
-.cell-input.zero { color: #999; }
-.cell-input:disabled { background: #fafafa; color: #777; }
-.qty-locked-edit { display: inline-flex; align-items: center; gap: 4px; }
-.qty-locked-edit .l { color: #8a6500; }
-.qty-mixed .plus, .qty-locked-edit .plus { color: #888; }
-.mx__add-bar-row td { padding: 6px 10px; background: #f9f9fc; text-align: left; }
-.add-bar { display: flex; gap: 10px; align-items: center; }
-.add-bar__link { color: #4338ca; cursor: pointer; padding: 4px 8px; border-radius: 3px; font-size: 12px; }
-.add-bar__link:hover { background: #eef0fe; }
-.add-bar__sep { color: #ccc; }
-.add-bar__hint { color: #999; font-size: 11px; margin-left: 4px; }
-.bulk-btn { color: #4338ca; }
+.mx th,
+.mx td {
+  border-bottom: 1px solid #F4F5F6;
+  border-right: 1px solid #F4F5F6;
+  padding: 9px 12px;
+  background: #fff;
+  text-align: center;
+  vertical-align: middle;
+}
+.mx thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #fff;
+  border-bottom: 1px solid #ECEDEF;
+  vertical-align: bottom;
+}
+
+/* ── Sticky customer column ── */
+.mx__col-cust,
+.mx__cust,
+.mx__foot-label {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #fff;
+  text-align: left;
+  min-width: 110px;
+  box-shadow: 1px 0 0 #ECEDEF;
+}
+.mx thead .mx__col-cust { z-index: 4; }
+.mx__col-cust { font-weight: 600; font-size: 13px; }
+
+/* ── Sum column ── */
+.mx__col-sum { text-align: right; min-width: 64px; background: #F6F7F8; }
+
+/* 客户 / 合计 表头标签：水平 + 垂直居中（覆盖 sticky 左对齐、sum 右对齐与 thead 的 bottom 对齐） */
+.mx thead .mx__col-cust,
+.mx thead .mx__col-sum {
+  text-align: center;
+  vertical-align: middle;
+}
+
+/* ── Output column header: allocation progress ── */
+.mx__col-jw { min-width: 120px; }
+.oh { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.oh-top { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
+.oh .nm { font-weight: 600; font-size: 12.5px; text-align: left; line-height: 1.3; }
+.oh .id { font-size: 10.5px; color: #AEB3B8; font-weight: 400; text-align: left; }
+.oh .alloc { display: flex; align-items: center; gap: 6px; }
+.oh .alloc .n { font-size: 11px; font-variant-numeric: tabular-nums; }
+.oh .alloc .track { width: 46px; height: 4px; border-radius: 2px; background: #EDEFF1; overflow: hidden; flex-shrink: 0; }
+.oh .alloc .fill { display: block; height: 100%; }
+/* full = emerald, under = amber — driven by parent th class */
+.mx__col-jw.full .fill { background: #1E7A5A; }
+.mx__col-jw.full .n { color: #1E7A5A; font-weight: 600; }
+.mx__col-jw.under .fill { background: #B7791F; }
+.mx__col-jw.under .n { color: #B7791F; font-weight: 600; }
+
+/* ── Customer cell ── */
+.mx__cust { padding: 8px 12px; }
+.cust-line { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; }
+.cust-line .src { margin-top: 0; }
+.cust-nm { font-weight: 600; font-size: 13px; color: #1A1D21; }
+.src {
+  font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 5px;
+  display: inline-block; margin-top: 3px;
+}
+.src.order { background: #EEF1F4; color: #475569; }
+.src.manual { background: #FBF0DC; color: #B7791F; }
+
+/* ── Qty cells ── */
+.mx__qty {
+  font-variant-numeric: tabular-nums;
+  color: #1A1D21;
+  min-width: 86px;
+  height: 38px;
+}
+.mx__qty.empty { color: #AEB3B8; }
+.mx__qty.locked { background: #fff8e6; color: #8a6500; }
+.mx__qty.mixed { background: linear-gradient(to right, #fff8e6 50%, #ffffff 50%); }
 .mx__qty.flash { background: #fffae8; transition: background 1.5s ease-out; }
 .mx__qty.flash::after { content: "✨"; display: inline-block; margin-left: 4px; font-size: 10px; vertical-align: 2px; }
 .mx__qty.flash .cell-input { border-color: #f0c000; box-shadow: 0 0 0 2px rgba(240,192,0,.16); }
-.mx-scroll { overflow-x: auto; }
-.mx thead th.mx__col-cust,
-.mx tbody td.mx__cust,
-.mx tfoot td.mx__foot-label {
-  position: sticky; left: 0; z-index: 2;
-  background: #fafafc;  /* repeat the surface bg so cells don't bleed through */
+
+/* qty-* classes used in h() render functions must NOT be scoped-only;
+   they are applied to spans inside h() which don't receive data-v attrs.
+   We define them here but they will NOT be scoped — intentionally global
+   via :global() so the render-function spans are styled. */
+:global(.qty-empty) { color: #AEB3B8; }
+:global(.qty-locked) { color: #8a6500; }
+:global(.qty-manual) { font-weight: 600; color: #1A1D21; }
+:global(.qty-mixed .l) { color: #8a6500; }
+:global(.qty-mixed .plus) { color: #8B9096; }
+:global(.qty-mixed .m) { font-weight: 600; color: #1A1D21; }
+
+/* ── Row sum ── */
+.mx__row-sum {
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: #F6F7F8;
+  color: #1A1D21;
 }
-.mx tfoot td.mx__foot-label { background: #eef0fe; }
-.mx-sticky-foot {
-  display: none;  /* hidden on wide screens — top-bar buttons suffice */
+
+/* ── Empty rows ── */
+.mx__empty td {
+  height: 60px; color: #AEB3B8; font-size: 12px;
+  background: repeating-linear-gradient(45deg, #F6F7F8 0 6px, #ECEDEF 6px 12px);
 }
+
+/* ── Foot totals row ── */
+.totrow td {
+  background: #F6F7F8;
+  border-top: 1px solid #ECEDEF;
+  font-weight: 600;
+}
+.mx__foot-label {
+  font-size: 12px;
+  color: #8B9096;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  background: #F6F7F8;
+}
+.mx__foot-cell { text-align: center; font-variant-numeric: tabular-nums; }
+.mx__foot-cell.ok .tot-ok { color: #1E7A5A; }
+.mx__foot-cell.warn .tot-bad { color: #B7791F; }
+.tot-sub { font-size: 10.5px; color: #AEB3B8; margin-top: 2px; }
+.mx__foot-total {
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: #F6F7F8;
+}
+
+/* ── Edit mode: add-row bar ── */
+.mx__add-bar-row td { padding: 6px 10px; background: #F6F7F8; text-align: left; }
+.add-bar { display: flex; gap: 10px; align-items: center; }
+.add-bar__link { color: #1E7A5A; cursor: pointer; padding: 4px 8px; border-radius: 3px; font-size: 12px; }
+.add-bar__link:hover { background: #E6F2EC; }
+.add-bar__sep { color: #AEB3B8; }
+.add-bar__hint { color: #8B9096; font-size: 11px; margin-left: 4px; }
+.bulk-btn { color: #1E7A5A; }
+
+/* ── Edit mode: manual row editor ── */
+.manual-edit { display: flex; gap: 6px; align-items: center; }
+.manual-edit__name { flex: 1; }
+.cell-input {
+  width: 56px; padding: 3px 6px;
+  border: 1px solid #ECEDEF;
+  border-radius: 3px;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px; text-align: center;
+  background: #fff;
+}
+.cell-input:focus { outline: none; border-color: #1E7A5A; box-shadow: 0 0 0 2px rgba(30,122,90,.12); }
+.cell-input.zero { color: #AEB3B8; }
+.cell-input:disabled { background: #F6F7F8; color: #8B9096; }
+:global(.qty-locked-edit) { display: inline-flex; align-items: center; gap: 4px; }
+:global(.qty-locked-edit .l) { color: #8a6500; }
+:global(.qty-locked-edit .plus) { color: #8B9096; }
+
+/* ── Sticky-bottom save bar (mobile only) ── */
+.mx-sticky-foot { display: none; }
 @media (max-width: 768px) {
   .mx-sticky-foot {
     display: flex; gap: 6px; justify-content: flex-end;
     position: sticky; bottom: 0; padding: 8px 12px;
-    background: #fff; border-top: 1px solid #eee;
+    background: #fff; border-top: 1px solid #ECEDEF;
     box-shadow: 0 -2px 4px rgba(0,0,0,.04);
     z-index: 3;
   }
 }
-.mx__col-jw { min-width: 90px; }
 </style>

@@ -304,6 +304,10 @@ def _draw_table_header(pdf, headers: list[str], top_y: float, column_widths: lis
         x += width
 
 
+def _seq_label(seq) -> str:
+    return f"#{seq}" if seq is not None else ""
+
+
 def _draw_detail_row(pdf, detail: dict, top_y: float, column_widths: list[float], row_height: float) -> None:
     x = _MARGIN_X
     pdf.setStrokeColor(colors.HexColor("#000000"))
@@ -315,7 +319,7 @@ def _draw_detail_row(pdf, detail: dict, top_y: float, column_widths: list[float]
 
     cells = _cell_positions(column_widths, top_y, row_height)
     pdf.setFillColor(colors.black)
-    _draw_centered_text(pdf, str(detail.get("seq", "")), *cells[0], font_size=10)
+    _draw_centered_text(pdf, _seq_label(detail.get("seq")), *cells[0], font_size=10, font_name="Helvetica")
     _draw_centered_paragraph(pdf, detail["name"] or detail["part_id"], *cells[1], font_size=10, max_lines=2)
     _draw_image_in_box(pdf, detail["part_image"], *cells[2])
     _draw_centered_text(pdf, detail["plating_method"], *cells[3], font_size=10)
@@ -364,15 +368,15 @@ def _fit_image(image_bytes: bytes, max_width: float, max_height: float):
     return ImageReader(BytesIO(image_bytes)), draw_width, draw_height
 
 
-def _draw_centered_text(pdf, text: str, x: float, y: float, width: float, height: float, font_size: int) -> None:
-    lines = simpleSplit(text or "", _LABEL_FONT, font_size, max(width, 1))[:2]
+def _draw_centered_text(pdf, text: str, x: float, y: float, width: float, height: float, font_size: int, font_name: str = _LABEL_FONT) -> None:
+    lines = simpleSplit(text or "", font_name, font_size, max(width, 1))[:2]
     if not lines:
         return
-    pdf.setFont(_LABEL_FONT, font_size)
+    pdf.setFont(font_name, font_size)
     total_height = len(lines) * (font_size + 2)
     current_y = y + (height + total_height) / 2 - font_size
     for line in lines:
-        line_width = stringWidth(line, _LABEL_FONT, font_size)
+        line_width = stringWidth(line, font_name, font_size)
         pdf.drawString(x + max(0, (width - line_width) / 2), current_y, line)
         current_y -= font_size + 2
 
@@ -414,7 +418,7 @@ def _load_template_text() -> dict:
     workbook = load_workbook(_TEMPLATE_PATH, data_only=True)
     sheet = workbook.active
     header_lines = [sheet["A2"].value or "", sheet["A3"].value or "", sheet["A4"].value or ""]
-    raw_headers = ["序号"] + [sheet.cell(row=7, column=column).value or "" for column in range(1, 7)]
+    raw_headers = ["#"] + [sheet.cell(row=7, column=column).value or "" for column in range(1, 7)]
     # Insert "重量" column after 单位 (index 5), before 备注 (index 6)
     detail_headers = raw_headers[:6] + ["重量"] + raw_headers[6:]
     customer_prefix = sheet["A6"].value or "顾客: "

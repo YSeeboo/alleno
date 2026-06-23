@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>配件管理 — 新设计语言 mockup</title>
+<style>
+  :root{
+    --ink:#1A1D21;            /* 近黑：标题 / 主按钮 */
+    --sidebar:#10141A;        /* 深色侧栏 */
+    --sidebar-2:#171C24;
+    --accent:#1E7A5A;         /* 祖母绿：唯一强调色 */
+    --accent-soft:#E6F2EC;
+    --danger:#E5484D;
+    --amber:#B7791F;
+    --line:#ECEDEF;
+    --line-2:#F2F3F5;
+    --muted:#8B9096;
+    --muted-2:#AEB3B8;
+    --paper:#FFFFFF;
+    --sub:#F6F7F8;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:#E9EBEE;
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--ink);-webkit-font-smoothing:antialiased;padding:24px;}
+  .lead{max-width:1320px;margin:0 auto 16px;}
+  .lead h1{font-size:15px;font-weight:600;color:#5b616a;margin:0 0 4px;}
+  .lead p{margin:0;font-size:12.5px;color:#878d96;line-height:1.6;}
+  .mono{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";}
+
+  /* ---------- app shell ---------- */
+  .app{max-width:1320px;margin:0 auto;height:840px;display:flex;background:var(--paper);
+    border-radius:16px;overflow:hidden;box-shadow:0 18px 50px rgba(16,20,26,.16);}
+
+  /* sidebar */
+  .side{width:236px;flex:none;background:var(--sidebar);color:#c8cdd4;display:flex;flex-direction:column;padding:16px 12px;}
+  .brand{display:flex;align-items:center;gap:9px;padding:6px 8px 14px;}
+  .brand .mk{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#2aa177,#155c43);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;}
+  .brand b{color:#fff;font-size:15px;font-weight:600;letter-spacing:.2px;}
+  .s-search{display:flex;align-items:center;gap:8px;background:var(--sidebar-2);border:1px solid #232a33;border-radius:8px;padding:7px 10px;margin-bottom:14px;}
+  .s-search .ph{color:#6b7280;font-size:13px;flex:1;}
+  .s-search .kbd{font-size:11px;color:#6b7280;border:1px solid #2a323c;border-radius:4px;padding:1px 5px;}
+  .s-grp{font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:#5b6470;padding:12px 10px 6px;font-weight:600;}
+  .s-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;font-size:13.5px;color:#c0c6cd;margin-bottom:1px;}
+  .s-item .ic{width:16px;text-align:center;opacity:.85;font-size:14px;}
+  .s-item.on{background:rgba(30,122,90,.16);color:#fff;}
+  .s-item.on .ic{color:#3FBF8F;opacity:1;}
+  .s-item .dot{margin-left:auto;width:18px;height:18px;border-radius:9px;background:var(--danger);color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;}
+  .side .spacer{flex:1;}
+  .s-user{display:flex;align-items:center;gap:9px;padding:8px;border-top:1px solid #20262e;margin-top:8px;}
+  .s-user .av{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#3a4350,#222831);}
+  .s-user .nm{font-size:13px;color:#dfe3e8;}
+  .s-user .nm small{display:block;color:#6b7280;font-size:11px;}
+
+  /* main */
+  .main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;}
+  .top{padding:22px 26px 0;}
+  .crumbs{font-size:12px;color:var(--muted);margin-bottom:10px;}
+  .title-row{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;}
+  h1.pg{font-size:26px;font-weight:700;letter-spacing:-.4px;margin:0;}
+  h1.pg .cnt{font-size:14px;font-weight:500;color:var(--muted);margin-left:10px;}
+  .top-actions{display:flex;gap:8px;}
+  .btn{height:36px;border-radius:9px;border:1px solid var(--line);background:#fff;padding:0 14px;font-size:13.5px;font-weight:500;color:var(--ink);display:inline-flex;align-items:center;gap:7px;cursor:default;}
+  .btn.ink{background:var(--ink);border-color:var(--ink);color:#fff;}
+  .btn .ic{font-size:13px;opacity:.8;}
+  .btn.ink .ic{opacity:.9;}
+
+  /* stat strip — signature: 小标签压大数字 */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:1px solid var(--line);border-radius:var(--radius);margin:18px 26px 0;background:#fff;overflow:hidden;}
+  .stat{padding:14px 18px;border-right:1px solid var(--line);}
+  .stat:last-child{border-right:0;}
+  .stat .k{font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);font-weight:600;}
+  .stat .v{font-size:26px;font-weight:700;letter-spacing:-.5px;margin-top:5px;line-height:1;}
+  .stat .v small{font-size:14px;font-weight:600;color:var(--muted);}
+  .stat .d{font-size:11.5px;margin-top:6px;color:var(--muted);}
+  .stat .d .up{color:var(--accent);font-weight:600;}
+  .stat .d .down{color:var(--danger);font-weight:600;}
+
+  /* filter row */
+  .filters{display:flex;align-items:center;gap:10px;padding:18px 26px 12px;flex-wrap:wrap;}
+  .chips{display:flex;gap:7px;}
+  .chip{height:32px;border-radius:16px;border:1px solid var(--line);background:#fff;padding:0 14px;font-size:13px;color:#4b5158;display:inline-flex;align-items:center;gap:6px;}
+  .chip.on{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:500;}
+  .chip .n{opacity:.6;font-size:12px;}
+  .search{margin-left:auto;display:flex;align-items:center;gap:8px;height:34px;border:1px solid var(--line);border-radius:9px;padding:0 11px;width:240px;background:#fff;}
+  .search .ph{color:var(--muted-2);font-size:13px;}
+  .search .ic{color:var(--muted-2);font-size:13px;}
+
+  /* table */
+  .tablewrap{margin:0 26px;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  thead th{text-align:left;font-size:11px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);font-weight:600;
+    padding:11px 14px;border-bottom:1px solid var(--line);background:#fff;white-space:nowrap;}
+  tbody td{padding:12px 14px;border-bottom:1px solid var(--line-2);vertical-align:middle;}
+  tbody tr:last-child td{border-bottom:0;}
+  tbody tr.sel td{background:#FAFBFB;}
+  tbody tr.sub td{background:#FBFCFC;}
+  td.r{text-align:right;}
+  .ck{width:16px;height:16px;border:1.5px solid #cdd1d6;border-radius:5px;display:inline-block;vertical-align:middle;}
+  .ck.on{background:var(--ink);border-color:var(--ink);position:relative;}
+  .ck.on::after{content:"✓";color:#fff;font-size:11px;position:absolute;inset:0;display:flex;align-items:center;justify-content:center;}
+  .pid{font-size:12.5px;color:#6b7280;}
+  .cell-item{display:flex;align-items:center;gap:11px;}
+  .thumb{width:36px;height:36px;border-radius:8px;flex:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.05);}
+  .t-gold{background:linear-gradient(135deg,#f0d9a7,#caa14e);}
+  .t-rose{background:linear-gradient(135deg,#f2cdbf,#cf8f7d);}
+  .t-silver{background:linear-gradient(135deg,#e3e6ea,#a9b0b8);}
+  .t-bead{background:linear-gradient(135deg,#dfe7f2,#9fb2cc);}
+  .t-green{background:linear-gradient(135deg,#cfe6d8,#7fb398);}
+  .nm{font-weight:600;}
+  .sub-nm{font-weight:500;color:#3f454c;}
+  .tag{font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:5px;margin-left:7px;letter-spacing:.2px;}
+  .tag.combo{background:var(--accent-soft);color:var(--accent);}
+  .tag.var{background:#eef0f2;color:#6b7280;}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:7px;vertical-align:middle;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);}
+  .stock-ok{font-weight:600;}
+  .stock-low{font-weight:700;color:var(--danger);}
+  .stock-low .pill{font-size:10px;background:#fdecec;color:var(--danger);border-radius:5px;padding:1px 6px;margin-left:6px;font-weight:600;}
+  .more{color:var(--muted);font-size:16px;letter-spacing:1px;}
+  .expand{color:var(--muted-2);font-size:11px;margin-right:6px;}
+
+  /* floating contextual action bar — signature */
+  .floatbar{position:absolute;left:50%;transform:translateX(-50%);bottom:22px;
+    background:var(--ink);color:#fff;border-radius:12px;display:flex;align-items:center;gap:4px;
+    padding:8px 8px 8px 16px;box-shadow:0 12px 30px rgba(16,20,26,.32);}
+  .floatbar .sel{font-size:13px;margin-right:10px;}
+  .floatbar .sel b{color:#3FBF8F;}
+  .floatbar .x{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#9aa1ab;font-size:13px;}
+  .fb-btn{height:30px;border-radius:8px;padding:0 12px;font-size:13px;color:#e7eaee;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.06);}
+  .fb-btn.primary{background:var(--accent);color:#fff;font-weight:600;}
+
+  .note{max-width:1320px;margin:18px auto 0;font-size:12.5px;color:#6b7280;line-height:1.85;}
+  .note b{color:var(--ink);}
+  .swatches{display:flex;gap:10px;margin:8px 0 0;flex-wrap:wrap;}
+  .sw{display:flex;align-items:center;gap:7px;font-size:11.5px;color:#5b616a;}
+  .sw i{width:16px;height:16px;border-radius:4px;display:inline-block;border:1px solid rgba(0,0,0,.06);}
+</style>
+</head>
+<body>
+
+<div class="lead">
+  <h1>配件管理 — 新设计语言提案</h1>
+  <p>近黑 + 祖母绿单色体系 · 强层级排版（大写小标签压大数字）· 胶囊筛选 · 深色侧栏 · 浮动操作条。配色/排版取自你给的 Mate 参考，内容套真实配件数据。</p>
+</div>
+
+<div class="app">
+  <!-- ============ sidebar ============ -->
+  <aside class="side">
+    <div class="brand"><span class="mk">◆</span><b>饰品店</b></div>
+    <div class="s-search"><span style="color:#6b7280">⌕</span><span class="ph">搜索…</span><span class="kbd">⌘K</span></div>
+
+    <div class="s-grp">工作台</div>
+    <div class="s-item"><span class="ic">▦</span>进度看板</div>
+    <div class="s-item"><span class="ic">⌂</span>仪表盘</div>
+
+    <div class="s-grp">商品</div>
+    <div class="s-item on"><span class="ic">⊞</span>配件管理</div>
+    <div class="s-item"><span class="ic">◈</span>饰品管理</div>
+    <div class="s-item"><span class="ic">▢</span>饰品模板</div>
+
+    <div class="s-grp">生产</div>
+    <div class="s-item"><span class="ic">🧾</span>订单管理</div>
+    <div class="s-item"><span class="ic">🛒</span>配件采购</div>
+    <div class="s-item"><span class="ic">⟳</span>待补货清单<span class="dot">5</span></div>
+    <div class="s-item"><span class="ic">⚡</span>电镀</div>
+    <div class="s-item"><span class="ic">✋</span>手工单</div>
+
+    <div class="spacer"></div>
+    <div class="s-item"><span class="ic">🗄</span>库存总表</div>
+    <div class="s-user"><span class="av"></span><span class="nm">店长 · Allen<small>管理员</small></span></div>
+  </aside>
+
+  <!-- ============ main ============ -->
+  <div class="main">
+    <div class="top">
+      <div class="crumbs">商品 / 配件管理</div>
+      <div class="title-row">
+        <h1 class="pg">配件管理<span class="cnt">共 1,284 个配件</span></h1>
+        <div class="top-actions">
+          <span class="btn"><span class="ic">↧</span>导入配件</span>
+          <span class="btn ink"><span class="ic">＋</span>新增配件</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- stat strip -->
+    <div class="stats">
+      <div class="stat"><div class="k">配件总数</div><div class="v mono">1,284</div><div class="d">吊坠 312 · 链条 188 · 小配件 784</div></div>
+      <div class="stat"><div class="k">组合件</div><div class="v mono">96</div><div class="d">含 BOM 子件</div></div>
+      <div class="stat"><div class="k">低库存预警</div><div class="v mono" style="color:var(--danger)">23</div><div class="d"><span class="down">↑ 4</span> 较上周</div></div>
+      <div class="stat"><div class="k">本月采购额</div><div class="v mono"><small>¥</small>86,400</div><div class="d"><span class="up">↑ 12%</span> 环比</div></div>
+    </div>
+
+    <!-- filters -->
+    <div class="filters">
+      <div class="chips">
+        <span class="chip on">全部 <span class="n">1284</span></span>
+        <span class="chip">吊坠 <span class="n">312</span></span>
+        <span class="chip">链条 <span class="n">188</span></span>
+        <span class="chip">小配件 <span class="n">784</span></span>
+      </div>
+      <div class="search"><span class="ic">⌕</span><span class="ph">搜索配件名称 / 编号</span></div>
+    </div>
+
+    <!-- table -->
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:38px"></th>
+            <th>编号</th>
+            <th>配件</th>
+            <th>类目</th>
+            <th>颜色</th>
+            <th class="r">单件成本</th>
+            <th class="r">当前库存</th>
+            <th style="width:48px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="sel">
+            <td><span class="ck on"></span></td>
+            <td class="pid mono">PJ-DZ-00012</td>
+            <td><div class="cell-item"><span class="thumb t-gold"></span><span class="nm">蝴蝶吊坠底托</span></div></td>
+            <td>吊坠</td>
+            <td><span class="dot" style="background:#d9b24a"></span>金色</td>
+            <td class="r mono"><small style="color:var(--muted)">¥</small> 2.40</td>
+            <td class="r mono"><span class="stock-ok">1,860</span></td>
+            <td class="r"><span class="more">⋯</span></td>
+          </tr>
+          <tr>
+            <td><span class="ck"></span></td>
+            <td class="pid mono">PJ-LT-00008</td>
+            <td><div class="cell-item"><span class="thumb t-rose"></span><span class="nm">玫瑰金链条</span><span class="tag var">3 变体</span></div></td>
+            <td>链条</td>
+            <td><span class="dot" style="background:#cf8f7d"></span>玫瑰金</td>
+            <td class="r mono"><small style="color:var(--muted)">¥</small> 5.10</td>
+            <td class="r mono"><span class="stock-ok">920</span></td>
+            <td class="r"><span class="more">⋯</span></td>
+          </tr>
+          <tr class="sub">
+            <td></td>
+            <td class="pid mono">PJ-LT-00008-45cm</td>
+            <td><div class="cell-item" style="padding-left:46px"><span class="expand">└</span><span class="sub-nm">玫瑰金链条 · 45cm</span></div></td>
+            <td>链条</td>
+            <td><span class="dot" style="background:#cf8f7d"></span>玫瑰金</td>
+            <td class="r mono"><small style="color:var(--muted)">¥</small> 5.60</td>
+            <td class="r mono"><span class="stock-ok">340</span></td>
+            <td class="r"><span class="more">⋯</span></td>
+          </tr>
+          <tr class="sel">
+            <td><span class="ck on"></span></td>
+            <td class="pid mono">PJ-DZ-00033</td>
+            <td><div class="cell-item"><span class="thumb t-green"></span><span class="nm">复古耳坠组件</span><span class="tag combo">组合</span></div></td>
+            <td>吊坠</td>
+            <td><span class="dot" style="background:#7fb398"></span>古银</td>
+            <td class="r mono"><small style="color:var(--muted)">¥</small> 8.75</td>
+            <td class="r mono"><span class="stock-ok">410</span></td>
+            <td class="r"><span class="more">⋯</span></td>
+          </tr>
+          <tr>
+            <td><span class="ck"></span></td>
+            <td class="pid mono">PJ-X-00102</td>
+            <td><div class="cell-item"><span class="thumb t-rose"></span><span class="nm">玫瑰金弹簧扣</span></div></td>
+            <td>小配件</td>
+            <td><span class="dot" style="background:#cf8f7d"></span>玫瑰金</td>
+            <td class="r mono"><small style="color:var(--muted)">¥</small> 0.32</td>
+            <td class="r mono"><span class="stock-low">48 <span class="pill">低</span></span></td>
+            <td class="r"><span class="more">⋯</span></td>
+          </tr>
+          <tr class="sel">
+            <td><span class="ck on"></span></td>
+            <td class="pid mono">PJ-X-00210</td>
+            <td><div class="cell-item"><span class="thumb t-bead"></span><span class="nm">4mm 米珠</span></div></td>
+            <td>小配件</td>
+            <td><span class="dot" style="background:#9fb2cc"></span>银色</td>
+            <td class="r mono"><small style="color:var(--muted)">¥</small> 0.05</td>
+            <td class="r mono"><span class="stock-ok">12,400</span></td>
+            <td class="r"><span class="more">⋯</span></td>
+          </tr>
+          <tr>
+            <td><span class="ck"></span></td>
+            <td class="pid mono">PJ-X-00188</td>
+            <td><div class="cell-item"><span class="thumb t-silver"></span><span class="nm">合金吊坠托</span><span class="tag combo">组合</span></div></td>
+            <td>小配件</td>
+            <td><span class="dot" style="background:#a9b0b8"></span>银色</td>
+            <td class="r mono"><small style="color:var(--muted)">¥</small> 1.18</td>
+            <td class="r mono"><span class="stock-low">9 <span class="pill">低</span></span></td>
+            <td class="r"><span class="more">⋯</span></td>
+          </tr>
+          <tr>
+            <td><span class="ck"></span></td>
+            <td class="pid mono">PJ-DZ-00051</td>
+            <td><div class="cell-item"><span class="thumb t-gold"></span><span class="nm">星月吊坠</span></div></td>
+            <td>吊坠</td>
+            <td><span class="dot" style="background:#d9b24a"></span>金色</td>
+            <td class="r mono"><small style="color:var(--muted)">¥</small> 3.05</td>
+            <td class="r mono"><span class="stock-ok">2,210</span></td>
+            <td class="r"><span class="more">⋯</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- floating contextual action bar (signature) -->
+    <div class="floatbar">
+      <span class="x">✕</span>
+      <span class="sel">已选 <b>3</b></span>
+      <span class="fb-btn"><span>↧</span>批量入库</span>
+      <span class="fb-btn"><span>⎘</span>导出</span>
+      <span class="fb-btn"><span>⚡</span>建电镀单</span>
+      <span class="fb-btn primary"><span>＋</span>建采购单</span>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <b>这版怎么对应你的诉求：</b><br>
+  · <b>配色</b>：近黑 <span class="swatches" style="display:inline-flex;vertical-align:middle"><span class="sw"><i style="background:#1A1D21"></i>#1A1D21</span><span class="sw"><i style="background:#1E7A5A"></i>祖母绿 #1E7A5A</span><span class="sw"><i style="background:#10141A"></i>侧栏 #10141A</span><span class="sw"><i style="background:#E5484D"></i>预警 #E5484D</span></span> —— 绿色只用在"激活导航 / 组合标签 / 正向 / 主操作"，其余克制成黑白灰。<br>
+  · <b>排版</b>：大标题 26px/700 + 全大写小标签（uppercase eyebrow）压大数字、等宽数字对齐金额库存、发丝分隔线、大留白。<br>
+  · <b>问题①（组块挤成一排）</b>：用"统计条 + 胶囊筛选 + 清晰表头分区"重新组织，信息成组、有呼吸。<br>
+  · <b>问题②（操作够不着 / 按钮沉底）</b>：勾选后<b>浮动深色操作条</b>常驻屏幕中下，批量入库/导出/建单永远触手可及——同一模式也用于建单/回收页的"提交"。<br>
+  · <b>signature</b>：① 标签压大数字的统计块 ② 浮动深色操作条。
+</div>
+
+</body>
+</html>
