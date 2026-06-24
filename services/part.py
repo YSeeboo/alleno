@@ -70,6 +70,8 @@ def create_part(db: Session, data: dict) -> Part:
             raise ValueError(f"Parent part not found: {parent_part_id}")
         if parent.parent_part_id is not None:
             raise ValueError("不支持多层嵌套：目标配件已有父配件")
+        if parent.is_composite:
+            raise ValueError("组合件不支持变体")
     data.pop("unit_cost", None)
     if "spec" in data:
         data["spec"] = (data["spec"].strip() if data["spec"] else None) or None
@@ -301,6 +303,8 @@ def _find_existing_variant(db: Session, part_id: str, variant_name: str, color: 
 
 def create_part_variant(db: Session, part_id: str, color_code: Optional[str] = None, spec: Optional[str] = None) -> Part:
     source, root, color, spec = _validate_variant_request(db, part_id, color_code, spec)
+    if root.is_composite:
+        raise ValueError("组合件不支持变体")
     variant_name = _build_variant_name(root.name, color, spec)
     existing = _find_existing_variant(db, root.id, variant_name, color, spec)
     if existing is not None:
