@@ -197,3 +197,54 @@ def test_copy_jewelry_empty_bom(db):
     src = create_jewelry(db, {"name": "S", "category": "单件"})
     new = copy_jewelry(db, src.id, {"name": "S-副本"})
     assert get_bom(db, new.id) == []
+
+
+# ---------------------------------------------------------------------------
+# add_jewelry_sibling tests
+# ---------------------------------------------------------------------------
+
+from services.jewelry import add_jewelry_sibling
+from models.bom import Bom
+from models.part import Part
+
+
+def test_add_sibling_assigns_suffix_and_backfills_group(db):
+    base = create_jewelry(db, {"name": "珍珠项链", "category": "套装", "retail_price": 168})
+    s1 = add_jewelry_sibling(db, base.id, {"color": "白K"})
+    s2 = add_jewelry_sibling(db, base.id, {"color": "玫瑰金"})
+    assert s1.id == f"{base.id}-A"
+    assert s2.id == f"{base.id}-B"
+    # 基准被回填，三者同组
+    assert get_jewelry(db, base.id).style_group == base.id
+    assert s1.style_group == base.id
+    assert s2.style_group == base.id
+    # 预填基准值 + override 生效
+    assert s1.name == "珍珠项链"
+    assert s1.color == "白K"
+
+
+def test_add_sibling_from_member_does_not_nest(db):
+    base = create_jewelry(db, {"name": "耳钉", "category": "单件"})
+    a = add_jewelry_sibling(db, base.id, {"color": "白K"})
+    # 从成员 -A 再加，仍挂回基准组，得到 -B（不是 -A-A）
+    b = add_jewelry_sibling(db, a.id, {"color": "玫瑰金"})
+    assert b.id == f"{base.id}-B"
+    assert b.style_group == base.id
+
+
+def test_add_sibling_copies_bom(db):
+    db.add(Part(id="PJ-DZ-T1", name="坠", category="吊坠", size_tier="medium"))
+    db.flush()
+    base = create_jewelry(db, {"name": "带BOM", "category": "套装"})
+    db.add(Bom(id="BM-T1", jewelry_id=base.id, part_id="PJ-DZ-T1", qty_per_unit=2))
+    db.flush()
+    sib = add_jewelry_sibling(db, base.id, {"color": "白K"})
+    sib_boms = db.query(Bom).filter(Bom.jewelry_id == sib.id).all()
+    assert len(sib_boms) == 1
+    assert sib_boms[0].part_id == "PJ-DZ-T1"
+    assert float(sib_boms[0].qty_per_unit) == 2
+
+
+def test_add_sibling_unknown_base_raises(db):
+    with pytest.raises(ValueError):
+        add_jewelry_sibling(db, "SP-SET-99999", {})

@@ -80,6 +80,82 @@ def delete_jewelry(db: Session, jewelry_id: str) -> None:
     db.flush()
 
 
+def _suffix_to_num(s: str) -> int:
+    """双射 26 进制：A->1, Z->26, AA->27。"""
+    n = 0
+    for ch in s:
+        n = n * 26 + (ord(ch) - ord("A") + 1)
+    return n
+
+
+def _num_to_suffix(n: int) -> str:
+    out = ""
+    while n > 0:
+        n, r = divmod(n - 1, 26)
+        out = chr(ord("A") + r) + out
+    return out
+
+
+def _next_sibling_suffix(db: Session, group: str) -> str:
+    """扫描同组已有后缀成员，返回下一个可用字母后缀。"""
+    prefix = f"{group}-"
+    members = db.query(Jewelry).filter(Jewelry.style_group == group).all()
+    nums = []
+    for m in members:
+        if m.id.startswith(prefix):
+            suf = m.id[len(prefix):]
+            if suf.isalpha() and suf.isupper():
+                nums.append(_suffix_to_num(suf))
+    return _num_to_suffix((max(nums) + 1) if nums else 1)
+
+
+def add_jewelry_sibling(db: Session, base_id: str, override_data: dict) -> Jewelry:
+    """以 base_id 为参照创建一条同款饰品（同 style_group，带后缀 ID，复制 BOM）。"""
+    base = get_jewelry(db, base_id)
+    if base is None:
+        raise ValueError(f"Jewelry not found: {base_id}")
+    # 不嵌套：解析到基准组键
+    group = base.style_group or base.id
+    group_base = base if group == base.id else get_jewelry(db, group)
+    # 回填基准自身的 style_group（首次成组）
+    if group_base is not None and group_base.style_group is None:
+        group_base.style_group = group
+        db.flush()
+
+    suffix = _next_sibling_suffix(db, group)
+    new_id = f"{group}-{suffix}"
+
+    src = group_base if group_base is not None else base
+    base_data = {
+        "name": src.name,
+        "image": src.image,
+        "structure_image": src.structure_image,
+        "category": src.category,
+        "color": src.color,
+        "unit": src.unit,
+        "retail_price": src.retail_price,
+        "wholesale_price": src.wholesale_price,
+        "handcraft_cost": src.handcraft_cost,
+    }
+    safe_override = {k: v for k, v in (override_data or {}).items() if k != "category"}
+    merged = {**base_data, **safe_override}
+    fields = {k: v for k, v in merged.items() if k in _JEWELRY_MODEL_FIELDS and k != "style_group"}
+
+    sibling = Jewelry(id=new_id, style_group=group, **fields)
+    db.add(sibling)
+    db.flush()
+
+    for src_bom in db.query(Bom).filter(Bom.jewelry_id == src.id).all():
+        db.add(Bom(
+            id=_next_id(db, Bom, "BM"),
+            jewelry_id=new_id,
+            part_id=src_bom.part_id,
+            qty_per_unit=src_bom.qty_per_unit,
+        ))
+    db.flush()
+    return sibling
+
+
 def copy_jewelry(db: Session, source_id: str, override_data: dict) -> Jewelry:
     """Clone a jewelry's basic info + BOM rows into a new jewelry record.
 
