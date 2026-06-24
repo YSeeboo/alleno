@@ -8,3 +8,4 @@ export const updateJewelryStatus = (id, status) =>
   api.patch(`/jewelries/${id}/status`, { status })
 export const deleteJewelry = (id) => api.delete(`/jewelries/${id}`)
 export const copyJewelry = (sourceId, data) => api.post(`/jewelries/${sourceId}/copy`, data)
+export const addJewelrySibling = (baseId, data) => api.post(`/jewelries/${baseId}/siblings`, data)
