@@ -5,7 +5,7 @@
       <div class="page-crumbs">商品 / 配件管理</div>
       <div class="title-row">
         <h1 class="page-title">
-          配件管理<span class="title-count">共 {{ rows.length }} 个配件</span>
+          配件管理<span class="title-count">共 {{ rows.length }} 个配件 · {{ displayRows.length }} 个根件</span>
         </h1>
         <div class="top-actions">
           <n-button class="btn-outline" @click="openImportModal">导入配件</n-button>
@@ -56,8 +56,8 @@
 
     <!-- Table -->
     <n-spin :show="loading">
-      <div class="table-wrap" v-if="rows.length > 0 || loading">
-        <n-data-table :columns="columns" :data="rows" :bordered="false" />
+      <div class="table-wrap" v-if="tableData.length > 0 || loading">
+        <n-data-table :columns="columns" :data="tableData" :bordered="false" :row-key="(r) => r.id" />
       </div>
       <n-empty v-else-if="!loading" description="暂无数据" style="margin: 40px 0;" />
     </n-spin>
@@ -195,8 +195,8 @@
           </n-collapse-item>
         </n-collapse>
 
-        <!-- 变体（编辑时显示） -->
-        <template v-if="editingId">
+        <!-- 变体（编辑时显示，组合件不显示） -->
+        <template v-if="editingId && !editingIsComposite">
           <div class="modal-sec-h" style="margin-top: 18px;">变体</div>
           <n-form-item label="创建颜色变体">
             <n-space>
@@ -369,6 +369,36 @@ const selectCategory = (value) => {
 const compositeCount = computed(() => rows.value.filter((r) => r.is_composite).length)
 const lowStockCount = computed(() => rows.value.filter((r) => r.stock < 10).length)
 
+// Grouping tree: root parts (parent_part_id == null) with their variant children
+const expanded = ref(new Set())
+function toggleGroup(rootId) {
+  const s = new Set(expanded.value)
+  s.has(rootId) ? s.delete(rootId) : s.add(rootId)
+  expanded.value = s
+}
+const displayRows = computed(() => {
+  const variantsByRoot = new Map()
+  const roots = []
+  for (const r of rows.value) {
+    if (r.parent_part_id) {
+      if (!variantsByRoot.has(r.parent_part_id)) variantsByRoot.set(r.parent_part_id, [])
+      variantsByRoot.get(r.parent_part_id).push(r)
+    } else roots.push(r)
+  }
+  return roots.map((root) => {
+    const children = (variantsByRoot.get(root.id) || []).slice().sort((a, b) => a.id.localeCompare(b.id))
+    return { ...root, _children: children }
+  })
+})
+const tableData = computed(() => {
+  const out = []
+  for (const r of displayRows.value) {
+    out.push(r)
+    if (expanded.value.has(r.id)) for (const c of r._children) out.push({ ...c, _isChild: true })
+  }
+  return out
+})
+
 const unitOptions = [
   { label: '个', value: '个' },
   { label: '条', value: '条' },
@@ -439,6 +469,7 @@ const doCreateSpecVariant = async () => {
 const showModal = ref(false)
 const editingId = ref(null)
 const editingIsVariant = ref(false)
+const editingIsComposite = ref(false)
 const saving = ref(false)
 const formRef = ref(null)
 const form = reactive({ name: '', image: '', category: null, color: '', spec: '', unit: '个', unit_cost: null, plating_process: '', parent_part_id: null, size_tier: null, buffer_ratio_override: null, buffer_floor_override: null })
@@ -557,6 +588,7 @@ const parentPartOptions = computed(() => {
 const openCreate = () => {
   editingId.value = null
   editingIsVariant.value = false
+  editingIsComposite.value = false
   existingVariantColors.value = []
   specVariantInput.value = ''
   specVariantColor.value = null
@@ -580,6 +612,7 @@ const openEdit = async (row) => {
   const rowId = row.id
   editingId.value = rowId
   editingIsVariant.value = !!row.parent_part_id
+  editingIsComposite.value = !!row.is_composite
   existingVariantColors.value = []
   specVariantInput.value = ''
   specVariantColor.value = null
@@ -783,8 +816,15 @@ const columns = [
   {
     title: '编号',
     key: 'id',
-    width: 130,
-    render: (row) => h('span', { class: 'cell-id mono' }, row.id),
+    width: 150,
+    render: (row) => {
+      const hasKids = !row._isChild && row._children && row._children.length
+      const caret = hasKids
+        ? h('span', { class: 'pt-caret', style: expanded.value.has(row.id) ? 'transform:rotate(90deg)' : '',
+            onClick: (e) => { e.stopPropagation(); toggleGroup(row.id) } }, '▸')
+        : h('span', { class: 'pt-caret pt-caret-spacer' }, '▸')
+      return h('span', { class: 'cell-id mono' }, [caret, ' ', row.id])
+    },
   },
   {
     title: '配件',
@@ -797,7 +837,10 @@ const columns = [
       if (row.is_composite) {
         children.push(h('span', { class: 'tag-combo' }, '组合'))
       }
-      return h('div', { class: 'cell-name-wrap' }, children)
+      if (!row._isChild && row._children && row._children.length) {
+        children.push(h('span', { class: 'count-pill' }, `变体×${row._children.length}`))
+      }
+      return h('div', { class: row._isChild ? 'cell-name-wrap pt-indent' : 'cell-name-wrap' }, children)
     },
   },
   { title: '类目', key: 'category' },
@@ -1255,5 +1298,35 @@ onMounted(() => {
   font-size: 12px;
   color: #8B9096;
   font-variant-numeric: tabular-nums;
+}
+
+/* ── Variant grouping tree ── */
+.pt-caret {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: #6b7280;
+  font-size: 10px;
+  align-items: center;
+  justify-content: center;
+  transition: transform .12s;
+}
+.pt-caret-spacer {
+  visibility: hidden;
+  cursor: default;
+}
+.count-pill {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: #EEF1F4;
+  color: #475569;
+  margin-left: 6px;
+}
+.pt-indent {
+  padding-left: 26px;
 }
 </style>
