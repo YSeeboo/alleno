@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>饰品管理刷新 + 款式归属 / 配件变体折叠 — Mockup</title>
+<style>
+  :root{
+    --ink:#1A1D21; --emerald:#1E7A5A; --accent-soft:#E6F2EC; --danger:#E5484D;
+    --amber:#B7791F; --line:#ECEDEF; --line-2:#F4F5F6; --muted:#8B9096;
+    --muted-2:#AEB3B8; --sub:#F6F7F8;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",sans-serif;
+    color:var(--ink);background:#F2F3F5;padding:32px 0;-webkit-font-smoothing:antialiased;}
+  .page{max-width:1080px;margin:0 auto 40px;background:#fff;border-radius:14px;
+    box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden;}
+  .variant-label{max-width:1080px;margin:36px auto 10px;font-size:11px;font-weight:700;
+    letter-spacing:.6px;color:#6b7280;text-transform:uppercase;padding:0 4px;}
+  .note{max-width:1080px;margin:0 auto 22px;font-size:12px;color:var(--muted);
+    padding:10px 14px;background:#fff;border-radius:8px;border-left:3px solid var(--emerald);}
+
+  /* page top */
+  .page-top{padding:22px 28px 0;}
+  .page-crumbs{font-size:12px;color:var(--muted);}
+  .title-row{display:flex;align-items:center;justify-content:space-between;margin-top:6px;}
+  .page-title{font-size:22px;font-weight:700;margin:0;line-height:1.2;}
+  .title-count{font-size:14px;font-weight:500;color:var(--muted);margin-left:10px;}
+  .top-actions{display:flex;gap:8px;}
+  .btn-outline{height:36px;border-radius:9px;border:1px solid var(--line);background:#fff;
+    color:var(--ink);font-size:13.5px;font-weight:500;padding:0 14px;cursor:pointer;}
+  .btn-ink{height:36px;border-radius:9px;background:var(--ink);border:1px solid var(--ink);
+    color:#fff;font-size:13.5px;font-weight:500;padding:0 14px;cursor:pointer;}
+
+  /* stat strip */
+  .stat-strip{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);
+    border-radius:10px;margin:20px 28px 0;background:#fff;overflow:hidden;}
+  .stat-card{padding:14px 20px;border-right:1px solid var(--line);}
+  .stat-card:last-child{border-right:0;}
+  .stat-label{font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);font-weight:600;}
+  .stat-value{font-size:26px;font-weight:700;letter-spacing:-.5px;margin-top:5px;line-height:1;}
+  .stat-danger{color:var(--danger);}
+  .mono{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";}
+
+  /* filter row */
+  .filter-row{display:flex;align-items:center;gap:12px;padding:18px 28px 14px;flex-wrap:wrap;}
+  .chip-group{display:flex;gap:7px;flex-wrap:wrap;}
+  .chip{height:32px;border-radius:16px;border:1px solid var(--line);background:#fff;padding:0 14px;
+    font-size:13px;color:#4b5158;display:inline-flex;align-items:center;cursor:pointer;white-space:nowrap;}
+  .chip:hover{border-color:#c8cdd4;}
+  .chip-active{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:500;}
+  .search-wrap{margin-left:auto;}
+  .search-box{height:34px;width:240px;border:1px solid var(--line);border-radius:8px;padding:0 12px;
+    font-size:13px;color:var(--muted);display:flex;align-items:center;}
+
+  /* table */
+  .table-wrap{margin:0 28px 28px;border:1px solid var(--line);border-radius:10px;overflow:hidden;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  thead th{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);
+    text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);background:#FAFBFC;}
+  thead th.r{text-align:right;}
+  tbody td{padding:11px 14px;border-bottom:1px solid var(--line-2);vertical-align:middle;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr.child td{background:#FCFCFD;}
+  tbody tr.child{display:none;}
+  tbody tr.child.open{display:table-row;}
+  td.r{text-align:right;}
+
+  .cell-id{font-size:12.5px;color:#6b7280;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .suffix{color:var(--ink);font-weight:700;}
+  .name-cell{display:flex;align-items:center;gap:10px;}
+  .indent{padding-left:26px;position:relative;}
+  .indent::before{content:"";position:absolute;left:11px;top:-11px;bottom:50%;width:1px;background:#DfE2E6;}
+  .indent::after{content:"";position:absolute;left:11px;top:50%;width:9px;height:1px;background:#DfE2E6;}
+  .thumb{width:34px;height:34px;border-radius:7px;background:var(--sub);display:inline-flex;
+    align-items:center;justify-content:center;color:var(--muted-2);font-size:9px;flex-shrink:0;
+    border:1px solid var(--line);}
+  .nm-main{font-weight:500;}
+  .nm-sub{color:var(--muted);font-size:11px;}
+  .caret{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;
+    border-radius:5px;cursor:pointer;color:#6b7280;font-size:10px;transition:background .12s,transform .12s;flex-shrink:0;}
+  .caret:hover{background:var(--line);}
+  .caret.spacer{visibility:hidden;}
+  .grouprow.open .caret{transform:rotate(90deg);}
+  .count-pill{font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:5px;background:#EEF1F4;
+    color:#475569;letter-spacing:.2px;white-space:nowrap;}
+  .tag-combo{font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:5px;background:var(--accent-soft);
+    color:var(--emerald);letter-spacing:.2px;white-space:nowrap;}
+  .cell-color{display:inline-flex;align-items:center;gap:6px;}
+  .color-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.12);}
+  .cat-tag{font-size:11px;color:#4b5158;}
+  .currency-sym{color:var(--muted);font-size:11px;}
+  .stock-ok{font-weight:600;}
+  .stock-low{font-weight:700;color:var(--danger);display:inline-flex;align-items:center;gap:5px;}
+  .pill-low{font-size:10px;background:#fdecec;color:var(--danger);border-radius:5px;padding:1px 6px;font-weight:600;}
+  .badge{font-size:11px;font-weight:500;cursor:pointer;}
+  .badge-green{color:var(--emerald);}
+  .badge-gray{color:var(--muted-2);}
+  .acts{display:inline-flex;gap:6px;}
+  .icon-btn{width:26px;height:26px;border:1px solid var(--line);border-radius:7px;background:#fff;
+    color:#6b7280;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;justify-content:center;}
+  .icon-btn:hover{border-color:#c8cdd4;color:var(--ink);}
+
+  /* modal */
+  .modal-stage{max-width:1080px;margin:0 auto;background:rgba(26,29,33,.05);border-radius:14px;
+    padding:30px;display:flex;justify-content:center;}
+  .modal{width:560px;background:#fff;border-radius:12px;box-shadow:0 12px 44px rgba(0,0,0,.14);overflow:hidden;}
+  .modal-h{padding:16px 22px;border-bottom:1px solid var(--line);font-size:15px;font-weight:600;
+    display:flex;align-items:center;gap:10px;}
+  .modal-h .id-preview{font-size:12px;font-weight:600;color:var(--emerald);background:var(--accent-soft);
+    padding:2px 9px;border-radius:6px;font-variant-numeric:tabular-nums;}
+  .modal-b{padding:20px 22px;}
+  .modal-alert{font-size:12.5px;color:#7a5321;background:#f6efe2;border:1px solid #e7d3ab;
+    border-radius:8px;padding:9px 12px;margin-bottom:16px;}
+  .modal-alert b{color:#603d15;}
+  .modal-sec-h{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);font-weight:600;margin:0 0 10px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .full{grid-column:1/-1;}
+  .fld label{display:block;font-size:12.5px;color:#4b5158;margin-bottom:5px;}
+  .inp{width:100%;height:36px;border:1px solid #DFE2E6;border-radius:9px;padding:0 12px;font-size:13.5px;
+    color:var(--ink);background:#fff;display:flex;align-items:center;}
+  .inp.ph{color:var(--muted);justify-content:space-between;}
+  .inp.dis{background:var(--sub);color:var(--muted);}
+  .pills{display:flex;gap:8px;}
+  .pill{height:36px;flex:1;border:1px solid #DFE2E6;border-radius:9px;display:flex;align-items:center;
+    justify-content:center;font-size:14px;color:#4b5158;background:#fff;}
+  .pill.on{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:500;}
+  .pill.dis{opacity:.6;}
+  .note-s{color:var(--muted);font-size:11.5px;margin-top:5px;}
+  .modal-f{padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px;}
+  .btn{padding:8px 18px;border-radius:9px;font-size:13.5px;cursor:pointer;border:1px solid var(--line);background:#fff;}
+  .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink);}
+</style>
+</head>
+<body>
+
+<p class="note">
+  Mockup · 仅展示效果,未写任何业务代码。三块:① 饰品管理刷新版(可展开「款式组」,后缀 -A/-B,B1 用 <code>style_group</code> 列)② 添加同款弹窗 ③ 配件管理变体折叠版。表格里有 ▸ 的行可点击展开。
+</p>
+
+<!-- ════════ ① 饰品管理(刷新 + 款式归属) ════════ -->
+<div class="variant-label">① 饰品管理 — 刷新视觉 + 可展开款式组</div>
+<div class="page">
+  <div class="page-top">
+    <div class="page-crumbs">商品 / 饰品管理</div>
+    <div class="title-row">
+      <h1 class="page-title">饰品管理<span class="title-count">共 14 件饰品 · 3 个款式组</span></h1>
+      <div class="top-actions">
+        <button class="btn-outline">从模板创建</button>
+        <button class="btn-ink">新增饰品</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stat-strip">
+    <div class="stat-card"><div class="stat-label">饰品总数</div><div class="stat-value mono">14</div></div>
+    <div class="stat-card"><div class="stat-label">低库存预警</div><div class="stat-value mono stat-danger">2</div></div>
+    <div class="stat-card"><div class="stat-label">已停用</div><div class="stat-value mono">1</div></div>
+  </div>
+
+  <div class="filter-row">
+    <div class="chip-group">
+      <button class="chip chip-active">全部</button>
+      <button class="chip">套装</button>
+      <button class="chip">单件</button>
+      <button class="chip">单对</button>
+      <button class="chip">未分类</button>
+    </div>
+    <div class="search-wrap"><div class="search-box">搜索饰品名称 / 编号</div></div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:170px">编号</th>
+          <th>饰品</th>
+          <th style="width:70px">类目</th>
+          <th style="width:90px">颜色</th>
+          <th style="width:56px">单位</th>
+          <th class="r" style="width:90px">零售价</th>
+          <th class="r" style="width:90px">批发价</th>
+          <th class="r" style="width:90px">总成本</th>
+          <th class="r" style="width:88px">库存</th>
+          <th style="width:62px">状态</th>
+          <th style="width:96px">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- 款式组 1: 珍珠吊坠项链 (base + 2 同款) -->
+        <tr class="grouprow open" data-group="g1" onclick="tg('g1',this)">
+          <td><span class="cell-id"><span class="caret">▸</span> SP-SET-00002</span></td>
+          <td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">珍珠吊坠项链</span> <span class="count-pill">同款 ×2</span><div class="nm-sub">套装 · 款式组基准</div></span></span></td>
+          <td><span class="cat-tag">套装</span></td>
+          <td><span class="cell-color"><span class="color-dot" style="background:#E8C36B"></span>金色</span></td>
+          <td>套</td>
+          <td class="r mono"><span class="currency-sym">¥</span>168</td>
+          <td class="r mono"><span class="currency-sym">¥</span>98</td>
+          <td class="r mono"><span class="currency-sym">¥</span>62.40</td>
+          <td class="r mono"><span class="stock-ok">23</span></td>
+          <td><span class="badge badge-green">• 启用</span></td>
+          <td><span class="acts"><button class="icon-btn" title="详情" onclick="event.stopPropagation()">→</button><button class="icon-btn" title="添加同款" onclick="event.stopPropagation()">＋</button><button class="icon-btn" title="更多" onclick="event.stopPropagation()">⋮</button></span></td>
+        </tr>
+        <tr class="child open" data-child="g1">
+          <td><span class="cell-id indent">SP-SET-00002<span class="suffix">-A</span></span></td>
+          <td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">珍珠吊坠项链</span><div class="nm-sub">白K · 同款变化</div></span></span></td>
+          <td><span class="cat-tag">套装</span></td>
+          <td><span class="cell-color"><span class="color-dot" style="background:#D9DCE0"></span>白K</span></td>
+          <td>套</td>
+          <td class="r mono"><span class="currency-sym">¥</span>168</td>
+          <td class="r mono"><span class="currency-sym">¥</span>98</td>
+          <td class="r mono"><span class="currency-sym">¥</span>61.80</td>
+          <td class="r mono"><span class="stock-low">3 <span class="pill-low">低</span></span></td>
+          <td><span class="badge badge-green">• 启用</span></td>
+          <td><span class="acts"><button class="icon-btn" title="详情">→</button><button class="icon-btn" title="编辑">✎</button><button class="icon-btn" title="更多">⋮</button></span></td>
+        </tr>
+        <tr class="child open" data-child="g1">
+          <td><span class="cell-id indent">SP-SET-00002<span class="suffix">-B</span></span></td>
+          <td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">珍珠吊坠项链(大坠)</span><div class="nm-sub">玫瑰金 · 换吊坠</div></span></span></td>
+          <td><span class="cat-tag">套装</span></td>
+          <td><span class="cell-color"><span class="color-dot" style="background:#E6B7A0"></span>玫瑰金</span></td>
+          <td>套</td>
+          <td class="r mono"><span class="currency-sym">¥</span>198</td>
+          <td class="r mono"><span class="currency-sym">¥</span>118</td>
+          <td class="r mono"><span class="currency-sym">¥</span>74.10</td>
+          <td class="r mono"><span class="stock-ok">11</span></td>
+          <td><span class="badge badge-green">• 启用</span></td>
+          <td><span class="acts"><button class="icon-btn" title="详情">→</button><button class="icon-btn" title="编辑">✎</button><button class="icon-btn" title="更多">⋮</button></span></td>
+        </tr>
+
+        <!-- 款式组 2: 折叠状态 -->
+        <tr class="grouprow" data-group="g2" onclick="tg('g2',this)">
+          <td><span class="cell-id"><span class="caret">▸</span> SP-PCS-00007</span></td>
+          <td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">小雏菊耳钉</span> <span class="count-pill">同款 ×3</span><div class="nm-sub">单件 · 款式组基准</div></span></span></td>
+          <td><span class="cat-tag">单件</span></td>
+          <td><span class="cell-color"><span class="color-dot" style="background:#E8C36B"></span>金色</span></td>
+          <td>个</td>
+          <td class="r mono"><span class="currency-sym">¥</span>39</td>
+          <td class="r mono"><span class="currency-sym">¥</span>22</td>
+          <td class="r mono"><span class="currency-sym">¥</span>13.20</td>
+          <td class="r mono"><span class="stock-ok">64</span></td>
+          <td><span class="badge badge-green">• 启用</span></td>
+          <td><span class="acts"><button class="icon-btn" title="详情" onclick="event.stopPropagation()">→</button><button class="icon-btn" title="添加同款" onclick="event.stopPropagation()">＋</button><button class="icon-btn" title="更多" onclick="event.stopPropagation()">⋮</button></span></td>
+        </tr>
+        <tr class="child" data-child="g2"><td><span class="cell-id indent">SP-PCS-00007<span class="suffix">-A</span></span></td><td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">小雏菊耳钉</span><div class="nm-sub">白K</div></span></span></td><td><span class="cat-tag">单件</span></td><td><span class="cell-color"><span class="color-dot" style="background:#D9DCE0"></span>白K</span></td><td>个</td><td class="r mono"><span class="currency-sym">¥</span>39</td><td class="r mono"><span class="currency-sym">¥</span>22</td><td class="r mono"><span class="currency-sym">¥</span>13.20</td><td class="r mono"><span class="stock-ok">28</span></td><td><span class="badge badge-green">• 启用</span></td><td><span class="acts"><button class="icon-btn">→</button><button class="icon-btn">✎</button><button class="icon-btn">⋮</button></span></td></tr>
+        <tr class="child" data-child="g2"><td><span class="cell-id indent">SP-PCS-00007<span class="suffix">-B</span></span></td><td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">小雏菊耳钉</span><div class="nm-sub">玫瑰金</div></span></span></td><td><span class="cat-tag">单件</span></td><td><span class="cell-color"><span class="color-dot" style="background:#E6B7A0"></span>玫瑰金</span></td><td>个</td><td class="r mono"><span class="currency-sym">¥</span>39</td><td class="r mono"><span class="currency-sym">¥</span>22</td><td class="r mono"><span class="currency-sym">¥</span>13.20</td><td class="r mono"><span class="stock-low">5 <span class="pill-low">低</span></span></td><td><span class="badge badge-gray">• 停用</span></td><td><span class="acts"><button class="icon-btn">→</button><button class="icon-btn">✎</button><button class="icon-btn">⋮</button></span></td></tr>
+        <tr class="child" data-child="g2"><td><span class="cell-id indent">SP-PCS-00007<span class="suffix">-C</span></span></td><td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">小雏菊耳钉(小号)</span><div class="nm-sub">金色 · 换尺寸</div></span></span></td><td><span class="cat-tag">单件</span></td><td><span class="cell-color"><span class="color-dot" style="background:#E8C36B"></span>金色</span></td><td>个</td><td class="r mono"><span class="currency-sym">¥</span>35</td><td class="r mono"><span class="currency-sym">¥</span>20</td><td class="r mono"><span class="currency-sym">¥</span>11.90</td><td class="r mono"><span class="stock-ok">40</span></td><td><span class="badge badge-green">• 启用</span></td><td><span class="acts"><button class="icon-btn">→</button><button class="icon-btn">✎</button><button class="icon-btn">⋮</button></span></td></tr>
+
+        <!-- 普通单条(无同款,无箭头) -->
+        <tr>
+          <td><span class="cell-id"><span class="caret spacer">▸</span> SP-PAIR-00011</span></td>
+          <td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">麻花纹手镯(一对)</span><div class="nm-sub">单对</div></span></span></td>
+          <td><span class="cat-tag">单对</span></td>
+          <td><span class="cell-color"><span class="color-dot" style="background:#E8C36B"></span>金色</span></td>
+          <td>对</td>
+          <td class="r mono"><span class="currency-sym">¥</span>258</td>
+          <td class="r mono"><span class="currency-sym">¥</span>150</td>
+          <td class="r mono"><span class="currency-sym">¥</span>96.00</td>
+          <td class="r mono"><span class="stock-ok">8</span></td>
+          <td><span class="badge badge-green">• 启用</span></td>
+          <td><span class="acts"><button class="icon-btn" title="详情">→</button><button class="icon-btn" title="添加同款">＋</button><button class="icon-btn" title="更多">⋮</button></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════════ ② 添加同款弹窗 ════════ -->
+<div class="variant-label">② 「添加同款」弹窗(从基准 SP-SET-00002 发起,自动分配 -C,预填+带 BOM)</div>
+<div class="modal-stage">
+  <div class="modal">
+    <div class="modal-h">添加同款 <span class="id-preview">将生成 SP-SET-00002-C</span></div>
+    <div class="modal-b">
+      <div class="modal-alert">归属款式组 <b>SP-SET-00002 珍珠吊坠项链</b>。已预填名称/类目/价格并带入基准 BOM 配件清单,改动「颜色 / 吊坠 / 价格」等差异点即可。类目沿用基准,不可改。</div>
+      <div class="modal-sec-h">基本信息</div>
+      <div class="grid2">
+        <div class="fld full"><label>名称</label><div class="inp">珍珠吊坠项链</div></div>
+        <div class="fld full"><label>图片</label>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div class="thumb" style="width:48px;height:48px;">IMG</div>
+            <button class="btn">上传图片</button>
+            <span class="note-s" style="margin-top:0;">默认沿用基准图,可重新上传替换(换色/换款常用)</span>
+          </div>
+        </div>
+        <div class="fld full"><label>类目</label><div class="pills dis"><div class="pill on">套装</div><div class="pill">单件</div><div class="pill">单对</div></div><div class="note-s">类目沿用基准,不可修改</div></div>
+        <div class="fld"><label>颜色</label><div class="inp ph">请选择 / 输入颜色 <span>▾</span></div></div>
+        <div class="fld"><label>单位</label><div class="inp">套</div></div>
+        <div class="fld"><label>零售价</label><div class="inp">¥ 168</div></div>
+        <div class="fld"><label>批发价</label><div class="inp">¥ 98</div></div>
+      </div>
+    </div>
+    <div class="modal-f"><button class="btn">取消</button><button class="btn primary">创建同款</button></div>
+  </div>
+</div>
+
+<!-- ════════ ③ 配件管理 变体折叠 ════════ -->
+<div class="variant-label">③ 配件管理 — 变体从平铺改为收进根行(可展开)</div>
+<div class="page">
+  <div class="page-top">
+    <div class="page-crumbs">商品 / 配件管理</div>
+    <div class="title-row">
+      <h1 class="page-title">配件管理<span class="title-count">共 32 个配件 · 9 个根件</span></h1>
+      <div class="top-actions"><button class="btn-outline">导入配件</button><button class="btn-ink">新增配件</button></div>
+    </div>
+  </div>
+  <div class="filter-row">
+    <div class="chip-group">
+      <button class="chip chip-active">全部</button>
+      <button class="chip">吊坠</button>
+      <button class="chip">链条</button>
+      <button class="chip">小配件</button>
+    </div>
+    <div class="search-wrap"><div class="search-box">搜索配件名称 / 编号</div></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:185px">编号</th><th>配件</th><th style="width:70px">类目</th>
+          <th style="width:90px">颜色</th><th style="width:80px">规格</th>
+          <th class="r" style="width:96px">单件成本</th><th class="r" style="width:88px">库存</th><th style="width:96px">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- 根件 + 3 变体, 展开 -->
+        <tr class="grouprow open" data-group="p1" onclick="tg('p1',this)">
+          <td><span class="cell-id"><span class="caret">▸</span> PJ-DZ-00001</span></td>
+          <td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">水滴锆石吊坠</span> <span class="count-pill">变体 ×3</span><div class="nm-sub">吊坠 · 根件</div></span></span></td>
+          <td><span class="cat-tag">吊坠</span></td>
+          <td><span class="cell-color"><span class="color-dot" style="background:#E8C36B"></span>金色</span></td>
+          <td>—</td>
+          <td class="r mono"><span class="currency-sym">¥</span>3.20</td>
+          <td class="r mono"><span class="stock-ok">420</span></td>
+          <td><span class="acts"><button class="icon-btn" onclick="event.stopPropagation()">→</button><button class="icon-btn" title="加变体" onclick="event.stopPropagation()">＋</button><button class="icon-btn" onclick="event.stopPropagation()">⋮</button></span></td>
+        </tr>
+        <tr class="child open" data-child="p1"><td><span class="cell-id indent">PJ-DZ-00001<span class="suffix">-G</span></span></td><td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">水滴锆石吊坠</span><div class="nm-sub">金色</div></span></span></td><td><span class="cat-tag">吊坠</span></td><td><span class="cell-color"><span class="color-dot" style="background:#E8C36B"></span>金色</span></td><td>—</td><td class="r mono"><span class="currency-sym">¥</span>3.20</td><td class="r mono"><span class="stock-ok">210</span></td><td><span class="acts"><button class="icon-btn">→</button><button class="icon-btn">✎</button></span></td></tr>
+        <tr class="child open" data-child="p1"><td><span class="cell-id indent">PJ-DZ-00001<span class="suffix">-S</span></span></td><td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">水滴锆石吊坠</span><div class="nm-sub">白K</div></span></span></td><td><span class="cat-tag">吊坠</span></td><td><span class="cell-color"><span class="color-dot" style="background:#D9DCE0"></span>白K</span></td><td>—</td><td class="r mono"><span class="currency-sym">¥</span>3.20</td><td class="r mono"><span class="stock-low">6 <span class="pill-low">低</span></span></td><td><span class="acts"><button class="icon-btn">→</button><button class="icon-btn">✎</button></span></td></tr>
+        <tr class="child open" data-child="p1"><td><span class="cell-id indent">PJ-DZ-00001<span class="suffix">-RG</span></span></td><td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">水滴锆石吊坠</span><div class="nm-sub">玫瑰金</div></span></span></td><td><span class="cat-tag">吊坠</span></td><td><span class="cell-color"><span class="color-dot" style="background:#E6B7A0"></span>玫瑰金</span></td><td>—</td><td class="r mono"><span class="currency-sym">¥</span>3.40</td><td class="r mono"><span class="stock-ok">204</span></td><td><span class="acts"><button class="icon-btn">→</button><button class="icon-btn">✎</button></span></td></tr>
+
+        <!-- 链条根件 + 规格变体, 折叠 -->
+        <tr class="grouprow" data-group="p2" onclick="tg('p2',this)">
+          <td><span class="cell-id"><span class="caret">▸</span> PJ-LT-00008</span></td>
+          <td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">O 字链</span> <span class="count-pill">变体 ×2</span><div class="nm-sub">链条 · 根件</div></span></span></td>
+          <td><span class="cat-tag">链条</span></td>
+          <td><span class="cell-color"><span class="color-dot" style="background:#E8C36B"></span>金色</span></td>
+          <td>—</td>
+          <td class="r mono"><span class="currency-sym">¥</span>1.80</td>
+          <td class="r mono"><span class="stock-ok">980</span></td>
+          <td><span class="acts"><button class="icon-btn" onclick="event.stopPropagation()">→</button><button class="icon-btn" title="加变体" onclick="event.stopPropagation()">＋</button><button class="icon-btn" onclick="event.stopPropagation()">⋮</button></span></td>
+        </tr>
+        <tr class="child" data-child="p2"><td><span class="cell-id indent">PJ-LT-00008<span class="suffix">-45cm</span></span></td><td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">O 字链</span><div class="nm-sub">45cm</div></span></span></td><td><span class="cat-tag">链条</span></td><td><span class="cell-color"><span class="color-dot" style="background:#E8C36B"></span>金色</span></td><td>45cm</td><td class="r mono"><span class="currency-sym">¥</span>1.80</td><td class="r mono"><span class="stock-ok">540</span></td><td><span class="acts"><button class="icon-btn">→</button><button class="icon-btn">✎</button></span></td></tr>
+        <tr class="child" data-child="p2"><td><span class="cell-id indent">PJ-LT-00008<span class="suffix">-50cm</span></span></td><td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">O 字链</span><div class="nm-sub">50cm</div></span></span></td><td><span class="cat-tag">链条</span></td><td><span class="cell-color"><span class="color-dot" style="background:#E8C36B"></span>金色</span></td><td>50cm</td><td class="r mono"><span class="currency-sym">¥</span>2.00</td><td class="r mono"><span class="stock-ok">440</span></td><td><span class="acts"><button class="icon-btn">→</button><button class="icon-btn">✎</button></span></td></tr>
+
+        <!-- 组合件, 无变体 -->
+        <tr>
+          <td><span class="cell-id"><span class="caret spacer">▸</span> PJ-X-00012</span></td>
+          <td><span class="name-cell"><span class="thumb">IMG</span><span><span class="nm-main">合金底托(组合)</span> <span class="tag-combo">组合</span><div class="nm-sub">小配件</div></span></span></td>
+          <td><span class="cat-tag">小配件</span></td>
+          <td><span class="cell-color"><span class="color-dot" style="background:#D9DCE0"></span>白K</span></td>
+          <td>—</td>
+          <td class="r mono"><span class="currency-sym">¥</span>5.60</td>
+          <td class="r mono"><span class="stock-ok">76</span></td>
+          <td><span class="acts"><button class="icon-btn">→</button><button class="icon-btn">✎</button><button class="icon-btn">⋮</button></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function tg(group, rowEl){
+  rowEl.classList.toggle('open');
+  document.querySelectorAll('tr.child[data-child="'+group+'"]').forEach(function(r){ r.classList.toggle('open'); });
+}
+</script>
+</body>
+</html>
