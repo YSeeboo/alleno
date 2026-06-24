@@ -284,6 +284,8 @@ const saveInline = async (row, field, value) => {
   try {
     await updateJewelry(row.id, { [field]: value })
     row[field] = value
+    const base = rows.value.find((x) => x.id === row.id)
+    if (base) base[field] = value
     message.success('已保存')
   } catch (e) {
     message.error(e.response?.data?.detail || '保存失败')
