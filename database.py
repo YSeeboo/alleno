@@ -458,6 +458,12 @@ def ensure_schema_compat(target_engine=None):
                 "ALTER TABLE handcraft_jewelry_item ALTER COLUMN jewelry_id DROP NOT NULL"
             ))
 
+        if inspector.has_table("jewelry"):
+            columns = {col["name"] for col in inspector.get_columns("jewelry")}
+            if "style_group" not in columns:
+                conn.execute(text("ALTER TABLE jewelry ADD COLUMN style_group VARCHAR NULL"))
+                logger.warning("Added missing jewelry.style_group column")
+
         # --- weight fields ---
         for table_name in [
             "plating_order_item",

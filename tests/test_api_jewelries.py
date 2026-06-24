@@ -187,3 +187,12 @@ def test_copy_jewelry_category_in_payload_ignored(client):
     new = resp.json()
     assert new["category"] == "套装"
     assert new["id"].startswith("SP-SET-")
+
+
+def test_jewelry_response_has_style_group_default_null(client):
+    client.post("/api/jewelries/", json={"name": "GroupProbe", "category": "套装"})
+    resp = client.get("/api/jewelries/")
+    assert resp.status_code == 200
+    row = next(r for r in resp.json() if r["name"] == "GroupProbe")
+    assert "style_group" in row
+    assert row["style_group"] is None

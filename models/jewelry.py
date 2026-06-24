@@ -17,3 +17,6 @@ class Jewelry(Base):
     wholesale_price = Column(Numeric(18, 7), nullable=True)
     status = Column(String, nullable=False, default="active")
     handcraft_cost = Column(Numeric(18, 7), nullable=True)
+    # 款式归属键：值=基准饰品 ID（如 SP-SET-00002）；NULL=未归组。
+    # 分组真相存此列，ID 的 -A/-B 后缀仅作显示。
+    style_group = Column(String, nullable=True, index=True)
