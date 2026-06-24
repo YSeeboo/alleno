@@ -196,3 +196,19 @@ def test_jewelry_response_has_style_group_default_null(client):
     row = next(r for r in resp.json() if r["name"] == "GroupProbe")
     assert "style_group" in row
     assert row["style_group"] is None
+
+
+def test_add_sibling_endpoint(client):
+    base = client.post("/api/jewelries/", json={"name": "套链", "category": "套装", "retail_price": 168}).json()
+    resp = client.post(f"/api/jewelries/{base['id']}/siblings", json={"color": "白K"})
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["id"] == f"{base['id']}-A"
+    assert data["style_group"] == base["id"]
+    assert data["color"] == "白K"
+    assert data["name"] == "套链"
+
+
+def test_add_sibling_endpoint_unknown_base_404(client):
+    resp = client.post("/api/jewelries/SP-SET-99999/siblings", json={"color": "白K"})
+    assert resp.status_code == 404

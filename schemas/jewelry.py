@@ -39,6 +39,18 @@ class JewelryCopyRequest(BaseModel):
     # Note: no `category` field — category is forced to source jewelry's.
 
 
+class JewelrySiblingIn(BaseModel):
+    # 全部可选：未传字段沿用基准。category 不接受（沿用基准且锁定）。
+    name: Optional[str] = None
+    image: Optional[str] = None
+    structure_image: Optional[str] = None
+    color: Optional[str] = None
+    unit: Optional[str] = None
+    retail_price: Optional[float] = None
+    wholesale_price: Optional[float] = None
+    handcraft_cost: Optional[float] = None
+
+
 class StatusUpdate(BaseModel):
     status: str
 

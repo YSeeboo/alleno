@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
-from schemas.jewelry import JewelryCreate, JewelryUpdate, JewelryResponse, StatusUpdate, JewelryCopyRequest
+from schemas.jewelry import JewelryCreate, JewelryUpdate, JewelryResponse, StatusUpdate, JewelryCopyRequest, JewelrySiblingIn
 from services.jewelry import (
     create_jewelry, get_jewelry, list_jewelries, update_jewelry,
-    delete_jewelry, set_status, copy_jewelry,
+    delete_jewelry, set_status, copy_jewelry, add_jewelry_sibling,
 )
 from api._errors import service_errors
 from services.jewelry_cost import attach_jewelry_costs
@@ -75,3 +75,13 @@ def api_copy_jewelry(source_id: str, body: JewelryCopyRequest, db: Session = Dep
     with service_errors():
         new_jewelry = copy_jewelry(db, source_id, body.model_dump(exclude_unset=True))
     return new_jewelry
+
+
+@router.post("/{base_id}/siblings", response_model=JewelryResponse, status_code=201)
+def api_add_jewelry_sibling(base_id: str, body: JewelrySiblingIn, db: Session = Depends(get_db)):
+    if get_jewelry(db, base_id) is None:
+        raise HTTPException(status_code=404, detail=f"Jewelry {base_id} not found")
+    with service_errors():
+        sibling = add_jewelry_sibling(db, base_id, body.model_dump(exclude_unset=True))
+    attach_jewelry_costs(db, [sibling])
+    return sibling
