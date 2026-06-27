@@ -437,6 +437,7 @@ const specVariantColor = ref(null)
 
 const colorVariants = ref([])
 const codeOfLabel = computed(() => Object.fromEntries(colorVariants.value.map(c => [c.label, c.code])))
+const badgeOfLabel = computed(() => Object.fromEntries(colorVariants.value.map(c => [c.label, c.badge])))
 const variantColorOptionsAll = computed(() => colorVariants.value.map(c => ({ code: c.code, label: `${c.label} ${c.code}`, badge: c.badge, common: c.common })))
 const commonVariantColors = computed(() => variantColorOptionsAll.value.filter(c => c.common))
 const moreVariantColors = computed(() => variantColorOptionsAll.value.filter(c => !c.common))
@@ -819,14 +820,6 @@ const confirmDelete = (row) => {
 }
 
 // Color dot map for known color names
-const COLOR_DOT_MAP = {
-  '金色': '#d9b24a',
-  '白K': '#a9b0b8',
-  '玫瑰金': '#cf8f7d',
-  '古银': '#8a9a8e',
-  '银色': '#a9b0b8',
-}
-
 const columns = [
   {
     title: '编号',
@@ -864,7 +857,7 @@ const columns = [
     key: 'color',
     render: (row) => {
       if (!row.color) return '-'
-      const dotColor = COLOR_DOT_MAP[row.color] || '#c0c6cd'
+      const dotColor = badgeOfLabel.value[row.color] || '#c0c6cd'
       return h('span', { class: 'cell-color' }, [
         h('span', {
           class: 'color-dot',
