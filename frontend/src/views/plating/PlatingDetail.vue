@@ -238,12 +238,12 @@
                   display: 'inline-block',
                   fontSize: '11px',
                   fontWeight: 'bold',
-                  color: addFormColor === cv.code ? '#fff' : BADGE_COLORS[cv.code],
-                  background: addFormColor === cv.code ? BADGE_COLORS[cv.code] : '#f5f5f5',
+                  color: addFormColor === cv.code ? '#fff' : badgeOf[cv.code],
+                  background: addFormColor === cv.code ? badgeOf[cv.code] : '#f5f5f5',
                   padding: '2px 10px',
                   borderRadius: '4px',
                   cursor: 'pointer',
-                  border: `1px solid ${BADGE_COLORS[cv.code]}`,
+                  border: `1px solid ${badgeOf[cv.code]}`,
                 }"
                 @click="toggleAddColor(cv.code)"
               >{{ cv.code }}</span>
@@ -648,20 +648,23 @@ const weightUnitOptions = [
   { label: 'g', value: 'g' },
 ]
 
-const BADGE_COLORS = { G: '#DAA520', S: '#C0C0C0', RG: '#B76E79' }
-const COLOR_SUFFIX_MAP = { '_金色': 'G', '_白K': 'S', '_玫瑰金': 'RG' }
-const COLOR_CODE_TO_METHOD = { G: '金', S: '白K', RG: '玫瑰金' }
-const METHOD_TO_CODE = { '金': 'G', '白K': 'S', '玫瑰金': 'RG' }
-
 const colorVariantList = ref([])
 let addVariantRequestSeq = 0
 
-const COLOR_LABEL_TO_CODE = { '金色': 'G', '白K': 'S', '玫瑰金': 'RG' }
+const badgeOf      = computed(() => Object.fromEntries(colorVariantList.value.map(c => [c.code, c.badge])))
+const methodOf     = computed(() => Object.fromEntries(colorVariantList.value.map(c => [c.code, c.method])))
+const codeOfMethod = computed(() => Object.fromEntries(colorVariantList.value.map(c => [c.method, c.code])))
+const codeOfLabel  = computed(() => Object.fromEntries(colorVariantList.value.map(c => [c.label, c.code])))
+const codeOfSuffix = computed(() => Object.fromEntries(colorVariantList.value.map(c => ['_' + c.label, c.code])))
+const commonColors = computed(() => colorVariantList.value.filter(c => c.common))
+const moreColors   = computed(() => colorVariantList.value.filter(c => !c.common))
+const expandedColorRows = ref(new Set())
+function toggleColorRow(id) { const s = new Set(expandedColorRows.value); s.has(id) ? s.delete(id) : s.add(id); expandedColorRows.value = s }
 
 const getPartColorCode = (part) => {
   if (!part) return null
-  if (part.color && COLOR_LABEL_TO_CODE[part.color]) return COLOR_LABEL_TO_CODE[part.color]
-  for (const [suffix, code] of Object.entries(COLOR_SUFFIX_MAP)) {
+  if (part.color && codeOfLabel.value[part.color]) return codeOfLabel.value[part.color]
+  for (const [suffix, code] of Object.entries(codeOfSuffix.value)) {
     if (part.name?.endsWith(suffix)) return code
   }
   return null
@@ -669,7 +672,7 @@ const getPartColorCode = (part) => {
 
 const getColorBadge = (partName) => {
   if (!partName) return null
-  for (const [suffix, code] of Object.entries(COLOR_SUFFIX_MAP)) {
+  for (const [suffix, code] of Object.entries(codeOfSuffix.value)) {
     if (partName.endsWith(suffix)) return code
   }
   return null
@@ -899,7 +902,7 @@ const toggleAddColor = async (code) => {
     return
   }
   addFormColor.value = code
-  addForm.value.plating_method = COLOR_CODE_TO_METHOD[code] || '金'
+  addForm.value.plating_method = methodOf.value[code] || '金'
   addForm.value.receive_part_id = null
   addVariantInfo.value = null
   addVariantLoading.value = true
@@ -958,7 +961,7 @@ const doCreateVariantInAdd = () => {
 const inlineColorSeq = ref({}) // key: row.id, value: request sequence number
 
 const toggleInlineColor = async (row, code) => {
-  const currentBadge = getColorBadge(row.receive_part_name) || METHOD_TO_CODE[row.plating_method] || null
+  const currentBadge = getColorBadge(row.receive_part_name) || codeOfMethod.value[row.plating_method] || null
   if (currentBadge === code) {
     // Deselect: clear receive_part_id
     try {
@@ -980,7 +983,7 @@ const toggleInlineColor = async (row, code) => {
       // Variant exists, update directly
       await updatePlatingItem(route.params.id, row.id, {
         receive_part_id: data.part.id,
-        plating_method: COLOR_CODE_TO_METHOD[code] || '金',
+        plating_method: methodOf.value[code] || '金',
       })
       if (!isStale()) await loadData()
     } else {
@@ -997,7 +1000,7 @@ const toggleInlineColor = async (row, code) => {
             const { data: newPart } = await createPartVariant(row.part_id, { color_code: code })
             await updatePlatingItem(route.params.id, row.id, {
               receive_part_id: newPart.id,
-              plating_method: COLOR_CODE_TO_METHOD[code] || '金',
+              plating_method: methodOf.value[code] || '金',
             })
             // Refresh parts list and table
             const { data: parts } = await listParts()
@@ -1565,28 +1568,39 @@ const itemColumns = [
     key: 'plating_color_inline',
     width: 120,
     render: (row) => {
-      const currentBadge = getColorBadge(row.receive_part_name) || METHOD_TO_CODE[row.plating_method] || null
+      const currentBadge = getColorBadge(row.receive_part_name) || codeOfMethod.value[row.plating_method] || null
       const pending = isPending()
-      return h('div', { style: 'display: flex; gap: 4px; align-items: center;' },
-        colorVariantList.value.map((cv) => {
-          const isActive = currentBadge === cv.code
-          return h('span', {
-            style: {
-              display: 'inline-block',
-              fontSize: '11px',
-              fontWeight: 'bold',
-              color: isActive ? '#fff' : BADGE_COLORS[cv.code],
-              background: isActive ? BADGE_COLORS[cv.code] : '#f5f5f5',
-              padding: '2px 8px',
-              borderRadius: '4px',
-              cursor: pending ? 'pointer' : 'default',
-              opacity: pending ? 1 : 0.5,
-              border: `1px solid ${BADGE_COLORS[cv.code]}`,
-            },
-            onClick: pending ? () => toggleInlineColor(row, cv.code) : undefined,
-          }, cv.code)
-        }),
-      )
+      const makeChip = (cv) => {
+        const isActive = currentBadge === cv.code
+        const badge = badgeOf.value[cv.code]
+        return h('span', {
+          style: {
+            display: 'inline-block',
+            fontSize: '11px',
+            fontWeight: 'bold',
+            color: isActive ? '#fff' : badge,
+            background: isActive ? badge : '#f5f5f5',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            cursor: pending ? 'pointer' : 'default',
+            opacity: pending ? 1 : 0.5,
+            border: `1px solid ${badge}`,
+          },
+          onClick: pending ? () => toggleInlineColor(row, cv.code) : undefined,
+        }, cv.code)
+      }
+      const chips = commonColors.value.map(makeChip)
+      if (moreColors.value.length > 0) {
+        if (expandedColorRows.value.has(row.id)) {
+          chips.push(...moreColors.value.map(makeChip))
+        } else {
+          chips.push(h('span', {
+            style: { fontSize: '11px', cursor: 'pointer', color: '#2080f0', userSelect: 'none' },
+            onClick: () => toggleColorRow(row.id),
+          }, '⋯'))
+        }
+      }
+      return h('div', { style: 'display: flex; gap: 4px; align-items: center; flex-wrap: wrap;' }, chips)
     },
   },
   {
