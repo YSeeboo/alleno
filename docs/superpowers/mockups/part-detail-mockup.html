@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>配件详情 刷新 — Mockup</title>
+<style>
+  :root{
+    --ink:#1A1D21; --emerald:#1E7A5A; --accent-soft:#E6F2EC; --danger:#E5484D;
+    --amber:#B7791F; --line:#ECEDEF; --line-2:#F4F5F6; --muted:#8B9096;
+    --muted-2:#AEB3B8; --sub:#F6F7F8;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",sans-serif;color:var(--ink);background:#F2F3F5;padding:28px 0;-webkit-font-smoothing:antialiased;}
+  .page{max-width:960px;margin:0 auto;background:#fff;border-radius:14px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden;}
+  .note{max-width:960px;margin:0 auto 22px;font-size:12px;color:var(--muted);padding:10px 14px;background:#fff;border-radius:8px;border-left:3px solid var(--emerald);}
+
+  .top{padding:22px 28px 0;}
+  .back{border:none;background:none;padding:0;margin:0 0 8px;color:var(--muted);font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:2px;}
+  .back:hover{color:var(--ink);}
+  .crumbs{font-size:12px;color:var(--muted);}
+  .title-row{display:flex;align-items:center;justify-content:space-between;margin-top:6px;gap:12px;}
+  .title-l{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .ptitle{font-size:22px;font-weight:700;margin:0;line-height:1.2;}
+  .id-chip{font-size:12px;color:#6b7280;background:var(--sub);border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-variant-numeric:tabular-nums;}
+  .cat-tag{font-size:11px;color:#4b5158;background:var(--line-2);border-radius:5px;padding:2px 8px;}
+  .acts{display:flex;gap:8px;flex-shrink:0;}
+  .btn-outline{height:34px;border-radius:9px;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:13px;font-weight:500;padding:0 14px;cursor:pointer;}
+  .btn-ink{height:34px;border-radius:9px;background:var(--ink);border:1px solid var(--ink);color:#fff;font-size:13px;font-weight:500;padding:0 14px;cursor:pointer;}
+
+  .stat-strip{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:10px;margin:20px 28px 0;overflow:hidden;}
+  .stat-card{padding:13px 18px;border-right:1px solid var(--line);}
+  .stat-card:last-child{border-right:0;}
+  .stat-label{font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);font-weight:600;}
+  .stat-value{font-size:24px;font-weight:700;letter-spacing:-.5px;margin-top:5px;line-height:1;font-variant-numeric:tabular-nums;}
+  .stat-sub{font-size:11px;color:var(--muted);margin-top:3px;}
+  .stat-danger{color:var(--danger);}
+
+  .sec{padding:22px 28px 0;}
+  .sec:last-child{padding-bottom:26px;}
+  .sec-h{display:flex;align-items:center;justify-content:space-between;padding:0 0 10px;border-bottom:1px solid var(--line);margin-bottom:14px;}
+  .sec-h .t{font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);}
+  .sec-h .cnt{font-size:11px;color:var(--muted-2);}
+  .sec-h .r-acts{display:inline-flex;gap:8px;align-items:center;}
+  .sbtn{font-size:12px;font-weight:500;padding:3px 10px;border-radius:6px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;line-height:1.4;}
+  .sbtn:hover{border-color:var(--muted-2);background:var(--line-2);}
+
+  /* key-value grid */
+  .kv{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 24px;}
+  .kv .f{display:flex;flex-direction:column;gap:3px;}
+  .kv .k{font-size:11px;color:var(--muted);}
+  .kv .v{font-size:14px;}
+  .thumb{width:44px;height:44px;border-radius:8px;background:var(--sub);border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;color:var(--muted-2);font-size:10px;}
+  .color-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12);vertical-align:middle;}
+  .cost{font-weight:600;}
+  .cost-bd{color:var(--muted);font-size:12px;margin-left:6px;}
+  .link{color:var(--emerald);cursor:pointer;}
+  .badge-no{font-size:11px;color:#4b5158;background:var(--line-2);border-radius:5px;padding:1px 7px;}
+  .price-hist{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--emerald);border:1px solid var(--accent-soft);background:var(--accent-soft);border-radius:6px;padding:1px 7px;margin-left:8px;cursor:pointer;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  thead th{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);background:#FAFBFC;}
+  th.r,td.r{text-align:right;}
+  tbody td{padding:10px;border-bottom:1px solid var(--line-2);vertical-align:middle;}
+  tbody tr:last-child td{border-bottom:none;}
+  .vrow.cur{background:var(--accent-soft);}
+  .cur-tag{font-size:10px;font-weight:600;color:var(--emerald);margin-left:6px;}
+  .root-tag{font-size:10px;font-weight:600;color:#475569;background:#EEF1F4;border-radius:4px;padding:1px 6px;margin-left:6px;}
+  .suffix{font-weight:700;color:var(--ink);}
+  .cell-id{font-variant-numeric:tabular-nums;color:#6b7280;font-size:12.5px;}
+  .mono{font-variant-numeric:tabular-nums;}
+  .stock-low{color:var(--danger);font-weight:700;}
+  .go{width:24px;height:24px;border:1px solid var(--line);border-radius:7px;background:#fff;color:#6b7280;cursor:pointer;font-size:12px;}
+  .pos{color:var(--emerald);font-weight:600;}
+  .neg{color:var(--danger);font-weight:600;}
+  .nm{display:flex;align-items:center;gap:9px;}
+  .nm small{color:var(--muted);font-size:11px;}
+
+  /* add form */
+  .addbar{display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);flex-wrap:wrap;}
+  .addbar .lbl{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase;}
+  .inp{height:34px;border:1px solid var(--line);border-radius:8px;padding:0 12px;font-size:13px;color:var(--muted);display:inline-flex;align-items:center;background:#fff;}
+  .empty{text-align:center;color:var(--muted-2);font-size:13px;padding:22px 0;background:var(--sub);border-radius:8px;}
+
+  /* batch add panel */
+  .addpanel{margin-top:14px;border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--sub);}
+  .addpanel-h{font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;}
+  .multiselect{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--line);border-radius:8px;background:#fff;padding:6px 8px;min-height:40px;}
+  .chip-sel{display:inline-flex;align-items:center;gap:6px;font-size:12px;background:var(--accent-soft);color:var(--emerald);border-radius:6px;padding:3px 9px;cursor:default;}
+  .chip-sel .x{cursor:pointer;opacity:.7;}
+  .ms-input{flex:1;min-width:180px;font-size:13px;color:var(--muted-2);padding:3px 4px;}
+  .staging{margin-top:12px;width:100%;background:#fff;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+  .staging th{background:#FAFBFC;}
+  .staging td small{color:var(--muted);font-size:11px;margin-left:6px;}
+  .qty-inp{display:inline-flex;width:84px;height:30px;border:1px solid var(--line);border-radius:6px;align-items:center;justify-content:center;background:#fff;font-variant-numeric:tabular-nums;}
+  .del{width:26px;height:26px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--danger);cursor:pointer;font-size:11px;}
+  .addpanel-f{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:12px;}
+  .addpanel-f .hint{margin-right:auto;font-size:12px;color:var(--muted);}
+</style>
+</head>
+<body>
+
+<p class="note">
+  Mockup · 配件详情刷新(对齐 PartList 的 ink+emerald)。含:① 标题区+编辑入口 ② 统计卡(库存/成本/子配件/变体) ③ 基本信息(去旧红蓝、露出组合件标识) ④ <b>变体家族</b>(新增,变体感知) ⑤ 子配件 BOM ⑥ 库存流水。示例为一个<b>非组合根件</b>。
+</p>
+
+<div class="page">
+  <!-- header -->
+  <div class="top">
+    <button class="back">← 返回</button>
+    <div class="crumbs">商品 / 配件管理 / 配件详情</div>
+    <div class="title-row">
+      <div class="title-l">
+        <h1 class="ptitle">水滴锆石吊坠</h1>
+        <span class="id-chip">PJ-DZ-00001</span>
+        <span class="cat-tag">吊坠</span>
+        <span class="root-tag">根件</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- stat strip -->
+  <div class="stat-strip">
+    <div class="stat-card"><div class="stat-label">当前库存</div><div class="stat-value">420</div><div class="stat-sub">个</div></div>
+    <div class="stat-card"><div class="stat-label">单件成本</div><div class="stat-value">¥3.20</div><div class="stat-sub">采购+穿珠+电镀</div></div>
+    <div class="stat-card"><div class="stat-label">子配件</div><div class="stat-value">0</div><div class="stat-sub">非组合件</div></div>
+    <div class="stat-card"><div class="stat-label">变体</div><div class="stat-value">5</div><div class="stat-sub">含颜色/规格</div></div>
+  </div>
+
+  <!-- 基本信息 -->
+  <div class="sec">
+    <div class="sec-h"><span class="t">基本信息</span><span class="r-acts"><button class="sbtn">✎ 编辑</button></span></div>
+    <div class="kv">
+      <div class="f"><span class="k">编号</span><span class="v mono">PJ-DZ-00001</span></div>
+      <div class="f"><span class="k">配件</span><span class="v">水滴锆石吊坠</span></div>
+      <div class="f"><span class="k">图片</span><span class="v"><span class="thumb">IMG</span></span></div>
+      <div class="f"><span class="k">类目</span><span class="v">吊坠</span></div>
+      <div class="f"><span class="k">颜色</span><span class="v"><span class="color-dot" style="background:#DAA520"></span>金色</span></div>
+      <div class="f"><span class="k">单位</span><span class="v">个</span></div>
+      <div class="f"><span class="k">默认电镀工艺</span><span class="v">金</span></div>
+      <div class="f"><span class="k">组合件</span><span class="v"><span class="badge-no">否</span></span></div>
+      <div class="f"><span class="k">关联原色配件</span><span class="v" style="color:var(--muted-2)">— (本件即根件)</span></div>
+      <div class="f" style="grid-column:1 / -1;">
+        <span class="k">单件成本</span>
+        <span class="v"><span class="cost">¥ 3.20</span><span class="cost-bd">(采购 2.00 + 穿珠 0.40 + 电镀 0.80)</span><span class="price-hist">📋 价格历史 · 3 条</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 变体家族 -->
+  <div class="sec">
+    <div class="sec-h"><span class="t">变体家族</span><span class="cnt">根件 + 5 变体</span></div>
+    <table>
+      <thead><tr><th style="width:30%">颜色</th><th>编号</th><th class="r" style="width:110px">单件成本</th><th class="r" style="width:90px">库存</th><th style="width:60px"></th></tr></thead>
+      <tbody>
+        <tr class="vrow cur">
+          <td><span class="color-dot" style="background:#DAA520"></span>金色 <span class="root-tag">根</span><span class="cur-tag">· 当前</span></td>
+          <td class="cell-id">PJ-DZ-00001</td>
+          <td class="r mono">¥3.20</td>
+          <td class="r mono">420</td>
+          <td><button class="go">→</button></td>
+        </tr>
+        <tr class="vrow">
+          <td><span class="color-dot" style="background:#CBA94B"></span>14K金</td>
+          <td class="cell-id">PJ-DZ-00001<span class="suffix">-K14</span></td>
+          <td class="r mono">¥3.40</td>
+          <td class="r mono">86</td>
+          <td><button class="go">→</button></td>
+        </tr>
+        <tr class="vrow">
+          <td><span class="color-dot" style="background:#C0C0C0"></span>白K</td>
+          <td class="cell-id">PJ-DZ-00001<span class="suffix">-S</span></td>
+          <td class="r mono">¥3.20</td>
+          <td class="r"><span class="stock-low mono">6</span></td>
+          <td><button class="go">→</button></td>
+        </tr>
+        <tr class="vrow">
+          <td><span class="color-dot" style="background:#9AA7B0"></span>银色</td>
+          <td class="cell-id">PJ-DZ-00001<span class="suffix">-SV</span></td>
+          <td class="r mono">¥3.30</td>
+          <td class="r mono">54</td>
+          <td><button class="go">→</button></td>
+        </tr>
+        <tr class="vrow">
+          <td><span class="color-dot" style="background:#B76E79"></span>玫瑰金</td>
+          <td class="cell-id">PJ-DZ-00001<span class="suffix">-RG</span></td>
+          <td class="r mono">¥3.40</td>
+          <td class="r mono">204</td>
+          <td><button class="go">→</button></td>
+        </tr>
+        <tr class="vrow">
+          <td><span class="color-dot" style="background:#DAA520"></span>金色 · 45cm</td>
+          <td class="cell-id">PJ-DZ-00001<span class="suffix">-G-45cm</span></td>
+          <td class="r mono">¥3.60</td>
+          <td class="r mono">120</td>
+          <td><button class="go">→</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 子配件 -->
+  <div class="sec">
+    <div class="sec-h">
+      <span class="t">子配件 BOM</span>
+      <span class="r-acts"><button class="sbtn">📋 复制其他配件 BOM</button></span>
+    </div>
+    <div class="empty">暂无子配件 BOM。下面可<b>搜索勾选、一次批量添加</b>(或从其他配件整套复制再微调)。</div>
+
+    <!-- 批量多选 + 暂存 -->
+    <div class="addpanel">
+      <div class="addpanel-h">添加子配件 · 搜索勾选(可多选)</div>
+      <div class="multiselect">
+        <span class="chip-sel">O字链 <b>PJ-LT-00008</b> <span class="x">✕</span></span>
+        <span class="chip-sel">卡扣 <b>PJ-X-00003</b> <span class="x">✕</span></span>
+        <span class="chip-sel">跳环 <b>PJ-X-00007</b> <span class="x">✕</span></span>
+        <span class="ms-input">搜索配件名称 / 编号,回车或点选加入下表…</span>
+      </div>
+
+      <table class="staging">
+        <thead><tr><th>待添加子配件</th><th class="r" style="width:150px">每单位用量</th><th style="width:54px"></th></tr></thead>
+        <tbody>
+          <tr><td><span class="nm"><span class="thumb" style="width:28px;height:28px;">IMG</span>O字链<small>PJ-LT-00008</small></span></td><td class="r"><span class="qty-inp">1</span></td><td><button class="del">✕</button></td></tr>
+          <tr><td><span class="nm"><span class="thumb" style="width:28px;height:28px;">IMG</span>卡扣<small>PJ-X-00003</small></span></td><td class="r"><span class="qty-inp">2</span></td><td><button class="del">✕</button></td></tr>
+          <tr><td><span class="nm"><span class="thumb" style="width:28px;height:28px;">IMG</span>跳环<small>PJ-X-00007</small></span></td><td class="r"><span class="qty-inp">4</span></td><td><button class="del">✕</button></td></tr>
+        </tbody>
+      </table>
+
+      <div class="addpanel-f">
+        <span class="hint">已选 3 项,提交前可逐行改用量</span>
+        <button class="sbtn">清空</button>
+        <button class="btn-ink" style="height:32px;">批量添加 3 项</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 库存流水 -->
+  <div class="sec">
+    <div class="sec-h"><span class="t">库存流水</span><span class="cnt">最近 4 条</span></div>
+    <table>
+      <thead><tr><th style="width:150px">时间</th><th style="width:120px">变动数量</th><th>原因</th><th>备注</th></tr></thead>
+      <tbody>
+        <tr><td class="mono" style="color:var(--muted)">06-26 14:20</td><td><span class="pos mono">+200</span></td><td>采购入库</td><td>CG-0034</td></tr>
+        <tr><td class="mono" style="color:var(--muted)">06-24 09:10</td><td><span class="neg mono">−60</span></td><td>手工发出</td><td>HC-0021</td></tr>
+        <tr><td class="mono" style="color:var(--muted)">06-22 16:02</td><td><span class="neg mono">−18</span></td><td>电镀发出</td><td>EP-0009</td></tr>
+        <tr><td class="mono" style="color:var(--muted)">06-20 11:30</td><td><span class="pos mono">+300</span></td><td>采购入库</td><td>CG-0031</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p class="note" style="margin-top:24px;border-left-color:var(--amber);">
+  视角差异:若打开的是某个<b>变体</b>(如 PJ-DZ-00001-K14),标题改成该变体、「根件」标签换成「变体」、基本信息「关联原色配件」指向根件,且「变体家族」里高亮的「当前」行变成 -K14。变体家族表对根件和变体显示同一份,方便互相跳转。组合件则反过来:无变体家族(组合件不支持变体),子配件 BOM 有内容。
+</p>
+</body>
+</html>
