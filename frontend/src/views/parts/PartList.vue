@@ -199,18 +199,40 @@
         <template v-if="editingId && !editingIsComposite">
           <div class="modal-sec-h" style="margin-top: 18px;">变体</div>
           <n-form-item label="创建颜色变体">
-            <n-space>
+            <n-space wrap>
               <n-button
-                v-for="vc in variantColorOptions"
+                v-for="vc in commonVariantColors"
                 :key="vc.code"
                 size="small"
-                :disabled="vc.exists || creatingVariant || loadingVariants"
-                :type="vc.exists ? 'default' : 'primary'"
+                :disabled="existingVariantColors.includes(vc.code) || creatingVariant || loadingVariants"
+                :type="existingVariantColors.includes(vc.code) ? 'default' : 'primary'"
                 secondary
                 @click="doCreateVariant(vc.code)"
               >
-                {{ vc.label }}{{ vc.exists ? ' ✓' : '' }}
+                <span v-if="vc.badge" :style="{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: vc.badge, marginRight: '5px', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.1)' }"></span>
+                {{ vc.label }}{{ existingVariantColors.includes(vc.code) ? ' ✓' : '' }}
               </n-button>
+              <n-button
+                size="small"
+                secondary
+                @click="showMoreVariantColors = !showMoreVariantColors"
+              >
+                {{ showMoreVariantColors ? '收起 ▴' : '＋ 更多颜色 ▾' }}
+              </n-button>
+              <template v-if="showMoreVariantColors">
+                <n-button
+                  v-for="vc in moreVariantColors"
+                  :key="vc.code"
+                  size="small"
+                  :disabled="existingVariantColors.includes(vc.code) || creatingVariant || loadingVariants"
+                  :type="existingVariantColors.includes(vc.code) ? 'default' : 'primary'"
+                  secondary
+                  @click="doCreateVariant(vc.code)"
+                >
+                  <span v-if="vc.badge" :style="{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: vc.badge, marginRight: '5px', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.1)' }"></span>
+                  {{ vc.label }}{{ existingVariantColors.includes(vc.code) ? ' ✓' : '' }}
+                </n-button>
+              </template>
             </n-space>
           </n-form-item>
           <n-form-item label="创建规格变体">
@@ -328,7 +350,7 @@ import {
   NModal, NDataTable, NSpin, NEmpty, NDropdown, NImage,
   NCollapse, NCollapseItem, NTag,
 } from 'naive-ui'
-import { listParts, createPart, updatePart, deletePart, importPartsExcel, downloadPartsImportTemplate, getPartVariants, createPartVariant } from '@/api/parts'
+import { listParts, createPart, updatePart, deletePart, importPartsExcel, downloadPartsImportTemplate, getPartVariants, createPartVariant, getColorVariants } from '@/api/parts'
 import { batchGetStock, addStock } from '@/api/inventory'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import ImageUploadModal from '../../components/ImageUploadModal.vue'
@@ -413,15 +435,15 @@ const loadingVariants = ref(false)
 const specVariantInput = ref('')
 const specVariantColor = ref(null)
 
-const COLOR_CODE_REVERSE = { '金色': 'G', '白K': 'S', '玫瑰金': 'RG' }
-const VARIANT_COLORS = [
-  { code: 'G', label: '金色 G' },
-  { code: 'S', label: '白K S' },
-  { code: 'RG', label: '玫瑰金 RG' },
-]
+const colorVariants = ref([])
+const codeOfLabel = computed(() => Object.fromEntries(colorVariants.value.map(c => [c.label, c.code])))
+const variantColorOptionsAll = computed(() => colorVariants.value.map(c => ({ code: c.code, label: `${c.label} ${c.code}`, badge: c.badge, common: c.common })))
+const commonVariantColors = computed(() => variantColorOptionsAll.value.filter(c => c.common))
+const moreVariantColors = computed(() => variantColorOptionsAll.value.filter(c => !c.common))
+const showMoreVariantColors = ref(false)
 
 const variantColorOptions = computed(() =>
-  VARIANT_COLORS.map((vc) => ({
+  variantColorOptionsAll.value.map((vc) => ({
     ...vc,
     exists: existingVariantColors.value.includes(vc.code),
   }))
@@ -435,7 +457,7 @@ const doCreateVariant = async (colorCode) => {
     const { data: variants } = await getPartVariants(editingId.value)
     existingVariantColors.value = variants
       .filter((v) => !v.spec)
-      .map((v) => COLOR_CODE_REVERSE[v.color])
+      .map((v) => codeOfLabel.value[v.color])
       .filter(Boolean)
     await load()
   } catch (error) {
@@ -445,7 +467,7 @@ const doCreateVariant = async (colorCode) => {
   }
 }
 
-const specVariantColorOptions = VARIANT_COLORS.map((vc) => ({ label: vc.label, value: vc.code }))
+const specVariantColorOptions = computed(() => variantColorOptionsAll.value.map((vc) => ({ label: vc.label, value: vc.code })))
 
 const doCreateSpecVariant = async () => {
   if (!specVariantInput.value) return
@@ -641,7 +663,7 @@ const openEdit = async (row) => {
     if (editingId.value !== rowId) return
     existingVariantColors.value = variants
       .filter((v) => !v.spec)
-      .map((v) => COLOR_CODE_REVERSE[v.color])
+      .map((v) => codeOfLabel.value[v.color])
       .filter(Boolean)
   } catch {
     // ignore — buttons will show all options as fallback
@@ -927,6 +949,7 @@ const columns = [
 onMounted(() => {
   loadAllPartsForSelect()
   load()
+  getColorVariants().then(r => { colorVariants.value = r.data })
 })
 </script>
 
