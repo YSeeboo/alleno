@@ -82,21 +82,53 @@
           <div style="margin-bottom: 6px; font-size: 13px; color: #666;">电镀颜色：</div>
           <n-space size="small" style="margin-bottom: 6px;">
             <span
-              v-for="cv in colorVariants"
+              v-for="cv in commonColors"
               :key="cv.code"
               :style="{
                 display: 'inline-block',
                 fontSize: '11px',
                 fontWeight: 'bold',
-                color: item._selectedColor === cv.code ? '#fff' : BADGE_COLORS[cv.code],
-                background: item._selectedColor === cv.code ? BADGE_COLORS[cv.code] : '#f5f5f5',
+                color: item._selectedColor === cv.code ? '#fff' : badgeOf[cv.code],
+                background: item._selectedColor === cv.code ? badgeOf[cv.code] : '#f5f5f5',
                 padding: '2px 10px',
                 borderRadius: '4px',
                 cursor: 'pointer',
-                border: `1px solid ${BADGE_COLORS[cv.code]}`,
+                border: `1px solid ${badgeOf[cv.code]}`,
               }"
               @click="toggleColor(item, cv.code)"
             >{{ cv.code }}</span>
+            <span
+              :style="{
+                display: 'inline-block',
+                fontSize: '11px',
+                fontWeight: 'bold',
+                color: '#666',
+                background: '#f5f5f5',
+                padding: '2px 10px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                border: '1px dashed #aaa',
+              }"
+              @click="showMoreColors = !showMoreColors"
+            >更多 {{ showMoreColors ? '▴' : '▾' }}</span>
+            <template v-if="showMoreColors">
+              <span
+                v-for="cv in moreColors"
+                :key="cv.code"
+                :style="{
+                  display: 'inline-block',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  color: item._selectedColor === cv.code ? '#fff' : badgeOf[cv.code],
+                  background: item._selectedColor === cv.code ? badgeOf[cv.code] : '#f5f5f5',
+                  padding: '2px 10px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  border: `1px solid ${badgeOf[cv.code]}`,
+                }"
+                @click="toggleColor(item, cv.code)"
+              >{{ cv.code }}</span>
+            </template>
           </n-space>
           <div v-if="item._selectedColor && item._variantInfo" style="font-size: 13px; color: #333;">
             <template v-if="item._variantInfo.part">
@@ -130,7 +162,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NDatePicker, NAlert } from 'naive-ui'
@@ -226,8 +258,13 @@ const doMerge = async () => {
   }
 }
 
-const BADGE_COLORS = { G: '#DAA520', S: '#C0C0C0', RG: '#B76E79' }
-const COLOR_CODE_TO_METHOD = { G: '金', S: '白K', RG: '玫瑰金' }
+const badgeOf      = computed(() => Object.fromEntries(colorVariants.value.map(c => [c.code, c.badge])))
+const methodOf     = computed(() => Object.fromEntries(colorVariants.value.map(c => [c.code, c.method])))
+const codeOfLabel  = computed(() => Object.fromEntries(colorVariants.value.map(c => [c.label, c.code])))
+const codeOfSuffix = computed(() => Object.fromEntries(colorVariants.value.map(c => ['_' + c.label, c.code])))
+const commonColors = computed(() => colorVariants.value.filter(c => c.common))
+const moreColors   = computed(() => colorVariants.value.filter(c => !c.common))
+const showMoreColors = ref(false)
 
 function createEmptyItem() {
   return { part_id: null, receive_part_id: null, qty: 1, unit: '个', weight: null, weight_unit: 'kg', plating_method: '金', note: '', _selectedColor: null, _variantInfo: null, _variantLoading: false, _creatingVariant: false, _reqSeq: 0 }
@@ -246,14 +283,12 @@ const weightUnitOptions = [
   { label: 'g', value: 'g' },
 ]
 
-const COLOR_LABEL_TO_CODE = { '金色': 'G', '白K': 'S', '玫瑰金': 'RG' }
-
 const getPartColorCode = (part) => {
   if (!part) return null
   // Prefer the color field (authoritative)
-  if (part.color && COLOR_LABEL_TO_CODE[part.color]) return COLOR_LABEL_TO_CODE[part.color]
+  if (part.color && codeOfLabel.value[part.color]) return codeOfLabel.value[part.color]
   // Fallback: parse name suffix
-  for (const [suffix, code] of Object.entries({ '_金色': 'G', '_白K': 'S', '_玫瑰金': 'RG' })) {
+  for (const [suffix, code] of Object.entries(codeOfSuffix.value)) {
     if (part.name?.endsWith(suffix)) return code
   }
   return null
@@ -285,7 +320,7 @@ const toggleColor = async (item, code) => {
     return
   }
   item._selectedColor = code
-  item.plating_method = COLOR_CODE_TO_METHOD[code] || '金'
+  item.plating_method = methodOf.value[code] || '金'
   item.receive_part_id = null
   item._variantInfo = null
   item._variantLoading = true
