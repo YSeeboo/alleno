@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>电镀颜色新增 14K金 / 银色(分层:常用 + 更多)— Mockup</title>
+<style>
+  :root{ --ink:#1A1D21; --muted:#8B9096; --line:#ECEDEF; --sub:#F6F7F8; --emerald:#1E7A5A; --amber:#B7791F; }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",sans-serif;color:var(--ink);background:#F2F3F5;padding:32px 0;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:880px;margin:0 auto;}
+  .note{font-size:12px;color:var(--muted);margin:0 auto 24px;padding:10px 14px;background:#fff;border-radius:8px;border-left:3px solid var(--emerald);}
+  .note.amber{border-left-color:var(--amber);}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:20px;}
+  .vlabel{font-size:11px;font-weight:700;letter-spacing:.6px;color:#6b7280;text-transform:uppercase;margin:0 0 12px;}
+  .row-label{font-size:13px;color:#666;margin:0 0 6px;}
+  .chips{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+  .chip{font-size:11px;font-weight:700;padding:3px 10px;border-radius:4px;cursor:pointer;user-select:none;background:#f5f5f5;}
+  .more-btn{font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px;cursor:pointer;user-select:none;color:#6b7280;background:#fff;border:1px dashed #c8cdd4;}
+  .more-wrap{display:none;gap:6px;align-items:center;}
+  .more-wrap.open{display:inline-flex;}
+  .tag-new{font-size:10px;font-weight:600;color:var(--emerald);background:#E6F2EC;border-radius:4px;padding:1px 6px;margin-left:2px;}
+  .small{font-size:12px;color:var(--muted);margin-top:10px;}
+  .divider{width:1px;height:18px;background:var(--line);margin:0 2px;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);background:#FAFBFC;}
+  td{padding:10px;border-bottom:1px solid #F4F5F6;vertical-align:middle;}
+  .vlist{display:flex;flex-direction:column;gap:8px;max-width:300px;}
+  .vrow{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer;}
+  .vrow:hover{border-color:#c8cdd4;}
+  .swatch{width:14px;height:14px;border-radius:50%;flex-shrink:0;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12);}
+  .vrow .lab{font-size:13px;}
+  .vrow .code{margin-left:auto;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .vmore{font-size:12px;color:#6b7280;cursor:pointer;user-select:none;padding:6px 2px;}
+  .vmore-wrap{display:none;flex-direction:column;gap:8px;}
+  .vmore-wrap.open{display:flex;}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#555;}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .tier{font-size:10px;color:#9aa0a6;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="note">
+    Mockup · 新增 <b>14K金 = K14</b>、<b>银色 = SV</b>,但二者<b>不常用</b>。做成<b>分层</b>:常用色(G/S/RG)直接显示,不常用色收进「更多 ▾」。常用/不常用由后端 <code>COLOR_VARIANTS</code> 的 <code>common</code> 标记驱动 —— 单一来源,三处页面一致。chip 可点选,「更多」可展开。
+  </p>
+
+  <!-- legend -->
+  <div class="card">
+    <p class="vlabel">五色一览(badge + code + 工艺名 + 分层)</p>
+    <div class="legend">
+      <span><i class="swatch" style="background:#DAA520"></i>金色 · G · 金 <em class="tier">常用</em></span>
+      <span><i class="swatch" style="background:#C0C0C0"></i>白K · S · 白K <em class="tier">常用</em></span>
+      <span><i class="swatch" style="background:#B76E79"></i>玫瑰金 · RG · 玫瑰金 <em class="tier">常用</em></span>
+      <span><i class="swatch" style="background:#CBA94B"></i>14K金 · K14 · 14K金 <em class="tag-new">新·不常用</em></span>
+      <span><i class="swatch" style="background:#9AA7B0"></i>银色 · SV · 银 <em class="tag-new">新·不常用</em></span>
+    </div>
+    <div class="small">⚠ 银色(SV)≠ 白K(S):白K 暖银灰、银色 冷蓝灰,色块特意区分。</div>
+  </div>
+
+  <!-- ① 电镀创建 -->
+  <div class="card">
+    <p class="vlabel">① 电镀单创建 — 电镀颜色选择(PlatingCreate)</p>
+    <div class="row-label">电镀颜色:</div>
+    <div class="chips" data-group="a1">
+      <span class="chip" data-c="G"  style="color:#DAA520;border:1px solid #DAA520">G</span>
+      <span class="chip" data-c="S"  style="color:#C0C0C0;border:1px solid #C0C0C0">S</span>
+      <span class="chip" data-c="RG" style="color:#B76E79;border:1px solid #B76E79">RG</span>
+      <span class="divider"></span>
+      <span class="more-btn" onclick="toggleMore(this)">更多 ▾</span>
+      <span class="more-wrap">
+        <span class="chip" data-c="K14" style="color:#CBA94B;border:1px solid #CBA94B">K14</span>
+        <span class="chip" data-c="SV"  style="color:#9AA7B0;border:1px solid #9AA7B0">SV</span>
+      </span>
+    </div>
+    <div class="small">日常只看到 G/S/RG;偶尔做 14K金/银色,点「更多」展开。选中后下方照常显示对应配件/工艺。</div>
+  </div>
+
+  <!-- ② 电镀详情 -->
+  <div class="card">
+    <p class="vlabel">② 电镀单详情 — 明细行内颜色 chip(PlatingDetail)</p>
+    <table>
+      <thead><tr><th style="width:48%">发出配件</th><th>颜色(行内可点 · 更多展开)</th><th style="width:80px">工艺</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>水滴锆石吊坠</td>
+          <td><div class="chips" data-group="d1">
+            <span class="chip" data-c="G"  style="color:#DAA520;border:1px solid #DAA520">G</span>
+            <span class="chip" data-c="S"  style="color:#C0C0C0;border:1px solid #C0C0C0">S</span>
+            <span class="chip" data-c="RG" style="color:#B76E79;border:1px solid #B76E79">RG</span>
+            <span class="more-btn" onclick="toggleMore(this)">⋯</span>
+            <span class="more-wrap">
+              <span class="chip" data-c="K14" style="color:#CBA94B;border:1px solid #CBA94B">K14</span>
+              <span class="chip" data-c="SV"  style="color:#9AA7B0;border:1px solid #9AA7B0">SV</span>
+            </span>
+          </div></td>
+          <td><span id="d1-method" style="font-size:12px;color:#333">—</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="small">表格里空间紧,常用色 + 「⋯」展开不常用,不撑爆行宽。</div>
+  </div>
+
+  <!-- ③ 配件加变体 -->
+  <div class="card">
+    <p class="vlabel">③ 配件管理 — 编辑弹窗「加颜色变体」可选项(PartList)</p>
+    <div class="vlist">
+      <div class="vrow"><i class="swatch" style="background:#DAA520"></i><span class="lab">金色</span><span class="code">G</span></div>
+      <div class="vrow"><i class="swatch" style="background:#C0C0C0"></i><span class="lab">白K</span><span class="code">S</span></div>
+      <div class="vrow"><i class="swatch" style="background:#B76E79"></i><span class="lab">玫瑰金</span><span class="code">RG</span></div>
+      <div class="vmore" onclick="toggleVMore(this)">＋ 更多颜色 ▾</div>
+      <div class="vmore-wrap">
+        <div class="vrow"><i class="swatch" style="background:#CBA94B"></i><span class="lab">14K金</span><span class="code">K14</span><em class="tag-new">新</em></div>
+        <div class="vrow"><i class="swatch" style="background:#9AA7B0"></i><span class="lab">银色</span><span class="code">SV</span><em class="tag-new">新</em></div>
+      </div>
+    </div>
+    <div class="small">选 14K金 → 变体 <code>PJ-DZ-00001-K14</code> / 名称 <code>…_14K金</code>;银色 → <code>-SV</code> / <code>…_银色</code>。</div>
+  </div>
+
+  <p class="note amber">
+    设计落点:后端 <code>COLOR_VARIANTS</code> 每条带 5 个属性 + <code>common</code> 标记;前端三处(PlatingCreate / PlatingDetail / PartList)改为「从接口派生」并按 <code>common</code> 分两层渲染(常用直显、不常用进「更多」)。以后加颜色或调整常用集,只改后端。
+  </p>
+</div>
+
+<script>
+  const METHODS = { G:'金', K14:'14K金', S:'白K', SV:'银', RG:'玫瑰金' };
+  function toggleMore(btn){ btn.nextElementSibling.classList.toggle('open'); btn.textContent = btn.nextElementSibling.classList.contains('open') ? (btn.textContent.startsWith('⋯')?'⋯':'更多 ▴') : (btn.textContent.startsWith('⋯')?'⋯':'更多 ▾'); }
+  function toggleVMore(el){ el.nextElementSibling.classList.toggle('open'); el.textContent = el.nextElementSibling.classList.contains('open') ? '－ 收起' : '＋ 更多颜色 ▾'; }
+  document.querySelectorAll('.chips[data-group]').forEach(group => {
+    group.querySelectorAll('.chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const active = chip.classList.contains('on');
+        group.querySelectorAll('.chip').forEach(c => {
+          c.classList.remove('on'); c.style.background = '#f5f5f5';
+          const m = c.getAttribute('style').match(/1px solid (#\w+)/); if (m) c.style.color = m[1];
+        });
+        const md = document.getElementById('d1-method');
+        if (!active) {
+          chip.classList.add('on');
+          const m = chip.getAttribute('style').match(/1px solid (#\w+)/); const hex = m ? m[1] : '#999';
+          chip.style.background = hex; chip.style.color = '#fff';
+          if (group.getAttribute('data-group') === 'd1' && md) md.textContent = METHODS[chip.dataset.c] || '—';
+        } else if (group.getAttribute('data-group') === 'd1' && md) md.textContent = '—';
+      });
+    });
+  });
+</script>
+</body>
+</html>
