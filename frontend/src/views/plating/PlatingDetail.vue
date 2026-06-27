@@ -232,7 +232,7 @@
           <div>
             <n-space size="small" style="margin-bottom: 6px;">
               <span
-                v-for="cv in colorVariantList"
+                v-for="cv in commonColors"
                 :key="cv.code"
                 :style="{
                   display: 'inline-block',
@@ -247,6 +247,39 @@
                 }"
                 @click="toggleAddColor(cv.code)"
               >{{ cv.code }}</span>
+              <span
+                v-if="moreColors.length"
+                :style="{
+                  display: 'inline-block',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  color: '#666',
+                  background: '#f5f5f5',
+                  padding: '2px 10px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  border: '1px dashed #aaa',
+                }"
+                @click="addColorShowMore = !addColorShowMore"
+              >更多 {{ addColorShowMore ? '▴' : '▾' }}</span>
+              <template v-if="addColorShowMore">
+                <span
+                  v-for="cv in moreColors"
+                  :key="cv.code"
+                  :style="{
+                    display: 'inline-block',
+                    fontSize: '11px',
+                    fontWeight: 'bold',
+                    color: addFormColor === cv.code ? '#fff' : badgeOf[cv.code],
+                    background: addFormColor === cv.code ? badgeOf[cv.code] : '#f5f5f5',
+                    padding: '2px 10px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    border: `1px solid ${badgeOf[cv.code]}`,
+                  }"
+                  @click="toggleAddColor(cv.code)"
+                >{{ cv.code }}</span>
+              </template>
             </n-space>
             <div v-if="addFormColor && addVariantInfo" style="font-size: 13px; color: #333;">
               <template v-if="addVariantInfo.part">
@@ -660,6 +693,7 @@ const commonColors = computed(() => colorVariantList.value.filter(c => c.common)
 const moreColors   = computed(() => colorVariantList.value.filter(c => !c.common))
 const expandedColorRows = ref(new Set())
 function toggleColorRow(id) { const s = new Set(expandedColorRows.value); s.has(id) ? s.delete(id) : s.add(id); expandedColorRows.value = s }
+const addColorShowMore = ref(false)
 
 const getPartColorCode = (part) => {
   if (!part) return null

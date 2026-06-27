@@ -109,9 +109,9 @@
                 cursor: 'pointer',
                 border: '1px dashed #aaa',
               }"
-              @click="showMoreColors = !showMoreColors"
-            >更多 {{ showMoreColors ? '▴' : '▾' }}</span>
-            <template v-if="showMoreColors">
+              @click="item._showMore = !item._showMore"
+            >更多 {{ item._showMore ? '▴' : '▾' }}</span>
+            <template v-if="item._showMore">
               <span
                 v-for="cv in moreColors"
                 :key="cv.code"
@@ -240,7 +240,7 @@ const doMerge = async () => {
   let added = 0
   try {
     for (const item of validItems) {
-      const { _selectedColor, _variantInfo, _variantLoading, _creatingVariant, _reqSeq, ...clean } = item
+      const { _selectedColor, _variantInfo, _variantLoading, _creatingVariant, _reqSeq, _showMore, ...clean } = item
       await addPlatingItem(orderId, clean)
       added++
     }
@@ -264,10 +264,9 @@ const codeOfLabel  = computed(() => Object.fromEntries(colorVariants.value.map(c
 const codeOfSuffix = computed(() => Object.fromEntries(colorVariants.value.map(c => ['_' + c.label, c.code])))
 const commonColors = computed(() => colorVariants.value.filter(c => c.common))
 const moreColors   = computed(() => colorVariants.value.filter(c => !c.common))
-const showMoreColors = ref(false)
 
 function createEmptyItem() {
-  return { part_id: null, receive_part_id: null, qty: 1, unit: '个', weight: null, weight_unit: 'kg', plating_method: '金', note: '', _selectedColor: null, _variantInfo: null, _variantLoading: false, _creatingVariant: false, _reqSeq: 0 }
+  return { part_id: null, receive_part_id: null, qty: 1, unit: '个', weight: null, weight_unit: 'kg', plating_method: '金', note: '', _selectedColor: null, _variantInfo: null, _variantLoading: false, _creatingVariant: false, _reqSeq: 0, _showMore: false }
 }
 
 const unitOptions = [
