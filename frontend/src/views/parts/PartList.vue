@@ -442,13 +442,6 @@ const commonVariantColors = computed(() => variantColorOptionsAll.value.filter(c
 const moreVariantColors = computed(() => variantColorOptionsAll.value.filter(c => !c.common))
 const showMoreVariantColors = ref(false)
 
-const variantColorOptions = computed(() =>
-  variantColorOptionsAll.value.map((vc) => ({
-    ...vc,
-    exists: existingVariantColors.value.includes(vc.code),
-  }))
-)
-
 const doCreateVariant = async (colorCode) => {
   creatingVariant.value = true
   try {
