@@ -248,3 +248,42 @@ def test_add_sibling_copies_bom(db):
 def test_add_sibling_unknown_base_raises(db):
     with pytest.raises(ValueError):
         add_jewelry_sibling(db, "SP-SET-99999", {})
+
+
+def test_add_sibling_inherits_inactive_status(db):
+    base = create_jewelry(db, {"name": "停用款", "category": "套装", "status": "inactive"})
+    sib = add_jewelry_sibling(db, base.id, {"color": "白K"})
+    assert sib.status == "inactive"
+
+
+def test_add_sibling_inherits_active_status(db):
+    base = create_jewelry(db, {"name": "在用款", "category": "套装"})
+    sib = add_jewelry_sibling(db, base.id, {"color": "白K"})
+    assert sib.status == "active"
+
+
+def test_delete_base_promotes_lowest_member(db):
+    base = create_jewelry(db, {"name": "项链", "category": "套装"})
+    a = add_jewelry_sibling(db, base.id, {"color": "白K"})    # -A
+    b = add_jewelry_sibling(db, base.id, {"color": "玫瑰金"})  # -B
+    delete_jewelry(db, base.id)
+    # surviving members re-point to the new lowest-id base (-A)
+    assert get_jewelry(db, base.id) is None
+    assert get_jewelry(db, a.id).style_group == a.id
+    assert get_jewelry(db, b.id).style_group == a.id
+
+
+def test_delete_non_base_member_leaves_group_intact(db):
+    base = create_jewelry(db, {"name": "耳钉", "category": "单件"})
+    a = add_jewelry_sibling(db, base.id, {"color": "白K"})
+    b = add_jewelry_sibling(db, base.id, {"color": "玫瑰金"})
+    delete_jewelry(db, b.id)
+    # base unchanged; remaining member still points at the base
+    assert get_jewelry(db, base.id).style_group == base.id
+    assert get_jewelry(db, a.id).style_group == base.id
+
+
+def test_delete_ungrouped_jewelry_unaffected(db):
+    j = create_jewelry(db, {"name": "孤品", "category": "单件"})
+    delete_jewelry(db, j.id)
+    assert get_jewelry(db, j.id) is None

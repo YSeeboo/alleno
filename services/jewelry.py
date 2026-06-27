@@ -76,6 +76,21 @@ def delete_jewelry(db: Session, jewelry_id: str) -> None:
     jewelry = get_jewelry(db, jewelry_id)
     if jewelry is None:
         raise ValueError(f"Jewelry not found: {jewelry_id}")
+    # If this row is a style-group base (id == its own style_group), promote
+    # the lowest-id surviving member so the group keeps pointing at a live row
+    # instead of a deleted id. Deletes are not blocked — see design §6.
+    group = jewelry.style_group
+    if group is not None and jewelry.id == group:
+        remaining = (
+            db.query(Jewelry)
+            .filter(Jewelry.style_group == group, Jewelry.id != jewelry_id)
+            .all()
+        )
+        if remaining:
+            new_base_id = min(m.id for m in remaining)
+            for m in remaining:
+                m.style_group = new_base_id
+            db.flush()
     db.delete(jewelry)
     db.flush()
 
@@ -136,6 +151,7 @@ def add_jewelry_sibling(db: Session, base_id: str, override_data: dict) -> Jewel
         "retail_price": src.retail_price,
         "wholesale_price": src.wholesale_price,
         "handcraft_cost": src.handcraft_cost,
+        "status": src.status,
     }
     safe_override = {k: v for k, v in (override_data or {}).items() if k != "category"}
     merged = {**base_data, **safe_override}
