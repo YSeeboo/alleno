@@ -6,9 +6,9 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from schemas.part import BatchCostUpdateRequest, BatchCostUpdateResponse, BatchCostUpdateResultItem, PartCreate, FindOrCreateVariantResponse, PartCostLogResponse, PartImportResponse, PartResponse, PartUpdate, PartVariantCreate
-from schemas.part_bom import PartBomSet
+from schemas.part_bom import PartBomSet, PartBomBatchSet
 from services.part import COLOR_VARIANTS, create_part, create_part_variant, find_or_create_variant, get_part, list_part_cost_logs, list_part_variants, list_parts, update_part, update_part_cost, delete_part
-from services.part_bom import set_part_bom, get_part_bom, delete_part_bom_item
+from services.part_bom import set_part_bom, get_part_bom, delete_part_bom_item, set_part_bom_batch
 from services.part_import import build_parts_import_template, import_parts_excel
 from api._errors import service_errors
 
@@ -87,6 +87,12 @@ def api_get_part_bom(part_id: str, db: Session = Depends(get_db)):
 def api_set_part_bom(part_id: str, body: PartBomSet, db: Session = Depends(get_db)):
     with service_errors():
         return set_part_bom(db, part_id, body.child_part_id, body.qty_per_unit)
+
+
+@router.post("/{part_id}/bom/batch")
+def api_set_part_bom_batch(part_id: str, body: PartBomBatchSet, db: Session = Depends(get_db)):
+    with service_errors():
+        return set_part_bom_batch(db, part_id, [i.model_dump() for i in body.items])
 
 
 @router.post("/{part_id}/find-or-create-variant", response_model=FindOrCreateVariantResponse)

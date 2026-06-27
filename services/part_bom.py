@@ -62,6 +62,26 @@ def set_part_bom(db: Session, parent_part_id: str, child_part_id: str, qty_per_u
     return bom
 
 
+def set_part_bom_batch(db: Session, parent_part_id: str, items: list[dict]) -> list:
+    """批量 upsert 子配件 BOM。先校验全部条目(原子:校验失败则一条不写),再逐条写。"""
+    parent = db.query(Part).filter_by(id=parent_part_id).first()
+    if not parent:
+        raise ValueError(f"配件 {parent_part_id} 不存在")
+    seen = set()
+    for it in items:
+        cid = it["child_part_id"]
+        if cid == parent_part_id:
+            raise ValueError("配件不能引用自身作为子配件")
+        if cid in seen:
+            raise ValueError(f"子配件 {cid} 在本批次中重复")
+        seen.add(cid)
+        if not db.query(Part).filter_by(id=cid).first():
+            raise ValueError(f"配件 {cid} 不存在")
+        if _would_create_cycle(db, parent_part_id, cid):
+            raise ValueError("不能添加此子配件关系，会形成循环引用")
+    return [set_part_bom(db, parent_part_id, it["child_part_id"], it["qty_per_unit"]) for it in items]
+
+
 def get_part_bom(db: Session, parent_part_id: str) -> list[dict]:
     rows = db.query(PartBom).filter_by(parent_part_id=parent_part_id).all()
     result = []

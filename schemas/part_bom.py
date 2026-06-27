@@ -8,6 +8,15 @@ class PartBomSet(BaseModel):
     qty_per_unit: float = Field(gt=0)
 
 
+class PartBomBatchItem(BaseModel):
+    child_part_id: str
+    qty_per_unit: float = Field(gt=0)
+
+
+class PartBomBatchSet(BaseModel):
+    items: list[PartBomBatchItem]
+
+
 class PartBomResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

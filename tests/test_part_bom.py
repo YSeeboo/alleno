@@ -274,3 +274,59 @@ def test_list_parts_includes_is_composite(client, db):
     parts_map = {p["id"]: p for p in resp.json()}
     assert parts_map[parent.id]["is_composite"] is True
     assert parts_map[children[0].id]["is_composite"] is False
+
+
+def test_set_part_bom_batch_adds_all(client, db):
+    parent, children = _setup_parts(db)
+    resp = client.post(f"/api/parts/{parent.id}/bom/batch", json={
+        "items": [
+            {"child_part_id": children[0].id, "qty_per_unit": 1.0},
+            {"child_part_id": children[1].id, "qty_per_unit": 2.0},
+            {"child_part_id": children[2].id, "qty_per_unit": 4.0},
+        ]
+    })
+    assert resp.status_code == 200
+    assert len(resp.json()) == 3
+    got = client.get(f"/api/parts/{parent.id}/bom")
+    assert len(got.json()) == 3
+
+
+def test_set_part_bom_batch_invalid_child_is_atomic(client, db):
+    parent, children = _setup_parts(db)
+    resp = client.post(f"/api/parts/{parent.id}/bom/batch", json={
+        "items": [
+            {"child_part_id": children[0].id, "qty_per_unit": 1.0},
+            {"child_part_id": "PJ-X-NOPE", "qty_per_unit": 1.0},
+        ]
+    })
+    assert resp.status_code == 400
+    # atomic: the valid item must NOT have been written
+    got = client.get(f"/api/parts/{parent.id}/bom")
+    assert len(got.json()) == 0
+
+
+def test_set_part_bom_batch_self_ref_rejected(client, db):
+    parent, _children = _setup_parts(db)
+    resp = client.post(f"/api/parts/{parent.id}/bom/batch", json={
+        "items": [{"child_part_id": parent.id, "qty_per_unit": 1.0}]
+    })
+    assert resp.status_code == 400
+
+
+def test_set_part_bom_batch_duplicate_in_batch_rejected(client, db):
+    parent, children = _setup_parts(db)
+    resp = client.post(f"/api/parts/{parent.id}/bom/batch", json={
+        "items": [
+            {"child_part_id": children[0].id, "qty_per_unit": 1.0},
+            {"child_part_id": children[0].id, "qty_per_unit": 2.0},
+        ]
+    })
+    assert resp.status_code == 400
+
+
+def test_set_part_bom_batch_zero_qty_rejected(client, db):
+    parent, children = _setup_parts(db)
+    resp = client.post(f"/api/parts/{parent.id}/bom/batch", json={
+        "items": [{"child_part_id": children[0].id, "qty_per_unit": 0}]
+    })
+    assert resp.status_code == 422
