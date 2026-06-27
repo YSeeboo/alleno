@@ -9,9 +9,11 @@ from models.part import Part, PartCostLog
 from services._helpers import _next_id_by_category, keyword_filter
 
 COLOR_VARIANTS = [
-    {"code": "G", "label": "金色"},
-    {"code": "S", "label": "白K"},
-    {"code": "RG", "label": "玫瑰金"},
+    {"code": "G",   "label": "金色",   "method": "金",     "badge": "#DAA520", "common": True},
+    {"code": "S",   "label": "白K",    "method": "白K",    "badge": "#C0C0C0", "common": True},
+    {"code": "RG",  "label": "玫瑰金", "method": "玫瑰金", "badge": "#B76E79", "common": True},
+    {"code": "K14", "label": "14K金",  "method": "14K金",  "badge": "#CBA94B", "common": False},
+    {"code": "SV",  "label": "银色",   "method": "银",     "badge": "#9AA7B0", "common": False},
 ]
 COLOR_SUFFIXES = [v["label"] for v in COLOR_VARIANTS]
 
