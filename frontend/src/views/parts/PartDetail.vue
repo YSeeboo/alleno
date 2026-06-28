@@ -417,7 +417,7 @@ import {
 } from 'naive-ui'
 import {
   getPart, updatePart, getPartCostLogs, listParts, getPartBom, setPartBom, deletePartBom,
-  getPartVariants, getColorVariants, setPartBomBatch,
+  getPartVariants, getColorVariants, setPartBomBatch, batchUpdatePartCosts,
 } from '@/api/parts'
 import { getStock, getStockLog, batchGetStock } from '@/api/inventory'
 import { fmtMoney, fmtPrice, parseNum, renderNamedImage, renderOptionWithImage } from '@/utils/ui'
@@ -548,13 +548,20 @@ function stagePart(opt) {
 function unstage(i) { staged.value.splice(i, 1) }
 async function submitBatch() {
   if (staged.value.length === 0) return
+  if (staged.value.some(s => !(s.qty_per_unit > 0))) {
+    message.warning('请为每个子配件填写用量(需大于 0)')
+    return
+  }
   batchSubmitting.value = true
   try {
     await setPartBomBatch(partId.value, staged.value.map(s => ({ child_part_id: s.child_part_id, qty_per_unit: s.qty_per_unit })))
     message.success(`已添加 ${staged.value.length} 项`)
     staged.value = []
     await loadPartBom()
-  } catch (e) { message.error(e.response?.data?.detail || '批量添加失败') }
+  } catch (e) {
+    const d = e.response?.data?.detail
+    message.error(typeof d === 'string' ? d : '批量添加失败')
+  }
   finally { batchSubmitting.value = false }
 }
 async function copyBomFrom(sourceId) {
@@ -659,23 +666,44 @@ const openEdit = () => {
   showEdit.value = true
 }
 
+const COST_FIELDS = ['purchase_cost', 'bead_cost', 'plating_cost']
+
 async function saveBasicInfo() {
-  await editFormRef.value?.validate()
+  try {
+    await editFormRef.value?.validate()
+  } catch {
+    return // 校验失败,表单已就地标红
+  }
   saving.value = true
   try {
-    const { category, ...data } = editForm
+    // 成本三项必须走成本端点(重算 unit_cost + 记价格历史 + 级联父件);
+    // PATCH/update_part 不会对这三项做这些,所以拆出来单独走 batch-update-costs。
+    const costUpdates = []
+    for (const f of COST_FIELDS) {
+      const newVal = editForm[f] ?? null
+      const oldVal = part.value?.[f] ?? null
+      if (newVal != null && newVal !== oldVal) {
+        costUpdates.push({ part_id: partId.value, field: f, value: newVal })
+      }
+    }
+    // 其余字段走 PATCH(剔除类目与三项成本)
+    const { category, purchase_cost, bead_cost, plating_cost, ...data } = editForm
     if (editingIsVariant.value) {
       delete data.color
     }
     await updatePart(partId.value, data)
+    if (costUpdates.length) {
+      await batchUpdatePartCosts({ updates: costUpdates })
+    }
     message.success('已保存')
     const { data: fresh } = await getPart(partId.value)
     part.value = fresh
-    // 成本可能变 → 刷新价格历史
+    // 成本可能变 → 刷新价格历史(此时已确有 PartCostLog)
     getPartCostLogs(partId.value).then(r => { costLogs.value = r.data }).catch(() => {})
     showEdit.value = false
   } catch (error) {
-    message.error(error.response?.data?.detail || '保存失败')
+    const d = error.response?.data?.detail
+    message.error(typeof d === 'string' ? d : '保存失败')
   } finally {
     saving.value = false
   }
