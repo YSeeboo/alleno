@@ -25,3 +25,4 @@ export const batchUpdatePartCosts = (data) => api.post('/parts/batch-update-cost
 export const getPartBom = (partId) => api.get(`/parts/${partId}/bom`)
 export const setPartBom = (partId, data) => api.post(`/parts/${partId}/bom`, data)
 export const deletePartBom = (bomId) => api.delete(`/parts/bom/${bomId}`)
+export const setPartBomBatch = (partId, items) => api.post(`/parts/${partId}/bom/batch`, { items })

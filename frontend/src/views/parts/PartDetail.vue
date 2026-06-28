@@ -211,32 +211,100 @@
           </table>
         </div>
 
-        <!-- 子配件 BOM (Task 3 will redesign — keep as-is) -->
-        <n-card title="子配件" class="bom-card">
+        <!-- 子配件 BOM -->
+        <div class="sec">
+          <div class="sec-h">
+            <span class="t">子配件 BOM</span>
+            <span class="cnt">{{ partBomList.length }} 项</span>
+            <span class="r-acts">
+              <button class="sbtn" @click="showCopyBom = !showCopyBom">📋 复制其他配件 BOM</button>
+            </span>
+          </div>
+
+          <!-- Copy BOM source selector -->
+          <div v-if="showCopyBom" style="margin-bottom: 14px; display: flex; align-items: center; gap: 10px;">
+            <n-select
+              filterable
+              clearable
+              placeholder="选择源配件，复制其 BOM 到待添加列表"
+              :options="childPartOptions"
+              :render-label="renderOptionWithImage"
+              :style="{ width: isMobile ? '100%' : '360px' }"
+              @update:value="(v) => { if (v) copyBomFrom(v) }"
+            />
+            <button class="sbtn" @click="showCopyBom = false">取消</button>
+          </div>
+
+          <!-- Existing BOM table -->
           <n-data-table v-if="partBomList.length > 0" :columns="bomColumns" :data="partBomList" :bordered="false" />
           <n-empty v-else description="暂无子配件 BOM" style="margin: 16px 0;" />
 
-          <n-divider>添加子配件</n-divider>
-          <n-space align="center">
+          <!-- Batch add panel -->
+          <div class="addpanel">
+            <div class="addpanel-h">批量添加子配件</div>
             <n-select
-              v-model:value="newChildPartId"
-              :options="childPartOptions"
-              :render-label="renderOptionWithImage"
+              v-model:value="batchSelectVal"
               filterable
               clearable
-              placeholder="选择配件"
-              :style="{ width: isMobile ? '100%' : '240px' }"
+              placeholder="搜索并选择配件（可多次选择）"
+              :options="stageableOptions"
+              :render-label="renderOptionWithImage"
+              style="width: 100%;"
+              @update:value="(val, opt) => { if (opt) stagePart(opt) }"
             />
-            <n-input-number
-              v-model:value="newChildQty"
-              :min="0.01"
-              :precision="4"
-              placeholder="每单位用量"
-              style="width: 140px;"
-            />
-            <n-button type="primary" :loading="addingBom" @click="addPartBom">确认添加</n-button>
-          </n-space>
-        </n-card>
+
+            <!-- Staging table -->
+            <table v-if="staged.length > 0" class="staging" style="margin-top: 12px;">
+              <thead>
+                <tr>
+                  <th>子配件</th>
+                  <th style="width: 150px;">每单位用量</th>
+                  <th style="width: 50px;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, i) in staged" :key="row.child_part_id">
+                  <td>
+                    <div style="display: flex; align-items: center; gap: 9px;">
+                      <img
+                        v-if="row.child_part_image"
+                        :src="row.child_part_image"
+                        style="width: 32px; height: 32px; border-radius: 6px; object-fit: cover; border: 1px solid #ECEDEF; flex-shrink: 0;"
+                      />
+                      <div v-else style="width: 32px; height: 32px; border-radius: 6px; background: #F4F5F6; flex-shrink: 0;"></div>
+                      <div>
+                        <div style="font-size: 13px; color: #1A1D21;">{{ row.child_part_name }}</div>
+                        <div style="font-size: 11px; color: #8B9096; font-variant-numeric: tabular-nums;">{{ row.child_part_id }}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <n-input-number
+                      v-model:value="row.qty_per_unit"
+                      :min="0.01"
+                      :precision="4"
+                      style="width: 120px;"
+                    />
+                  </td>
+                  <td>
+                    <n-button size="small" type="error" @click="unstage(i)">×</n-button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="addpanel-f">
+              <span class="addpanel-hint">{{ staged.length > 0 ? staged.length + ' 项待添加' : '从上方搜索添加配件' }}</span>
+              <n-button :disabled="staged.length === 0" @click="staged = []">清空</n-button>
+              <n-button
+                type="primary"
+                :loading="batchSubmitting"
+                :disabled="staged.length === 0"
+                @click="submitBatch"
+              >批量添加 {{ staged.length }} 项</n-button>
+            </div>
+          </div>
+        </div>
 
         <!-- 库存流水 (eyebrow style) -->
         <div class="sec sec-last">
@@ -338,18 +406,18 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, h, onMounted } from 'vue'
+import { ref, reactive, computed, h, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
 import {
-  NCard, NSpin, NDataTable, NSpace, NButton, NEmpty, NImage, NPopover,
-  NDivider, NSelect, NInputNumber, NPopconfirm,
+  NSpin, NDataTable, NSpace, NButton, NEmpty, NImage, NPopover,
+  NSelect, NInputNumber, NPopconfirm,
   NModal, NForm, NFormItem, NInput,
 } from 'naive-ui'
 import {
   getPart, updatePart, getPartCostLogs, listParts, getPartBom, setPartBom, deletePartBom,
-  getPartVariants, getColorVariants,
+  getPartVariants, getColorVariants, setPartBomBatch,
 } from '@/api/parts'
 import { getStock, getStockLog, batchGetStock } from '@/api/inventory'
 import { fmtMoney, fmtPrice, parseNum, renderNamedImage, renderOptionWithImage } from '@/utils/ui'
@@ -371,13 +439,21 @@ const partId = computed(() => route.params.id)
 // Sub-parts BOM
 const partBomList = ref([])
 const childPartOptions = ref([])
-const newChildPartId = ref(null)
-const newChildQty = ref(1)
-const addingBom = ref(false)
+// Batch add state (Task 3)
+const staged = ref([])          // [{ child_part_id, child_part_name, child_part_image, qty_per_unit }]
+const batchSubmitting = ref(false)
+const batchSelectVal = ref(null)
+const showCopyBom = ref(false)
 
 // Color variants for dot display
 const colorVariants = ref([])
 const badgeOfLabel = computed(() => Object.fromEntries(colorVariants.value.map(c => [c.label, c.badge])))
+
+// Batch staging — exclude self + existing BOM + already staged
+const stageableOptions = computed(() => {
+  const taken = new Set([...partBomList.value.map(b => b.child_part_id), ...staged.value.map(s => s.child_part_id)])
+  return childPartOptions.value.filter(o => !taken.has(o.value))
+})
 
 // Variant family
 const variantFamily = ref([])
@@ -464,21 +540,34 @@ const loadPartBom = async () => {
   }
 }
 
-const addPartBom = async () => {
-  if (!newChildPartId.value) return
-  addingBom.value = true
+function stagePart(opt) {
+  if (!opt) return
+  staged.value.push({ child_part_id: opt.value, child_part_name: opt.name, child_part_image: opt.image, qty_per_unit: 1 })
+  nextTick(() => { batchSelectVal.value = null })
+}
+function unstage(i) { staged.value.splice(i, 1) }
+async function submitBatch() {
+  if (staged.value.length === 0) return
+  batchSubmitting.value = true
   try {
-    await setPartBom(partId.value, {
-      child_part_id: newChildPartId.value,
-      qty_per_unit: newChildQty.value,
-    })
-    message.success('添加成功')
-    newChildPartId.value = null
-    newChildQty.value = 1
+    await setPartBomBatch(partId.value, staged.value.map(s => ({ child_part_id: s.child_part_id, qty_per_unit: s.qty_per_unit })))
+    message.success(`已添加 ${staged.value.length} 项`)
+    staged.value = []
     await loadPartBom()
-  } finally {
-    addingBom.value = false
+  } catch (e) { message.error(e.response?.data?.detail || '批量添加失败') }
+  finally { batchSubmitting.value = false }
+}
+async function copyBomFrom(sourceId) {
+  if (!sourceId) return
+  const { data } = await getPartBom(sourceId)
+  const taken = new Set([...partBomList.value.map(b => b.child_part_id), ...staged.value.map(s => s.child_part_id)])
+  for (const b of data) {
+    if (b.child_part_id === partId.value || taken.has(b.child_part_id)) continue
+    staged.value.push({ child_part_id: b.child_part_id, child_part_name: b.child_part_name, child_part_image: b.child_part_image, qty_per_unit: b.qty_per_unit })
+    taken.add(b.child_part_id)
   }
+  message.success('已预填到待添加列表，可微调后提交')
+  showCopyBom.value = false
 }
 
 const saveBomQty = async (row) => {
@@ -999,9 +1088,59 @@ onMounted(async () => {
   background: #F4F5F6;
 }
 
-/* ── BOM card (Task 3 will move to .sec style) ── */
-.bom-card {
-  margin: 22px 28px 0;
+/* ── Batch add panel ── */
+.addpanel {
+  margin-top: 14px;
+  border: 1px solid #ECEDEF;
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: #F6F7F8;
+}
+
+.addpanel-h {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #8B9096;
+  margin-bottom: 10px;
+}
+
+.staging thead th {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #8B9096;
+  text-align: left;
+  padding: 9px 10px;
+  border-bottom: 1px solid #ECEDEF;
+  background: #FAFBFC;
+}
+
+.staging tbody td {
+  padding: 10px;
+  border-bottom: 1px solid #F4F5F6;
+  vertical-align: middle;
+  background: #fff;
+}
+
+.staging tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.addpanel-f {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.addpanel-hint {
+  margin-right: auto;
+  font-size: 12px;
+  color: #8B9096;
 }
 
 /* ── Edit modal layout ── */
