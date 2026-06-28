@@ -559,15 +559,17 @@ async function submitBatch() {
 }
 async function copyBomFrom(sourceId) {
   if (!sourceId) return
-  const { data } = await getPartBom(sourceId)
-  const taken = new Set([...partBomList.value.map(b => b.child_part_id), ...staged.value.map(s => s.child_part_id)])
-  for (const b of data) {
-    if (b.child_part_id === partId.value || taken.has(b.child_part_id)) continue
-    staged.value.push({ child_part_id: b.child_part_id, child_part_name: b.child_part_name, child_part_image: b.child_part_image, qty_per_unit: b.qty_per_unit })
-    taken.add(b.child_part_id)
-  }
-  message.success('已预填到待添加列表，可微调后提交')
-  showCopyBom.value = false
+  try {
+    const { data } = await getPartBom(sourceId)
+    const taken = new Set([...partBomList.value.map(b => b.child_part_id), ...staged.value.map(s => s.child_part_id)])
+    for (const b of data) {
+      if (b.child_part_id === partId.value || taken.has(b.child_part_id)) continue
+      staged.value.push({ child_part_id: b.child_part_id, child_part_name: b.child_part_name, child_part_image: b.child_part_image, qty_per_unit: b.qty_per_unit })
+      taken.add(b.child_part_id)
+    }
+    message.success('已预填到待添加列表，可微调后提交')
+    showCopyBom.value = false
+  } catch (e) { message.error(e.response?.data?.detail || '复制 BOM 失败') }
 }
 
 const saveBomQty = async (row) => {
