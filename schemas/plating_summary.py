@@ -1,4 +1,4 @@
-from datetime import date as date_type
+from datetime import date as date_type, datetime
 from typing import Literal, Optional, List
 from pydantic import BaseModel, ConfigDict
 
@@ -27,6 +27,7 @@ class DispatchedItem(BaseModel):
     dispatch_date: date_type
     days_out: Optional[int] = None       # None when is_completed
     is_completed: bool
+    archived_at: Optional[datetime] = None
     receive_part_id: Optional[str] = None
     receive_part_name: Optional[str] = None
     receive_part_image: Optional[str] = None

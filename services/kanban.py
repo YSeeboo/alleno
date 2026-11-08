@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from services._helpers import keyword_filter
 from sqlalchemy.orm import Session
 
@@ -32,6 +32,7 @@ from services.inventory import add_stock, deduct_stock
 from services.plating import send_plating_order
 from services.handcraft import send_handcraft_order
 from time_utils import now_beijing
+from services.production_archive import require_unarchived
 
 _DISPATCHED_STATUSES = ("processing", "completed")
 
@@ -150,7 +151,7 @@ def _pending_vendors(db: Session, order_type: str | None) -> set[tuple]:
     if order_type is None or order_type == "plating":
         rows = (
             db.query(PlatingOrder.supplier_name)
-            .filter(PlatingOrder.status == "pending")
+            .filter(PlatingOrder.status == "pending", PlatingOrder.archived_at.is_(None))
             .distinct()
             .all()
         )
@@ -160,7 +161,7 @@ def _pending_vendors(db: Session, order_type: str | None) -> set[tuple]:
     if order_type is None or order_type == "handcraft":
         rows = (
             db.query(HandcraftOrder.supplier_name)
-            .filter(HandcraftOrder.status == "pending")
+            .filter(HandcraftOrder.status == "pending", HandcraftOrder.archived_at.is_(None))
             .distinct()
             .all()
         )
@@ -181,7 +182,7 @@ def _pending_part_counts(db: Session, order_type: str | None) -> dict[tuple, int
                 func.count(PlatingOrderItem.part_id.distinct()).label("cnt"),
             )
             .join(PlatingOrderItem, PlatingOrder.id == PlatingOrderItem.plating_order_id)
-            .filter(PlatingOrder.status == "pending")
+            .filter(PlatingOrder.status == "pending", PlatingOrder.archived_at.is_(None))
             .group_by(PlatingOrder.supplier_name)
             .all()
         )
@@ -195,7 +196,7 @@ def _pending_part_counts(db: Session, order_type: str | None) -> dict[tuple, int
                 func.count(HandcraftPartItem.part_id.distinct()).label("cnt"),
             )
             .join(HandcraftPartItem, HandcraftOrder.id == HandcraftPartItem.handcraft_order_id)
-            .filter(HandcraftOrder.status == "pending")
+            .filter(HandcraftOrder.status == "pending", HandcraftOrder.archived_at.is_(None))
             .group_by(HandcraftOrder.supplier_name)
             .all()
         )
@@ -218,7 +219,7 @@ def _processing_outstanding_counts(db: Session, order_type: str | None) -> dict[
                 func.sum(func.coalesce(PlatingOrderItem.received_qty, 0)).label("received"),
             )
             .join(PlatingOrderItem, PlatingOrder.id == PlatingOrderItem.plating_order_id)
-            .filter(PlatingOrder.status == "processing")
+            .filter(PlatingOrder.status == "processing", PlatingOrder.archived_at.is_(None))
             .group_by(PlatingOrder.supplier_name, PlatingOrderItem.part_id)
             .all()
         )
@@ -235,7 +236,7 @@ def _processing_outstanding_counts(db: Session, order_type: str | None) -> dict[
             )
             .join(HandcraftPartItem, HandcraftOrder.id == HandcraftPartItem.handcraft_order_id)
             .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
-            .filter(HandcraftOrder.status == "processing")
+            .filter(HandcraftOrder.status == "processing", HandcraftOrder.archived_at.is_(None))
             .group_by(HandcraftOrder.supplier_name, HandcraftPartItem.part_id)
             .all()
         )
@@ -246,7 +247,7 @@ def _processing_outstanding_counts(db: Session, order_type: str | None) -> dict[
                 func.sum(HandcraftJewelryItem.qty).label("qty"),
             )
             .join(HandcraftJewelryItem, HandcraftOrder.id == HandcraftJewelryItem.handcraft_order_id)
-            .filter(HandcraftOrder.status == "processing")
+            .filter(HandcraftOrder.status == "processing", HandcraftOrder.archived_at.is_(None))
             .group_by(HandcraftOrder.supplier_name, HandcraftJewelryItem.jewelry_id)
             .all()
         )
@@ -261,6 +262,7 @@ def _processing_outstanding_counts(db: Session, order_type: str | None) -> dict[
             .filter(
                 VendorReceipt.order_type == "handcraft",
                 HandcraftOrder.status == "processing",
+                HandcraftOrder.archived_at.is_(None),
             )
             .group_by(
                 HandcraftOrder.supplier_name,
@@ -349,6 +351,7 @@ def _dispatched_for_vendor(db: Session, vendor_name: str, order_type: str) -> di
             .filter(
                 PlatingOrder.supplier_name == vendor_name,
                 PlatingOrder.status.in_(_DISPATCHED_STATUSES),
+                PlatingOrder.archived_at.is_(None),
             )
             .group_by(PlatingOrderItem.part_id)
             .all()
@@ -364,6 +367,7 @@ def _dispatched_for_vendor(db: Session, vendor_name: str, order_type: str) -> di
             .filter(
                 HandcraftOrder.supplier_name == vendor_name,
                 HandcraftOrder.status.in_(_DISPATCHED_STATUSES),
+                HandcraftOrder.archived_at.is_(None),
             )
             .group_by(HandcraftPartItem.part_id)
             .all()
@@ -376,6 +380,8 @@ def _dispatched_for_vendor(db: Session, vendor_name: str, order_type: str) -> di
 
 def _received_for_vendor(db: Session, vendor_name: str, order_type: str) -> dict[tuple, float]:
     """(item_id, item_type) → received qty for a specific vendor from vendor_receipt."""
+    model = PlatingOrder if order_type == "plating" else HandcraftOrder
+    archived_ids = db.query(model.id).filter(model.archived_at.is_not(None))
     rows = (
         db.query(
             VendorReceipt.item_id,
@@ -383,6 +389,7 @@ def _received_for_vendor(db: Session, vendor_name: str, order_type: str) -> dict
             func.sum(VendorReceipt.qty).label("qty"),
         )
         .filter(VendorReceipt.vendor_name == vendor_name, VendorReceipt.order_type == order_type)
+        .filter(or_(VendorReceipt.order_id.is_(None), VendorReceipt.order_id.notin_(archived_ids)))
         .group_by(VendorReceipt.item_id, VendorReceipt.item_type)
         .all()
     )
@@ -399,6 +406,7 @@ def _validate_order_ownership(
         order = db.query(HandcraftOrder).filter(HandcraftOrder.id == order_id).first()
     if order is None:
         raise ValueError(f"订单 {order_id} 不存在")
+    require_unarchived(order)
     if order.supplier_name != vendor_name:
         raise ValueError(f"订单 {order_id} 不属于厂家 {vendor_name}")
 
@@ -567,6 +575,7 @@ def _expected_jewelry_for_vendor(db: Session, vendor_name: str) -> dict[str, flo
         .filter(
             HandcraftOrder.supplier_name == vendor_name,
             HandcraftOrder.status == "processing",
+            HandcraftOrder.archived_at.is_(None),
         )
         .group_by(HandcraftJewelryItem.jewelry_id)
         .all()
@@ -588,6 +597,7 @@ def _all_expected_jewelry_for_vendor(db: Session, vendor_name: str) -> dict[str,
         .filter(
             HandcraftOrder.supplier_name == vendor_name,
             HandcraftOrder.status.in_(_DISPATCHED_STATUSES),
+            HandcraftOrder.archived_at.is_(None),
         )
         .group_by(HandcraftJewelryItem.jewelry_id)
         .all()
@@ -618,6 +628,7 @@ def _try_complete_vendor_orders(db: Session, vendor_name: str, order_type: str) 
             .filter(
                 PlatingOrder.supplier_name == vendor_name,
                 PlatingOrder.status == "processing",
+                PlatingOrder.archived_at.is_(None),
             )
             .first()
         )
@@ -629,6 +640,7 @@ def _try_complete_vendor_orders(db: Session, vendor_name: str, order_type: str) 
         db.query(PlatingOrder).filter(
             PlatingOrder.supplier_name == vendor_name,
             PlatingOrder.status == "processing",
+            PlatingOrder.archived_at.is_(None),
         ).update({"status": "completed", "completed_at": now}, synchronize_session=False)
 
     else:  # handcraft
@@ -638,6 +650,7 @@ def _try_complete_vendor_orders(db: Session, vendor_name: str, order_type: str) 
             .filter(
                 HandcraftOrder.supplier_name == vendor_name,
                 HandcraftOrder.status == "processing",
+                HandcraftOrder.archived_at.is_(None),
             )
             .group_by(HandcraftJewelryItem.jewelry_id)
             .all()
@@ -648,10 +661,12 @@ def _try_complete_vendor_orders(db: Session, vendor_name: str, order_type: str) 
 
         received_rows = (
             db.query(VendorReceipt.item_id, func.sum(VendorReceipt.qty))
+            .join(HandcraftOrder, HandcraftOrder.id == VendorReceipt.order_id)
             .filter(
                 VendorReceipt.vendor_name == vendor_name,
                 VendorReceipt.order_type == "handcraft",
                 VendorReceipt.item_type == "jewelry",
+                HandcraftOrder.archived_at.is_(None),
             )
             .group_by(VendorReceipt.item_id)
             .all()
@@ -664,6 +679,7 @@ def _try_complete_vendor_orders(db: Session, vendor_name: str, order_type: str) 
         db.query(HandcraftOrder).filter(
             HandcraftOrder.supplier_name == vendor_name,
             HandcraftOrder.status == "processing",
+            HandcraftOrder.archived_at.is_(None),
         ).update({"status": "completed", "completed_at": now}, synchronize_session=False)
 
 
@@ -770,6 +786,7 @@ def get_vendor_detail(db: Session, vendor_name: str, order_type: str) -> VendorD
             .filter(
                 PlatingOrder.supplier_name == vendor_name,
                 PlatingOrder.status.in_(_DISPATCHED_STATUSES),
+                PlatingOrder.archived_at.is_(None),
             )
             .group_by(PlatingOrderItem.part_id, PlatingOrderItem.plating_method)
             .all()
@@ -830,6 +847,7 @@ def get_vendor_detail(db: Session, vendor_name: str, order_type: str) -> VendorD
         order_rows = (
             db.query(PlatingOrder)
             .filter(PlatingOrder.supplier_name == vendor_name)
+            .filter(PlatingOrder.archived_at.is_(None))
             .order_by(PlatingOrder.created_at.desc())
             .all()
         )
@@ -843,6 +861,7 @@ def get_vendor_detail(db: Session, vendor_name: str, order_type: str) -> VendorD
         order_rows = (
             db.query(HandcraftOrder)
             .filter(HandcraftOrder.supplier_name == vendor_name)
+            .filter(HandcraftOrder.archived_at.is_(None))
             .order_by(HandcraftOrder.created_at.desc())
             .all()
         )
@@ -949,7 +968,7 @@ def get_orders_for_vendor(
     else:
         rows = (
             db.query(HandcraftOrder)
-            .filter(HandcraftOrder.supplier_name == vendor_name, HandcraftOrder.status == "processing")
+            .filter(HandcraftOrder.supplier_name == vendor_name, HandcraftOrder.status == "processing", HandcraftOrder.archived_at.is_(None))
             .order_by(HandcraftOrder.created_at.desc())
             .all()
         )
@@ -1184,6 +1203,7 @@ def change_order_status(
         order = db.query(PlatingOrder).filter(PlatingOrder.id == order_id).first()
         if order is None:
             raise ValueError(f"电镀单 {order_id} 不存在")
+        require_unarchived(order)
         current_status = order.status
 
         if current_status == new_status:
@@ -1220,6 +1240,7 @@ def change_order_status(
         order = db.query(HandcraftOrder).filter(HandcraftOrder.id == order_id).first()
         if order is None:
             raise ValueError(f"手工单 {order_id} 不存在")
+        require_unarchived(order)
         current_status = order.status
 
         if current_status == new_status:

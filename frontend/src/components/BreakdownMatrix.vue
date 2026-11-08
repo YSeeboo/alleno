@@ -243,6 +243,7 @@ const CellEditable = defineComponent({
 const props = defineProps({
   hcId: { type: String, required: true },
   hcStatus: { type: String, required: true },
+  archived: { type: Boolean, default: false },
   groups: { type: Array, required: true },  // backend breakdown response
 })
 const emit = defineEmits(['saved'])
@@ -286,12 +287,13 @@ function cancelEdit() {
 }
 
 // Status gates (sourced from the spec's state matrix)
-const canAddNewRow = computed(() => props.hcStatus === 'pending')
-const canAddNewManual = computed(() => props.hcStatus === 'pending')  // new manual entry on existing row
-const canEditQty = computed(() => props.hcStatus === 'pending')
-const canEditCustomerName = computed(() => props.hcStatus !== 'completed')
+const canAddNewRow = computed(() => !props.archived && props.hcStatus === 'pending')
+const canAddNewManual = computed(() => !props.archived && props.hcStatus === 'pending')  // new manual entry on existing row
+const canEditQty = computed(() => !props.archived && props.hcStatus === 'pending')
+const canEditCustomerName = computed(() => !props.archived && props.hcStatus !== 'completed')
 
 function canDeleteRow(r) {
+  if (props.archived) return false
   if (r.is_locked_customer) return false
   if (props.hcStatus === 'completed') return false
   // processing: only deletable if all manual entries have received_qty == 0
@@ -611,7 +613,7 @@ function computeDiff() {
   return { deletes, patches, adds }
 }
 
-const canEdit = computed(() => props.hcStatus !== 'completed')
+const canEdit = computed(() => !props.archived && props.hcStatus !== 'completed')
 
 // --- Transpose backend groups → rows (customer-major) + cols (jewelry-major) ---
 

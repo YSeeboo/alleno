@@ -14,6 +14,10 @@ class HandcraftOrder(Base):
     status = Column(String, nullable=False, default="pending")
     created_at = Column(DateTime, default=now_beijing)
     completed_at = Column(DateTime, nullable=True)
+    archived_at = Column(DateTime, nullable=True)
+    archive_reason = Column(Text, nullable=True)
+    archived_by = Column(String, nullable=True)
+    archive_batch_id = Column(String, nullable=True)
     note = Column(Text, nullable=True)
     delivery_images_raw = Column("delivery_images", Text, nullable=True)
     # Uniqueness lives in a partial index built by ensure_schema_compat

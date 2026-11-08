@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>手工单详情 — 产出项「添加产出」入口 Mockup</title>
+<style>
+  :root {
+    --ink: #1A1D21;
+    --emerald: #1E7A5A;
+    --accent-soft: #E6F2EC;
+    --danger: #E5484D;
+    --amber: #B7791F;
+    --line: #ECEDEF;
+    --line-2: #F4F5F6;
+    --muted: #8B9096;
+    --muted-2: #AEB3B8;
+    --sub: #F6F7F8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: #fff;
+    padding: 32px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  .note {
+    font-size: 12px; color: var(--muted); margin: 0 0 28px;
+    padding: 10px 14px; background: var(--sub); border-radius: 8px;
+    border-left: 3px solid var(--emerald);
+  }
+  .variant-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.6px;
+    color: var(--muted-2); text-transform: uppercase; margin: 36px 0 10px;
+  }
+
+  /* ── eyebrow section ── */
+  .hc-sec { margin-bottom: 28px; }
+  .hc-sec-h {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 0 8px; border-bottom: 1px solid var(--line); margin-bottom: 12px;
+  }
+  .hc-sec-h .t {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.8px;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .acts { display: inline-flex; gap: 8px; }
+  .hc-sbtn {
+    font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: 6px;
+    border: 1px solid var(--line); background: #fff; color: var(--ink);
+    cursor: pointer; transition: all 0.15s; line-height: 1.4;
+  }
+  .hc-sbtn:hover { border-color: var(--muted-2); background: var(--line-2); }
+  .hc-sbtn--primary {
+    border-color: var(--emerald); color: var(--emerald); background: var(--accent-soft);
+  }
+  .hc-sbtn--primary:hover { background: var(--emerald); color: #fff; }
+
+  /* ── table ── */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase;
+    color: var(--muted); text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line);
+  }
+  tbody td { padding: 10px 12px; border-bottom: 1px solid var(--line-2); }
+  tbody tr:last-child td { border-bottom: none; }
+  .nm { display: flex; align-items: center; gap: 10px; }
+  .thumb {
+    width: 36px; height: 36px; border-radius: 6px; background: var(--sub);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--muted-2); font-size: 10px; flex-shrink: 0;
+  }
+  .nm small { color: var(--muted); font-size: 11px; }
+  .tag {
+    font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px;
+    background: var(--accent-soft); color: var(--emerald);
+  }
+  .tag.part { background: #EEF1F4; color: #475569; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ── empty state ── */
+  .empty {
+    text-align: center; color: var(--muted-2); font-size: 13px;
+    padding: 28px 0; background: var(--sub); border-radius: 8px;
+  }
+  .empty a { color: var(--emerald); cursor: pointer; }
+
+  /* ── modal ── */
+  .modal-stage {
+    margin-top: 14px; background: rgba(26,29,33,0.04); border-radius: 12px;
+    padding: 28px; display: flex; justify-content: center;
+  }
+  .modal {
+    width: 480px; background: #fff; border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.12); overflow: hidden;
+  }
+  .modal-h {
+    padding: 16px 20px; border-bottom: 1px solid var(--line);
+    font-size: 15px; font-weight: 600;
+  }
+  .modal-b { padding: 20px; }
+  .frow { display: flex; align-items: center; margin-bottom: 16px; }
+  .frow:last-child { margin-bottom: 0; }
+  .flabel { width: 76px; font-size: 13px; color: var(--ink); flex-shrink: 0; }
+  .fctrl { flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    border: none; background: #fff; padding: 6px 18px; font-size: 13px;
+    cursor: pointer; color: var(--muted); transition: all 0.15s;
+  }
+  .seg button.on { background: var(--emerald); color: #fff; font-weight: 500; }
+  .inp {
+    width: 100%; height: 34px; border: 1px solid var(--line); border-radius: 8px;
+    padding: 0 12px; font-size: 13px; color: var(--ink); background: #fff;
+  }
+  .inp.sel { display: flex; align-items: center; justify-content: space-between; color: var(--muted); cursor: pointer; }
+  .inp.sel .ph { color: var(--ink); }
+  .inp.sel::after { content: "▾"; color: var(--muted-2); }
+  .row2 { display: flex; gap: 8px; }
+  .num-inp { width: 100%; height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .modal-f {
+    padding: 14px 20px; border-top: 1px solid var(--line);
+    display: flex; justify-content: flex-end; gap: 10px;
+  }
+  .btn { padding: 7px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid var(--line); background: #fff; }
+  .btn.primary { background: var(--emerald); color: #fff; border-color: var(--emerald); }
+  .hint { font-size: 11px; color: var(--muted-2); margin-top: 5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="note">
+    Mockup · 手工单详情「产出项」新增添加入口。纯前端改动 <code>HandcraftDetail.vue</code>,后端 <code>addHandcraftJewelry</code> 已就绪。下面展示 3 个状态:有数据 / 空态 / 添加弹窗。
+  </p>
+
+  <!-- ── 变体 A:有产出项 ── -->
+  <div class="variant-label">A · 产出项区(有数据,pending/processing 显示「＋ 添加产出」)</div>
+  <div class="hc-sec">
+    <div class="hc-sec-h">
+      <span class="t">产出项</span>
+      <span class="acts">
+        <button class="hc-sbtn">🔗 批量关联订单</button>
+        <button class="hc-sbtn hc-sbtn--primary">＋ 添加产出</button>
+      </span>
+    </div>
+    <table>
+      <thead>
+        <tr><th style="width:44%">产出</th><th>类型</th><th>数量</th><th>已收回</th><th></th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="nm"><span class="thumb">IMG</span><span>珍珠吊坠项链<br><small>SP-0007</small></span></span></td>
+          <td><span class="tag">饰品</span></td>
+          <td class="num">5 套</td>
+          <td class="num">0 / 5</td>
+          <td style="text-align:right; color:var(--muted-2)">编辑 · 删除</td>
+        </tr>
+        <tr>
+          <td><span class="nm"><span class="thumb">IMG</span><span>合金底托(组合)<br><small>PJ-X-00012</small></span></span></td>
+          <td><span class="tag part">组合配件</span></td>
+          <td class="num">12 个</td>
+          <td class="num">0 / 12</td>
+          <td style="text-align:right; color:var(--muted-2)">编辑 · 删除</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── 变体 B:空态 ── -->
+  <div class="variant-label">B · 产出项区(空态,订单可编辑时仍显示区块+按钮)</div>
+  <div class="hc-sec">
+    <div class="hc-sec-h">
+      <span class="t">产出项</span>
+      <span class="acts">
+        <button class="hc-sbtn hc-sbtn--primary">＋ 添加产出</button>
+      </span>
+    </div>
+    <div class="empty">暂无产出项,点击右上角 <a>＋ 添加产出</a> 添加饰品或组合配件</div>
+  </div>
+
+  <!-- ── 变体 C:添加弹窗 ── -->
+  <div class="variant-label">C · 「添加产出」弹窗</div>
+  <div class="modal-stage">
+    <div class="modal">
+      <div class="modal-h">添加产出</div>
+      <div class="modal-b">
+        <div class="frow">
+          <span class="flabel">产出类型</span>
+          <span class="fctrl">
+            <span class="seg">
+              <button class="on">饰品</button>
+              <button>组合配件</button>
+            </span>
+          </span>
+        </div>
+        <div class="frow">
+          <span class="flabel">饰品</span>
+          <span class="fctrl">
+            <div class="inp sel"><span class="ph">SP-0007 珍珠吊坠项链</span><span>▾</span></div>
+            <div class="hint">可搜索编号 / 名称</div>
+          </span>
+        </div>
+        <div class="frow">
+          <span class="flabel">数量</span>
+          <span class="fctrl"><input class="num-inp" value="5"></span>
+        </div>
+        <div class="frow">
+          <span class="flabel">单位</span>
+          <span class="fctrl"><div class="inp sel"><span class="ph">套</span><span>▾</span></div></span>
+        </div>
+        <div class="frow">
+          <span class="flabel">重量</span>
+          <span class="fctrl row2">
+            <input class="num-inp" placeholder="可选" style="flex:1">
+            <div class="inp sel" style="width:90px"><span class="ph">kg</span><span>▾</span></div>
+          </span>
+        </div>
+        <div class="frow">
+          <span class="flabel">备注</span>
+          <span class="fctrl"><input class="inp" placeholder="备注（可选）"></span>
+        </div>
+      </div>
+      <div class="modal-f">
+        <button class="btn">取消</button>
+        <button class="btn primary">确认添加</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="note" style="margin-top:32px; border-left-color: var(--amber);">
+    切到「组合配件」类型时,"饰品"那一行变为"组合配件"下拉(复用 partOptions),默认单位变「个」。不含"客户名"字段——客户归属在「客户分拣」做。
+  </p>
+</div>
+</body>
+</html>

@@ -14,6 +14,7 @@ from models.part import Part
 from services._helpers import _next_id, keyword_filter
 from services.inventory import add_stock, batch_get_stock, deduct_stock, supplement_shortfall
 from time_utils import now_beijing
+from services.production_archive import filter_archive, require_unarchived
 
 
 # Per-tier buffer rule for suggesting handcraft part allocation:
@@ -220,6 +221,7 @@ def create_handcraft_order(
             .filter(
                 HandcraftOrder.supplier_name == supplier_name,
                 HandcraftOrder.status == "pending",
+                HandcraftOrder.archived_at.is_(None),
                 func.cast(HandcraftOrder.created_at, Date) == today_beijing,
             )
             .order_by(HandcraftOrder.created_at.asc(), HandcraftOrder.id.asc())
@@ -321,6 +323,7 @@ def _compute_effective_part_totals(
 
 def send_handcraft_order(db: Session, handcraft_order_id: str) -> HandcraftOrder:
     order = get_handcraft_order(db, handcraft_order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {handcraft_order_id}")
     if order.status != "pending":
@@ -375,6 +378,7 @@ def supplement_and_send_handcraft_order(
     All validation lives in send_handcraft_order; failures roll back.
     """
     order = get_handcraft_order(db, handcraft_order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {handcraft_order_id}")
     if order.status != "pending":
@@ -579,6 +583,7 @@ def list_suppliers_with_sorting(db: Session) -> list[str]:
     rows = (
         db.query(HandcraftOrder.supplier_name)
         .filter(exists(qualifying_subq))
+        .filter(HandcraftOrder.archived_at.is_(None))
         .distinct()
         .order_by(HandcraftOrder.supplier_name.asc())
         .all()
@@ -633,6 +638,7 @@ def list_handcraft_orders_with_sorting(
             db.query(HandcraftOrder.id)
             .filter(HandcraftOrder.supplier_name == supplier_name)
             .filter(exists(qualifying_subq))
+            .filter(HandcraftOrder.archived_at.is_(None))
             .order_by(HandcraftOrder.created_at.desc(), HandcraftOrder.id.desc())
             .all()
         )
@@ -664,14 +670,14 @@ def list_handcraft_orders_with_sorting(
     return {"orders": orders_out, "has_more": has_more}
 
 
-def list_handcraft_orders(db: Session, status: str = None, supplier_name: str = None) -> list:
+def list_handcraft_orders(db: Session, status: str = None, supplier_name: str = None, archive: str = "active") -> list:
     # An explicitly empty / whitespace-only supplier_name means "caller
     # asked for this supplier but the value is empty" — return no rows
     # instead of falling through to an unfiltered query. supplier_name=None
     # (parameter not provided) still returns all rows.
     if supplier_name is not None and not supplier_name.strip():
         return []
-    q = db.query(HandcraftOrder)
+    q = filter_archive(db.query(HandcraftOrder), HandcraftOrder, archive)
     if status is not None:
         q = q.filter(HandcraftOrder.status == status)
     clause = keyword_filter(supplier_name, HandcraftOrder.supplier_name)
@@ -806,6 +812,7 @@ def get_handcraft_jewelries(db: Session, order_id: str) -> list:
 
 def update_handcraft_order(db: Session, order_id: str, data: dict) -> HandcraftOrder:
     order = get_handcraft_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
     if "supplier_name" in data and data["supplier_name"] is not None:
@@ -823,6 +830,7 @@ def update_handcraft_order(db: Session, order_id: str, data: dict) -> HandcraftO
 
 def update_handcraft_delivery_images(db: Session, order_id: str, delivery_images: Optional[list]) -> HandcraftOrder:
     order = get_handcraft_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
     order.delivery_images = _normalize_delivery_images(delivery_images)
@@ -832,6 +840,7 @@ def update_handcraft_delivery_images(db: Session, order_id: str, delivery_images
 
 def add_handcraft_part(db: Session, order_id: str, item: dict) -> HandcraftPartItem:
     order = get_handcraft_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
     if order.status != "pending":
@@ -871,6 +880,7 @@ def add_handcraft_part(db: Session, order_id: str, item: dict) -> HandcraftPartI
 
 def update_handcraft_part(db: Session, order_id: str, item_id: int, data: dict) -> HandcraftPartItem:
     order = get_handcraft_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
     if order.status != "pending":
@@ -966,6 +976,7 @@ def delete_handcraft_part(db: Session, order_id: str, item_id: int) -> None:
     from models.order import OrderItemLink
 
     order = get_handcraft_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
     if order.status != "pending":
@@ -1000,6 +1011,7 @@ def delete_handcraft_part(db: Session, order_id: str, item_id: int) -> None:
 
 def add_handcraft_jewelry(db: Session, order_id: str, item: dict) -> HandcraftJewelryItem:
     order = get_handcraft_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
     if order.status not in ("pending", "processing"):
@@ -1044,6 +1056,7 @@ def update_handcraft_jewelry(db: Session, order_id: str, item_id: int, data: dic
     from models.order import OrderItemLink
 
     order = get_handcraft_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
     item = db.query(HandcraftJewelryItem).filter(
@@ -1093,6 +1106,7 @@ def delete_handcraft_jewelry(db: Session, order_id: str, item_id: int) -> None:
     from models.order import OrderItemLink, OrderTodoBatchJewelry
 
     order = get_handcraft_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
     if order.status == "completed":
@@ -1142,6 +1156,7 @@ def delete_handcraft_order(db: Session, order_id: str) -> None:
     from sqlalchemy import or_
 
     order = get_handcraft_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
 
@@ -1269,6 +1284,7 @@ def update_handcraft_order_status(db: Session, order_id: str, status: str) -> Ha
     if status not in _HANDCRAFT_VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Valid values: {', '.join(sorted(_HANDCRAFT_VALID_STATUSES))}")
     order = get_handcraft_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
     current = order.status
@@ -1317,6 +1333,7 @@ def list_handcraft_pending_receive_items(
         .join(Part, HandcraftPartItem.part_id == Part.id)
         .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
         .filter(
+            HandcraftOrder.archived_at.is_(None),
             HandcraftPartItem.status == "制作中",
             func.coalesce(HandcraftPartItem.received_qty, 0) < effective_qty_expr,
         )
@@ -1374,6 +1391,7 @@ def list_handcraft_pending_receive_items(
         .outerjoin(Jewelry, HandcraftJewelryItem.jewelry_id == Jewelry.id)
         .outerjoin(Part, HandcraftJewelryItem.part_id == Part.id)
         .filter(
+            HandcraftOrder.archived_at.is_(None),
             HandcraftJewelryItem.status == "制作中",
             func.coalesce(HandcraftJewelryItem.received_qty, 0) < HandcraftJewelryItem.qty,
         )
@@ -1444,6 +1462,7 @@ def merge_duplicate_part_items(db: Session, order_id: str, part_id: str) -> dict
     Returns: {merged_part_item_id, before_rows, after_rows, merged_qty}.
     """
     order = db.get(HandcraftOrder, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"订单 {order_id} 不存在")
     if order.status != "pending":

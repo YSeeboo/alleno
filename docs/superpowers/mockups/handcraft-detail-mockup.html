@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>手工单详情 — 优化想法 mockup v2</title>
+<style>
+  :root{
+    --ink:#1A1D21; --accent:#1E7A5A; --accent-soft:#E6F2EC; --danger:#E5484D; --amber:#B7791F;
+    --line:#ECEDEF; --line-2:#F4F5F6; --muted:#8B9096; --muted-2:#AEB3B8; --sub:#F6F7F8; --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:#E9EBEE;
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--ink);padding:28px;-webkit-font-smoothing:antialiased;}
+  .lead{max-width:1120px;margin:0 auto 14px;}
+  .lead h1{font-size:15px;font-weight:600;color:#5b616a;margin:0 0 4px;}
+  .lead p{margin:0;font-size:12.5px;color:#878d96;}
+  .mono{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";}
+
+  .page{max-width:1120px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:14px;
+    box-shadow:0 10px 30px rgba(16,20,26,.08);padding:24px 26px 0;position:relative;overflow:hidden;}
+
+  .crumbs{font-size:12px;color:var(--muted);margin-bottom:8px;}
+  .head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;}
+  .head .l{display:flex;align-items:center;gap:12px;}
+  h1.t{font-size:25px;font-weight:700;letter-spacing:-.4px;margin:0;}
+  .status-pill{font-size:12px;font-weight:600;padding:3px 12px;border-radius:20px;background:var(--accent-soft);color:var(--accent);}
+  .head .r{display:flex;align-items:center;gap:8px;}
+  .hbtn{height:32px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:0 12px;font-size:13px;color:var(--ink);display:inline-flex;align-items:center;gap:6px;}
+  .hbtn.ghost{border:0;color:var(--muted);}
+
+  /* stepper */
+  .stepper{display:flex;align-items:center;margin:20px 0 4px;}
+  .step{display:flex;align-items:center;gap:9px;}
+  .step .dot{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;}
+  .step.done .dot{background:var(--accent);color:#fff;}
+  .step.cur .dot{background:var(--accent);color:#fff;box-shadow:0 0 0 4px var(--accent-soft);}
+  .step.todo .dot{background:#EDEFF1;color:var(--muted-2);}
+  .step .lab{font-size:13px;font-weight:600;} .step.todo .lab{color:var(--muted-2);font-weight:500;}
+  .step .sub{font-size:11px;color:var(--muted);margin-top:1px;}
+  .bar{flex:1;height:2px;margin:0 14px;border-radius:1px;} .bar.on{background:var(--accent);} .bar.off{background:#EDEFF1;}
+
+  /* summary cards */
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--line);border-radius:var(--radius);margin:18px 0 4px;overflow:hidden;}
+  .stat{padding:13px 16px;border-right:1px solid var(--line);} .stat:last-child{border-right:0;}
+  .stat .k{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);font-weight:600;}
+  .stat .v{font-size:23px;font-weight:700;letter-spacing:-.4px;margin-top:5px;line-height:1;}
+  .stat .v small{font-size:13px;color:var(--muted);font-weight:600;}
+
+  .meta{display:flex;gap:26px;flex-wrap:wrap;padding:14px 0 2px;font-size:13px;}
+  .meta .m .k{font-size:11px;color:var(--muted);} .meta .m .v{font-weight:500;margin-top:2px;}
+
+  .sec{margin-top:22px;}
+  .sec-h{display:flex;align-items:center;justify-content:space-between;margin:0 0 10px;gap:12px;}
+  .sec-h .t{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);font-weight:600;}
+  .sec-h .acts{display:flex;gap:7px;}
+  .sbtn{height:28px;border:1px solid var(--line);border-radius:7px;background:#fff;padding:0 10px;font-size:12.5px;color:var(--ink);display:inline-flex;align-items:center;gap:5px;}
+  .sbtn.accent{color:var(--accent);border-color:#cfe6da;}
+
+  table{width:100%;border-collapse:collapse;font-size:13.5px;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;}
+  thead th{text-align:left;font-size:11px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);font-weight:600;padding:10px 13px;border-bottom:1px solid var(--line);background:#fff;white-space:nowrap;}
+  tbody td{padding:11px 13px;border-bottom:1px solid var(--line-2);vertical-align:middle;}
+  tbody tr:last-child td{border-bottom:0;}
+  td.r{text-align:right;}
+  .ci{display:flex;align-items:center;gap:10px;}
+  .thumb{width:34px;height:34px;border-radius:7px;flex:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.05);}
+  .t-g{background:linear-gradient(135deg,#f0d9a7,#caa14e);} .t-c{background:linear-gradient(135deg,#e7d4f0,#b07cc6);}
+  .t-b{background:linear-gradient(135deg,#dfe7f2,#9fb2cc);} .t-r{background:linear-gradient(135deg,#f2cdbf,#cf8f7d);}
+  .nm{font-weight:600;} .id{font-size:11px;color:var(--muted-2);}
+  .tag{font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:5px;margin-left:7px;}
+  .tag.jew{background:#EEF1F4;color:#475569;} .tag.combo{background:var(--accent-soft);color:var(--accent);}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:7px;vertical-align:middle;}
+  .src{font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:5px;margin-left:6px;}
+  .src.order{background:#EEF1F4;color:#475569;} .src.manual{background:#FBF0DC;color:var(--amber);}
+  .prog{display:flex;align-items:center;gap:8px;justify-content:flex-end;}
+  .prog .track{width:54px;height:5px;border-radius:3px;background:#EDEFF1;overflow:hidden;}
+  .prog .fill{height:100%;background:var(--accent);}
+  .prog .num{font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px;}
+  .st{font-size:11px;font-weight:600;padding:2px 8px;border-radius:11px;}
+  .st.making{background:#FBF0DC;color:var(--amber);} .st.done{background:var(--accent-soft);color:var(--accent);}
+  .more{color:var(--muted-2);font-size:16px;letter-spacing:1px;cursor:pointer;}
+  .ref{color:var(--muted);}
+
+  /* 发货图片 */
+  .gallery{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .ph{width:84px;height:84px;border-radius:10px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.06);}
+  .g1{background:linear-gradient(135deg,#e8ddc6,#c9b083);} .g2{background:linear-gradient(135deg,#d7e0ea,#9fb0c4);} .g3{background:linear-gradient(135deg,#e3d6ea,#bda3cc);}
+  .addimg{width:84px;height:84px;border-radius:10px;border:1.5px dashed #D7DBE0;background:var(--sub);display:flex;align-items:center;justify-content:center;color:var(--muted-2);font-size:22px;}
+
+  .fab{position:sticky;bottom:0;display:flex;justify-content:center;padding:18px 0 22px;margin-top:24px;}
+  .pill{background:var(--ink);border-radius:14px;padding:8px 10px;display:flex;align-items:center;gap:6px;box-shadow:0 14px 34px rgba(16,20,26,.3);}
+  .pill .b{height:32px;border-radius:9px;padding:0 14px;font-size:13px;color:#dfe3e8;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.06);}
+  .pill .b.primary{background:var(--accent);color:#fff;font-weight:600;}
+
+  .note{max-width:1120px;margin:16px auto 0;font-size:12.5px;color:#6b7280;line-height:1.85;}
+  .note b{color:var(--ink);}
+</style>
+</head>
+<body>
+<div class="lead"><h1>手工单详情 — 优化想法 v2</h1><p>已修正：配件区去进度条 · 补发货图片区 · 补 裁剪统计/批量关联订单/手动添加 等按钮 · 表格补齐列</p></div>
+
+<div class="page">
+  <div class="crumbs">生产 / 手工单 / HC-0231</div>
+  <div class="head">
+    <div class="l"><h1 class="t">手工单 HC-0231</h1><span class="status-pill">进行中</span></div>
+    <div class="r">
+      <span class="hbtn">⎘ 导出 Excel</span>
+      <span class="hbtn">⤓ PDF</span>
+      <span class="hbtn ghost">⋯ 更多</span>
+      <span class="hbtn ghost">← 返回</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step done"><span class="dot">✓</span><div><div class="lab">待发出</div><div class="sub">06-10 创建</div></div></div>
+    <div class="bar on"></div>
+    <div class="step cur"><span class="dot">2</span><div><div class="lab">进行中</div><div class="sub">06-11 已发出</div></div></div>
+    <div class="bar off"></div>
+    <div class="step todo"><span class="dot">3</span><div><div class="lab">已完成</div><div class="sub">待产出全部收回</div></div></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">产出项</div><div class="v mono">2<small> 种 · 80 件</small></div></div>
+    <div class="stat"><div class="k">发出配件</div><div class="v mono">5<small> 种 · 1,720 件</small></div></div>
+    <div class="stat"><div class="k">产出已收回</div><div class="v mono">22<small> / 80</small></div></div>
+    <div class="stat"><div class="k">差额 / 损耗</div><div class="v mono">0</div></div>
+    <div class="stat"><div class="k">回执码</div><div class="v mono" style="font-size:20px;letter-spacing:1px;">K7Q3M</div></div>
+  </div>
+
+  <div class="meta">
+    <div class="m"><div class="k">手工商家</div><div class="v">义乌 · 小李饰品</div></div>
+    <div class="m"><div class="k">创建时间</div><div class="v mono">2026-06-10</div></div>
+    <div class="m"><div class="k">发出日期</div><div class="v mono">2026-06-11</div></div>
+    <div class="m"><div class="k">备注</div><div class="v">中秋档期，优先</div></div>
+  </div>
+
+  <!-- 产出项（有收回 → 保留进度条）-->
+  <div class="sec">
+    <div class="sec-h">
+      <span class="t">产出项</span>
+      <span class="acts">
+        <span class="sbtn">＋ 手动添加</span>
+        <span class="sbtn">🔗 批量关联订单</span>
+      </span>
+    </div>
+    <table>
+      <thead><tr><th>产出项</th><th>单号</th><th>客户</th><th class="r">数量</th><th class="r">重量</th><th class="r" style="width:150px">已收回</th><th>状态</th><th style="width:40px"></th></tr></thead>
+      <tbody>
+        <tr>
+          <td><div class="ci"><span class="thumb t-g"></span><span class="nm">蝴蝶吊坠项链 <span class="tag jew">饰品</span></span></div></td>
+          <td class="id mono">SP-0042</td>
+          <td>张小姐 <span class="src order">订单</span></td>
+          <td class="r mono">30</td>
+          <td class="r mono">—</td>
+          <td class="r"><div class="prog"><span class="num">22/30</span><span class="track"><span class="fill" style="width:73%"></span></span></div></td>
+          <td><span class="st making">制作中</span></td>
+          <td><span class="more">⋯</span></td>
+        </tr>
+        <tr>
+          <td><div class="ci"><span class="thumb t-c"></span><span class="nm">复古耳环 <span class="tag combo">组合</span></span></div></td>
+          <td class="id mono">PJ-X-00188</td>
+          <td>李先生 <span class="src manual">手填</span></td>
+          <td class="r mono">50</td>
+          <td class="r mono">—</td>
+          <td class="r"><div class="prog"><span class="num">0/50</span><span class="track"><span class="fill" style="width:0%"></span></span></div></td>
+          <td><span class="st making">制作中</span></td>
+          <td><span class="more">⋯</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 客户分拣（内联组件 BreakdownMatrix，不跳转）-->
+  <div class="sec">
+    <div class="sec-h"><span class="t">客户分拣</span><span class="acts" style="font-size:11px;color:var(--muted-2)">内联矩阵 · 直接在本页编辑</span></div>
+    <table>
+      <thead><tr><th>产出项</th><th>客户</th><th>来源</th><th class="r">数量</th><th class="r">已收回</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><div class="ci"><span class="thumb t-g" style="width:26px;height:26px"></span><span class="nm">蝴蝶吊坠项链</span></div></td>
+          <td>张小姐</td><td><span class="src order">订单 OR-0188</span></td>
+          <td class="r mono">18</td><td class="r mono">18</td>
+        </tr>
+        <tr>
+          <td><div class="ci"><span class="thumb t-g" style="width:26px;height:26px"></span><span class="nm">蝴蝶吊坠项链</span></div></td>
+          <td>王女士</td><td><span class="src manual">手填</span></td>
+          <td class="r mono">12</td><td class="r mono">4</td>
+        </tr>
+        <tr>
+          <td><div class="ci"><span class="thumb t-c" style="width:26px;height:26px"></span><span class="nm">复古耳环</span></div></td>
+          <td>李先生</td><td><span class="src manual">手填</span></td>
+          <td class="r mono">50</td><td class="r mono">0</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 发出配件（不收回 → 无进度条，展示发出/重量/参考BOM）；配货模拟/裁剪统计为弹窗 -->
+  <div class="sec">
+    <div class="sec-h">
+      <span class="t">发出配件</span>
+      <span class="acts">
+        <span class="sbtn">＋ 手动添加</span>
+        <span class="sbtn">配货模拟…</span>
+        <span class="sbtn">裁剪统计…</span>
+      </span>
+    </div>
+    <table>
+      <thead><tr><th>配件</th><th>编号</th><th>颜色</th><th class="r">发出数量</th><th class="r">重量</th><th class="r">参考 BOM</th><th style="width:40px"></th></tr></thead>
+      <tbody>
+        <tr>
+          <td><div class="ci"><span class="thumb t-r"></span><span class="nm">玫瑰金弹簧扣</span></div></td>
+          <td class="id mono">PJ-X-00102</td>
+          <td><span class="dot" style="background:#cf8f7d"></span>玫瑰金</td>
+          <td class="r mono">300</td>
+          <td class="r mono">0.45 <span class="ref">kg</span></td>
+          <td class="r mono ref">1.0 / 件</td>
+          <td><span class="more">⋯</span></td>
+        </tr>
+        <tr>
+          <td><div class="ci"><span class="thumb t-b"></span><span class="nm">4mm 米珠</span></div></td>
+          <td class="id mono">PJ-X-00210</td>
+          <td><span class="dot" style="background:#9fb2cc"></span>银色</td>
+          <td class="r mono">1,300</td>
+          <td class="r mono">0.32 <span class="ref">kg</span></td>
+          <td class="r mono ref">16 / 件</td>
+          <td><span class="more">⋯</span></td>
+        </tr>
+        <tr>
+          <td><div class="ci"><span class="thumb t-g"></span><span class="nm">合金吊坠托 <span class="tag combo">组合</span></span></div></td>
+          <td class="id mono">PJ-DZ-00033</td>
+          <td><span class="dot" style="background:#a9b0b8"></span>金色</td>
+          <td class="r mono">120</td>
+          <td class="r mono">—</td>
+          <td class="r mono ref">4 / 件</td>
+          <td><span class="more">⋯</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 补货清单（配件不足时生成的补货请求）-->
+  <div class="sec">
+    <div class="sec-h">
+      <span class="t">补货清单</span>
+      <span class="acts"><span class="sbtn accent">去补货 →</span></span>
+    </div>
+    <table>
+      <thead><tr><th>配件</th><th>编号</th><th class="r">需补数量</th><th>状态</th><th style="width:40px"></th></tr></thead>
+      <tbody>
+        <tr>
+          <td><div class="ci"><span class="thumb t-r"></span><span class="nm">玫瑰金弹簧扣</span></div></td>
+          <td class="id mono">PJ-X-00102</td>
+          <td class="r mono">120</td>
+          <td><span class="st making">待补货</span></td>
+          <td><span class="more">⋯</span></td>
+        </tr>
+        <tr>
+          <td><div class="ci"><span class="thumb t-b"></span><span class="nm">4mm 米珠</span></div></td>
+          <td class="id mono">PJ-X-00210</td>
+          <td class="r mono">500</td>
+          <td><span class="st done">已补货</span></td>
+          <td><span class="more">⋯</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 发货图片（唯一上传入口 = 图片右侧的 +）-->
+  <div class="sec">
+    <div class="sec-h"><span class="t">发货图片</span></div>
+    <div class="gallery">
+      <span class="ph g1"></span><span class="ph g2"></span><span class="ph g3"></span>
+      <span class="addimg">＋</span>
+    </div>
+  </div>
+
+  <!-- 浮动操作条：聚焦关键生命周期动作 -->
+  <div class="fab">
+    <div class="pill">
+      <span class="b">查看回收单</span>
+      <span class="b primary">确认发出 →</span>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <b>本次修正：</b>
+  ① <b>发出配件去掉收回进度条</b>（配件不核销/退回），改为展示 发出数量 / 重量 / 参考 BOM；产出项保留"已收回"进度条（产出才会收回）。
+  ② 补 <b>发货图片</b> 区（缩略图墙 + 上传）。
+  ③ 按钮按区归位：<b>手动添加 / 批量关联订单</b> 放产出项区，<b>配货模拟 / 裁剪统计 / 手动添加</b> 放发出配件区，<b>导出 Excel / PDF / 更多</b> 放页头，<b>查看回收单 / 确认发出</b> 放浮动条。
+  ④ 表格补列：产出项加 客户(+来源订单/手填) / 重量 / 操作⋯；发出配件加 编号 / 颜色 / 重量 / 参考 BOM / 操作⋯。
+</div>
+</body>
+</html>

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from api._errors import service_errors
+from api.production_archive import guard_plating_archive
 from database import get_db
 from schemas.plating import (
     PendingReceiveItemResponse,
@@ -63,7 +64,7 @@ class PlatingItemUpdate(BaseModel):
 class StatusUpdate(BaseModel):
     status: str
 
-router = APIRouter(prefix="/api/plating", tags=["plating"])
+router = APIRouter(prefix="/api/plating", tags=["plating"], dependencies=[Depends(guard_plating_archive)])
 
 
 @router.post("/", response_model=PlatingResponse, status_code=201)
@@ -80,9 +81,9 @@ def api_create_plating_order(body: PlatingCreate, db: Session = Depends(get_db))
 
 
 @router.get("/", response_model=list[PlatingResponse])
-def api_list_plating_orders(status: Optional[str] = None, supplier_name: Optional[str] = None, db: Session = Depends(get_db)):
+def api_list_plating_orders(status: Optional[str] = None, supplier_name: Optional[str] = None, archive: str = Query("active", pattern="^(active|archived|all)$"), db: Session = Depends(get_db)):
     with service_errors():
-        return list_plating_orders(db, status=status, supplier_name=supplier_name)
+        return list_plating_orders(db, status=status, supplier_name=supplier_name, archive=archive)
 
 
 @router.get("/suppliers", response_model=list[str])

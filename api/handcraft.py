@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from api._errors import service_errors
+from api.production_archive import guard_handcraft_archive
 from database import get_db
 from schemas.handcraft import (
     HandcraftCreate,
@@ -98,7 +99,7 @@ class HandcraftJewelryUpdate(BaseModel):
 class StatusUpdate(BaseModel):
     status: str
 
-router = APIRouter(prefix="/api/handcraft", tags=["handcraft"])
+router = APIRouter(prefix="/api/handcraft", tags=["handcraft"], dependencies=[Depends(guard_handcraft_archive)])
 
 
 @router.post("/", response_model=HandcraftResponse, status_code=201, responses={200: {"model": HandcraftResponse, "description": "Merged into existing pending order"}})
@@ -118,9 +119,9 @@ def api_create_handcraft_order(body: HandcraftCreate, db: Session = Depends(get_
 
 
 @router.get("/", response_model=list[HandcraftResponse])
-def api_list_handcraft_orders(status: Optional[str] = None, supplier_name: Optional[str] = None, db: Session = Depends(get_db)):
+def api_list_handcraft_orders(status: Optional[str] = None, supplier_name: Optional[str] = None, archive: str = Query("active", pattern="^(active|archived|all)$"), db: Session = Depends(get_db)):
     with service_errors():
-        return list_handcraft_orders(db, status=status, supplier_name=supplier_name)
+        return list_handcraft_orders(db, status=status, supplier_name=supplier_name, archive=archive)
 
 
 @router.get("/suppliers", response_model=list[str])

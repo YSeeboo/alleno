@@ -9,6 +9,7 @@ from models.part import Part
 from models.plating_receipt import PlatingReceipt, PlatingReceiptItem
 from models.production_loss import ProductionLoss
 from time_utils import now_beijing
+from services.production_archive import filter_archive
 
 
 def _to_beijing_date(dt) -> Optional[date]:
@@ -23,7 +24,7 @@ def _serialize_dispatched(poi: PlatingOrderItem, po: PlatingOrder, part: Optiona
     is_completed = received >= qty
     dispatch_date = _to_beijing_date(po.created_at)
     days_out = None
-    if not is_completed:
+    if not is_completed and po.archived_at is None:
         days_out = max(0, (today - dispatch_date).days - 1)
     return {
         "plating_order_item_id": poi.id,
@@ -41,6 +42,7 @@ def _serialize_dispatched(poi: PlatingOrderItem, po: PlatingOrder, part: Optiona
         "dispatch_date": dispatch_date,
         "days_out": days_out,
         "is_completed": is_completed,
+        "archived_at": po.archived_at,
         "receive_part_id": recv_part.id if recv_part else None,
         "receive_part_name": recv_part.name if recv_part else None,
         "receive_part_image": recv_part.image if recv_part else None,
@@ -57,6 +59,7 @@ def list_dispatched(
     sort: Literal["dispatch_date_desc", "days_out_desc"] = "dispatch_date_desc",
     skip: int = 0,
     limit: int = 30,
+    archive: str = "active",
 ) -> tuple[list[dict], int]:
     from services._helpers import keyword_filter
 
@@ -67,6 +70,7 @@ def list_dispatched(
         db.query(PlatingOrderItem, PlatingOrder)
         .join(PlatingOrder, PlatingOrderItem.plating_order_id == PlatingOrder.id)
     )
+    q = filter_archive(q, PlatingOrder, archive)
 
     if supplier_name:
         q = q.filter(PlatingOrder.supplier_name == supplier_name)
@@ -153,6 +157,7 @@ def list_received(
     part_keyword: Optional[str] = None,
     skip: int = 0,
     limit: int = 30,
+    archive: str = "active",
 ) -> tuple[list[dict], int]:
     from services._helpers import keyword_filter
 
@@ -164,6 +169,7 @@ def list_received(
         .join(PlatingOrder, PlatingOrderItem.plating_order_id == PlatingOrder.id)
         .filter(PlatingOrderItem.received_qty > 0)
     )
+    q = filter_archive(q, PlatingOrder, archive)
 
     if supplier_name:
         q = q.filter(PlatingOrder.supplier_name == supplier_name)

@@ -21,13 +21,14 @@ def api_list_dispatched(
     sort: Literal["dispatch_date_desc", "days_out_desc"] = Query("dispatch_date_desc"),
     skip: int = Query(0, ge=0),
     limit: int = Query(30, ge=1, le=200),
+    archive: Literal["active", "archived", "all"] = Query("active"),
     db: Session = Depends(get_db),
 ):
     items, total = list_dispatched(
         db, supplier_name=supplier_name,
         date_from=date_from, date_to=date_to,
         part_keyword=part_keyword, sort=sort,
-        skip=skip, limit=limit,
+        skip=skip, limit=limit, archive=archive,
     )
     return {"items": items, "total": total}
 
@@ -40,12 +41,13 @@ def api_list_received(
     part_keyword: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(30, ge=1, le=200),
+    archive: Literal["active", "archived", "all"] = Query("active"),
     db: Session = Depends(get_db),
 ):
     items, total = list_received(
         db, supplier_name=supplier_name,
         date_from=date_from, date_to=date_to,
         part_keyword=part_keyword,
-        skip=skip, limit=limit,
+        skip=skip, limit=limit, archive=archive,
     )
     return {"items": items, "total": total}

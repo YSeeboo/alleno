@@ -11,6 +11,7 @@
       </n-button-group>
 
       <div class="filters">
+        <n-select v-model:value="archive" :options="archiveOptions" style="width: 150px" />
         <n-date-picker v-model:value="dateRangeRaw" type="daterange" clearable style="width: 240px" placeholder="日期范围" />
         <n-select v-model:value="supplier" :options="supplierOptions" placeholder="商家" clearable style="width: 160px" />
         <n-input v-model:value="qInput" placeholder="搜索 ID 或配件名" clearable style="width: 220px" />
@@ -67,6 +68,12 @@ const route = useRoute()
 const router = useRouter()
 
 const tab = ref('out')
+const archive = ref('active')
+const archiveOptions = [
+  { label: '正常单据', value: 'active' },
+  { label: '历史归档', value: 'archived' },
+  { label: '全部（含归档）', value: 'all' },
+]
 const supplier = ref(null)
 const dateRangeRaw = ref(null)
 const qInput = ref('')
@@ -89,6 +96,7 @@ function tsToLocalDate(ms) {
 
 function syncStateFromQuery() {
   const q = route.query
+  archive.value = ['active', 'archived', 'all'].includes(q.archive) ? q.archive : 'active'
   tab.value = q.tab === 'in' ? 'in' : 'out'
   supplier.value = q.supplier || null
   if (q.date_from && q.date_to) {
@@ -106,6 +114,7 @@ function syncStateFromQuery() {
 
 function pushQuery() {
   const q = {}
+  if (archive.value !== 'active') q.archive = archive.value
   if (tab.value !== 'out') q.tab = tab.value
   if (supplier.value) q.supplier = supplier.value
   if (dateRangeRaw.value) {
@@ -137,7 +146,7 @@ async function loadSuppliers() {
 }
 
 function buildParams() {
-  const params = { skip: (page.value - 1) * pageSize, limit: pageSize }
+  const params = { skip: (page.value - 1) * pageSize, limit: pageSize, archive: archive.value }
   if (supplier.value) params.supplier_name = supplier.value
   if (dateRangeRaw.value) {
     params.date_from = tsToLocalDate(dateRangeRaw.value[0])
@@ -188,7 +197,7 @@ function navigateToDetail(kind, id, highlightId) {
 const renderOrderLink = (row) => h('span', {
   style: 'color:#6366F1;cursor:pointer;font-family:ui-monospace,monospace;',
   onClick: () => navigateToDetail('plating', row.plating_order_id, row.plating_order_item_id),
-}, row.plating_order_id)
+}, `${row.archived_at ? '历史归档 · ' : ''}${row.plating_order_id}`)
 
 function dayColor(days) {
   if (days === 0) return '#10B981'
@@ -235,6 +244,9 @@ const renderReceiptLinks = (row) => row.receipts.length === 0
     }))
 
 const renderLoss = (row) => {
+  if (row.archived_at && row.loss_state === 'pending') {
+    return h('span', { style: 'color:#94A3B8' }, '历史归档（未核销）')
+  }
   if (row.loss_state === 'confirmed') {
     return h('span', { style: 'color:#EF4444;font-weight:600;' }, row.loss_total_qty)
   }
@@ -314,8 +326,8 @@ onMounted(async () => {
   await load()
 })
 
-watch([supplier, dateRangeRaw, qDebounced, sortByDays], () => { page.value = 1 })
-watch([tab, supplier, dateRangeRaw, qDebounced, sortByDays, page], load)
+watch([archive, supplier, dateRangeRaw, qDebounced, sortByDays], () => { page.value = 1 })
+watch([archive, tab, supplier, dateRangeRaw, qDebounced, sortByDays, page], load)
 </script>
 
 <style scoped>

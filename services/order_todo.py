@@ -784,6 +784,7 @@ def link_supplier(db: Session, order_id: str, batch_id: int, supplier_name: str)
             .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
             .filter(
                 HCOrder.status == "pending",
+                HCOrder.archived_at.is_(None),
                 HandcraftPartItem.part_id.in_(check_part_ids),
             )
             .group_by(HandcraftPartItem.part_id)
@@ -819,6 +820,7 @@ def link_supplier(db: Session, order_id: str, batch_id: int, supplier_name: str)
         .filter(
             HCOrder.supplier_name == supplier_name,
             HCOrder.status == "pending",
+            HCOrder.archived_at.is_(None),
             sa_func.cast(HCOrder.created_at, Date) == today_beijing,
         )
         .order_by(HCOrder.created_at.asc())
@@ -895,6 +897,8 @@ def delete_batch(db: Session, order_id: str, batch_id: int) -> None:
     # If linked to a handcraft order, check status
     if batch.handcraft_order_id:
         hc = db.query(HCOrder).filter_by(id=batch.handcraft_order_id).first()
+        from services.production_archive import require_unarchived
+        require_unarchived(hc)
         if hc and hc.status != "pending":
             raise ValueError(f"手工单 {hc.id} 已发出，无法删除该批次")
 

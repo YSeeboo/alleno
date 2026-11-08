@@ -76,6 +76,20 @@ def ensure_schema_compat(target_engine=None):
     with target_engine.begin() as conn:
         inspector = inspect(conn)
 
+        # Archiving is separate from completion: never alter stock or received qty.
+        for table in ("plating_order", "handcraft_order"):
+            if inspector.has_table(table):
+                columns = {c["name"] for c in inspector.get_columns(table)}
+                for name, sql_type in (
+                    ("archived_at", "TIMESTAMP NULL"),
+                    ("archive_reason", "TEXT NULL"),
+                    ("archived_by", "VARCHAR NULL"),
+                    ("archive_batch_id", "VARCHAR NULL"),
+                ):
+                    if name not in columns:
+                        conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN {name} {sql_type}'))
+                        logger.warning("Added missing %s.%s", table, name)
+
         if inspector.has_table("vendor_receipt"):
             columns = {col["name"] for col in inspector.get_columns("vendor_receipt")}
             if "order_id" not in columns:

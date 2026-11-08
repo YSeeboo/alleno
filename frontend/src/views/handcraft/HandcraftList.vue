@@ -6,6 +6,8 @@
       <div class="page-divider"></div>
     </div>
     <div class="filter-bar">
+      <n-select v-model:value="filterArchive" :options="archiveOptions"
+        :style="{ width: isMobile ? '100%' : '150px' }" @update:value="load" />
       <n-select v-model:value="filterStatus" :options="statusOptions" clearable placeholder="筛选状态"
         :style="{ width: isMobile ? '100%' : '140px' }" @update:value="load" />
       <n-select v-model:value="filterSupplier" :options="supplierOptions" clearable placeholder="筛选商家"
@@ -44,6 +46,12 @@ const loading = ref(true)
 const deletingId = ref(null)
 const rows = ref([])
 const filterStatus = ref(null)
+const filterArchive = ref('active')
+const archiveOptions = [
+  { label: '正常单据', value: 'active' },
+  { label: '历史归档', value: 'archived' },
+  { label: '全部（含归档）', value: 'all' },
+]
 const filterSupplier = ref(null)
 const supplierOptions = ref([])
 const receiptCodeInput = ref('')
@@ -80,7 +88,7 @@ const statusBadge = { pending: 'badge-amber', processing: 'badge-indigo', comple
 const load = async () => {
   loading.value = true
   try {
-    const params = {}
+    const params = { archive: filterArchive.value }
     if (filterStatus.value) params.status = filterStatus.value
     if (filterSupplier.value) params.supplier_name = filterSupplier.value
     const { data } = await listHandcraft(params)
@@ -127,7 +135,7 @@ const columns = [
   {
     title: '状态',
     key: 'status',
-    render: (r) => h('span', { class: `badge ${statusBadge[r.status] || 'badge-gray'}` }, `• ${statusLabel[r.status] || r.status}`),
+    render: (r) => h('span', { class: `badge ${r.archived_at ? 'badge-gray' : statusBadge[r.status] || 'badge-gray'}` }, `${r.archived_at ? '历史归档 · ' : '• '}${statusLabel[r.status] || r.status}`),
   },
   { title: '创建时间', key: 'created_at', render: (r) => new Date(r.created_at).toLocaleString('zh-CN') },
   {
@@ -139,6 +147,7 @@ const columns = [
       {
         size: 'small',
         type: 'error',
+        disabled: !!row.archived_at,
         loading: deletingId.value === row.id,
         onClick: (event) => {
           event.stopPropagation()

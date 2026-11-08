@@ -9,6 +9,7 @@ from models.plating_order import PlatingOrder, PlatingOrderItem
 from models.vendor_receipt import VendorReceipt
 from services._helpers import _next_id, keyword_filter
 from services.inventory import add_stock, batch_get_stock, deduct_stock, supplement_shortfall
+from services.production_archive import filter_archive, require_unarchived
 
 
 def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
@@ -82,6 +83,7 @@ def create_plating_order(db: Session, supplier_name: str, items: list, note: str
 
 def send_plating_order(db: Session, plating_order_id: str) -> PlatingOrder:
     order = get_plating_order(db, plating_order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"PlatingOrder not found: {plating_order_id}")
     if order.status != "pending":
@@ -129,6 +131,7 @@ def supplement_and_send_plating_order(
     Returns (order, supplemented_dict).
     """
     order = get_plating_order(db, plating_order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"PlatingOrder not found: {plating_order_id}")
     if order.status != "pending":
@@ -161,14 +164,14 @@ def get_plating_order(db: Session, plating_order_id: str) -> Optional[PlatingOrd
     return db.query(PlatingOrder).filter(PlatingOrder.id == plating_order_id).first()
 
 
-def list_plating_orders(db: Session, status: str = None, supplier_name: str = None) -> list:
+def list_plating_orders(db: Session, status: str = None, supplier_name: str = None, archive: str = "active") -> list:
     # An explicitly empty / whitespace-only supplier_name means "caller
     # asked for this supplier but the value is empty" — return no rows
     # instead of falling through to an unfiltered query. supplier_name=None
     # (parameter not provided) still returns all rows.
     if supplier_name is not None and not supplier_name.strip():
         return []
-    q = db.query(PlatingOrder)
+    q = filter_archive(db.query(PlatingOrder), PlatingOrder, archive)
     if status is not None:
         q = q.filter(PlatingOrder.status == status)
     clause = keyword_filter(supplier_name, PlatingOrder.supplier_name)
@@ -199,6 +202,7 @@ def get_plating_items(db: Session, order_id: str) -> list:
 
 def add_plating_item(db: Session, order_id: str, item: dict) -> PlatingOrderItem:
     order = get_plating_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"PlatingOrder not found: {order_id}")
     if order.status != "pending":
@@ -226,6 +230,7 @@ def add_plating_item(db: Session, order_id: str, item: dict) -> PlatingOrderItem
 
 def update_plating_item(db: Session, order_id: str, item_id: int, data: dict) -> PlatingOrderItem:
     order = get_plating_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"PlatingOrder not found: {order_id}")
     if order.status != "pending":
@@ -271,6 +276,7 @@ def update_plating_item(db: Session, order_id: str, item_id: int, data: dict) ->
 
 def delete_plating_item(db: Session, order_id: str, item_id: int) -> None:
     order = get_plating_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"PlatingOrder not found: {order_id}")
     if order.status != "pending":
@@ -299,6 +305,7 @@ def delete_plating_order(db: Session, order_id: str) -> None:
         raise ValueError(f"PlatingOrder not found: {order_id}")
 
     items = get_plating_items(db, order_id)
+    require_unarchived(order)
     vendor_received = _vendor_receipt_totals_for_plating(db, order_id)
 
     # Compute PlatingReceiptItem totals per receive_part_id
@@ -377,6 +384,7 @@ def update_plating_order_status(db: Session, order_id: str, status: str) -> Plat
     if status not in _PLATING_VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Valid values: {', '.join(sorted(_PLATING_VALID_STATUSES))}")
     order = get_plating_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"PlatingOrder not found: {order_id}")
     current = order.status
@@ -417,6 +425,7 @@ def list_pending_receive_items(db: Session, part_keyword: str = None, supplier_n
         .join(SendPart, PlatingOrderItem.part_id == SendPart.id)
         .outerjoin(ReceivePart, PlatingOrderItem.receive_part_id == ReceivePart.id)
         .filter(
+            PlatingOrder.archived_at.is_(None),
             PlatingOrderItem.status == "电镀中",
             func.coalesce(PlatingOrderItem.received_qty, 0) < PlatingOrderItem.qty,
         )
@@ -468,6 +477,7 @@ def get_plating_supplier_names(db: Session) -> list[str]:
 
 def update_plating_order(db: Session, order_id: str, data: dict) -> PlatingOrder:
     order = get_plating_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"PlatingOrder not found: {order_id}")
     if "supplier_name" in data and data["supplier_name"] is not None:
@@ -482,6 +492,7 @@ def update_plating_order(db: Session, order_id: str, data: dict) -> PlatingOrder
 
 def update_plating_delivery_images(db: Session, order_id: str, delivery_images: Optional[list]) -> PlatingOrder:
     order = get_plating_order(db, order_id)
+    require_unarchived(order)
     if order is None:
         raise ValueError(f"PlatingOrder not found: {order_id}")
     order.delivery_images = _normalize_delivery_images(delivery_images)

@@ -102,6 +102,9 @@ class HandcraftResponse(BaseModel):
     status: str
     created_at: datetime
     completed_at: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
+    archive_reason: Optional[str] = None
+    archived_by: Optional[str] = None
     note: Optional[str] = None
     delivery_images: List[str] = Field(default_factory=list)
 

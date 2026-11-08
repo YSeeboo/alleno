@@ -25,6 +25,7 @@ const props = defineProps({
   show: { type: Boolean, required: true },
   orderId: { type: String, required: true },
   status: { type: String, required: true },  // pending / processing / completed
+  archived: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:show', 'restock-changed'])
 
@@ -38,7 +39,7 @@ const exporting = ref(false)
 // Prefer the just-loaded status over props.status — covers the case where
 // another tab transitioned the order out of pending while this modal was open.
 const readonly = computed(
-  () => (data.value?.status ?? props.status) !== 'pending',
+  () => props.archived || (data.value?.status ?? props.status) !== 'pending',
 )
 
 const displayGroups = computed(() => {
@@ -412,7 +413,7 @@ const WEIGHT_UNIT_OPTIONS = [
               进度：{{ data.progress.picked }} / {{ data.progress.total }} 已完成
             </span>
             <n-tag v-if="readonly" size="small" type="warning" style="margin-left: 12px;">
-              只读 ({{ data.status === 'processing' ? '处理中' : '已完成' }})
+              只读 ({{ archived ? '历史归档' : data.status === 'processing' ? '处理中' : '已完成' }})
             </n-tag>
           </div>
           <n-space>

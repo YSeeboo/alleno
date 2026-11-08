@@ -37,6 +37,7 @@ from schemas.handcraft import (
 )
 from services.handcraft import compute_suggested_qty
 from services.handcraft_picking_weight import bulk_load_for_picking
+from services.production_archive import require_unarchived
 
 
 def _compute_suggested_qty(theoretical: Optional[float], part: Optional[Part]) -> Optional[int]:
@@ -288,6 +289,7 @@ class HandcraftPickingMarkResult:
 
 
 def _check_writable(order: HandcraftOrder) -> None:
+    require_unarchived(order)
     if order.status != "pending":
         raise ValueError("手工单已发出，配货模拟为只读")
 

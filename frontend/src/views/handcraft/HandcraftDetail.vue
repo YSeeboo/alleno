@@ -20,6 +20,7 @@
     </div>
 
     <!-- ── Status stepper ──────────────────────────────────── -->
+    <ProductionArchiveNotice :order="order" />
     <div v-if="order" class="hc-stepper">
       <div class="hc-step" :class="stepClass('pending')">
         <span class="hc-step__dot">{{ order.status !== 'pending' ? '✓' : '1' }}</span>
@@ -103,7 +104,7 @@
           </template>
           <template v-else>
             {{ order.supplier_name }}
-            <n-button v-if="order.status === 'pending'" text type="primary" size="small" style="margin-left: 4px;" @click="startEditSupplier">
+            <n-button v-if="isPending()" text type="primary" size="small" style="margin-left: 4px;" @click="startEditSupplier">
               <template #icon><n-icon :component="CreateOutline" /></template>
             </n-button>
           </template>
@@ -126,7 +127,7 @@
           </template>
           <template v-else>
             {{ fmt(order.created_at) }}
-            <n-button text type="primary" size="small" style="margin-left: 4px;" @click="startEditCreatedAt">
+            <n-button v-if="!order.archived_at" text type="primary" size="small" style="margin-left: 4px;" @click="startEditCreatedAt">
               <template #icon><n-icon :component="CreateOutline" /></template>
             </n-button>
           </template>
@@ -144,18 +145,24 @@
 
     <n-spin :show="loading">
       <!-- ── 产出项 section ────────────────────────────────────── -->
-      <div v-if="jewelryItems.length > 0" class="hc-sec">
+      <div v-if="jewelryItems.length > 0 || canAddOutput" class="hc-sec">
         <div class="hc-sec-h">
           <span class="t">产出项</span>
           <span class="acts">
             <button
-              v-if="order?.status === 'pending'"
-              class="hc-sbtn hc-sbtn--primary"
+              v-if="isPending()"
+              class="hc-sbtn"
               @click="openBatchLinkModal"
             >🔗 批量关联订单</button>
+            <button
+              v-if="canAddOutput"
+              class="hc-sbtn hc-sbtn--primary"
+              @click="openAddOutput"
+            >＋ 添加产出</button>
           </span>
         </div>
-        <n-data-table :columns="jewelryColumns" :data="jewelryItems" :bordered="false" />
+        <n-data-table v-if="jewelryItems.length > 0" :columns="jewelryColumns" :data="jewelryItems" :bordered="false" />
+        <div v-else class="hc-empty">暂无产出项，点击右上角「＋ 添加产出」添加饰品或组合配件</div>
       </div>
 
       <!-- ── 客户分拣 — BreakdownMatrix has its own "客户分拣" header, no wrapper title needed ── -->
@@ -166,6 +173,7 @@
         <BreakdownMatrix
           :hc-id="route.params.id"
           :hc-status="order?.status || 'pending'"
+          :archived="!!order?.archived_at"
           :groups="breakdownGroups"
           @saved="onBreakdownSaved"
         />
@@ -232,6 +240,7 @@
               />
               <n-button
                 class="delivery-image-delete"
+                v-if="!order.archived_at"
                 size="tiny"
                 type="error"
                 circle
@@ -251,7 +260,7 @@
             </button>
           </div>
           <button
-            v-else
+            v-else-if="canAddDeliveryImage"
             class="delivery-image-add"
             :disabled="deliveryImagesSaving"
             @click="openDeliveryImageModal"
@@ -283,7 +292,7 @@
               @click="openPickingSimulation"
             >配货模拟</button>
             <button
-              v-if="order?.status === 'pending'"
+              v-if="isPending()"
               class="hc-sbtn hc-sbtn--primary"
               @click="openAddModal"
             >＋ 添加配件</button>
@@ -402,6 +411,73 @@
               }}
             </n-button>
           </n-space>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- 添加产出（饰品 / 组合配件） -->
+    <n-modal v-model:show="outputModalVisible" preset="card" title="添加产出" :style="{ width: isMobile ? '95vw' : '480px' }">
+      <form @submit.prevent="doAddOutput">
+        <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="90">
+          <n-form-item label="产出类型">
+            <n-radio-group v-model:value="outputForm.output_type" @update:value="onOutputTypeChange">
+              <n-radio-button value="jewelry">饰品</n-radio-button>
+              <n-radio-button value="part">组合配件</n-radio-button>
+            </n-radio-group>
+          </n-form-item>
+          <n-form-item :label="outputForm.output_type === 'jewelry' ? '饰品' : '组合配件'">
+            <n-select
+              v-if="outputForm.output_type === 'jewelry'"
+              v-model:value="outputForm.jewelry_id"
+              :options="jewelryOptions"
+              :render-label="renderOptionWithImage"
+              filterable
+              clearable
+              placeholder="选择饰品"
+            />
+            <n-select
+              v-else
+              v-model:value="outputForm.part_id"
+              :options="partOptions"
+              :render-label="renderOptionWithImage"
+              filterable
+              clearable
+              placeholder="选择组合配件"
+            />
+          </n-form-item>
+          <n-form-item label="数量">
+            <n-input-number v-model:value="outputForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
+          </n-form-item>
+          <n-form-item label="单位">
+            <n-select v-model:value="outputForm.unit" :options="outputUnitOptions" />
+          </n-form-item>
+          <n-form-item label="重量">
+            <div style="display: flex; gap: 8px; width: 100%;">
+              <n-input-number
+                v-model:value="outputForm.weight"
+                :min="0"
+                :precision="2"
+                :step="0.1"
+                placeholder="可选"
+                clearable
+                style="flex: 1;"
+              />
+              <n-select
+                v-model:value="outputForm.weight_unit"
+                :options="weightUnitOptions"
+                style="width: 90px;"
+              />
+            </div>
+          </n-form-item>
+          <n-form-item label="备注">
+            <n-input v-model:value="outputForm.note" placeholder="备注（可选）" />
+          </n-form-item>
+        </n-form>
+      </form>
+      <template #footer>
+        <n-space justify="end" style="width: 100%;">
+          <n-button @click="outputModalVisible = false">取消</n-button>
+          <n-button type="primary" :loading="outputSubmitting" @click="doAddOutput">确认添加</n-button>
         </n-space>
       </template>
     </n-modal>
@@ -595,6 +671,7 @@
       :show="pickingModalShow"
       :order-id="String(route.params.id)"
       :status="order?.status || 'pending'"
+      :archived="!!order?.archived_at"
       @update:show="(v) => { pickingModalShow = v; if (!v) loadData() }"
       @restock-changed="loadRestock"
     />
@@ -627,7 +704,7 @@
         导出PDF
       </n-button>
       <n-button
-        v-if="order.status === 'pending'"
+        v-if="isPending()"
         type="primary"
         :loading="sending"
         @click="doSend"
@@ -640,6 +717,7 @@
 </template>
 
 <script setup>
+import ProductionArchiveNotice from '@/components/ProductionArchiveNotice.vue'
 import { ref, reactive, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
@@ -649,7 +727,7 @@ import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
   NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon, NImage,
-  NRadioGroup, NRadio, NDatePicker, NTabs, NTabPane,
+  NRadioGroup, NRadio, NRadioButton, NDatePicker, NTabs, NTabPane,
 } from 'naive-ui'
 import { CreateOutline } from '@vicons/ionicons5'
 import {
@@ -829,9 +907,9 @@ const totalLossQty = computed(() =>
 )
 const deliveryImages = computed(() => order.value?.delivery_images || [])
 const totalDeliveryImageCount = computed(() => deliveryImages.value.length + pendingDeliveryImages.value.length)
-const canAddDeliveryImage = computed(() => totalDeliveryImageCount.value < 10)
+const canAddDeliveryImage = computed(() => !order.value?.archived_at && totalDeliveryImageCount.value < 10)
 const statusOptions = computed(() => {
-  if (!order.value) return []
+  if (!order.value || order.value.archived_at) return []
   const s = order.value.status
   if (s === 'pending') return [{ label: '进行中', value: 'processing' }]
   if (s === 'processing') return [
@@ -870,6 +948,57 @@ const onRecentChange = (payload) => {
 const editModalVisible = ref(false)
 const editSubmitting = ref(false)
 const editForm = ref({ id: null, qty: 1, unit: '个' })
+
+// --- 添加产出（饰品 / 组合配件）---
+const jewelryOptions = ref([])
+const outputUnitOptions = [
+  { label: '套', value: '套' },
+  { label: '个', value: '个' },
+  { label: '条', value: '条' },
+  { label: '对', value: '对' },
+]
+const outputModalVisible = ref(false)
+const outputSubmitting = ref(false)
+const outputForm = ref({ output_type: 'jewelry', jewelry_id: null, part_id: null, qty: 1, unit: '套', weight: null, weight_unit: 'kg', note: '' })
+const canAddOutput = computed(() => !order.value?.archived_at && ['pending', 'processing'].includes(order.value?.status))
+
+function openAddOutput() {
+  outputForm.value = { output_type: 'jewelry', jewelry_id: null, part_id: null, qty: 1, unit: '套', weight: null, weight_unit: 'kg', note: '' }
+  outputModalVisible.value = true
+}
+
+function onOutputTypeChange(val) {
+  outputForm.value.jewelry_id = null
+  outputForm.value.part_id = null
+  outputForm.value.unit = val === 'jewelry' ? '套' : '个'
+}
+
+async function doAddOutput() {
+  const t = outputForm.value.output_type
+  if (t === 'jewelry' && !outputForm.value.jewelry_id) { message.warning('请选择饰品'); return }
+  if (t === 'part' && !outputForm.value.part_id) { message.warning('请选择组合配件'); return }
+  if (!outputForm.value.qty || outputForm.value.qty < 1) { message.warning('请填写数量'); return }
+  outputSubmitting.value = true
+  try {
+    const payload = {
+      qty: outputForm.value.qty,
+      unit: outputForm.value.unit,
+      weight: outputForm.value.weight ?? null,
+      weight_unit: outputForm.value.weight != null ? outputForm.value.weight_unit : null,
+      note: outputForm.value.note || null,
+    }
+    if (t === 'jewelry') payload.jewelry_id = outputForm.value.jewelry_id
+    else payload.part_id = outputForm.value.part_id
+    await addHandcraftJewelry(route.params.id, payload)
+    message.success('已添加产出')
+    outputModalVisible.value = false
+    await Promise.all([loadJewelries(), loadBreakdown()])
+  } catch (e) {
+    message.error(e?.response?.data?.detail || '添加失败')
+  } finally {
+    outputSubmitting.value = false
+  }
+}
 const editingCellKey = ref('')
 const editingCellValue = ref('')
 const savingCellKey = ref('')
@@ -1417,7 +1546,7 @@ const doDeleteJewelryItem = (row) => {
   })
 }
 
-const isPending = () => order.value?.status === 'pending'
+const isPending = () => !order.value?.archived_at && order.value?.status === 'pending'
 const normalizeEditableValue = (value) => (value || '').trim()
 const mergeDeliveryImages = (...groups) => [...new Set(groups.flat().filter(Boolean))]
 
@@ -1843,6 +1972,7 @@ const doUnlinkJewelryItem = (itemId, link) => {
 
 const renderPartOrderLinkCell = (row) => {
   const links = partItemOrderLinks.value[row.id] || []
+  if (order.value?.archived_at) return links.map((link) => link.order_id).join('、') || '—'
   if (links.length === 0) {
     return h(NButton, {
       size: 'small', text: true, type: 'primary',
@@ -1865,6 +1995,7 @@ const renderPartOrderLinkCell = (row) => {
 
 const renderJewelryOrderLinkCell = (row) => {
   const links = jewelryItemOrderLinks.value[row.id] || []
+  if (order.value?.archived_at) return links.map((link) => link.order_id).join('、') || '—'
   if (links.length === 0) {
     return h(NButton, {
       size: 'small', text: true, type: 'primary',
@@ -2081,6 +2212,7 @@ const itemColumns = [
     key: 'actions',
     width: 140,
     render: (row) => {
+      if (order.value?.archived_at) return '历史归档（只读）'
       const pending = isPending()
       const editBtn = h(
         NTooltip,
@@ -2215,7 +2347,8 @@ const jewelryColumns = [
     key: 'actions',
     width: 140,
     render: (row) => {
-      const pending = order.value?.status === 'pending'
+      if (order.value?.archived_at) return '历史归档（只读）'
+      const pending = isPending()
       const btns = []
       if (pending) {
         btns.push(h(
@@ -2250,6 +2383,13 @@ onMounted(async () => {
   try {
     const { data: jewels } = await listJewelries()
     jewels.forEach((j) => { jewelryMap.value[j.id] = j })
+    jewelryOptions.value = jewels.map((j) => ({
+      label: `${j.id} ${j.name}`,
+      value: j.id,
+      code: j.id,
+      name: j.name,
+      image: j.image,
+    }))
     await loadData()
     listSuppliers({ type: 'handcraft' }).then(({ data }) => {
       supplierOptions.value = data.map((s) => ({ label: s.name, value: s.name }))
@@ -2718,6 +2858,15 @@ async function copyReceiptCode() {
 .hc-sbtn--primary:hover {
   background: #D2EBDF;
   border-color: #1E7A5A;
+}
+
+.hc-empty {
+  text-align: center;
+  color: #AEB3B8;
+  font-size: 13px;
+  padding: 28px 0;
+  background: #F6F7F8;
+  border-radius: 8px;
 }
 
 .hc-export-btn--excel:hover { background-color: #1E7A5A !important; color: #fff !important; }

@@ -16,16 +16,19 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from models.handcraft_order import (
+    HandcraftOrder,
     HandcraftPartItem,
     HandcraftPickingWeight,
 )
 from models.part import Part
+from services.production_archive import require_unarchived
 
 
 _UNIT_TO_KG = {"kg": Decimal("1"), "g": Decimal("0.001")}
 
 
 def _validate_part_item_in_order(db: Session, order_id: str, part_item_id: int) -> HandcraftPartItem:
+    require_unarchived(db.get(HandcraftOrder, order_id))
     pi = db.query(HandcraftPartItem).filter_by(id=part_item_id).one_or_none()
     if pi is None or pi.handcraft_order_id != order_id:
         raise ValueError(f"part_item {part_item_id} 不属于手工单 {order_id}")

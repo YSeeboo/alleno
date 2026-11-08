@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>客户分拣矩阵 — 优化 mockup</title>
+<style>
+  :root{
+    --ink:#1A1D21; --accent:#1E7A5A; --accent-soft:#E6F2EC; --danger:#E5484D; --amber:#B7791F;
+    --line:#ECEDEF; --line-2:#F4F5F6; --muted:#8B9096; --muted-2:#AEB3B8; --sub:#F6F7F8;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:#E9EBEE;font-family:"Inter",-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);padding:28px;-webkit-font-smoothing:antialiased;}
+  .lead{max-width:920px;margin:0 auto 14px;}
+  .lead h1{font-size:15px;font-weight:600;color:#5b616a;margin:0 0 4px;}
+  .lead p{margin:0;font-size:12.5px;color:#878d96;}
+  .mono{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";}
+
+  .card{max-width:920px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(16,20,26,.08);overflow:hidden;}
+  .head{display:flex;align-items:center;gap:10px;padding:15px 18px;border-bottom:1px solid var(--line);}
+  .head .eb{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);font-weight:600;}
+  .head .title{font-size:15px;font-weight:600;}
+  .head .tag{font-size:11px;font-weight:600;padding:2px 9px;border-radius:11px;background:#FBF0DC;color:var(--amber);}
+  .head .sp{flex:1;}
+  .head .btn{height:30px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:0 12px;font-size:13px;display:inline-flex;align-items:center;gap:6px;}
+  .head .btn.accent{background:var(--accent);border-color:var(--accent);color:#fff;}
+
+  .scroll{overflow-x:auto;}
+  table.mx{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;}
+  .mx th,.mx td{border-bottom:1px solid var(--line-2);border-right:1px solid var(--line-2);padding:9px 12px;background:#fff;}
+  .mx thead th{position:sticky;top:0;z-index:3;background:#fff;border-bottom:1px solid var(--line);vertical-align:bottom;}
+  /* sticky customer column */
+  .mx .col-cust{position:sticky;left:0;z-index:2;min-width:150px;text-align:left;box-shadow:1px 0 0 var(--line);}
+  .mx thead .col-cust{z-index:4;}
+  .mx .col-sum{text-align:right;min-width:64px;background:var(--sub);}
+
+  /* output column header: name + allocation progress */
+  .oh{display:flex;flex-direction:column;gap:5px;min-width:120px;}
+  .oh .nm{font-weight:600;font-size:12.5px;}
+  .oh .id{font-size:10.5px;color:var(--muted-2);font-weight:400;}
+  .oh .alloc{display:flex;align-items:center;gap:6px;}
+  .oh .alloc .n{font-size:11px;font-variant-numeric:tabular-nums;}
+  .oh .alloc .track{width:46px;height:4px;border-radius:2px;background:#EDEFF1;overflow:hidden;}
+  .oh .alloc .fill{height:100%;}
+  .oh.full .fill{background:var(--accent);} .oh.full .n{color:var(--accent);font-weight:600;}
+  .oh.under .fill{background:var(--amber);} .oh.under .n{color:var(--amber);font-weight:600;}
+
+  /* customer cell */
+  .col-cust .nm{font-weight:600;}
+  .src{font-size:10px;font-weight:600;padding:1px 6px;border-radius:5px;margin-left:0;display:inline-block;margin-top:3px;}
+  .src.order{background:#EEF1F4;color:#475569;} .src.manual{background:#FBF0DC;color:var(--amber);}
+
+  /* qty cells */
+  .qc{text-align:center;font-variant-numeric:tabular-nums;}
+  .qc.zero{color:var(--muted-2);}
+  .qc.has{font-weight:600;}
+  .rsum{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;background:var(--sub);}
+
+  /* bottom totals row */
+  .totrow td{background:var(--sub);border-top:1px solid var(--line);font-weight:600;}
+  .totrow .col-cust{background:var(--sub);font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+  .tot{text-align:center;font-variant-numeric:tabular-nums;}
+  .tot .ok{color:var(--accent);} .tot .bad{color:var(--amber);}
+  .tot .sub{font-size:10.5px;color:var(--muted-2);}
+
+  .note{max-width:920px;margin:16px auto 0;font-size:12.5px;color:#6b7280;line-height:1.85;}
+  .note b{color:var(--ink);}
+</style>
+</head>
+<body>
+<div class="lead"><h1>客户分拣矩阵 — 优化</h1><p>客户(行) × 产出项(列)；列头加分配进度、来源 chip、空格淡化、底部合计行高亮缺分</p></div>
+
+<div class="card">
+  <div class="head">
+    <span class="title">客户分拣</span>
+    <span class="tag">未分满 · 缺 10</span>
+    <span class="sp"></span>
+    <span class="btn">批量分配</span>
+    <span class="btn accent">＋ 编辑分配</span>
+  </div>
+
+  <div class="scroll">
+    <table class="mx">
+      <thead>
+        <tr>
+          <th class="col-cust">客户</th>
+          <th>
+            <div class="oh full">
+              <span class="nm">蝴蝶吊坠项链</span><span class="id">SP-0042</span>
+              <span class="alloc"><span class="n">30/30</span><span class="track"><span class="fill" style="width:100%"></span></span></span>
+            </div>
+          </th>
+          <th>
+            <div class="oh under">
+              <span class="nm">复古耳环</span><span class="id">PJ-X-00188</span>
+              <span class="alloc"><span class="n">40/50</span><span class="track"><span class="fill" style="width:80%"></span></span></span>
+            </div>
+          </th>
+          <th class="col-sum">合计</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="col-cust"><div class="nm">张小姐</div><span class="src order">订单 OR-0188 ↗</span></td>
+          <td class="qc has">18</td>
+          <td class="qc zero">·</td>
+          <td class="rsum">18</td>
+        </tr>
+        <tr>
+          <td class="col-cust"><div class="nm">王女士</div><span class="src manual">手填</span></td>
+          <td class="qc has">12</td>
+          <td class="qc zero">·</td>
+          <td class="rsum">12</td>
+        </tr>
+        <tr>
+          <td class="col-cust"><div class="nm">李先生</div><span class="src manual">手填</span></td>
+          <td class="qc zero">·</td>
+          <td class="qc has">40</td>
+          <td class="rsum">40</td>
+        </tr>
+        <tr class="totrow">
+          <td class="col-cust">已分 / 总</td>
+          <td class="tot"><span class="ok">30 / 30</span><div class="sub">已分满</div></td>
+          <td class="tot"><span class="bad">40 / 50</span><div class="sub">缺 10</div></td>
+          <td class="rsum">70</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="note">
+  <b>优化点：</b>
+  ① <b>列头加分配进度</b>：每个产出项列头显示「已分/总」+ 迷你进度条，<b>分满=祖母绿、未分满=琥珀</b>——一眼看哪个产出还没分完。
+  ② <b>底部合计行</b>：列合计(已分/总) + 缺分高亮(缺 10)，行合计在右；不用心算。
+  ③ <b>客户来源 chip</b>：订单来源(灰 + 单号 ↗) vs 手填(琥珀)，和详情页一致。
+  ④ <b>空格淡化</b>：未分配的格子用淡「·」，有值的加粗，视线只落在已分配处。
+  ⑤ <b>状态标</b>：标题旁「未分满 · 缺 10 / 已分满」，整体进度一眼可见。
+  ⑥ 客户列 sticky-left、表头 sticky-top（保留现有）；视觉套新发丝网格 + 等宽数字。
+  <br>编辑态：格子变输入框，「+加一行客户」「批量分配」沿用现有交互，仅换皮。
+</div>
+</body>
+</html>

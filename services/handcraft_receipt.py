@@ -11,6 +11,7 @@ from models.part import Part
 from services._helpers import _next_id
 from services.inventory import add_stock, deduct_stock
 from time_utils import now_beijing
+from services.production_archive import require_unarchived
 
 
 _VALID_STATUSES = {"未付款", "已付款"}
@@ -113,6 +114,7 @@ def _apply_receive(db: Session, order_item, item_type: str, qty: float) -> dict:
     via BOM (which bumps the parts' consumed_qty). Returns the BOM shortfall
     dict {part_id: qty} from auto-consume (empty when fully covered / N/A).
     """
+    require_unarchived(db.get(HandcraftOrder, order_item.handcraft_order_id))
     order_item.received_qty = float(order_item.received_qty or 0) + qty
     shortfall: dict[str, float] = {}
     if item_type == "part":
@@ -240,6 +242,7 @@ def _reverse_receive(db: Session, order_item, item_type: str, qty: float) -> Non
     Jewelry/part-output: deduct stock + reverse auto-consumed parts (which
     decrement consumed_qty).
     """
+    require_unarchived(db.get(HandcraftOrder, order_item.handcraft_order_id))
     order_item.received_qty = float(order_item.received_qty or 0) - qty
     if item_type == "part":
         order_item.returned_qty = float(order_item.returned_qty or 0) - qty

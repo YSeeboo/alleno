@@ -296,6 +296,7 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
             .filter(
                 HandcraftPartItem.id.in_(own_hcpi_ids),
                 HandcraftOrder.status.in_(statuses),
+                HandcraftOrder.archived_at.is_(None),
                 HandcraftPartItem.part_id.in_(part_ids),
             )
             .group_by(HandcraftPartItem.part_id)
@@ -317,6 +318,7 @@ def get_parts_summary(db: Session, order_id: str) -> list[dict]:
             .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
             .filter(
                 HandcraftOrder.status == "pending",
+                HandcraftOrder.archived_at.is_(None),
                 HandcraftPartItem.part_id.in_(part_ids),
             )
             .group_by(HandcraftPartItem.part_id)

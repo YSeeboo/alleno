@@ -7,6 +7,7 @@
     </n-space>
 
     <n-spin :show="loading">
+      <ProductionArchiveNotice :order="order" />
       <n-card v-if="order" title="基本信息" style="margin-bottom: 16px;">
         <template #header-extra>
           <n-space size="small">
@@ -46,7 +47,7 @@
             </template>
             <template v-else>
               {{ order.supplier_name }}
-              <n-button v-if="order.status === 'pending'" text type="primary" size="small" style="margin-left: 6px;" @click="startEditSupplier">
+              <n-button v-if="isPending()" text type="primary" size="small" style="margin-left: 6px;" @click="startEditSupplier">
                 <template #icon><n-icon :component="CreateOutline" /></template>
               </n-button>
             </template>
@@ -82,7 +83,7 @@
             </template>
             <template v-else>
               {{ fmt(order.created_at) }}
-              <n-button text type="primary" size="small" style="margin-left: 6px;" @click="startEditCreatedAt">
+              <n-button v-if="!order.archived_at" text type="primary" size="small" style="margin-left: 6px;" @click="startEditCreatedAt">
                 <template #icon><n-icon :component="CreateOutline" /></template>
               </n-button>
             </template>
@@ -148,6 +149,7 @@
                   />
                   <n-button
                     class="delivery-image-delete"
+                    v-if="!order.archived_at"
                     size="tiny"
                     type="error"
                     circle
@@ -167,7 +169,7 @@
                 </button>
               </div>
               <button
-                v-else
+                v-else-if="canAddDeliveryImage"
                 class="delivery-image-add"
                 :disabled="deliveryImagesSaving"
                 @click="openDeliveryImageModal"
@@ -182,7 +184,7 @@
           </n-descriptions-item>
         </n-descriptions>
         <n-space style="margin-top: 12px;">
-          <n-button v-if="order.status === 'pending'" type="primary" :loading="sending" @click="doSend">
+          <n-button v-if="isPending()" type="primary" :loading="sending" @click="doSend">
             确认发出
           </n-button>
         </n-space>
@@ -192,14 +194,14 @@
         <template #header-extra>
           <n-space size="small">
             <n-button
-              v-if="items.length > 0"
+              v-if="items.length > 0 && !order?.archived_at"
               size="small"
               @click="openBatchLinkModal"
             >
               批量关联订单
             </n-button>
             <n-button
-              v-if="order?.status === 'pending'"
+              v-if="isPending()"
               type="primary"
               size="small"
               @click="openAddModal"
@@ -504,6 +506,7 @@
 </template>
 
 <script setup>
+import ProductionArchiveNotice from '@/components/ProductionArchiveNotice.vue'
 import { ref, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
@@ -655,9 +658,9 @@ const statusType = { pending: 'default', processing: 'info', completed: 'success
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
 const deliveryImages = computed(() => order.value?.delivery_images || [])
 const totalDeliveryImageCount = computed(() => deliveryImages.value.length + pendingDeliveryImages.value.length)
-const canAddDeliveryImage = computed(() => totalDeliveryImageCount.value < 10)
+const canAddDeliveryImage = computed(() => !order.value?.archived_at && totalDeliveryImageCount.value < 10)
 const statusOptions = computed(() => {
-  if (!order.value) return []
+  if (!order.value || order.value.archived_at) return []
   const s = order.value.status
   if (s === 'pending') return [{ label: '进行中', value: 'processing' }]
   if (s === 'processing') return [
@@ -1095,7 +1098,7 @@ const doDeleteItem = (row) => {
   })
 }
 
-const isPending = () => order.value?.status === 'pending'
+const isPending = () => !order.value?.archived_at && order.value?.status === 'pending'
 const normalizeNote = (value) => (value || '').trim()
 const mergeDeliveryImages = (...groups) => [...new Set(groups.flat().filter(Boolean))]
 
@@ -1495,6 +1498,7 @@ const doUnlinkPlatingItem = (itemId, link) => {
 
 const renderOrderLinkCell = (row) => {
   const links = itemOrderLinks.value[row.id] || []
+  if (order.value?.archived_at) return links.map((link) => link.order_id).join('、') || '—'
   if (links.length === 0) {
     return h(NButton, {
       size: 'small',
@@ -1535,6 +1539,7 @@ const renderReceiptLinkCell = (row) => {
   const fullyReceived = receivedQty >= qty
 
   if (links.length === 0) {
+    if (order.value?.archived_at) return '—'
     return h(NButton, {
       size: 'small',
       text: true,
@@ -1551,7 +1556,7 @@ const renderReceiptLinkCell = (row) => {
         onClick: () => router.push(`/plating-receipts/${link.receipt_id}?highlight=${link.receipt_item_id}`),
       }, link.receipt_id),
     ]
-    if (!fullyReceived) {
+    if (!fullyReceived && !order.value?.archived_at) {
       badge.push(h(NButton, {
         size: 'tiny',
         quaternary: true,
@@ -1565,7 +1570,7 @@ const renderReceiptLinkCell = (row) => {
     }, badge)
   }))
 
-  if (!fullyReceived) {
+  if (!fullyReceived && !order.value?.archived_at) {
     children.push(h(NButton, {
       size: 'tiny',
       text: true,
@@ -1757,6 +1762,7 @@ const itemColumns = [
     key: 'actions',
     width: 100,
     render: (row) => {
+      if (order.value?.archived_at) return '历史归档（只读）'
       const pending = isPending()
       const btns = []
 

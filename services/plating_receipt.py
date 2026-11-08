@@ -10,6 +10,7 @@ from models.plating_receipt import PlatingReceipt, PlatingReceiptItem
 from services._helpers import _next_id
 from services.inventory import add_stock, deduct_stock
 from time_utils import now_beijing
+from services.production_archive import require_unarchived
 
 
 def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
@@ -71,6 +72,7 @@ def _check_plating_order_completion(db: Session, plating_order_id: str) -> None:
 
 def _apply_receive(db: Session, plating_order_item: PlatingOrderItem, qty: float) -> None:
     """Add qty to received_qty, update item status, add stock."""
+    require_unarchived(db.get(PlatingOrder, plating_order_item.plating_order_id))
     plating_order_item.received_qty = float(plating_order_item.received_qty or 0) + qty
     receive_id = plating_order_item.receive_part_id or plating_order_item.part_id
     add_stock(db, "part", receive_id, qty, "电镀收回")
@@ -82,6 +84,7 @@ def _apply_receive(db: Session, plating_order_item: PlatingOrderItem, qty: float
 
 def _reverse_receive(db: Session, plating_order_item: PlatingOrderItem, qty: float) -> None:
     """Reverse qty from received_qty, update item status, deduct stock."""
+    require_unarchived(db.get(PlatingOrder, plating_order_item.plating_order_id))
     plating_order_item.received_qty = float(plating_order_item.received_qty or 0) - qty
     receive_id = plating_order_item.receive_part_id or plating_order_item.part_id
     deduct_stock(db, "part", receive_id, qty, "电镀收回撤回")

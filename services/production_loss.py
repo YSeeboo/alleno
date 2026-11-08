@@ -15,6 +15,7 @@ from services.handcraft_receipt import (
     _auto_consume_child_parts,
 )
 from time_utils import now_beijing
+from services.production_archive import require_unarchived
 
 
 def confirm_plating_loss(
@@ -27,6 +28,7 @@ def confirm_plating_loss(
     note: Optional[str] = None,
 ) -> ProductionLoss:
     po = db.query(PlatingOrder).filter_by(id=order_id).first()
+    require_unarchived(po)
     if not po:
         raise ValueError(f"电镀单 {order_id} 不存在")
 
@@ -88,6 +90,7 @@ def confirm_handcraft_loss(
     note: Optional[str] = None,
 ) -> ProductionLoss:
     hc = db.query(HandcraftOrder).filter_by(id=order_id).first()
+    require_unarchived(hc)
     if not hc:
         raise ValueError(f"手工单 {order_id} 不存在")
 
