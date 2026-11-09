@@ -73,11 +73,11 @@ import HandcraftIcon from '@/components/icons/HandcraftIcon.vue'
 import SortingIcon from '@/components/icons/SortingIcon.vue'
 import JewelryTemplateIcon from '@/components/icons/JewelryTemplateIcon.vue'
 import OrderIcon from '@/components/icons/OrderIcon.vue'
-import PlatingSummaryIcon from '@/components/icons/PlatingSummaryIcon.vue'
 import InventoryLogIcon from '@/components/icons/InventoryLogIcon.vue'
 import RestockIcon from '@/components/icons/RestockIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 import logoWhite from '@/assets/logo-white.png'
+import { isPlatingRoute } from '@/utils/platingNavigation'
 
 const router = useRouter()
 const route = useRoute()
@@ -105,9 +105,7 @@ const allFlatItems = [
   { label: '订单管理', key: 'orders', icon: icon(OrderIcon), perm: 'orders' },
   { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
   { label: '待补货清单', key: 'restock', icon: icon(RestockIcon), perm: ['handcraft', 'restock'] },
-  { label: '电镀汇总', key: 'plating-summary', icon: icon(PlatingSummaryIcon), perm: 'plating' },
-  { label: '电镀发出', key: 'plating', icon: icon(PaperPlaneOutline), perm: 'plating' },
-  { label: '电镀回收', key: 'plating-receipts', icon: icon(DownloadOutline), perm: 'plating' },
+  { label: '电镀管理', key: 'plating-management', icon: icon(PlatingIcon), perm: 'plating' },
   { label: '手工发出', key: 'handcraft', icon: icon(PaperPlaneOutline), perm: 'handcraft' },
   { label: '手工回收', key: 'handcraft-receipts', icon: icon(DownloadOutline), perm: 'handcraft' },
   { label: '货物分拣', key: 'cargo-sorting', icon: icon(SortingIcon), perm: 'sorting' },
@@ -144,14 +142,7 @@ const allGroupedItems = [
       { label: '订单管理', key: 'orders', icon: icon(OrderIcon), perm: 'orders' },
       { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
       { label: '待补货清单', key: 'restock', icon: icon(RestockIcon), perm: ['handcraft', 'restock'] },
-      {
-        label: '电镀', key: 'plating-group', icon: icon(PlatingIcon), perm: 'plating',
-        children: [
-          { label: '电镀汇总', key: 'plating-summary', icon: icon(PlatingSummaryIcon), perm: 'plating' },
-          { label: '电镀发出', key: 'plating', icon: icon(PaperPlaneOutline), perm: 'plating' },
-          { label: '电镀回收', key: 'plating-receipts', icon: icon(DownloadOutline), perm: 'plating' },
-        ],
-      },
+      { label: '电镀管理', key: 'plating-management', icon: icon(PlatingIcon), perm: 'plating' },
       {
         label: '手工单', key: 'handcraft-group', icon: icon(HandcraftIcon), perm: 'handcraft',
         children: [
@@ -189,6 +180,7 @@ const groupedItems = computed(() =>
 const menuOptions = computed(() => collapsed.value ? flatItems.value : groupedItems.value)
 
 const activeKey = computed(() => {
+  if (isPlatingRoute(route.path)) return 'plating-management'
   const seg = route.path.split('/')[1]
   return seg || 'dashboard'
 })

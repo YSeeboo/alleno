@@ -11,6 +11,7 @@ from services._helpers import _next_id
 from services.inventory import add_stock, deduct_stock
 from time_utils import now_beijing
 from services.production_archive import require_unarchived
+from services.plating_reconciliation import snapshot_receipt
 
 
 def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
@@ -188,7 +189,7 @@ def add_plating_receipt_items(
     receipt_id: str,
     items: list,
 ) -> PlatingReceipt:
-    receipt = db.query(PlatingReceipt).filter(PlatingReceipt.id == receipt_id).first()
+    receipt = db.query(PlatingReceipt).filter(PlatingReceipt.id == receipt_id).populate_existing().with_for_update().first()
     if receipt is None:
         raise ValueError(f"PlatingReceipt not found: {receipt_id}")
     if receipt.status == "已付款":
@@ -279,13 +280,15 @@ def get_plating_receipt_items(db: Session, receipt_id: str) -> list:
 
 
 def delete_plating_receipt(db: Session, receipt_id: str) -> None:
-    receipt = db.query(PlatingReceipt).filter(PlatingReceipt.id == receipt_id).first()
+    receipt = db.query(PlatingReceipt).filter(PlatingReceipt.id == receipt_id).populate_existing().with_for_update().first()
     if receipt is None:
         raise ValueError(f"PlatingReceipt not found: {receipt_id}")
     if receipt.status == "已付款":
         raise ValueError("已付款的回收单不能删除")
 
-    items = get_plating_receipt_items(db, receipt_id)
+    # Refresh only before mutation; the shared item getter is also used by
+    # _recalc_total while item changes have not yet been flushed.
+    items = db.query(PlatingReceiptItem).filter_by(plating_receipt_id=receipt_id).populate_existing().all()
     affected_plating_orders = set()
 
     for item in items:
@@ -325,7 +328,7 @@ def update_plating_receipt(db: Session, receipt_id: str, data: dict) -> PlatingR
 def update_plating_receipt_status(db: Session, receipt_id: str, status: str) -> PlatingReceipt:
     if status not in _VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Valid: {', '.join(sorted(_VALID_STATUSES))}")
-    receipt = db.query(PlatingReceipt).filter(PlatingReceipt.id == receipt_id).first()
+    receipt = db.query(PlatingReceipt).filter(PlatingReceipt.id == receipt_id).populate_existing().with_for_update().first()
     if receipt is None:
         raise ValueError(f"PlatingReceipt not found: {receipt_id}")
     if receipt.status == status:
@@ -336,6 +339,7 @@ def update_plating_receipt_status(db: Session, receipt_id: str, status: str) -> 
         receipt.paid_at = max(now, receipt.created_at) if receipt.created_at else now
     else:
         receipt.paid_at = None
+    snapshot_receipt(db, receipt, paid=status == "已付款")
     receipt.status = status
     db.flush()
     _enrich_receipt(db, receipt)
@@ -353,7 +357,7 @@ def update_plating_receipt_images(db: Session, receipt_id: str, delivery_images:
 
 
 def update_plating_receipt_item(db: Session, receipt_id: str, item_id: int, data: dict) -> PlatingReceiptItem:
-    receipt = db.query(PlatingReceipt).filter(PlatingReceipt.id == receipt_id).first()
+    receipt = db.query(PlatingReceipt).filter(PlatingReceipt.id == receipt_id).populate_existing().with_for_update().first()
     if receipt is None:
         raise ValueError(f"PlatingReceipt not found: {receipt_id}")
     if receipt.status == "已付款":
@@ -362,7 +366,7 @@ def update_plating_receipt_item(db: Session, receipt_id: str, item_id: int, data
     item = db.query(PlatingReceiptItem).filter(
         PlatingReceiptItem.id == item_id,
         PlatingReceiptItem.plating_receipt_id == receipt_id,
-    ).first()
+    ).populate_existing().first()
     if item is None:
         raise ValueError(f"PlatingReceiptItem {item_id} not found in receipt {receipt_id}")
 
@@ -408,7 +412,7 @@ def update_plating_receipt_item(db: Session, receipt_id: str, item_id: int, data
 
 
 def delete_plating_receipt_item(db: Session, receipt_id: str, item_id: int) -> None:
-    receipt = db.query(PlatingReceipt).filter(PlatingReceipt.id == receipt_id).first()
+    receipt = db.query(PlatingReceipt).filter(PlatingReceipt.id == receipt_id).populate_existing().with_for_update().first()
     if receipt is None:
         raise ValueError(f"PlatingReceipt not found: {receipt_id}")
     if receipt.status == "已付款":
@@ -417,7 +421,7 @@ def delete_plating_receipt_item(db: Session, receipt_id: str, item_id: int) -> N
     item = db.query(PlatingReceiptItem).filter(
         PlatingReceiptItem.id == item_id,
         PlatingReceiptItem.plating_receipt_id == receipt_id,
-    ).first()
+    ).populate_existing().first()
     if item is None:
         raise ValueError(f"PlatingReceiptItem {item_id} not found in receipt {receipt_id}")
 

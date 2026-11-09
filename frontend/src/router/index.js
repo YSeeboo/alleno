@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+import { rememberPlatingLocation, restorePlatingListQuery } from '@/utils/platingNavigation'
+import { createPlatingRoutes } from './plating'
 
 const ROUTE_PERMISSION_MAP = {
   kanban: 'kanban',
@@ -11,6 +13,7 @@ const ROUTE_PERMISSION_MAP = {
   plating: 'plating',
   'plating-receipts': 'plating',
   'plating-summary': 'plating',
+  'plating-management': 'plating',
   handcraft: 'handcraft',
   'handcraft-receipts': 'handcraft',
   'cargo-sorting': 'sorting',
@@ -22,7 +25,7 @@ const ROUTE_PERMISSION_MAP = {
 
 const PERMISSION_ROUTE_ORDER = [
   'kanban', 'dashboard', 'parts', 'jewelries', 'orders',
-  'purchase-orders', 'plating', 'handcraft', 'restock', 'cargo-sorting',
+  'purchase-orders', 'plating-management', 'handcraft', 'restock', 'cargo-sorting',
   'inventory', 'inventory-log', 'users',
 ]
 
@@ -78,13 +81,7 @@ const router = createRouter({
         { path: 'purchase-orders', component: lazyLoad(() => import('@/views/purchase-orders/PurchaseOrderList.vue')), meta: { perm: 'purchase_orders' } },
         { path: 'purchase-orders/create', component: lazyLoad(() => import('@/views/purchase-orders/PurchaseOrderCreate.vue')), meta: { perm: 'purchase_orders' } },
         { path: 'purchase-orders/:id', component: lazyLoad(() => import('@/views/purchase-orders/PurchaseOrderDetail.vue')), meta: { perm: 'purchase_orders' } },
-        { path: 'plating', component: lazyLoad(() => import('@/views/plating/PlatingList.vue')), meta: { perm: 'plating' } },
-        { path: 'plating/create', component: lazyLoad(() => import('@/views/plating/PlatingCreate.vue')), meta: { perm: 'plating' } },
-        { path: 'plating/:id', component: lazyLoad(() => import('@/views/plating/PlatingDetail.vue')), meta: { perm: 'plating' } },
-        { path: 'plating-receipts', component: lazyLoad(() => import('@/views/plating-receipts/PlatingReceiptList.vue')), meta: { perm: 'plating' } },
-        { path: 'plating-receipts/create', component: lazyLoad(() => import('@/views/plating-receipts/PlatingReceiptCreate.vue')), meta: { perm: 'plating' } },
-        { path: 'plating-receipts/:id', component: lazyLoad(() => import('@/views/plating-receipts/PlatingReceiptDetail.vue')), meta: { perm: 'plating' } },
-        { path: 'plating-summary', component: lazyLoad(() => import('@/views/plating/PlatingSummary.vue')), meta: { perm: 'plating' } },
+        ...createPlatingRoutes(lazyLoad),
         { path: 'handcraft-receipts', component: lazyLoad(() => import('@/views/handcraft-receipts/HandcraftReceiptList.vue')), meta: { perm: 'handcraft' } },
         { path: 'handcraft-receipts/create', component: lazyLoad(() => import('@/views/handcraft-receipts/HandcraftReceiptCreate.vue')), meta: { perm: 'handcraft' } },
         { path: 'handcraft-receipts/:id', component: lazyLoad(() => import('@/views/handcraft-receipts/HandcraftReceiptDetail.vue')), meta: { perm: 'handcraft' } },
@@ -105,7 +102,7 @@ const router = createRouter({
 
 let userFetched = false
 
-router.beforeEach(async (to) => {
+router.beforeEach(async (to, from) => {
   const { useAuthStore } = await import('@/stores/auth')
   const authStore = useAuthStore()
 
@@ -144,7 +141,11 @@ router.beforeEach(async (to) => {
     return target
   }
 
-  return true
+  return restorePlatingListQuery(to, from) || true
+})
+
+router.afterEach((to, from, failure) => {
+  if (!failure) rememberPlatingLocation(to)
 })
 
 export default router

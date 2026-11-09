@@ -29,6 +29,7 @@ from api.handcraft_receipt import router as handcraft_receipt_router
 from api.supplier import router as supplier_router
 from api.jewelry_template import router as jewelry_template_router
 from api.plating_summary import router as plating_summary_router
+from api.plating_reconciliation import router as plating_reconciliation_router
 from api.restock import router as restock_router
 from api.customers import router as customers_router
 
@@ -103,6 +104,7 @@ app.include_router(inventory_router, dependencies=[require_permission("inventory
 app.include_router(orders_router, dependencies=[require_permission("orders")])
 app.include_router(plating_router, dependencies=[require_permission("plating")])
 app.include_router(plating_summary_router, dependencies=[require_permission("plating")])
+app.include_router(plating_reconciliation_router, dependencies=[require_permission("plating")])
 app.include_router(cargo_sorting_router, dependencies=[require_permission("sorting")])
 app.include_router(handcraft_router, dependencies=[require_permission("handcraft")])
 app.include_router(customers_router, dependencies=[require_permission("handcraft")])

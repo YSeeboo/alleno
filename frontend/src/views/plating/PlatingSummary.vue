@@ -1,6 +1,7 @@
 <template>
   <div class="plating-summary">
-    <div class="page-head">
+    <div v-if="embedded" class="plating-section-title"><h2>电镀汇总</h2><span>按配件明细查看发出与收回</span></div>
+    <div v-else class="page-head">
       <h2 class="page-title">电镀汇总</h2>
     </div>
 
@@ -53,8 +54,8 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, h } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, computed, watch, onMounted, onBeforeUnmount, h } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   NButton, NButtonGroup, NDataTable, NDatePicker, NForm, NFormItem, NInput,
   NInputNumber, NModal, NPagination, NSelect, NSpin, NTag, useMessage,
@@ -63,23 +64,33 @@ import api from '@/api/index'
 import { listDispatchedSummary, listReceivedSummary } from '@/api/platingSummary'
 import { getPlatingSuppliers } from '@/api/plating'
 import { renderImageThumb } from '@/utils/ui'
+import { usePlatingPageQuery } from '@/composables/usePlatingPageQuery'
 
-const route = useRoute()
+defineProps({ embedded: { type: Boolean, default: false } })
+
+const { route, active, query, updateQuery, field } = usePlatingPageQuery('summary')
 const router = useRouter()
 
-const tab = ref('out')
-const archive = ref('active')
+const tab = field('tab', 'out')
+const archive = field('archive', 'active')
 const archiveOptions = [
   { label: '正常单据', value: 'active' },
   { label: '历史归档', value: 'archived' },
   { label: '全部（含归档）', value: 'all' },
 ]
-const supplier = ref(null)
-const dateRangeRaw = ref(null)
-const qInput = ref('')
-const qDebounced = ref('')
-const sortByDays = ref(false)
-const page = ref(1)
+const supplier = field('supplier')
+const dateRangeRaw = computed({
+  get: () => query.value.date_from && query.value.date_to
+    ? [new Date(`${query.value.date_from}T00:00:00`).getTime(), new Date(`${query.value.date_to}T00:00:00`).getTime()] : null,
+  set: (value) => { void updateQuery({ date_from: value ? tsToLocalDate(value[0]) : null, date_to: value ? tsToLocalDate(value[1]) : null }) },
+})
+const qInput = ref(query.value.q || '')
+const qDebounced = computed(() => query.value.q || '')
+const sortByDays = computed(() => query.value.sort === 'days')
+const page = computed({
+  get: () => Number(query.value.page || 1),
+  set: (value) => { void updateQuery({ page: String(value) }, false) },
+})
 const pageSize = 30
 
 const rows = ref([])
@@ -94,47 +105,16 @@ function tsToLocalDate(ms) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function syncStateFromQuery() {
-  const q = route.query
-  archive.value = ['active', 'archived', 'all'].includes(q.archive) ? q.archive : 'active'
-  tab.value = q.tab === 'in' ? 'in' : 'out'
-  supplier.value = q.supplier || null
-  if (q.date_from && q.date_to) {
-    const from = new Date(q.date_from).getTime()
-    const to = new Date(q.date_to).getTime()
-    dateRangeRaw.value = [from, to]
-  } else {
-    dateRangeRaw.value = null
-  }
-  qInput.value = q.q || ''
-  qDebounced.value = q.q || ''
-  sortByDays.value = q.sort === 'days'
-  page.value = parseInt(q.page) || 1
-}
-
-function pushQuery() {
-  const q = {}
-  if (archive.value !== 'active') q.archive = archive.value
-  if (tab.value !== 'out') q.tab = tab.value
-  if (supplier.value) q.supplier = supplier.value
-  if (dateRangeRaw.value) {
-    q.date_from = tsToLocalDate(dateRangeRaw.value[0])
-    q.date_to = tsToLocalDate(dateRangeRaw.value[1])
-  }
-  if (qDebounced.value) q.q = qDebounced.value
-  if (sortByDays.value) q.sort = 'days'
-  if (page.value > 1) q.page = page.value
-  router.replace({ query: q })
-}
-
 let qTimer = null
 watch(qInput, (v) => {
   clearTimeout(qTimer)
-  qTimer = setTimeout(() => { qDebounced.value = v; page.value = 1 }, 300)
+  if (v === qDebounced.value) return
+  qTimer = setTimeout(() => { void updateQuery({ q: v }) }, 300)
 })
+watch(qDebounced, (value) => { qInput.value = value })
 
-function setTab(t) { tab.value = t; page.value = 1; sortByDays.value = false }
-function toggleSortDays() { sortByDays.value = !sortByDays.value; page.value = 1 }
+function setTab(t) { void updateQuery({ tab: t, sort: null }) }
+function toggleSortDays() { void updateQuery({ sort: sortByDays.value ? null : 'days' }) }
 
 async function loadSuppliers() {
   try {
@@ -157,19 +137,24 @@ function buildParams() {
   return params
 }
 
+let loadVersion = 0
+let disposed = false
 async function load() {
+  if (!active.value || disposed) return
+  const version = ++loadVersion
   loading.value = true
   try {
     const fn = tab.value === 'out' ? listDispatchedSummary : listReceivedSummary
     const { data } = await fn(buildParams())
-    rows.value = data.items
-    total.value = data.total
+    if (version === loadVersion) {
+      rows.value = data.items
+      total.value = data.total
+    }
   } catch (e) {
-    message.error(e?.response?.data?.detail || '加载汇总数据失败')
+    if (version === loadVersion) message.error(e?.response?.data?.detail || '加载汇总数据失败')
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
-  pushQuery()
 }
 
 const renderPart = (row) => h('span', { style: 'display:inline-flex;align-items:center;gap:8px;' }, [
@@ -321,17 +306,23 @@ onMounted(async () => {
   // Clear any stale return state from a prior summary visit so a future
   // direct visit to a detail page won't show a misleading 返回汇总 button.
   sessionStorage.removeItem('plating-summary-return')
-  syncStateFromQuery()
   await loadSuppliers()
   await load()
 })
 
-watch([archive, supplier, dateRangeRaw, qDebounced, sortByDays], () => { page.value = 1 })
-watch([archive, tab, supplier, dateRangeRaw, qDebounced, sortByDays, page], load)
+watch(() => route.fullPath, () => { if (active.value) void load() })
+onBeforeUnmount(() => {
+  disposed = true
+  clearTimeout(qTimer)
+  loadVersion++
+})
 </script>
 
 <style scoped>
 .plating-summary { padding: 4px 0; }
+.plating-section-title { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-bottom: 14px; }
+.plating-section-title h2 { margin: 0; font-size: 15px; font-weight: 650; }
+.plating-section-title span { color: #9AA2A9; font-size: 11px; }
 .page-head { margin-bottom: 12px; }
 .page-title { font-size: 20px; font-weight: 700; margin: 0; }
 .toolbar {
@@ -343,5 +334,11 @@ watch([archive, tab, supplier, dateRangeRaw, qDebounced, sortByDays, page], load
 :deep(.row-completed td) {
   background: #F1F5F9 !important;
   color: #94A3B8;
+}
+@media (max-width: 767px) {
+  .filters { width: 100%; }
+  .filters > * { flex: 1 1 calc(50% - 4px); min-width: 0; }
+  .filters > :deep(.n-date-picker) { flex-basis: 100%; }
+  .pager-wrap { overflow-x: auto; }
 }
 </style>

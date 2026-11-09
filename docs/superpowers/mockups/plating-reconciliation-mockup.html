@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>电镀商家对账 · 交互 Demo</title>
+  <style>
+    :root{--ink:#20282c;--muted:#929b9f;--green:#1e7a5a;--soft:#eaf4ee;--line:#e8eceb;--bg:#f6f7f8;--amber:#b37a2c}
+    *{box-sizing:border-box}[hidden]{display:none!important}
+    body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+    button,input,select{font:inherit}button,select{cursor:pointer}button,a,input,select{-webkit-tap-highlight-color:transparent}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--green);outline-offset:3px}
+    svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}a{color:var(--green);text-decoration:none}
+    .sidebar{width:220px;position:fixed;inset:0 auto 0 0;background:#10141a;color:#aeb7c1;padding:25px 16px 85px;overflow:auto;z-index:30}.brand{display:flex;align-items:center;gap:16px;padding:0 13px;margin-bottom:34px;color:white;letter-spacing:2.4px;font-size:15px;font-weight:650}.brand-mark{font:italic 30px Georgia,serif;letter-spacing:-5px;width:29px;color:#e4e8ea}.nav-group{margin:25px 13px 9px;font-size:10px;color:#65717d;letter-spacing:1.8px}.nav{display:flex;align-items:center;gap:12px;width:100%;padding:10px 14px;margin:3px 0;border:0;border-radius:7px;background:transparent;color:inherit;text-align:left;font-size:13px}.nav.active{background:#1e7a5a33;color:#f0f8f3;font-weight:600}.nav.active svg{color:#54c39a}.nav.active::after{content:"";width:5px;height:5px;background:#54c39a;border-radius:50%;margin-left:auto}.side-user{display:flex;gap:10px;align-items:center;position:absolute;inset:auto 0 0;padding:17px 25px;border-top:1px solid #242a31;background:#10141a}.avatar{display:grid;place-items:center;width:31px;height:31px;border-radius:50%;color:#d6ede2;background:#244b3d}.user-name{color:#d4d9de;font-size:12px}.user-role{color:#74808c;font-size:10px}
+    main{margin-left:220px;padding:22px 30px 36px;min-width:0}.preview{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:8px 12px;border:1px dashed #cddcd3;border-radius:7px;background:#f0f5f2;color:#71877a;font-size:11px;margin-bottom:25px}.preview strong{color:#4c775e;font-weight:600}.preview-dot{display:inline-block;width:6px;height:6px;background:#77a48a;border-radius:50%;margin-right:7px}.text-button{border:0;padding:0;background:none;color:var(--green);font-size:inherit}.text-button:hover{text-decoration:underline}.breadcrumbs{font-size:11px;color:var(--muted);margin-bottom:4px}h1{font-size:27px;letter-spacing:-.6px;margin:0;font-weight:700}.subtitle{margin:4px 0 0;font-size:12px;color:var(--muted)}.page-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.heading-note{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--muted)}.heading-note svg{width:14px;height:14px}
+    .tabs{display:flex;gap:29px;border-bottom:1px solid #e1e5e7;margin-top:25px;overflow-x:auto}.tab{position:relative;display:flex;align-items:center;justify-content:center;gap:8px;padding:0 3px 14px;border:0;background:none;color:#818a91;white-space:nowrap;font-size:14px}.tab svg{width:17px;height:17px}.tab:hover,.tab[aria-selected=true]{color:var(--green)}.tab[aria-selected=true]{font-weight:650}.tab[aria-selected=true]::after{content:"";position:absolute;height:3px;background:var(--green);bottom:0;left:0;right:0;border-radius:3px 3px 0 0}
+    .workspace{padding-top:23px}.section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:17px}.section-heading h2{margin:0;font-size:16px;font-weight:650}.section-heading p{margin:3px 0 0;font-size:11px;color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid #dfe5e1;border-radius:6px;background:white;color:#65716b;padding:7px 12px;line-height:18px;font-size:12px;white-space:nowrap}.btn svg{width:15px;height:15px}.btn.primary{background:var(--green);border-color:var(--green);color:white}.btn:hover{filter:brightness(.97)}.btn:disabled{cursor:not-allowed;opacity:.5}
+    .filter-panel{padding:15px 17px;background:#fff;border:1px solid var(--line);border-radius:9px}.filter-row{display:flex;align-items:flex-end;gap:13px;flex-wrap:wrap}.field{display:flex;flex-direction:column;gap:6px}.field-label{font-size:11px;color:#8c9791}.control{height:34px;padding:0 10px;background:#fff;border:1px solid #dfe5e1;border-radius:6px;color:#4c5b53;font-size:12px;max-width:100%}select.control{min-width:170px}.date-range{display:flex;align-items:center;gap:8px}.date-range span{color:#a1a8ad}.date-range input{width:139px}.quick-dates{display:flex;gap:5px;align-self:flex-end;height:34px;align-items:center}.quick-dates button{border:0;border-radius:4px;background:none;color:#8c9791;padding:3px 7px;font-size:11px}.quick-dates button.active{background:var(--soft);color:var(--green)}.reset-filters{margin-left:auto;height:34px;font-size:11px;color:#939d97}.filter-caption{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:10px;color:#9aa39e;padding:10px 1px 0}.filter-caption strong{font-weight:500;color:#728078}.filter-error{color:#bd5f50;font-size:11px;margin-top:7px}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin:18px 0}.stat{border:1px solid var(--line);border-radius:9px;background:#fff;padding:17px 20px;position:relative;overflow:hidden}.stat-label{display:flex;align-items:center;gap:7px;color:#7e8c84;font-size:11px}.stat-label svg{width:15px;height:15px;color:#9fa9a3}.stat-value{font-size:29px;font-weight:650;line-height:1.4;margin:6px 0 4px;letter-spacing:-.6px;font-variant-numeric:tabular-nums}.stat-value small{font-size:16px;font-weight:450;margin-right:6px;color:#8e9992}.stat-foot{font-size:10px;color:#9ca59f}.stat.paid .stat-value{color:var(--green)}.stat.pending{background:linear-gradient(115deg,#f0f7f2,#fff);border-color:#dbe9df}.stat.pending .stat-value{color:#246549}.stat.pending::after{content:"";position:absolute;width:100px;height:100px;border:20px solid #e3eee666;border-radius:50%;right:-24px;top:-22px;pointer-events:none}
+    .block{margin-top:21px}.block-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}.block-title{display:flex;align-items:center;gap:9px}.block-title h3{font-size:13px;margin:0;font-weight:650}.count{display:inline-flex;align-items:center;background:#e9edeb;color:#819088;font-size:10px;border-radius:4px;padding:1px 6px}.block-note{font-size:10px;color:#98a39b}.table-scroll{overflow:auto;background:white;border:1px solid #e5eae7;border-radius:8px}table{border-collapse:separate;border-spacing:0;width:100%;text-align:left;white-space:nowrap;font-variant-numeric:tabular-nums}th{height:39px;padding:8px 15px;background:#fafbfa;color:#8c9791;font-size:10px;font-weight:500;border-bottom:1px solid var(--line)}td{padding:12px 15px;border-bottom:1px solid #eef1ef;font-size:12px;color:#536259}tbody tr:last-child td{border-bottom:0}tbody tr:hover td{background:#fcfdfc}.right{text-align:right}.vendor-table{min-width:650px}.vendor-table tfoot td{background:#fafcfb;font-size:11px;border-top:1px solid var(--line);font-weight:600}.vendor-name{color:#3d5145;font-weight:550;display:flex;align-items:center;gap:8px}.vendor-icon{display:inline-grid;place-items:center;width:27px;height:27px;background:#f0f5f1;border-radius:6px;color:#869e8c}.vendor-icon svg{width:14px;height:14px}.vendor-meta{font-size:10px;color:#a2aaa5;margin-left:5px;font-weight:400}.money{font-variant-numeric:tabular-nums}.green{color:var(--green)}.muted{color:#a4ada7}.amber{color:var(--amber)}
+    .rule-strip{display:flex;align-items:center;gap:7px;padding:8px 11px;border:1px solid #e4ebe5;border-radius:6px;background:#f0f5f1;color:#7d9081;font-size:10px;margin:13px 0}.rule-strip svg{width:14px;height:14px}.rule-strip strong{color:#587b62;font-weight:550}.rule-strip .spacer{margin-left:auto;white-space:nowrap}.detail-table{table-layout:fixed;min-width:1735px}.detail-table th,.detail-table td{padding-left:12px;padding-right:12px}.detail-table td{height:64px;font-size:11px}.detail-table .fixed-date{position:sticky;left:0;background:white;z-index:2;border-right:1px solid #edf0ed}.detail-table th.fixed-date{background:#fafbfa;z-index:4}.detail-table .pinned{position:sticky;background:white;z-index:2}.detail-table th.pinned{background:#fafbfa;z-index:4}.detail-table .price-col{right:292px;border-left:1px solid #edf0ed;box-shadow:-5px 0 9px -7px #74857777}.detail-table .override-col{right:185px;background:#f7fbf8}.detail-table th.override-col{background:#f0f6f1;color:#477d58}.detail-table .amount-col{right:85px}.detail-table .status-col{right:0}.detail-table tbody tr:hover .override-col{background:#f0f7f2}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px}.secondary{font-size:10px;color:#a0aaa3;margin-top:2px}.part-name{font-size:11px;color:#3d4d43;overflow:hidden;text-overflow:ellipsis}.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:20px;font-size:10px}.badge::before{content:"";width:4px;height:4px;background:currentColor;border-radius:50%}.badge.paid{background:#eaf4ee;color:#48876a}.badge.unpaid{background:#fbf2e6;color:#b1803e}.tag{font-size:10px;color:#a58a50;background:#faf7ef;border:1px solid #eee8d9;border-radius:4px;padding:2px 6px}.tag.silver{background:#f3f5f8;border-color:#e3e8ed;color:#8495a6}.price-input{width:82px;height:29px;border:1px solid #dbe6dd;border-radius:5px;background:white;padding:0 8px;text-align:right;color:#2c7147;font-size:11px;font-variant-numeric:tabular-nums}.price-input::placeholder{color:#b4bfb7;font-size:10px}.price-input.has-value{border-color:#bcd6c3;background:#fff}.price-input[aria-invalid=true]{border-color:#cd6f61;background:#fff8f6}.locked-price{display:flex;align-items:center;justify-content:flex-end;gap:5px;color:#a0aaa3}.locked-price svg{width:12px;height:12px}.changed-amount{font-weight:600;color:#31754c}.footer{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:10px;color:#9aa59e}.footer .saved{display:flex;align-items:center;gap:4px;color:#7f9a87}.saved svg{width:12px;height:12px}.empty{text-align:center;color:#9aa59e;padding:32px!important;height:auto!important}.bottom-note{font-size:10px;color:#a0aaa4;margin-top:24px;line-height:1.9}.bottom-note strong{font-weight:500;color:#86988b}.toast{position:fixed;bottom:25px;left:calc(50% + 100px);transform:translateX(-50%);max-width:calc(100% - 32px);padding:10px 17px;background:#253e30;color:#eff9f0;border-radius:7px;font-size:12px;box-shadow:0 8px 30px #233b2922;z-index:80}.mobile-header,.overlay{display:none}
+    dialog{padding:24px;width:min(570px,calc(100% - 32px));max-height:85vh;overflow:auto;border:1px solid #e2e7e3;border-radius:12px;color:var(--ink);box-shadow:0 20px 70px #10141a24}dialog::backdrop{background:#10141a66;backdrop-filter:blur(2px)}dialog h2{font-size:18px;margin:0 0 7px}dialog p,dialog li{color:#7b8b80;font-size:12px;line-height:1.9}dialog ul{padding-left:19px}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:20px}.dialog-note{padding:10px 12px;background:#f4f7f4;border-radius:6px;font-size:11px;color:#7e9183}.receipt-line{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #edf1ee;padding:10px 0;font-size:12px}.receipt-line:last-child{border-bottom:0}.receipt-line span{color:#93a096}.receipt-items{margin:13px 0}.receipt-items td,.receipt-items th{padding:9px;font-size:11px;white-space:normal}
+    @media(min-width:1600px){main{padding-left:42px;padding-right:42px}.detail-table{min-width:1770px}}
+    @media(max-width:1200px){.heading-note{display:none}.quick-dates{order:4}.reset-filters{order:5}.filter-row{gap:10px}.rule-strip .spacer{display:none}}
+    @media(max-width:760px){.sidebar{transform:translateX(-100%);transition:transform .2s}body.menu-open .sidebar{transform:translateX(0)}body.menu-open .overlay{display:block;position:fixed;inset:0;background:#10141a66;z-index:25}main{margin:0;padding:17px 16px 28px}.mobile-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:17px;font-size:10px;color:#95a198}.mobile-header button{display:flex;padding:5px 7px;background:white;border:1px solid #dce2df;border-radius:6px;color:#54665b}.mobile-header strong{letter-spacing:2px}.preview{font-size:10px;margin-bottom:20px}.preview-right{display:none}h1{font-size:25px}.tabs{gap:23px;margin-top:22px}.tab{font-size:12px;gap:5px}.tab svg{width:15px;height:15px}.workspace{padding-top:20px}.section-heading{align-items:flex-start}.section-heading h2{font-size:15px}.section-heading p{font-size:10px;max-width:195px}.section-heading .btn{padding:6px 9px;font-size:11px}.filter-panel{padding:13px}.filter-row{gap:11px}.field{flex:1 1 calc(50% - 10px);min-width:0}.field.dates{flex-basis:100%;order:3}.field .control{width:100%;min-width:0}.date-range input{flex:1;min-width:0}.quick-dates{flex:1}.reset-filters{margin-left:auto}.filter-caption{font-size:9px}.stats{gap:7px;margin:13px 0}.stat{padding:12px 10px}.stat-label{font-size:10px;gap:4px}.stat-label svg{display:none}.stat-value{font-size:19px;letter-spacing:-.4px;margin:7px 0}.stat-value small{font-size:11px;margin-right:3px}.stat-foot{font-size:9px}.stat.pending::after{display:none}.block{margin-top:19px}.block-note{font-size:9px}.vendor-table{min-width:590px}.vendor-table th,.vendor-table td{padding-left:11px;padding-right:11px}.rule-strip{font-size:9px;align-items:flex-start}.rule-strip svg{margin-top:2px}.detail-table .pinned,.detail-table .fixed-date{position:static;box-shadow:none}.detail-table{min-width:1735px}.toast{left:50%;font-size:11px;width:max-content}.bottom-note{font-size:9px}.footer{font-size:9px}}
+    @media(max-width:760px){.preview-right{display:inline-flex;align-items:center;font-size:9px}.filter-caption{overflow-wrap:anywhere}}
+    @media(prefers-reduced-motion:reduce){.sidebar{transition:none}}
+  </style>
+  <link rel="stylesheet" href="./floating-action-bar.css">
+  <style>
+    main{display:flex;flex-direction:column;min-height:100vh;padding-bottom:0}
+    .toast{bottom:calc(98px + env(safe-area-inset-bottom))}
+  </style>
+</head>
+<body>
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10H3Z"/><path d="M9 20v-7h6v7"/></symbol>
+    <symbol id="box" viewBox="0 0 24 24"><path d="m3 7 9-4 9 4v11l-9 4-9-4Z"/><path d="m3 7 9 4 9-4M12 11v11M7 5l10 4"/></symbol>
+    <symbol id="diamond" viewBox="0 0 24 24"><path d="m3 8 4-5h10l4 5-9 13Z"/><path d="M3 8h18M7 3l5 18 5-18"/></symbol>
+    <symbol id="orders" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3h6v3H9ZM9 11h6M9 15h6"/></symbol>
+    <symbol id="plating" viewBox="0 0 24 24"><path d="M4 11h16l-2 10H6ZM2 11h20M8 11V3h8v8M12 3v11"/><path d="m10 16 2 2 2-2"/></symbol>
+    <symbol id="send" viewBox="0 0 24 24"><path d="m3 10 18-7-7 18-3-8ZM11 13 21 3"/></symbol>
+    <symbol id="receive" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 15v6h16v-6"/></symbol>
+    <symbol id="chart" viewBox="0 0 24 24"><path d="M4 3v18h17M8 16v-4M13 16V7M18 16v-7"/></symbol>
+    <symbol id="store" viewBox="0 0 24 24"><path d="m3 9 2-6h14l2 6M3 9v3h18V9M5 12v9h14v-9M9 21v-6h6v6M8 3l-1 9M16 3l1 9"/></symbol>
+    <symbol id="users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a7 7 0 0 1 14 0v2M17 4a4 4 0 0 1 0 8M22 21v-2a7 7 0 0 0-4-6"/></symbol>
+    <symbol id="info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.5"/></symbol>
+    <symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></symbol>
+    <symbol id="wallet" viewBox="0 0 24 24"><path d="M20 7H5a2 2 0 0 1 0-4h13v4M3 5v14a2 2 0 0 0 2 2h15V7"/><path d="M20 11h-6v6h6M16 14h.1"/></symbol>
+    <symbol id="file" viewBox="0 0 24 24"><path d="M14 3H5v18h14V8ZM14 3v5h5M8 12h8M8 16h8"/></symbol>
+  </svg>
+  <div id="nav-overlay" class="overlay"></div>
+  <aside class="sidebar" aria-label="主导航">
+    <div class="brand"><span class="brand-mark">AL</span>ALLENOP</div>
+    <div class="nav-group">工作空间</div>
+    <button class="nav" data-placeholder="进度看板"><svg><use href="#grid"/></svg>进度看板</button>
+    <button class="nav" data-placeholder="仪表盘"><svg><use href="#home"/></svg>仪表盘</button>
+    <div class="nav-group">业务管理</div>
+    <button class="nav" data-placeholder="配件管理"><svg><use href="#box"/></svg>配件管理</button>
+    <button class="nav" data-placeholder="饰品管理"><svg><use href="#diamond"/></svg>饰品管理</button>
+    <button class="nav" data-placeholder="订单管理"><svg><use href="#orders"/></svg>订单管理</button>
+    <button class="nav" data-placeholder="配件采购"><svg><use href="#store"/></svg>配件采购</button>
+    <button class="nav active" id="plating-entry" aria-current="page"><svg><use href="#plating"/></svg>电镀管理</button>
+    <button class="nav" data-placeholder="手工单"><svg><use href="#orders"/></svg>手工单</button>
+    <button class="nav" data-placeholder="库存总表"><svg><use href="#box"/></svg>库存总表</button>
+    <div class="nav-group">系统</div>
+    <button class="nav" data-placeholder="商家管理"><svg><use href="#store"/></svg>商家管理</button>
+    <button class="nav" data-placeholder="用户管理"><svg><use href="#users"/></svg>用户管理</button>
+    <div class="side-user"><div class="avatar">A</div><div><div class="user-name">管理员</div><div class="user-role">演示工作空间</div></div></div>
+  </aside>
+  <main>
+    <div class="mobile-header"><button id="open-menu" aria-label="打开导航菜单" aria-expanded="false"><svg><use href="#menu"/></svg></button><strong>ALLENOP</strong><span>交互原型</span></div>
+    <div class="preview"><span><span class="preview-dot"></span><strong>商家对账 · 交互 Demo</strong> · 示例数据，不连接业务系统</span><span class="preview-right"><button class="text-button" id="demo-help">演示说明</button>　·　<button class="text-button" id="reset-demo">重置演示数据</button></span></div>
+    <div class="breadcrumbs">生产管理 / 电镀管理</div>
+    <div class="page-heading"><div><h1>电镀管理</h1><p class="subtitle">汇总、发出、回收与商家对账，在同一个入口切换。</p></div><span class="heading-note"><svg><use href="#clock"/></svg>保留各页面的独立筛选条件</span></div>
+    <nav class="tabs" role="tablist" aria-label="电镀业务页面">
+      <a class="tab" id="tab-summary" role="tab" aria-selected="false" tabindex="-1" href="plating-management-mockup.html#summary"><svg><use href="#chart"/></svg>电镀汇总</a>
+      <a class="tab" id="tab-dispatch" role="tab" aria-selected="false" tabindex="-1" href="plating-management-mockup.html#dispatch"><svg><use href="#send"/></svg>电镀发出</a>
+      <a class="tab" id="tab-receipt" role="tab" aria-selected="false" tabindex="-1" href="plating-management-mockup.html#receipt"><svg><use href="#receive"/></svg>电镀回收</a>
+      <a class="tab" id="tab-reconciliation" role="tab" aria-selected="true" aria-controls="panel-reconciliation" href="#reconciliation"><svg><use href="#file"/></svg>电镀商家对账</a>
+    </nav>
+    <section class="workspace" id="panel-reconciliation" role="tabpanel" aria-labelledby="tab-reconciliation">
+      <div class="section-heading"><div><h2>电镀商家对账</h2><p>按回收明细核对加工报价，独立记录最终结算金额。</p></div></div>
+      <div class="filter-panel">
+        <div class="filter-row">
+          <label class="field"><span class="field-label">商家名称</span><select class="control" id="vendor" aria-label="商家名称"><option value="">全部商家</option><option>华盛电镀厂</option><option>恒鑫电镀厂</option><option>新艺电镀厂</option></select></label>
+          <div class="field dates"><span class="field-label">回收日期</span><div class="date-range"><input class="control" id="from" type="date" aria-label="开始日期"><span>至</span><input class="control" id="to" type="date" aria-label="结束日期"></div></div>
+          <label class="field"><span class="field-label">付款状态</span><select class="control" id="status" aria-label="付款状态"><option value="">全部状态</option><option value="unpaid">未付款</option><option value="paid">已付款</option></select></label>
+          <div class="quick-dates" aria-label="快捷日期"><button data-period="month">本月</button><button data-period="last">上月</button><button data-period="all">不限日期</button></div>
+          <button class="text-button reset-filters" id="reset-filters">重置筛选</button>
+        </div>
+        <div id="date-error" class="filter-error" role="alert" hidden>开始日期不能晚于结束日期，请调整日期范围。</div>
+        <div class="filter-caption"><span id="scope-caption"></span><span>按回收单创建时间统计 · 汇总与明细使用相同筛选</span></div>
+      </div>
+      <div class="stats" aria-live="polite">
+        <article class="stat"><div class="stat-label"><svg><use href="#file"/></svg>应付款</div><div class="stat-value"><small>¥</small><span id="total-due">0.00</span></div><div class="stat-foot">已付款 + 待付款</div></article>
+        <article class="stat paid"><div class="stat-label"><svg><use href="#check"/></svg>已付款</div><div class="stat-value"><small>¥</small><span id="total-paid">0.00</span></div><div class="stat-foot">已结算金额，价格已锁定</div></article>
+        <article class="stat pending"><div class="stat-label"><svg><use href="#wallet"/></svg>待付款</div><div class="stat-value"><small>¥</small><span id="total-pending">0.00</span></div><div class="stat-foot" id="pending-foot">按对账后的金额计算</div></article>
+      </div>
+      <section class="block" aria-labelledby="vendor-summary-title">
+        <div class="block-head"><div class="block-title"><h3 id="vendor-summary-title">商家汇总</h3><span class="count" id="vendor-count"></span></div><span class="block-note">点击商家名称，可查看该商家的明细</span></div>
+        <div class="table-scroll"><table class="vendor-table"><thead><tr><th style="width:37%">商家名称</th><th class="right">应付款</th><th class="right">已付款</th><th class="right">待付款</th></tr></thead><tbody id="vendor-body"></tbody><tfoot id="vendor-foot"></tfoot></table></div>
+      </section>
+      <section class="block" aria-labelledby="detail-title">
+        <div class="block-head"><div class="block-title"><h3 id="detail-title">回收明细</h3><span class="count" id="detail-count"></span></div><span class="block-note">金额单位：元　<span id="scroll-hint">· 左右滑动查看完整明细</span></span></div>
+        <div class="rule-strip"><svg><use href="#info"/></svg><span><strong>改价只影响对账，不修改原回收单。</strong> 留空沿用原单价，清空可恢复；已付款不可改价。</span><span class="spacer">回车或移出输入框保存</span></div>
+        <div class="table-scroll" id="detail-scroll" tabindex="0" role="region" aria-label="回收明细，可横向滚动">
+          <table class="detail-table"><colgroup><col style="width:110px"><col style="width:137px"><col style="width:117px"><col style="width:140px"><col style="width:173px"><col style="width:129px"><col style="width:80px"><col style="width:80px"><col style="width:50px"><col style="width:80px"><col style="width:85px"><col style="width:107px"><col style="width:100px"><col style="width:85px"><col style="width:162px"></colgroup>
+            <thead><tr><th class="fixed-date">回收时间 ↓</th><th>回收单号</th><th>商家名称</th><th>配件编号</th><th>配件</th><th>电镀单号</th><th>电镀方式</th><th class="right">回收数量</th><th>单位</th><th class="right">重量</th><th class="right pinned price-col">单价</th><th class="right pinned override-col">改价</th><th class="right pinned amount-col">金额</th><th class="pinned status-col">付款状态</th><th>备注</th></tr></thead>
+            <tbody id="detail-body"></tbody>
+          </table>
+        </div>
+        <div class="footer"><span id="detail-footer"></span><span class="saved" id="save-status"><svg><use href="#check"/></svg>改价仅保存在本浏览器的演示数据中</span></div>
+      </section>
+      <div class="bottom-note"><strong>对账口径</strong>　已付款按结算时的对账金额锁定；历史已付款记录沿用原单金额。尚未定价的明细单独提示，不按 0 元结算。<br>本 Demo 不包含部分付款与损耗扣款抵扣；所有改价、付款演示均不影响真实业务数据。</div>
+    </section>
+    <div class="fab-spacer" aria-hidden="true"></div>
+    <footer class="fab-bar" aria-label="电镀商家对账操作"><div class="fab-pill"><button class="fab-action fab-action--excel" id="export"><svg><use href="#receive"/></svg>导出 Excel</button></div></footer>
+  </main>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <dialog id="dialog" aria-labelledby="dialog-title"><h2 id="dialog-title"></h2><div id="dialog-body"></div><div class="dialog-actions" id="dialog-actions"></div></dialog>
+  <script>
+    // Standalone sample only: no API calls, business credentials or backend writes.
+    const $ = id => document.getElementById(id);
+    const esc = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const icon = name => `<svg aria-hidden="true"><use href="#${name}"/></svg>`;
+    const now = new Date();
+    const month = (offset=0) => { const d=new Date(now.getFullYear(),now.getMonth()+offset,1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; };
+    const day = (n,offset=0) => `${month(offset)}-${String(n).padStart(2,'0')}`;
+    const bounds = offset => {const d=new Date(now.getFullYear(),now.getMonth()+offset+1,0);return {from:`${month(offset)}-01`,to:`${month(offset)}-${d.getDate()}`};};
+    const receipts = [
+      {id:'EPR-DEMO-0058',vendor:'华盛电镀厂',date:day(9),time:'10:32',paid:false},
+      {id:'EPR-DEMO-0057',vendor:'恒鑫电镀厂',date:day(8),time:'15:20',paid:false},
+      {id:'EPR-DEMO-0056',vendor:'新艺电镀厂',date:day(7),time:'11:06',paid:false},
+      {id:'EPR-DEMO-0055',vendor:'华盛电镀厂',date:day(6),time:'09:45',paid:true},
+      {id:'EPR-DEMO-0054',vendor:'恒鑫电镀厂',date:day(5),time:'14:18',paid:true},
+      {id:'EPR-DEMO-0053',vendor:'新艺电镀厂',date:day(3),time:'16:30',paid:true},
+      {id:'EPR-DEMO-0049',vendor:'华盛电镀厂',date:day(27,-1),time:'10:15',paid:false},
+      {id:'EPR-DEMO-0048',vendor:'恒鑫电镀厂',date:day(25,-1),time:'09:10',paid:true},
+    ];
+    const items = [
+      {id:1,receipt:0,partId:'PJ-DZ-00033',part:'合金蝴蝶吊坠',order:'EP-DEMO-0073',method:'金色',qty:'300',unit:'个',weight:'0.45 kg',price:'0.5',note:'按样板金色'},
+      {id:2,receipt:0,partId:'PJ-X-00102',part:'龙虾扣 · 12mm',order:'EP-DEMO-0071',method:'金色',qty:'500',unit:'个',weight:'0.32 kg',price:'0.18',note:'同单第二项'},
+      {id:3,receipt:1,partId:'PJ-LT-00008',part:'细蛇骨链 · 45cm',order:'EP-DEMO-0072',method:'银色',qty:'200',unit:'条',weight:'0.80 kg',price:'1.8',note:'链条勿打结'},
+      {id:4,receipt:1,partId:'PJ-DZ-00021',part:'爱心吊坠',order:'EP-DEMO-0070',method:'银色',qty:'400',unit:'个',weight:'0.50 kg',price:'0.65',note:''},
+      {id:5,receipt:2,partId:'PJ-X-00076',part:'圆形连接环 · 6mm',order:'EP-DEMO-0069',method:'金色',qty:'1000',unit:'个',weight:'0.28 kg',price:'0.12',note:'分批收回'},
+      {id:6,receipt:2,partId:'PJ-DZ-00012',part:'星星吊坠',order:'EP-DEMO-0067',method:'金色',qty:'200',unit:'个',weight:'0.20 kg',price:null,note:'等待商家确认报价'},
+      {id:7,receipt:3,partId:'PJ-DZ-00033',part:'合金蝴蝶吊坠',order:'EP-DEMO-0066',method:'金色',qty:'600',unit:'个',weight:'0.90 kg',price:'0.5',note:'历史已付款'},
+      {id:8,receipt:3,partId:'PJ-X-00102',part:'龙虾扣 · 12mm',order:'EP-DEMO-0065',method:'金色',qty:'800',unit:'个',weight:'0.51 kg',price:'0.18',note:''},
+      {id:9,receipt:4,partId:'PJ-LT-00008',part:'细蛇骨链 · 45cm',order:'EP-DEMO-0064',method:'银色',qty:'150',unit:'条',weight:'0.60 kg',price:'1.8',note:'已结清'},
+      {id:10,receipt:5,partId:'PJ-DZ-00012',part:'星星吊坠',order:'EP-DEMO-0063',method:'金色',qty:'350',unit:'个',weight:'0.35 kg',price:'0.72',note:'已结清'},
+      {id:11,receipt:6,partId:'PJ-DZ-00021',part:'爱心吊坠',order:'EP-DEMO-0058',method:'金色',qty:'500',unit:'个',weight:'0.63 kg',price:'0.6',note:'上月未结清'},
+      {id:12,receipt:7,partId:'PJ-LT-00008',part:'细蛇骨链 · 45cm',order:'EP-DEMO-0057',method:'银色',qty:'100',unit:'条',weight:'0.40 kg',price:'1.8',note:'上月已付款'},
+    ];
+    const storageKey='allen-demo-plating-reconciliation-v1';
+    const validPrice = value => typeof value==='string' && /^\d{1,10}(\.\d{1,7})?$/.test(value);
+    let state={overrides:{},settlements:{}};
+    let filters={vendor:'',status:'',...bounds(0)};
+    try {
+      const saved=JSON.parse(localStorage.getItem(storageKey));
+      if(saved?.filters){
+        const f=saved.filters;
+        if(['',...receipts.map(r=>r.vendor)].includes(f.vendor))filters.vendor=f.vendor;
+        if(['','paid','unpaid'].includes(f.status))filters.status=f.status;
+        for(const key of ['from','to'])if(typeof f[key]==='string'&&(f[key]===''||/^\d{4}-\d{2}-\d{2}$/.test(f[key])))filters[key]=f[key];
+      }
+      for(const item of items){const value=saved?.overrides?.[item.id];if(!receipts[item.receipt].paid&&validPrice(value))state.overrides[item.id]=value;}
+      for(const receipt of receipts.filter(r=>!r.paid)){
+        const value=saved?.settlements?.[receipt.id];const rows=items.filter(i=>receipts[i.receipt]===receipt);
+        if(value&&rows.every(i=>typeof value[i.id]==='string'&&/^\d+$/.test(value[i.id])))state.settlements[receipt.id]=value;
+      }
+    }catch(_){/* The demo remains usable if storage is unavailable. */}
+    const SCALE=10000000n;
+    function fixed(value){const [whole,decimals='']=String(value).split('.');return BigInt(whole)*SCALE+BigInt((decimals+'0000000').slice(0,7));}
+    function priceFor(item){return state.overrides[item.id]??item.price;}
+    function paid(receipt){return receipt.paid||!!state.settlements[receipt.id];}
+    function originalAmount(item){return item.price===null?null:(fixed(item.qty)*fixed(item.price)+SCALE/2n)/SCALE;}
+    function amount(item){const locked=state.settlements[receipts[item.receipt].id]?.[item.id];if(locked!==undefined)return BigInt(locked);const price=priceFor(item);return price===null?null:(fixed(item.qty)*fixed(price)+SCALE/2n)/SCALE;}
+    function money(value){if(value===null)return '待定价';const cents=(value+50000n)/100000n;return `${(cents/100n).toLocaleString('en-US')}.${String(cents%100n).padStart(2,'0')}`;}
+    function decimal(value){return `${value/SCALE}.${String(value%SCALE).padStart(7,'0')}`.replace(/\.?0+$/,'');}
+    function priceLabel(value){return value===null?'—':String(value).replace(/(\.\d*?)0+$/,'$1').replace(/\.$/,'');}
+    function sum(rows,fn=amount){return rows.reduce((total,row)=>total+(fn(row)??0n),0n);}
+    function totals(rows){const due=sum(rows),settled=sum(rows.filter(i=>paid(receipts[i.receipt])));return {due,paid:settled,pending:due-settled};}
+    function invalidDates(){return !!(filters.from&&filters.to&&filters.from>filters.to);}
+    function filtered(){if(invalidDates())return [];return items.filter(i=>{const r=receipts[i.receipt];return (!filters.vendor||r.vendor===filters.vendor)&&(!filters.from||r.date>=filters.from)&&(!filters.to||r.date<=filters.to)&&(!filters.status||(filters.status==='paid')===paid(r));}).sort((a,b)=>receipts[b.receipt].date.localeCompare(receipts[a.receipt].date)||a.id-b.id);}
+    function persist(){try{localStorage.setItem(storageKey,JSON.stringify({...state,filters}));return true;}catch(_){return false;}}
+    let toastTimer;
+    function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,3500);}
+    function setFilters(){for(const key of ['vendor','from','to','status'])$(key).value=filters[key];render();}
+    function empty(cols,message='没有符合条件的示例数据，请调整筛选条件。'){return `<tr><td class="empty" colspan="${cols}">${message}</td></tr>`;}
+    function renderSummary(rows){
+      const total=totals(rows),unknown=rows.filter(i=>amount(i)===null).length;
+      $('total-due').textContent=money(total.due);$('total-paid').textContent=money(total.paid);$('total-pending').textContent=money(total.pending);
+      $('pending-foot').textContent=unknown?`另有 ${unknown} 条待定价，尚未计入金额`:'按对账后的金额计算';
+      const vendors=[...new Set(rows.map(i=>receipts[i.receipt].vendor))];$('vendor-count').textContent=`${vendors.length} 家`;
+      $('vendor-body').innerHTML=vendors.map(vendor=>{const entries=rows.filter(i=>receipts[i.receipt].vendor===vendor),t=totals(entries),pending=entries.filter(i=>amount(i)===null).length;return `<tr><td><div class="vendor-name"><span class="vendor-icon">${icon('store')}</span><button class="text-button" data-vendor="${esc(vendor)}">${esc(vendor)}</button><span class="vendor-meta">${new Set(entries.map(i=>i.receipt)).size} 张回收单${pending?' · '+pending+' 条待定价':''}</span></div></td><td class="right money">¥ ${money(t.due)}</td><td class="right money green">¥ ${money(t.paid)}</td><td class="right money">¥ ${money(t.pending)}</td></tr>`;}).join('')||empty(4);
+      $('vendor-foot').innerHTML=rows.length?`<tr><td>合计 <span class="muted" style="font-weight:400">${unknown?'（不含 '+unknown+' 条待定价明细）':''}</span></td><td class="right">¥ ${money(total.due)}</td><td class="right green">¥ ${money(total.paid)}</td><td class="right">¥ ${money(total.pending)}</td></tr>`:'';
+      $('detail-count').textContent=`${rows.length} 条`;
+      $('detail-footer').textContent=`共 ${new Set(rows.map(i=>i.receipt)).size} 张回收单 / ${rows.length} 条明细 · ${rows.filter(i=>!paid(receipts[i.receipt])).length} 条可改价${unknown?' · '+unknown+' 条待定价':''}`;
+      $('export').disabled=!rows.length||invalidDates();
+    }
+    function renderDetails(rows){
+      $('detail-body').innerHTML=rows.map(i=>{const r=receipts[i.receipt],locked=paid(r),override=state.overrides[i.id],value=amount(i);return `<tr data-row="${i.id}"><td class="fixed-date"><div>${r.date}</div><div class="secondary">${r.time}</div></td><td><button class="text-button mono" data-receipt="${r.id}">${r.id}</button></td><td>${r.vendor}</td><td class="mono">${i.partId}</td><td><div class="part-name" title="${esc(i.part)}">${esc(i.part)}</div></td><td><button class="text-button mono" data-order="${i.order}">${i.order}</button></td><td><span class="tag ${i.method==='银色'?'silver':''}">${i.method}</span></td><td class="right">${i.qty}</td><td>${i.unit}</td><td class="right">${i.weight}</td><td class="right pinned price-col">${priceLabel(i.price)}</td><td class="right pinned override-col">${locked?`<span class="locked-price" title="已付款，结算价格已锁定">${icon('lock')}${override===undefined?'—':esc(priceLabel(override))}</span>`:`<input class="price-input ${override!==undefined?'has-value':''}" type="text" inputmode="decimal" autocomplete="off" aria-label="${r.id} ${esc(i.part)} 改价" data-price="${i.id}" value="${esc(override??'')}" placeholder="填写改价">`}</td><td class="right pinned amount-col ${override!==undefined?'changed-amount':''} ${value===null?'amber':''}" data-amount="${i.id}" title="${value===null?'尚未定价，不计入汇总':decimal(value)+' 元'}">${money(value)}</td><td class="pinned status-col"><span class="badge ${locked?'paid':'unpaid'}">${locked?'已付款':'未付款'}</span></td><td class="muted" title="${esc(i.note)}">${esc(i.note)||'—'}</td></tr>`;}).join('')||empty(15,invalidDates()?'请先修正日期范围。':undefined);
+    }
+    function render(){
+      persist();
+      const rows=filtered();$('date-error').hidden=!invalidDates();
+      $('scope-caption').innerHTML=`<strong>${esc(filters.vendor||'全部商家')}</strong>　·　${esc(filters.from||'不限起始日期')} — ${esc(filters.to||'不限结束日期')}　·　${filters.status==='paid'?'已付款':filters.status==='unpaid'?'未付款':'全部付款状态'}`;
+      document.querySelectorAll('[data-period]').forEach(b=>{const range=bounds(b.dataset.period==='last'?-1:0);b.classList.toggle('active',b.dataset.period==='all'?!filters.from&&!filters.to:filters.from===range.from&&filters.to===range.to);});
+      renderSummary(rows);renderDetails(rows);
+    }
+    function commitPrice(input){
+      const item=items.find(i=>i.id===Number(input.dataset.price));if(!item||paid(receipts[item.receipt]))return true;
+      const value=input.value.trim();
+      if(value!==''&&!validPrice(value)){input.setAttribute('aria-invalid','true');input.setCustomValidity('请输入大于等于 0 的单价，最多 7 位小数');toast('改价须大于等于 0，最多 7 位小数；本次输入尚未保存');return false;}
+      input.removeAttribute('aria-invalid');input.setCustomValidity('');
+      const previous=state.overrides[item.id];if((value===''&&previous===undefined)||value===previous)return true;
+      if(value==='')delete state.overrides[item.id];else state.overrides[item.id]=value;
+      const saved=persist();input.value=value;input.classList.toggle('has-value',value!=='');
+      const cell=document.querySelector(`[data-amount="${item.id}"]`),result=amount(item);cell.textContent=money(result);cell.title=result===null?'尚未定价':decimal(result)+' 元';cell.classList.toggle('changed-amount',value!=='');cell.classList.toggle('amber',result===null);
+      renderSummary(filtered());$('save-status').innerHTML=icon('check')+(saved?'对账改价已保存 · 原回收单未修改':'浏览器存储不可用 · 改价仅本次打开有效');
+      toast(value===''?'已恢复原单价，原回收单未修改':'对账改价已保存，原回收单未修改');return true;
+    }
+    function openDialog(title,html,actions=[]){$('dialog-title').textContent=title;$('dialog-body').innerHTML=html;$('dialog-actions').innerHTML='';for(const action of [...actions,{label:'关闭',run:()=>$('dialog').close()}]){const b=document.createElement('button');b.className='btn'+(action.primary?' primary':'');b.textContent=action.label;b.onclick=action.run;$('dialog-actions').append(b);}if(!$('dialog').open)$('dialog').showModal();}
+    function openReceipt(id){
+      const r=receipts.find(r=>r.id===id),rows=items.filter(i=>receipts[i.receipt]===r),unknown=rows.some(i=>amount(i)===null);
+      openDialog(`回收单 ${r.id}`,`<p>${r.vendor} · ${r.date} ${r.time}　<span class="badge ${paid(r)?'paid':'unpaid'}">${paid(r)?'已付款':'未付款'}</span></p><div class="receipt-line"><span>原回收单金额（始终不变）</span><strong>¥ ${money(sum(rows,originalAmount))}${rows.some(i=>i.price===null)?' + 待定价':''}</strong></div><div class="receipt-line"><span>${paid(r)?'对账已结算金额':'当前对账金额'}</span><strong class="green">¥ ${money(sum(rows))}${unknown?' + 待定价':''}</strong></div><table class="receipt-items"><thead><tr><th>配件</th><th class="right">数量</th><th class="right">原单价</th><th class="right">对账改价</th></tr></thead><tbody>${rows.map(i=>`<tr><td>${esc(i.part)}</td><td class="right">${i.qty}</td><td class="right">${priceLabel(i.price)}</td><td class="right green">${priceLabel(state.overrides[i.id]??null)}</td></tr>`).join('')}</tbody></table><div class="dialog-note">这里用于对比原单与对账金额，改价不会回写原单。${paid(r)?'对账金额已锁定，不能再修改。':unknown?'请先补全待定价明细，再演示结算。':'下方按钮仅演示原回收单变为已付款后，对账金额锁定的效果，并非新增正式付款入口。'}</div>`,!paid(r)&&!unknown?[{label:'仅演示：原单标记已付款',primary:true,run:()=>{openDialog('确认演示付款并锁价',`<p>模拟按对账金额 <strong>¥ ${money(sum(rows))}</strong> 支付给 ${r.vendor}。</p><div class="dialog-note">该回收单的 ${rows.length} 条明细将一并变为已付款，锁定当前对账金额。原单金额仍保留 ¥ ${money(sum(rows,originalAmount))}。仅影响浏览器中的示例数据，可通过“重置演示数据”恢复。</div>`,[{label:'确认模拟付款',primary:true,run:()=>{state.settlements[r.id]=Object.fromEntries(rows.map(i=>[i.id,String(amount(i))]));persist();$('dialog').close();render();toast('已模拟付款，对账金额与改价已锁定；原单未改价');}}]);}}]:[]);
+    }
+    // Minimal real .xlsx export, using uncompressed ZIP and inline strings; no CDN dependency.
+    const xml=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
+    const utf8=new TextEncoder();
+    function crc32(bytes){let crc=0xffffffff;for(const byte of bytes){crc^=byte;for(let n=0;n<8;n++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return (crc^0xffffffff)>>>0;}
+    function zip(files){
+      const parts=[],central=[];let offset=0,centralLength=0;
+      for(const [name,text] of Object.entries(files)){
+        const filename=utf8.encode(name),data=utf8.encode(text),crc=crc32(data),header=new Uint8Array(30+filename.length),v=new DataView(header.buffer);
+        v.setUint32(0,0x04034b50,true);v.setUint16(4,20,true);v.setUint16(6,0x800,true);v.setUint32(14,crc,true);v.setUint32(18,data.length,true);v.setUint32(22,data.length,true);v.setUint16(26,filename.length,true);header.set(filename,30);parts.push(header,data);
+        const dir=new Uint8Array(46+filename.length),d=new DataView(dir.buffer);d.setUint32(0,0x02014b50,true);d.setUint16(4,20,true);d.setUint16(6,20,true);d.setUint16(8,0x800,true);d.setUint32(16,crc,true);d.setUint32(20,data.length,true);d.setUint32(24,data.length,true);d.setUint16(28,filename.length,true);d.setUint32(42,offset,true);dir.set(filename,46);central.push(dir);centralLength+=dir.length;offset+=header.length+data.length;
+      }
+      const end=new Uint8Array(22),v=new DataView(end.buffer);v.setUint32(0,0x06054b50,true);v.setUint16(8,central.length,true);v.setUint16(10,central.length,true);v.setUint32(12,centralLength,true);v.setUint32(16,offset,true);
+      return new Blob([...parts,...central,end],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    }
+    const numeric=value=>({number:String(value)});
+    function sheet(rows){return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rows.map((row,index)=>`<row r="${index+1}">${row.map(cell=>cell&&typeof cell==='object'&&'number'in cell?`<c><v>${xml(cell.number)}</v></c>`:`<c t="inlineStr"><is><t xml:space="preserve">${xml(cell)}</t></is></c>`).join('')}</row>`).join('')}</sheetData></worksheet>`;}
+    function exportExcel(){
+      const invalid=document.querySelector('[data-price][aria-invalid=true]');if(invalid){invalid.focus();toast('请先修正或清空未保存的无效改价，再导出');return;}
+      const rows=filtered();if(!rows.length)return;
+      const vendors=[...new Set(rows.map(i=>receipts[i.receipt].vendor))],t=totals(rows),numMoney=value=>numeric(money(value).replaceAll(',',''));
+      const summary=[['电镀商家对账 · 示例数据'],['商家',filters.vendor||'全部商家','回收开始日期',filters.from||'不限','回收结束日期',filters.to||'不限','付款状态',filters.status==='paid'?'已付款':filters.status==='unpaid'?'未付款':'全部'],['说明','金额为对账金额，不回写原回收单；待定价明细不计入合计。'],[],['商家名称','应付款','已付款','待付款','待定价明细数'],...vendors.map(v=>{const entries=rows.filter(i=>receipts[i.receipt].vendor===v),a=totals(entries);return [v,numMoney(a.due),numMoney(a.paid),numMoney(a.pending),numeric(entries.filter(i=>amount(i)===null).length)];}),['合计',numMoney(t.due),numMoney(t.paid),numMoney(t.pending),numeric(rows.filter(i=>amount(i)===null).length)]];
+      const detail=[['回收时间','配件','电镀方式','回收数量','单位','重量','单价','改价','金额','备注'],...rows.map(i=>{const r=receipts[i.receipt],a=amount(i);return [`${r.date} ${r.time}`,i.part,i.method,numeric(i.qty),i.unit,i.weight,i.price===null?'':numeric(i.price),state.overrides[i.id]===undefined?'':numeric(state.overrides[i.id]),a===null?'待定价':numMoney(a),i.note];})];
+      const files={
+        '[Content_Types].xml':'<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
+        '_rels/.rels':'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+        'xl/workbook.xml':'<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView activeTab="0"/></bookViews><sheets><sheet name="回收明细" sheetId="1" r:id="rId1"/><sheet name="商家汇总" sheetId="2" r:id="rId2"/></sheets></workbook>',
+        'xl/_rels/workbook.xml.rels':'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>',
+        'xl/worksheets/sheet1.xml':sheet(detail),'xl/worksheets/sheet2.xml':sheet(summary),
+      };
+      const url=URL.createObjectURL(zip(files)),link=document.createElement('a');link.href=url;link.download=`电镀商家对账_${filters.vendor||'全部商家'}_${filters.from||'不限'}_${filters.to||'不限'}_Demo.xlsx`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);toast(`已导出 ${vendors.length} 家商家、${rows.length} 条明细，含汇总与明细两个工作表`);
+    }
+    for(const key of ['vendor','from','to','status'])$(key).addEventListener('change',()=>{filters[key]=$(key).value;render();});
+    document.querySelectorAll('[data-period]').forEach(b=>b.addEventListener('click',()=>{Object.assign(filters,b.dataset.period==='all'?{from:'',to:''}:bounds(b.dataset.period==='last'?-1:0));setFilters();}));
+    $('reset-filters').onclick=()=>{filters={vendor:'',status:'',...bounds(0)};setFilters();};
+    $('detail-body').addEventListener('focusout',event=>{if(event.target.matches('[data-price]'))commitPrice(event.target);});
+    $('detail-body').addEventListener('keydown',event=>{if(!event.target.matches('[data-price]'))return;if(event.key==='Enter'){event.preventDefault();if(commitPrice(event.target))event.target.blur();}if(event.key==='Escape'){const i=items.find(i=>i.id===Number(event.target.dataset.price));event.target.value=state.overrides[i.id]??'';event.target.removeAttribute('aria-invalid');event.target.setCustomValidity('');event.target.blur();}});
+    document.addEventListener('click',event=>{
+      const vendor=event.target.closest('[data-vendor]');if(vendor){filters.vendor=vendor.dataset.vendor;setFilters();return;}
+      const receipt=event.target.closest('[data-receipt]');if(receipt){openReceipt(receipt.dataset.receipt);return;}
+      const order=event.target.closest('[data-order]');if(order){openDialog('电镀单 '+order.dataset.order,'<p>正式页面将进入对应电镀单详情，返回后保留对账筛选条件。</p><div class="dialog-note">本次只演示对账页面，不跳转真实业务系统。</div>');return;}
+      const placeholder=event.target.closest('[data-placeholder]');if(placeholder)openDialog(placeholder.dataset.placeholder,'<p>其他业务模块保持原样，本次预览仅展示电镀商家对账。</p>');
+    });
+    $('export').onclick=exportExcel;
+    $('demo-help').onclick=()=>openDialog('可以这样体验 Demo','<ul><li>默认查看本月全部商家；可按商家、日期、付款状态筛选。</li><li>在未付款行的“改价”中输入 0.45，回车或移出输入框，金额和商家汇总随之更新。</li><li>清空改价恢复原单价；输入 0 表示零报价，不等于留空。</li><li>点击回收单号，对比原单金额与对账金额；可模拟原单已付款，查看锁价效果。</li><li>已付款行显示锁标记，不能改价。</li><li>导出为真正的 .xlsx 文件，含“商家汇总”“回收明细”两个工作表。</li></ul><div class="dialog-note">改价与模拟结算只保存于本浏览器。顶部“重置演示数据”可恢复初始样例，不影响任何真实数据。</div>');
+    $('reset-demo').onclick=()=>openDialog('重置演示数据','<p>清除本 Demo 的改价与模拟付款，恢复初始示例数据与默认筛选。</p><div class="dialog-note">只清除本页面自己的演示存储，不影响原导航 Demo 或真实业务系统。</div>',[{label:'确认重置',primary:true,run:()=>{state={overrides:{},settlements:{}};filters={vendor:'',status:'',...bounds(0)};persist();$('dialog').close();setFilters();$('save-status').innerHTML=icon('check')+'已恢复初始演示数据';toast('演示改价与模拟付款已重置');}}]);
+    function closeMenu(){document.body.classList.remove('menu-open');$('open-menu').setAttribute('aria-expanded','false');}
+    $('open-menu').onclick=()=>{document.body.classList.add('menu-open');$('open-menu').setAttribute('aria-expanded','true');};$('nav-overlay').onclick=closeMenu;$('plating-entry').onclick=closeMenu;
+    document.addEventListener('keydown',event=>{if(event.key==='Escape')closeMenu();});
+    document.querySelector('[role=tablist]').addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const tabs=Array.from(document.querySelectorAll('[role=tab]')),index=tabs.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:tabs.length-1))%tabs.length;tabs[next].focus();});
+    setFilters();
+    $('tab-reconciliation').scrollIntoView({block:'nearest',inline:'nearest'});
+    window.addEventListener('resize',()=>$('tab-reconciliation').scrollIntoView({block:'nearest',inline:'nearest'}));
+  </script>
+</body>
+</html>

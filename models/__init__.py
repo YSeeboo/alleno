@@ -15,6 +15,7 @@ from .handcraft_order import (
 from .vendor_receipt import VendorReceipt
 from .purchase_order import PurchaseOrder, PurchaseOrderItem, PurchaseOrderItemAddon
 from .plating_receipt import PlatingReceipt, PlatingReceiptItem
+from .plating_reconciliation import PlatingReconciliation
 from .handcraft_receipt import HandcraftReceipt, HandcraftReceiptItem
 from .user import User
 from .supplier import Supplier
@@ -25,6 +26,7 @@ from .production_loss import ProductionLoss
 from .restock_request import RestockRequest
 
 __all__ = [
+    "PlatingReconciliation",
     "Part",
     "PartCostLog",
     "Jewelry",
