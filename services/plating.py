@@ -486,6 +486,8 @@ def update_plating_order(db: Session, order_id: str, data: dict) -> PlatingOrder
         order.supplier_name = data["supplier_name"]
     if "created_at" in data and data["created_at"] is not None:
         order.created_at = _replace_date(order.created_at, data["created_at"])
+    if "note" in data:
+        order.note = data["note"]
     db.flush()
     return order
 

@@ -117,7 +117,7 @@ def api_get_plating_order(order_id: str, db: Session = Depends(get_db)):
 @router.patch("/{order_id}", response_model=PlatingResponse)
 def api_update_plating_order(order_id: str, body: PlatingUpdate, db: Session = Depends(get_db)):
     with service_errors():
-        return update_plating_order(db, order_id, body.model_dump())
+        return update_plating_order(db, order_id, body.model_dump(exclude_unset=True))
 
 
 @router.delete("/{order_id}", status_code=204)

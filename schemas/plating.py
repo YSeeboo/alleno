@@ -41,6 +41,7 @@ class ReceiptRequest(BaseModel):
 class PlatingUpdate(BaseModel):
     supplier_name: Optional[str] = None
     created_at: Optional[date] = None
+    note: Optional[str] = None
 
     @field_validator("supplier_name")
     @classmethod

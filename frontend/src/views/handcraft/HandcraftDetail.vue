@@ -678,39 +678,33 @@
 
     <!-- ── Floating action bar ────────────────────────────────── -->
     <floating-action-bar v-if="order">
-      <n-button
-        quaternary
-        style="color:#C0C6CD"
+      <floating-action-button
         @click="router.push(`/handcraft-receipts?supplier_name=${encodeURIComponent(order.supplier_name)}`)"
       >
         查看回收单
-      </n-button>
-      <n-button
-        quaternary
-        class="hc-export-btn--excel"
-        style="color:#C0C6CD"
+      </floating-action-button>
+      <floating-action-button
+        variant="excel"
         :loading="downloadingExcel"
         @click="doDownloadExcel"
       >
         导出Excel
-      </n-button>
-      <n-button
-        quaternary
-        class="hc-export-btn--pdf"
-        style="color:#C0C6CD"
+      </floating-action-button>
+      <floating-action-button
+        variant="pdf"
         :loading="downloadingPdf"
         @click="doDownloadPdf"
       >
         导出PDF
-      </n-button>
-      <n-button
+      </floating-action-button>
+      <floating-action-button
         v-if="isPending()"
-        type="primary"
+        variant="primary"
         :loading="sending"
         @click="doSend"
       >
         确认发出
-      </n-button>
+      </floating-action-button>
     </floating-action-bar>
 
   </div>
@@ -760,6 +754,7 @@ import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 import HandcraftPickingSimulationModal from '@/components/picking/HandcraftPickingSimulationModal.vue'
 import FloatingActionBar from '@/components/FloatingActionBar.vue'
+import FloatingActionButton from '@/components/FloatingActionButton.vue'
 import RecentImportsPicker from '@/components/RecentImportsPicker.vue'
 import { attachPartsToOrder } from '@/api/handcraftActions'
 
@@ -2869,10 +2864,6 @@ async function copyReceiptCode() {
   border-radius: 8px;
 }
 
-.hc-export-btn--excel:hover { background-color: #1E7A5A !important; color: #fff !important; }
-.hc-export-btn--pdf:hover   { background-color: #E5484D !important; color: #fff !important; }
-.hc-export-btn--excel:hover :deep(.n-button__content),
-.hc-export-btn--pdf:hover :deep(.n-button__content) { color: #fff !important; }
 
 .hc-receipt-copy { cursor: pointer; transition: color 0.15s; }
 .hc-receipt-copy:hover { color: #1E7A5A; }

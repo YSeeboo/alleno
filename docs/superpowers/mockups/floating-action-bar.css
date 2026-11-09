@@ -1,0 +1,91 @@
+/* Shared prototype styles. See ../specs/2026-11-08-floating-action-bar-design.md. */
+.fab-bar {
+  --fab-surface: #1A1D21;
+  --fab-text: #C0C6CD;
+  --fab-excel: #1E7A5A;
+  --fab-pdf: #E5484D;
+  --fab-primary: #1E7A5A;
+  --fab-primary-hover: #248D69;
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  padding: 14px 0 calc(14px + env(safe-area-inset-bottom));
+  pointer-events: none;
+  z-index: 20;
+}
+
+.fab-spacer { height: 64px; flex-shrink: 0; margin-top: auto; }
+
+.fab-pill {
+  pointer-events: auto;
+  background: var(--fab-surface);
+  border-radius: 14px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  box-shadow: 0 14px 34px rgba(16, 20, 26, .30);
+}
+
+.fab-pill .fab-action {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fab-text);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color .15s, color .15s, border-color .15s;
+}
+
+.fab-pill .fab-action svg { width: 14px; height: 14px; color: inherit; }
+.fab-pill .fab-action[hidden] { display: none; }
+
+.fab-pill .fab-action:not(:disabled):not([aria-busy="true"]):is(:hover, :focus-visible, :active) {
+  background: #FFFFFF0D;
+  color: #fff;
+}
+
+.fab-pill .fab-action--excel:not(:disabled):not([aria-busy="true"]):is(:hover, :focus-visible, :active) {
+  background: var(--fab-excel);
+  color: #fff;
+}
+
+.fab-pill .fab-action--pdf:not(:disabled):not([aria-busy="true"]):is(:hover, :focus-visible, :active) {
+  background: var(--fab-pdf);
+  color: #fff;
+}
+
+.fab-pill .fab-action--primary {
+  background: var(--fab-primary);
+  border-color: var(--fab-primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+.fab-pill .fab-action--primary:not(:disabled):not([aria-busy="true"]):is(:hover, :focus-visible, :active) {
+  background: var(--fab-primary-hover);
+  border-color: var(--fab-primary-hover);
+}
+
+.fab-pill .fab-action:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.fab-pill .fab-action:is(:disabled, [aria-busy="true"]) { opacity: .45; cursor: not-allowed; }
+
+@media (max-width: 480px) {
+  .fab-spacer { height: 120px; }
+  .fab-pill { flex-wrap: wrap; width: 100%; gap: 4px; }
+  .fab-pill .fab-action { flex: 1 1 calc(50% - 4px); min-height: 44px; font-size: 11px; padding: 9px 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fab-pill .fab-action { transition: none; }
+}
