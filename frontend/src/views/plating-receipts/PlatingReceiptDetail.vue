@@ -1,34 +1,32 @@
 <template>
-  <div>
-    <n-space align="center" style="margin-bottom: 16px;">
-      <n-button text @click="router.back()">← 返回</n-button>
-      <n-button v-if="summaryReturn" size="small" @click="backToSummary">← 返回汇总</n-button>
-      <n-h2 style="margin: 0;">回收单详情</n-h2>
-    </n-space>
+  <div class="receipt-detail">
+    <div class="page-breadcrumb">生产 / 电镀回收 / {{ receipt?.id || '…' }}</div>
+    <header class="rd-head">
+      <div class="rd-title">
+        <h2 class="page-title">电镀回收单 {{ receipt?.id || '…' }}</h2>
+        <n-popselect v-if="receipt" :value="receipt.status" :options="statusToggleOptions" trigger="click" @update:value="doChangeStatus">
+          <button type="button" class="rd-status" :class="{ 'is-paid': isPaid() }" aria-label="切换回收单付款状态">{{ receipt.status }} ▾</button>
+        </n-popselect>
+      </div>
+      <n-space size="small">
+        <n-button v-if="summaryReturn" text size="small" @click="backToSummary">返回汇总</n-button>
+        <n-button text size="small" @click="router.back()">← 返回</n-button>
+      </n-space>
+    </header>
 
     <n-spin :show="loading">
       <n-empty v-if="!loading && !receipt" description="加载失败，请返回重试" style="margin-top: 24px;" />
-      <n-card v-if="receipt" title="基本信息" style="margin-bottom: 16px;">
-        <n-descriptions :column="isMobile ? 1 : 3" bordered>
-          <n-descriptions-item label="回收单号">{{ receipt.id }}</n-descriptions-item>
-          <n-descriptions-item label="商家">{{ receipt.vendor_name }}</n-descriptions-item>
-          <n-descriptions-item label="状态">
-            <n-popselect
-              :value="receipt?.status"
-              :options="statusToggleOptions"
-              trigger="click"
-              @update:value="doChangeStatus"
-            >
-              <n-tag
-                :type="statusType[receipt.status]"
-                style="cursor: pointer;"
-              >
-                {{ receipt.status }} ▾
-              </n-tag>
-            </n-popselect>
-          </n-descriptions-item>
-          <n-descriptions-item label="总金额">{{ receipt.total_amount != null ? `¥ ${fmtMoney(receipt.total_amount)}` : '-' }}</n-descriptions-item>
-          <n-descriptions-item label="创建时间">
+      <template v-if="receipt">
+        <section class="rd-stats" aria-label="回收单统计">
+          <div class="rd-stat"><div class="rd-stat-label">回收明细</div><div class="rd-stat-value">{{ items.length }}<small>项</small></div><div class="rd-stat-note">{{ detailSummary.partCount }} 种配件</div></div>
+          <div class="rd-stat"><div class="rd-stat-label">本单回收数量</div><div class="rd-stat-value rd-quantities"><span v-for="quantity in detailSummary.quantities" :key="quantity.unit">{{ quantity.qty }}<small>{{ quantity.unit }}</small></span><template v-if="!detailSummary.quantities.length">—</template></div><div class="rd-stat-note">不同单位分别汇总</div></div>
+          <div class="rd-stat"><div class="rd-stat-label">回收总重量</div><div class="rd-stat-value">{{ detailSummary.weightKg ?? '—' }}<small v-if="detailSummary.weightKg != null">kg</small></div><div class="rd-stat-note">{{ detailSummary.weightKg == null ? '暂无填写重量' : '按填写重量换算汇总' }}</div></div>
+          <div class="rd-stat"><div class="rd-stat-label">待定价明细</div><div class="rd-stat-value" :class="{ 'is-amber': detailSummary.unpricedCount > 0 }">{{ detailSummary.unpricedCount }}<small>项</small></div><div class="rd-stat-note">{{ detailSummary.unpricedCount ? '未定价不视为免费' : '全部明细已定价' }}</div></div>
+          <div class="rd-stat"><div class="rd-stat-label">原单总金额</div><div class="rd-stat-value is-green"><small v-if="receipt.total_amount != null">¥</small>{{ receipt.total_amount != null ? fmtMoney(receipt.total_amount) : '待定价' }}</div><div class="rd-stat-note">不含商家对账独立改价</div></div>
+        </section>
+        <section class="rd-meta" aria-label="基本信息">
+          <div class="rd-meta-item"><div class="rd-meta-label">商家 / 电镀厂</div><div class="rd-meta-value">{{ receipt.vendor_name }}</div></div>
+          <div class="rd-meta-item"><div class="rd-meta-label">创建时间</div><div class="rd-meta-value">
             <template v-if="editingCreatedAt">
               <n-space align="center" size="small">
                 <n-date-picker
@@ -43,14 +41,39 @@
             </template>
             <template v-else>
               {{ fmt(receipt.created_at) }}
-              <n-button text type="primary" size="small" style="margin-left: 6px;" @click="startEditCreatedAt">
+              <n-button text type="primary" size="small" style="margin-left: 6px;" aria-label="修改创建时间" @click="startEditCreatedAt">
                 <template #icon><n-icon :component="CreateOutline" /></template>
               </n-button>
             </template>
-          </n-descriptions-item>
-          <n-descriptions-item label="付款时间">{{ receipt.paid_at ? fmt(receipt.paid_at) : '-' }}</n-descriptions-item>
-          <n-descriptions-item label="备注">{{ receipt.note || '-' }}</n-descriptions-item>
-          <n-descriptions-item label="单据&配件图片" :span="2">
+          </div></div>
+          <div class="rd-meta-item"><div class="rd-meta-label">付款时间</div><div class="rd-meta-value">{{ receipt.paid_at ? fmt(receipt.paid_at) : '—' }}</div></div>
+          <div class="rd-meta-item rd-meta-note"><div class="rd-meta-label">备注</div><div class="rd-meta-value rd-note-text">{{ receipt.note || '—' }}</div></div>
+        </section>
+
+        <section class="rd-section" aria-labelledby="receipt-items-title">
+          <div class="rd-section-head">
+            <div class="rd-section-title"><h3 id="receipt-items-title">回收明细</h3><span class="rd-count">{{ items.length }} 项</span></div>
+            <n-space size="small" align="center">
+              <span class="rd-hint">{{ isPaid() ? '已付款 · 明细及备注已锁定' : '可修改明细，点击备注直接编辑' }}</span>
+              <n-button v-if="!isPaid()" size="small" type="primary" secondary @click="openAddItemsModal">+ 增加配件</n-button>
+            </n-space>
+          </div>
+          <n-data-table
+            v-if="items.length"
+            class="rd-table"
+            :columns="itemColumns"
+            :data="items"
+            :bordered="false"
+            :row-key="(row) => row.id"
+            :scroll-x="1330"
+            :row-class-name="(row) => row.id === highlightItemId ? 'receipt-highlight-row' : ''"
+          />
+          <n-empty v-else description="暂无明细" style="padding: 24px;" />
+          <p class="rd-table-note">数量为本单实际回收数量；损耗操作针对来源电镀单的剩余差额，不计入本单回收数量。</p>
+        </section>
+
+        <section class="rd-section" aria-labelledby="receipt-images-title">
+          <div class="rd-section-head"><div class="rd-section-title"><h3 id="receipt-images-title">单据与配件图片</h3><span class="rd-count">{{ totalDeliveryImageCount }} / 9</span></div><span class="rd-hint">回收凭证与配件照片 · 点击图片可预览</span></div>
             <div class="delivery-images-block">
               <div v-if="pendingDeliveryImages.length > 0" class="delivery-images-warning">
                 <div class="delivery-images-warning-title">
@@ -109,6 +132,7 @@
                   />
                   <n-button
                     class="delivery-image-delete"
+                    :aria-label="`删除第 ${index + 1} 张图片`"
                     size="tiny"
                     type="error"
                     circle
@@ -121,6 +145,7 @@
                 <button
                   v-if="canAddDeliveryImage"
                   class="delivery-image-add"
+                  aria-label="上传单据或配件图片"
                   :disabled="deliveryImagesSaving"
                   @click="openDeliveryImageModal"
                 >
@@ -128,8 +153,9 @@
                 </button>
               </div>
               <button
-                v-else
+                v-else-if="canAddDeliveryImage"
                 class="delivery-image-add"
+                aria-label="上传单据或配件图片"
                 :disabled="deliveryImagesSaving"
                 @click="openDeliveryImageModal"
               >
@@ -140,30 +166,12 @@
                 <span v-if="pendingDeliveryImages.length > 0">（待保存 {{ pendingDeliveryImages.length }} 张）</span>
               </div>
             </div>
-          </n-descriptions-item>
-        </n-descriptions>
-      </n-card>
-
-      <n-card v-if="receipt">
-        <template #header>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span>回收明细</span>
-            <n-button v-if="!isPaid()" size="small" type="primary" @click="openAddItemsModal">+ 增加配件</n-button>
-          </div>
-        </template>
-        <n-data-table
-          v-if="receipt.items?.length > 0"
-          :columns="itemColumns"
-          :data="receipt.items"
-          :bordered="false"
-          :row-class-name="(row) => row.id === highlightItemId ? 'receipt-highlight-row' : ''"
-        />
-        <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
-      </n-card>
-
-      <div v-if="receipt" style="margin-top: 16px;">
-        <n-button type="error" :disabled="isPaid()" @click="doDeleteReceipt">删除回收单</n-button>
-      </div>
+        </section>
+        <div class="rd-footer">
+          <p class="rd-footer-note">{{ isPaid() ? '已付款后不可增删改明细；创建时间和图片仍可维护。' : '确认付款后将锁定明细；付款状态可在页头切换。' }}</p>
+          <n-button text type="error" size="small" :disabled="isPaid()" @click="doDeleteReceipt">删除回收单</n-button>
+        </div>
+      </template>
     </n-spin>
 
     <!-- Edit Item Modal -->
@@ -208,7 +216,7 @@
 
     <!-- Add Items Modal -->
     <n-modal v-model:show="addItemsModalVisible" preset="card" :title="`增加回收配件（${receipt?.vendor_name}）`" :style="{ width: isMobile ? '95vw' : '800px' }">
-      <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
+      <div class="rd-add-filters">
         <n-input
           v-model:value="addItemsFilterKeyword"
           placeholder="编号/名称搜索"
@@ -233,6 +241,7 @@
           :data="addItemsPendingItems"
           :bordered="false"
           :row-key="(row) => row.id"
+          :scroll-x="1050"
           :checked-row-keys="addItemsCheckedKeys"
           @update:checked-row-keys="(keys) => { addItemsCheckedKeys = keys }"
           size="small"
@@ -308,8 +317,8 @@ import { useMessage, useDialog } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useSummaryReturn } from '@/composables/useSummaryReturn'
 import {
-  NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
-  NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
+  NSpin, NDataTable,
+  NSpace, NButton, NEmpty, NModal, NForm, NFormItem,
   NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon, NImage, NDatePicker,
 } from 'naive-ui'
 import { CreateOutline } from '@vicons/ionicons5'
@@ -325,6 +334,7 @@ import { batchUpdatePartCosts } from '@/api/parts'
 import { confirmPlatingLoss } from '@/api/productionLoss'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
+import { summarizePlatingReceipt } from '@/utils/platingReceiptDetail'
 
 const route = useRoute()
 const router = useRouter()
@@ -352,6 +362,8 @@ const { isMobile } = useIsMobile()
 
 const loading = ref(true)
 const receipt = ref(null)
+const items = computed(() => receipt.value?.items || [])
+const detailSummary = computed(() => summarizePlatingReceipt(items.value))
 
 const editingCreatedAt = ref(false)
 const editingCreatedAtTs = ref(null)
@@ -414,7 +426,6 @@ const deliveryImagesSaving = ref(false)
 const pendingDeliveryImages = ref([])
 const retryingPendingImage = ref('')
 
-const statusType = { '已付款': 'success', '未付款': 'error' }
 const statusToggleOptions = computed(() => {
   if (!receipt.value) return []
   if (receipt.value.status === '未付款') return [{ label: '已付款', value: '已付款' }]
@@ -738,7 +749,7 @@ const renderNoteCell = (row) => {
         'text-overflow: ellipsis',
         'white-space: nowrap',
         'vertical-align: bottom',
-        !isPaid() ? 'cursor: pointer; color: #2080f0;' : '',
+        !isPaid() ? 'cursor: pointer; color: #1E7A5A;' : '',
       ].join('; '),
       onClick: !isPaid() ? () => startEditNote(row) : undefined,
     },
@@ -747,41 +758,44 @@ const renderNoteCell = (row) => {
 }
 
 const itemColumns = [
-  { title: '配件编号', key: 'part_id', width: 160 },
   {
     title: '配件',
     key: 'part_name',
-    minWidth: 140,
-    render: (row) => row.part_name || row.part_id,
+    width: 210,
+    render: (row) => h('div', { class: 'rd-part' }, [
+      h('div', { class: 'rd-part-name' }, [row.part_name || row.part_id,
+        row.part_is_composite ? h('span', { class: 'rd-composite' }, '组合') : null]),
+      h('div', { class: 'rd-part-code' }, row.part_id),
+    ]),
   },
   {
     title: '电镀单号',
     key: 'plating_order_id',
-    width: 110,
+    width: 120,
     render: (row) => {
       if (!row.plating_order_id) return '-'
       return h('a', {
-        style: 'color: #2080f0; cursor: pointer;',
-        onClick: (e) => { e.stopPropagation(); router.push(`/plating/${row.plating_order_id}`) },
+        class: 'rd-source-link',
+        href: `/plating/${row.plating_order_id}`,
+        onClick: (e) => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; e.preventDefault(); e.stopPropagation(); router.push(`/plating/${row.plating_order_id}`) },
       }, row.plating_order_id)
     },
   },
   { title: '电镀方式', key: 'plating_method', width: 90, render: (r) => r.plating_method || '-' },
-  { title: '回收数量', key: 'qty' },
-  { title: '单位', key: 'unit', render: (r) => r.unit || '-' },
-  { title: '重量', key: 'weight', width: 100, render: (r) => r.weight != null ? `${r.weight} ${r.weight_unit || 'g'}` : '—' },
-  { title: '单价', key: 'price', render: (r) => r.price != null ? `¥ ${fmtMoney(r.price)}` : '-' },
-  { title: '金额', key: 'amount', render: (r) => r.amount != null ? `¥ ${fmtMoney(r.amount)}` : '-' },
+  { title: '回收数量', key: 'qty', width: 120, render: (r) => h('span', { class: 'rd-qty' }, [String(r.qty), h('small', null, r.unit || '未标单位')]) },
+  { title: '重量', key: 'weight', width: 120, render: (r) => r.weight != null ? `${r.weight} ${r.weight_unit || 'g'}` : '—' },
+  { title: '单价', key: 'price', width: 120, render: (r) => r.price != null ? `¥ ${fmtMoney(r.price)}` : h('span', { class: 'rd-unpriced' }, '待定价') },
+  { title: '金额', key: 'amount', width: 130, render: (r) => r.amount != null ? h('span', { class: 'rd-amount' }, `¥ ${fmtMoney(r.amount)}`) : h('span', { class: 'rd-unpriced' }, '待定价') },
   {
     title: '备注',
     key: 'note',
-    minWidth: 240,
+    minWidth: 220,
     render: (row) => renderNoteCell(row),
   },
   {
     title: '操作',
     key: 'actions',
-    width: 140,
+    width: 200,
     render: (row) => {
       const canEdit = !isPaid()
       const editBtn = h(
@@ -793,6 +807,8 @@ const itemColumns = [
               NButton,
               {
                 size: 'small',
+                text: true,
+                type: 'primary',
                 disabled: !canEdit,
                 style: 'margin-right: 6px;',
                 onClick: canEdit ? () => openEditModal(row) : undefined,
@@ -811,6 +827,7 @@ const itemColumns = [
               NButton,
               {
                 size: 'small',
+                text: true,
                 type: 'error',
                 disabled: !canEdit,
                 onClick: canEdit ? () => doDeleteItem(row) : undefined,
@@ -826,6 +843,7 @@ const itemColumns = [
       if (sourceGap > 0) {
         btns.push(h(NButton, {
           size: 'small',
+          text: true,
           type: 'warning',
           onClick: () => openLossModal(row),
         }, { default: () => '确认损耗' }))
@@ -1056,6 +1074,66 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.receipt-detail { min-width: 0; }
+.rd-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin: 8px 0 20px; }
+.rd-title { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.rd-title .page-title { margin: 0; }
+.rd-status { border: 0; border-radius: 20px; padding: 4px 11px; font: inherit; font-size: 11px; font-weight: 600; background: #FBF0DC; color: #B7791F; cursor: pointer; }
+.rd-status.is-paid { background: #E6F2EC; color: #1E7A5A; }
+.rd-status:focus-visible, .delivery-image-add:focus-visible { outline: 2px solid #1E7A5A; outline-offset: 3px; }
+.rd-stats { display: grid; grid-template-columns: .85fr 1.15fr 1fr .9fr 1.3fr; background: #fff; border: 1px solid #ECEDEF; border-radius: 9px; overflow: hidden; }
+.rd-stat { min-width: 0; padding: 14px 17px; border-right: 1px solid #ECEDEF; }
+.rd-stat:last-child { border-right: 0; }
+.rd-stat-label, .rd-meta-label { font-size: 10px; color: #8B9096; margin-bottom: 4px; }
+.rd-stat-value { font-size: 25px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rd-stat-value small { font-size: 12px; color: #8B9096; font-weight: 500; margin: 0 4px; }
+.rd-quantities { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.rd-quantities span { white-space: nowrap; }
+.rd-stat-note { font-size: 10px; color: #A4ABB1; margin-top: 4px; }
+.rd-stat-value.is-green { color: #1E7A5A; }
+.rd-stat-value.is-amber { color: #B7791F; }
+.rd-meta { display: grid; grid-template-columns: minmax(140px, 1.1fr) minmax(170px, 1fr) minmax(130px, .9fr) minmax(160px, 1.5fr); gap: 18px; padding: 20px 0 26px; }
+.rd-meta-item { min-width: 0; }
+.rd-meta-value { font-size: 12px; min-height: 20px; overflow-wrap: anywhere; }
+.rd-meta-value :deep(.n-space) { max-width: 100%; }
+.rd-note-text { white-space: pre-wrap; }
+.rd-section { margin-bottom: 24px; }
+.rd-section-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; border-bottom: 1px solid #ECEDEF; padding-bottom: 9px; margin-bottom: 12px; }
+.rd-section-title { display: flex; align-items: center; gap: 8px; }
+.rd-section-title h3 { margin: 0; font-size: 11px; color: #8B9096; letter-spacing: .8px; font-weight: 700; }
+.rd-count { font-size: 10px; border-radius: 4px; padding: 1px 6px; color: #879199; background: #E9ECEF; }
+.rd-hint, .rd-table-note { font-size: 10px; color: #939DA5; }
+.rd-table-note { margin: 9px 0 0; }
+.rd-table { border: 1px solid #ECEDEF; border-radius: 9px; overflow: hidden; }
+.rd-table :deep(th.n-data-table-th) { background: #FAFBFB; color: #8B9096; font-size: 10px; font-weight: 600; }
+.rd-table :deep(td.n-data-table-td) { padding: 14px 12px; font-size: 12px; }
+.rd-table :deep(.rd-part-name) { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-weight: 600; }
+.rd-table :deep(.rd-part-code) { color: #A5ADB4; font-size: 10px; margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.rd-table :deep(.rd-composite) { font-size: 9px; font-weight: 400; border-radius: 3px; padding: 1px 5px; background: #F0F2F4; color: #879199; }
+.rd-table :deep(.rd-source-link) { color: #718278; text-decoration: none; }
+.rd-table :deep(.rd-source-link:hover) { color: #1E7A5A; text-decoration: underline; }
+.rd-table :deep(.rd-qty), .rd-table :deep(.rd-amount) { font-weight: 600; font-variant-numeric: tabular-nums; }
+.rd-table :deep(.rd-qty) { color: #1E7A5A; white-space: nowrap; }
+.rd-table :deep(.rd-qty small) { color: #A4ACB3; font-size: 10px; font-weight: 400; margin-left: 4px; }
+.rd-table :deep(.rd-unpriced) { color: #B7791F; font-size: 11px; }
+.rd-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.rd-footer-note { margin: 0; color: #939EA5; font-size: 11px; }
+.rd-add-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+@media (max-width: 1200px) {
+  .rd-meta { grid-template-columns: 1fr 1fr; }
+  .rd-stat { padding: 12px; }
+}
+@media (max-width: 760px) {
+  .receipt-detail > .page-breadcrumb { padding-left: 32px; }
+  .rd-title .page-title { font-size: 22px; }
+  .rd-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rd-stat { border-bottom: 1px solid #ECEDEF; }
+  .rd-stat:nth-child(2n) { border-right: 0; }
+  .rd-stat:last-child { grid-column: 1 / -1; border-bottom: 0; }
+  .rd-stat-value { font-size: 22px; }
+  .rd-meta { gap: 14px; }
+  .rd-meta-note { grid-column: 1 / -1; }
+}
 .delivery-images-block {
   display: flex;
   flex-direction: column;
@@ -1110,10 +1188,10 @@ onMounted(async () => {
   position: relative;
   width: 88px;
   height: 88px;
-  border-radius: 14px;
+  border-radius: 8px;
   overflow: hidden;
-  border: 1px solid #eadbc1;
-  background: linear-gradient(180deg, #fffdf7, #f7f0e1);
+  border: 1px solid #E0E4E7;
+  background: #F6F7F8;
 }
 
 .delivery-image-preview {
@@ -1129,10 +1207,10 @@ onMounted(async () => {
 .delivery-image-add {
   width: 88px;
   height: 88px;
-  border: 1px dashed #d6b98d;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #fffaf0, #f6eedc);
-  color: #8a5a17;
+  border: 1px dashed #D1D9D4;
+  border-radius: 8px;
+  background: #F7FAF8;
+  color: #98AA9F;
   font-size: 30px;
   line-height: 1;
   cursor: pointer;
@@ -1144,7 +1222,7 @@ onMounted(async () => {
 }
 
 .delivery-images-meta {
-  color: #8a6b39;
+  color: #939DA5;
   font-size: 12px;
 }
 
