@@ -64,11 +64,13 @@ def list_dispatched(
     from services._helpers import keyword_filter
 
     today = now_beijing().date()
-    is_completed_expr = (PlatingOrderItem.received_qty >= PlatingOrderItem.qty)
 
     q = (
         db.query(PlatingOrderItem, PlatingOrder)
         .join(PlatingOrder, PlatingOrderItem.plating_order_id == PlatingOrder.id)
+        # Filter settled items before counting/pagination, including confirmed
+        # losses already counted in received_qty. Legacy NULL means no receipts.
+        .filter(func.coalesce(PlatingOrderItem.received_qty, 0) < PlatingOrderItem.qty)
     )
     q = filter_archive(q, PlatingOrder, archive)
 
@@ -92,15 +94,12 @@ def list_dispatched(
         # dispatch_date, so ordering by created_at asc gives the same row order as
         # days_out desc — without portable date-arithmetic SQL.
         q = q.order_by(
-            case((is_completed_expr, 1), else_=0),
             asc(PlatingOrder.created_at),
             desc(PlatingOrderItem.id),
         )
     else:
-        # Default sort: in-progress first (completed flag asc: False=0 before True=1),
-        # then within each partition by dispatch date desc, then item id desc for stability.
+        # Default sort: dispatch date desc, then item id desc for stability.
         q = q.order_by(
-            case((is_completed_expr, 1), else_=0),
             desc(PlatingOrder.created_at),
             desc(PlatingOrderItem.id),
         )

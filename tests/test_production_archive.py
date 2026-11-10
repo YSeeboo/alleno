@@ -113,7 +113,7 @@ def test_archived_orders_disappear_from_active_lists_selectors_and_kanban(db, sa
     assert {v.vendor_name for v in kanban.returned.vendors} == {"完成电镀厂"}
     _, active_total = list_dispatched(db)
     archived, archived_total = list_dispatched(db, archive="archived")
-    assert active_total == 2
+    assert active_total == 1
     assert archived_total == 2
     assert all(r["archived_at"] is not None and r["days_out"] is None for r in archived)
     received, total = list_received(db, archive="archived")

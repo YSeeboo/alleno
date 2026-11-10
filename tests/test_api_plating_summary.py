@@ -41,8 +41,8 @@ def test_list_dispatched_empty(db):
     assert total == 0
 
 
-def test_list_dispatched_default_sort_partition(db):
-    """Completed items sink to bottom; within each partition, dispatch date desc."""
+def test_list_dispatched_excludes_completed_and_sorts_by_dispatch_date(db):
+    """Only outstanding items appear, ordered by dispatch date desc."""
     _make_part(db, "PJ-DZ-00001")
     _make_part(db, "PJ-DZ-00002")
     _make_part(db, "PJ-DZ-00003")
@@ -60,10 +60,72 @@ def test_list_dispatched_default_sort_partition(db):
     _make_item(db, order_id="EP-0003", part_id="PJ-DZ-00003", qty=8, received=8)
 
     items, total = list_dispatched(db)
-    assert total == 3
-    # Order: in-progress B (newer) → in-progress A (older) → completed C
-    assert [i["plating_order_id"] for i in items] == ["EP-0002", "EP-0001", "EP-0003"]
-    assert [i["is_completed"] for i in items] == [False, False, True]
+    assert total == 2
+    assert [i["plating_order_id"] for i in items] == ["EP-0002", "EP-0001"]
+    assert all(not i["is_completed"] for i in items)
+
+
+@pytest.mark.parametrize("received", [5, 6])
+def test_list_dispatched_filters_completed_items_not_whole_orders(db, received):
+    _make_part(db, "PJ-DZ-MIXED")
+    order = _make_order(db, "EP-MIXED", "厂")
+    pending = _make_item(db, order_id=order.id, part_id="PJ-DZ-MIXED", qty=5)
+    partial = _make_item(db, order_id=order.id, part_id="PJ-DZ-MIXED", qty=5, received=2)
+    completed = _make_item(db, order_id=order.id, part_id="PJ-DZ-MIXED", qty=5, received=received)
+
+    items, total = list_dispatched(db)
+    assert total == 2
+    assert {i["plating_order_item_id"] for i in items} == {pending.id, partial.id}
+    received_items, _ = list_received(db)
+    assert completed.id in {i["plating_order_item_id"] for i in received_items}
+
+
+def test_list_dispatched_keeps_legacy_null_received_quantity(db):
+    _make_part(db, "PJ-DZ-NULL")
+    _make_order(db, "EP-NULL", "厂")
+    item = _make_item(db, order_id="EP-NULL", part_id="PJ-DZ-NULL", qty=5)
+    item.received_qty = None
+    db.flush()
+
+    items, total = list_dispatched(db)
+    assert total == 1
+    assert items[0]["plating_order_item_id"] == item.id
+    assert items[0]["is_completed"] is False
+
+
+def test_list_dispatched_hides_items_settled_with_confirmed_loss(db):
+    from services.production_loss import confirm_plating_loss
+
+    _make_part(db, "PJ-DZ-LOSS")
+    _make_order(db, "EP-LOSS", "厂")
+    item = _make_item(db, order_id="EP-LOSS", part_id="PJ-DZ-LOSS", qty=10, received=8)
+    confirm_plating_loss(db, "EP-LOSS", item.id, loss_qty=2)
+
+    assert list_dispatched(db) == ([], 0)
+    received_items, total = list_received(db)
+    assert total == 1
+    assert received_items[0]["actual_received_qty"] == 8
+    assert received_items[0]["loss_total_qty"] == 2
+
+
+@pytest.mark.parametrize("archive", ["active", "archived", "all"])
+def test_api_dispatched_filters_completed_before_count_and_pagination(client, db, archive):
+    _make_part(db, "PJ-DZ-PAGE")
+    order = _make_order(db, "EP-PAGE", "厂A")
+    if archive == "archived":
+        order.archived_at = now_beijing()
+    oldest = _make_item(db, order_id=order.id, part_id="PJ-DZ-PAGE", qty=5)
+    _make_item(db, order_id=order.id, part_id="PJ-DZ-PAGE", qty=5, received=5)
+    newest = _make_item(db, order_id=order.id, part_id="PJ-DZ-PAGE", qty=5, received=2)
+    _make_item(db, order_id=order.id, part_id="PJ-DZ-PAGE", qty=5, received=5)
+
+    params = {"archive": archive, "supplier_name": "厂A", "part_keyword": "PJ-DZ-PAGE", "limit": 1}
+    for skip, expected in [(0, [newest.id]), (1, [oldest.id]), (2, [])]:
+        response = client.get("/api/plating-summary/dispatched", params={**params, "skip": skip})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 2
+        assert [i["plating_order_item_id"] for i in body["items"]] == expected
 
 
 def test_list_dispatched_supplier_filter(db):
@@ -106,8 +168,8 @@ def test_list_dispatched_keyword_filter(db):
     assert items[0]["part_name"] == "圆形吊坠"
 
 
-def test_list_dispatched_sort_days_out_flattens_partition(db):
-    """When sort=days_out_desc, completed items are NOT pushed to bottom."""
+def test_list_dispatched_sort_days_out_excludes_completed(db):
+    """Days-out sorting still excludes completed items, even older ones."""
     _make_part(db, "PJ-DZ-S1")
     _make_part(db, "PJ-DZ-S2")
     _make_part(db, "PJ-DZ-S3")
@@ -119,7 +181,8 @@ def test_list_dispatched_sort_days_out_flattens_partition(db):
     _make_item(db, order_id="EP-S3", part_id="PJ-DZ-S3", qty=5, received=0)
 
     items, total = list_dispatched(db, sort="days_out_desc")
-    assert [i["plating_order_id"] for i in items] == ["EP-S2", "EP-S3", "EP-S1"]
+    assert total == 2
+    assert [i["plating_order_id"] for i in items] == ["EP-S2", "EP-S3"]
 
 
 def test_list_dispatched_pagination(db):
