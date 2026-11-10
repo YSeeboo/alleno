@@ -5,6 +5,8 @@
     title="批量上传配件图片"
     :style="{ width: isMobile ? '95vw' : '680px', maxHeight: '80vh' }"
     :mask-closable="false"
+    :closable="!uploadingPartId"
+    :close-on-esc="!uploadingPartId"
     @update:show="$emit('update:show', $event)"
   >
     <div style="max-height: 60vh; overflow-y: auto;">
@@ -13,7 +15,7 @@
           <tr>
             <th style="width: 120px;">配件编号</th>
             <th>配件名称</th>
-            <th style="width: 100px; text-align: center;">图片</th>
+            <th :style="{ width: isMobileUpload ? '128px' : '100px', textAlign: 'center' }">图片</th>
           </tr>
         </thead>
         <tbody>
@@ -35,12 +37,18 @@
                   size="tiny"
                   type="error"
                   style="position: absolute; top: -6px; right: -6px;"
+                  :disabled="!!uploadingPartId"
                   @click="removeImage(part.part_id)"
                 >
                   <template #icon><n-icon :component="CloseOutline" /></template>
                 </n-button>
               </div>
               <!-- Upload area -->
+              <div v-else-if="isMobileUpload" class="batch-mobile-choices">
+                <ImageFilePicker source="camera" compact :disabled="!!uploadingPartId" @select="uploadPartImage($event, part.part_id)" />
+                <ImageFilePicker compact :disabled="!!uploadingPartId" @select="uploadPartImage($event, part.part_id)" />
+                <div v-if="uploadingPartId === part.part_id" class="batch-upload-status" role="status"><n-spin size="small" />{{ uploadStatus }}</div>
+              </div>
               <div
                 v-else
                 :class="['upload-area', { 'upload-focus': focusedPartId === part.part_id, 'upload-loading': uploadingPartId === part.part_id }]"
@@ -59,11 +67,11 @@
     </div>
     <template #footer>
       <n-space justify="end">
-        <n-button @click="$emit('update:show', false)">完成</n-button>
+        <n-button :disabled="!!uploadingPartId" @click="$emit('update:show', false)">完成</n-button>
         <n-button-group v-if="triggeredBy === 'import' && batchId">
-          <n-button type="primary" @click="openAttach('new')">加入手工单</n-button>
+          <n-button type="primary" :disabled="!!uploadingPartId" @click="openAttach('new')">加入手工单</n-button>
           <n-dropdown trigger="click" :options="splitMenuOptions" @select="openAttach">
-            <n-button type="primary" style="padding: 0 8px;">
+            <n-button type="primary" :disabled="!!uploadingPartId" style="padding: 0 8px;">
               <span style="font-size: 10px;">▾</span>
             </n-button>
           </n-dropdown>
@@ -88,8 +96,11 @@ import { updatePart } from '@/api/parts'
 import { updateBatchPartImage, getBatchById } from '@/utils/recentImports'
 import AttachToHandcraftModal from '@/components/AttachToHandcraftModal.vue'
 import { useIsMobile } from '@/composables/useIsMobile'
+import { useImageUploadMode } from '@/composables/useImageUploadMode'
+import ImageFilePicker from '@/components/ImageFilePicker.vue'
 
 const { isMobile } = useIsMobile()
+const { isMobileUpload } = useImageUploadMode()
 
 const props = defineProps({
   show: Boolean,
@@ -109,6 +120,7 @@ const message = useMessage()
 const uploadedImages = ref({})
 const focusedPartId = ref(null)
 const uploadingPartId = ref(null)
+const uploadStatus = ref('')
 
 // --- Attach-to-handcraft submodal ---
 const showAttachModal = ref(false)
@@ -143,20 +155,26 @@ function setFocus(partId, event) {
 }
 
 async function handlePaste(event, partId) {
-  if (uploadingPartId.value) return
+  if (isMobileUpload.value || uploadingPartId.value) return
   const file = [...(event.clipboardData?.items || [])]
     .find(item => item.type?.startsWith('image/'))
     ?.getAsFile()
   if (!file) return
   event.preventDefault()
+  await uploadPartImage(file, partId)
+}
 
+async function uploadPartImage(file, partId) {
+  if (!file || uploadingPartId.value) return
   uploadingPartId.value = partId
   try {
     const url = await uploadImageToOss({
       kind: 'part',
       file,
       entityId: partId,
+      onStage: (stage) => { uploadStatus.value = stage },
     })
+    uploadStatus.value = '正在保存图片…'
     await updatePart(partId, { image: url })
     uploadedImages.value[partId] = url
     if (props.batchId) updateBatchPartImage(props.batchId, partId, url)
@@ -165,6 +183,7 @@ async function handlePaste(event, partId) {
     message.error(`${partId} 上传失败: ${err.message || '未知错误'}`)
   } finally {
     uploadingPartId.value = null
+    uploadStatus.value = ''
   }
 }
 
@@ -180,6 +199,8 @@ async function removeImage(partId) {
 </script>
 
 <style scoped>
+.batch-mobile-choices { display: flex; flex-direction: column; gap: 6px; min-width: 110px; }
+.batch-upload-status { display: flex; justify-content: center; align-items: center; gap: 6px; color: #718278; font-size: 12px; }
 .upload-area {
   width: 64px;
   height: 64px;

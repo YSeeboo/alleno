@@ -1,44 +1,46 @@
 <template>
-  <n-modal v-model:show="visible" :mask-closable="!uploading">
+  <n-modal v-model:show="visible" :mask-closable="!uploading" :close-on-esc="!uploading">
     <n-card
       title="上传图片"
       :style="{ width: isMobile ? '95vw' : '460px', maxWidth: '95vw' }"
       :bordered="false"
       role="dialog"
     >
-      <div class="paste-zone">
+      <div v-if="isMobileUpload" class="mobile-upload-choices">
+        <ImageFilePicker source="camera" :disabled="uploading" @select="uploadFile" />
+        <ImageFilePicker :disabled="uploading" @select="uploadFile" />
+      </div>
+      <div v-else class="paste-zone">
         <div class="paste-icon">
           <n-icon :component="ClipboardOutline" size="28" />
         </div>
         <div class="paste-text">Ctrl/Cmd + V 上传粘贴的图片</div>
       </div>
+      <div v-if="uploading" class="upload-status" role="status" aria-live="polite">
+        <n-spin size="small" />{{ uploadStatus }}
+      </div>
 
       <template #footer>
         <n-space justify="end">
           <n-button :disabled="uploading" @click="visible = false">取消</n-button>
-          <n-button type="primary" :loading="uploading" @click="triggerLocalUpload">本地上传</n-button>
+          <ImageFilePicker v-if="!isMobileUpload" compact :disabled="uploading" @select="uploadFile" />
         </n-space>
       </template>
     </n-card>
   </n-modal>
-
-  <input
-    ref="fileInputRef"
-    type="file"
-    accept="image/*"
-    style="display: none;"
-    @change="handleFileChange"
-  />
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { NModal, NCard, NButton, NSpace, NIcon, useMessage } from 'naive-ui'
+import { NModal, NCard, NButton, NSpace, NIcon, NSpin, useMessage } from 'naive-ui'
 import { ClipboardOutline } from '@vicons/ionicons5'
 import { uploadImageToOss } from '@/api/uploads'
 import { useIsMobile } from '@/composables/useIsMobile'
+import { useImageUploadMode } from '@/composables/useImageUploadMode'
+import ImageFilePicker from '@/components/ImageFilePicker.vue'
 
 const { isMobile } = useIsMobile()
+const { isMobileUpload } = useImageUploadMode()
 
 const props = defineProps({
   show: Boolean,
@@ -50,8 +52,8 @@ const props = defineProps({
 const emit = defineEmits(['update:show', 'uploaded'])
 
 const message = useMessage()
-const fileInputRef = ref(null)
 const uploading = ref(false)
+const uploadStatus = ref('')
 
 const visible = computed({
   get: () => props.show,
@@ -59,13 +61,14 @@ const visible = computed({
 })
 
 const uploadFile = async (file) => {
-  if (!file) return
+  if (!file || uploading.value) return
   uploading.value = true
   try {
     const url = await uploadImageToOss({
       kind: props.kind,
       file,
       entityId: props.entityId,
+      onStage: (stage) => { uploadStatus.value = stage },
     })
     emit('uploaded', url)
     if (!props.suppressSuccess) {
@@ -80,21 +83,12 @@ const uploadFile = async (file) => {
     message.error(msg)
   } finally {
     uploading.value = false
+    uploadStatus.value = ''
   }
 }
 
-const handleFileChange = async (event) => {
-  const file = event.target.files?.[0]
-  event.target.value = ''
-  await uploadFile(file)
-}
-
-const triggerLocalUpload = () => {
-  fileInputRef.value?.click()
-}
-
 const handlePaste = async (event) => {
-  if (!visible.value || uploading.value) return
+  if (!visible.value || isMobileUpload.value || uploading.value) return
   const file = [...(event.clipboardData?.items || [])]
     .find((item) => item.type?.startsWith('image/'))
     ?.getAsFile()
@@ -104,9 +98,9 @@ const handlePaste = async (event) => {
 }
 
 watch(
-  () => visible.value,
-  (show) => {
-    if (show) {
+  [visible, isMobileUpload],
+  ([show, mobile]) => {
+    if (show && !mobile) {
       window.addEventListener('paste', handlePaste)
     } else {
       window.removeEventListener('paste', handlePaste)
@@ -121,6 +115,8 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.mobile-upload-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.upload-status { display: flex; align-items: center; justify-content: center; gap: 10px; padding-top: 16px; color: #718278; font-size: 13px; }
 .paste-zone {
   min-height: 180px;
   border: 2px dashed #d9c9a1;
