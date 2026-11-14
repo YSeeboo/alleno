@@ -29,6 +29,7 @@ class JewelryUpdate(BaseModel):
 
 class JewelryCopyRequest(BaseModel):
     name: str
+    category: Optional[str] = None
     image: Optional[str] = None
     structure_image: Optional[str] = None
     color: Optional[str] = None
@@ -36,12 +37,12 @@ class JewelryCopyRequest(BaseModel):
     retail_price: Optional[float] = None
     wholesale_price: Optional[float] = None
     handcraft_cost: Optional[float] = None
-    # Note: no `category` field — category is forced to source jewelry's.
 
 
 class JewelrySiblingIn(BaseModel):
-    # 全部可选：未传字段沿用基准。category 不接受（沿用基准且锁定）。
+    # 全部可选：未传字段沿用基准，类目不再与编号或单位绑定。
     name: Optional[str] = None
+    category: Optional[str] = None
     image: Optional[str] = None
     structure_image: Optional[str] = None
     color: Optional[str] = None

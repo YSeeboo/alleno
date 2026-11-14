@@ -44,7 +44,7 @@ def test_create_jewelry_sequential_ids_different_categories(db):
 
 def test_create_jewelry_invalid_category_raises(db):
     with pytest.raises(ValueError, match="Invalid category"):
-        create_jewelry(db, {"name": "X", "category": "戒指"})
+        create_jewelry(db, {"name": "X", "category": "未知类型"})
 
 
 def test_create_jewelry_missing_category_raises(db):
@@ -100,17 +100,17 @@ def test_update_jewelry_partial(db):
 
 
 def test_update_jewelry_category_raises(db):
-    # Any attempt to change category should fail — the ID encodes the category.
     create_jewelry(db, {"name": "A", "category": "套装"})
-    with pytest.raises(ValueError, match="Category cannot be changed after creation"):
+    with pytest.raises(ValueError, match="Invalid category"):
         update_jewelry(db, "SP-SET-00001", {"category": "非法分类"})
 
 
-def test_update_jewelry_valid_category_still_raises(db):
-    # Even passing a valid (but different) category is disallowed.
-    create_jewelry(db, {"name": "A", "category": "套装"})
-    with pytest.raises(ValueError, match="Category cannot be changed after creation"):
-        update_jewelry(db, "SP-SET-00001", {"category": "单件"})
+def test_update_jewelry_category_preserves_legacy_identifier_and_unit(db):
+    create_jewelry(db, {"name": "A", "category": "套装", "unit": "套"})
+    jewelry = update_jewelry(db, "SP-SET-00001", {"category": "组合套装"})
+    assert jewelry.id == "SP-SET-00001"
+    assert jewelry.category == "组合套装"
+    assert jewelry.unit == "套"
 
 
 def test_delete_jewelry(db):
@@ -181,11 +181,12 @@ def test_copy_jewelry_override_fields(db):
     assert float(new.retail_price) == 80.0
 
 
-def test_copy_jewelry_ignores_category_in_override(db):
+def test_copy_jewelry_allows_category_in_override(db):
     src = create_jewelry(db, {"name": "S", "category": "套装"})
-    new = copy_jewelry(db, src.id, {"name": "S-副本", "category": "单件"})
-    assert new.category == "套装"
-    assert new.id.startswith("SP-SET-")
+    new = copy_jewelry(db, src.id, {"name": "S-副本", "category": "组合套装"})
+    assert new.category == "组合套装"
+    assert new.id.startswith("SP-") and not new.id.startswith("SP-SET-")
+    assert src.category == "套装"
 
 
 def test_copy_jewelry_source_not_found(db):

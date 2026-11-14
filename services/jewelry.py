@@ -4,15 +4,19 @@ from sqlalchemy.orm import Session
 
 from models.bom import Bom
 from models.jewelry import Jewelry
+from schemas.jewelry_options import JEWELRY_TYPES, LEGACY_JEWELRY_PREFIXES
 from services._helpers import _next_id, _next_id_by_category, keyword_filter
 
 _VALID_STATUSES = {"active", "inactive"}
 
-JEWELRY_CATEGORIES = {
-    "套装": "SP-SET",
-    "单件": "SP-PCS",
-    "单对": "SP-PAIR",
-}
+# New product types share a category-independent sequence. Keep the old
+# prefixes only for legacy clients; existing identifiers are never rewritten.
+JEWELRY_CATEGORIES = {**dict.fromkeys(JEWELRY_TYPES, "SP"), **LEGACY_JEWELRY_PREFIXES}
+
+
+def _validate_category(category):
+    if category not in JEWELRY_CATEGORIES:
+        raise ValueError(f"Invalid category '{category}'. 请选择饰品类型：{'、'.join(JEWELRY_TYPES)}")
 
 
 _JEWELRY_MODEL_FIELDS = {c.key for c in Jewelry.__table__.columns}
@@ -20,10 +24,7 @@ _JEWELRY_MODEL_FIELDS = {c.key for c in Jewelry.__table__.columns}
 
 def create_jewelry(db: Session, data: dict) -> Jewelry:
     category = data.get("category")
-    if category not in JEWELRY_CATEGORIES:
-        raise ValueError(
-            f"Invalid category '{category}'. Must be one of: {list(JEWELRY_CATEGORIES.keys())}"
-        )
+    _validate_category(category)
     prefix = JEWELRY_CATEGORIES[category]
     model_data = {k: v for k, v in data.items() if k in _JEWELRY_MODEL_FIELDS}
     jewelry = Jewelry(id=_next_id_by_category(db, Jewelry, prefix), **model_data)
@@ -52,13 +53,10 @@ def update_jewelry(db: Session, jewelry_id: str, data: dict) -> Jewelry:
     jewelry = get_jewelry(db, jewelry_id)
     if jewelry is None:
         raise ValueError(f"Jewelry not found: {jewelry_id}")
-    # Category changes are disallowed because the jewelry ID encodes the category
-    # (e.g. SP-SET-00001 means 套装). Allowing a category change would make the
-    # ID misleading and break the ID-format contract.
+    # Category is metadata, not an identifier or a unit-conversion instruction.
+    # Preserve legacy IDs, foreign keys, style groups and all quantities.
     if "category" in data:
-        raise ValueError(
-            "Category cannot be changed after creation — the jewelry ID encodes the category."
-        )
+        _validate_category(data["category"])
     for key, value in data.items():
         if key in _JEWELRY_MODEL_FIELDS:
             setattr(jewelry, key, value)
@@ -129,6 +127,8 @@ def add_jewelry_sibling(db: Session, base_id: str, override_data: dict) -> Jewel
     base = get_jewelry(db, base_id)
     if base is None:
         raise ValueError(f"Jewelry not found: {base_id}")
+    if "category" in (override_data or {}):
+        _validate_category(override_data["category"])
     # 不嵌套：解析到基准组键
     group = base.style_group or base.id
     group_base = base if group == base.id else get_jewelry(db, group)
@@ -153,8 +153,9 @@ def add_jewelry_sibling(db: Session, base_id: str, override_data: dict) -> Jewel
         "handcraft_cost": src.handcraft_cost,
         "status": src.status,
     }
-    safe_override = {k: v for k, v in (override_data or {}).items() if k != "category"}
+    safe_override = dict(override_data or {})
     merged = {**base_data, **safe_override}
+    _validate_category(merged["category"])
     fields = {k: v for k, v in merged.items() if k in _JEWELRY_MODEL_FIELDS and k != "style_group"}
 
     sibling = Jewelry(id=new_id, style_group=group, **fields)
@@ -176,8 +177,7 @@ def copy_jewelry(db: Session, source_id: str, override_data: dict) -> Jewelry:
     """Clone a jewelry's basic info + BOM rows into a new jewelry record.
 
     - Raises ValueError if source_id does not exist.
-    - Category is always inherited from source (any 'category' key in
-      override_data is ignored).
+    - Category and unit default to the source, with explicit overrides allowed.
     - Inventory log is NOT cloned; the new jewelry starts at stock 0.
     - status defaults to 'active'.
     """
@@ -196,7 +196,7 @@ def copy_jewelry(db: Session, source_id: str, override_data: dict) -> Jewelry:
         "wholesale_price": source.wholesale_price,
         "handcraft_cost": source.handcraft_cost,
     }
-    safe_override = {k: v for k, v in (override_data or {}).items() if k != "category"}
+    safe_override = dict(override_data or {})
     merged = {**base_data, **safe_override}
 
     new_jewelry = create_jewelry(db, merged)

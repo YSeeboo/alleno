@@ -6,7 +6,7 @@
       <div class="title-row">
         <h1 class="page-title">饰品管理<span class="title-count">共 {{ rows.length }} 件饰品 · {{ groupCount }} 个款式组</span></h1>
         <div class="top-actions">
-          <n-button v-if="canUseTemplates" class="btn-outline" @click="openTemplateSelect">从模板创建</n-button>
+          <n-button v-if="canUseStructures" class="btn-outline" @click="router.push('/jewelry-structures')">结构批量创建</n-button>
           <n-button class="btn-ink" @click="openCreate">新增饰品</n-button>
         </div>
       </div>
@@ -54,7 +54,7 @@
         type="warning"
         style="margin-bottom: 12px;"
       >
-        从 <b>{{ copySourceId }} {{ copySourceName }}</b> 复制（含 BOM 配件清单）。类目沿用源饰品。
+        从 <b>{{ copySourceId }} {{ copySourceName }}</b> 复制（含 BOM 配件清单）。类目和单位预填源饰品，可分别设置。
       </n-alert>
       <n-form ref="formRef" :model="form" label-placement="left" label-width="100">
         <n-form-item label="名称" path="name" :rule="{ required: true, message: '请输入名称' }">
@@ -80,16 +80,16 @@
         <n-form-item
           label="类目"
           path="category"
-          :rule="(editingId || copySourceId) ? undefined : { required: true, message: '请选择类目', trigger: 'change' }"
+          :rule="{ required: true, message: '请选择饰品类型', trigger: 'change' }"
         >
-          <n-select v-model:value="form.category" :options="categoryOptions" clearable placeholder="请选择类目" :disabled="!!editingId || !!copySourceId" />
-          <span v-if="editingId" style="color: #999; font-size: 12px; margin-left: 8px;">类目不可修改</span>
-          <span v-else-if="copySourceId" style="color: #999; font-size: 12px; margin-left: 8px;">复制时不可修改</span>
+          <n-select v-model:value="form.category" :options="categoryOptions" clearable placeholder="例如：耳饰、项链" />
         </n-form-item>
+        <p class="form-hint">类目用于分类和筛选；修改类目不会改变编号或单位。</p>
         <n-form-item label="颜色"><n-input v-model:value="form.color" /></n-form-item>
-        <n-form-item label="单位">
-          <n-select v-model:value="form.unit" :options="unitOptions" placeholder="请选择单位" />
+        <n-form-item label="计量单位" path="unit" :rule="{ required: true, message: '请选择计量单位', trigger: 'change' }">
+          <n-select v-model:value="form.unit" :options="unitOptions" placeholder="例如：对、个、条" />
         </n-form-item>
+        <p class="form-hint">库存、售价和 BOM 均以 1 个所选单位为基准。修改单位不会自动换算已有数量或价格。</p>
         <n-form-item label="零售价">
           <n-input-number v-model:value="form.retail_price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" style="width: 100%;" />
         </n-form-item>
@@ -110,7 +110,8 @@
     <n-modal v-model:show="showSiblingModal" preset="card" :style="{ width: isMobile ? '95vw' : '480px' }">
       <template #header>添加同款 · 将生成 {{ siblingBase?.style_group || siblingBase?.id }}-新后缀</template>
       <n-form label-placement="left" label-width="100">
-        <n-alert type="warning" style="margin-bottom:12px;">归属款式组 <b>{{ siblingBase?.id }} {{ siblingBase?.name }}</b>，已预填并带入基准 BOM。类目沿用基准不可改。</n-alert>
+        <n-alert type="warning" style="margin-bottom:12px;">归属款式组 <b>{{ siblingBase?.id }} {{ siblingBase?.name }}</b>，已预填并带入基准 BOM。类目与单位分别设置，改变单位不会换算用料。</n-alert>
+        <n-form-item label="类目"><n-select v-model:value="siblingForm.category" :options="categoryOptions" placeholder="请选择饰品类型" /></n-form-item>
         <n-form-item label="名称"><n-input v-model:value="siblingForm.name" /></n-form-item>
         <n-form-item label="图片">
           <n-space vertical style="width:100%;">
@@ -122,7 +123,7 @@
           </n-space>
         </n-form-item>
         <n-form-item label="颜色"><n-input v-model:value="siblingForm.color" /></n-form-item>
-        <n-form-item label="单位"><n-select v-model:value="siblingForm.unit" :options="unitOptions" /></n-form-item>
+        <n-form-item label="计量单位"><n-select v-model:value="siblingForm.unit" :options="unitOptions" /></n-form-item>
         <n-form-item label="零售价"><n-input-number v-model:value="siblingForm.retail_price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" style="width:100%;" /></n-form-item>
         <n-form-item label="批发价"><n-input-number v-model:value="siblingForm.wholesale_price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" style="width:100%;" /></n-form-item>
       </n-form>
@@ -135,25 +136,11 @@
       :entity-id="currentUploadItemId"
       @uploaded="onImageUploaded"
     />
-
-    <!-- Template selection modal for "从模板创建" -->
-    <n-modal v-model:show="showTemplateSelectModal" preset="card" title="从模板创建饰品" :style="{ width: isMobile ? '95vw' : '520px' }">
-      <n-spin :show="loadingTemplateList">
-        <n-empty v-if="!loadingTemplateList && templateList.length === 0" description="暂无模板" />
-        <div v-for="tpl in templateList" :key="tpl.id" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
-          <div>
-            <div style="font-weight: 600;">{{ tpl.name }}</div>
-            <div style="color: #999; font-size: 12px;">{{ tpl.item_count || 0 }} 个配件</div>
-          </div>
-          <n-button size="small" type="primary" @click="selectTemplate(tpl)">选择</n-button>
-        </div>
-      </n-spin>
-    </n-modal>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch, h } from 'vue'
+import { ref, reactive, computed, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
@@ -163,8 +150,8 @@ import {
 } from 'naive-ui'
 import { listJewelries, createJewelry, updateJewelry, updateJewelryStatus, deleteJewelry, copyJewelry, addJewelrySibling } from '@/api/jewelries'
 import { batchGetStock } from '@/api/inventory'
-import { listTemplates, applyTemplate } from '@/api/jewelryTemplates'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
+import { jewelryCategoryOptions as categoryOptions, jewelryUnitOptions as unitOptions, isJewelryType, jewelryCategoryLabel } from '@/utils/jewelryOptions'
 import { useAuthStore } from '@/stores/auth'
 import ImageUploadModal from '../../components/ImageUploadModal.vue'
 
@@ -173,7 +160,7 @@ const message = useMessage()
 const dialog = useDialog()
 const authStore = useAuthStore()
 const { isMobile } = useIsMobile()
-const canUseTemplates = computed(() => authStore.hasPermission('parts'))
+const canUseStructures = computed(() => authStore.hasPermission('parts'))
 const modalTitle = computed(() => {
   if (editingId.value) return '编辑饰品'
   if (copySourceId.value) return '复制饰品'
@@ -183,34 +170,18 @@ const loading = ref(true)
 const rows = ref([])
 const filterStatus = ref(null)
 const searchName = ref('')
-const filterCategory = ref(undefined) // undefined=全部, '__none__'=未分类
+const filterCategory = ref(undefined) // undefined=全部, '__pending__'=旧类目或未分类
 
 const statusOptions = [
   { label: '启用', value: 'active' },
   { label: '停用', value: 'inactive' },
 ]
 
-const categoryOptions = [
-  { label: '套装', value: '套装' },
-  { label: '单件', value: '单件' },
-  { label: '单对', value: '单对' },
-]
-
 const categoryChips = [
   { label: '全部', value: undefined },
-  { label: '套装', value: '套装' },
-  { label: '单件', value: '单件' },
-  { label: '单对', value: '单对' },
-  { label: '未分类', value: '__none__' },
+  ...categoryOptions,
+  { label: '待分类', value: '__pending__' },
 ]
-
-const unitOptions = [
-  { label: '个', value: '个' },
-  { label: '套', value: '套' },
-  { label: '对', value: '对' },
-]
-
-const VALID_CATEGORIES = categoryOptions.map((o) => o.value)
 
 const LOW_STOCK = 10
 const lowStockCount = computed(() => rows.value.filter((r) => (r.stock ?? 0) < LOW_STOCK).length)
@@ -218,7 +189,7 @@ const inactiveCount = computed(() => rows.value.filter((r) => r.status === 'inac
 
 function selectCategory(v) { filterCategory.value = v; load() }
 
-// 分组树：按 style_group 聚桶；表头=id===group 的那条，缺则取组内最小 id；
+// 同款排序：按 style_group 聚桶；表头=id===group 的那条，缺则取组内最小 id；
 // style_group 为空的为独立单条。返回排好序的「显示行」：每个表头行带 _children 数组。
 const displayRows = computed(() => {
   const groups = new Map()
@@ -244,20 +215,11 @@ const displayRows = computed(() => {
 })
 const groupCount = computed(() => displayRows.value.filter((r) => r._children.length > 0).length)
 
-const expanded = ref(new Set())
-function toggleGroup(gid) {
-  const s = new Set(expanded.value)
-  s.has(gid) ? s.delete(gid) : s.add(gid)
-  expanded.value = s
-}
-
 const tableData = computed(() => {
   const out = []
   for (const r of displayRows.value) {
     out.push(r)
-    if (r._isHeader && expanded.value.has(r._group)) {
-      for (const c of r._children) out.push({ ...c, _isChild: true })
-    }
+    for (const c of r._children) out.push({ ...c, _isChild: true })
   }
   return out
 })
@@ -332,29 +294,14 @@ const form = reactive({ name: '', image: '', category: null, color: '', unit: nu
 const showSiblingModal = ref(false)
 const siblingSaving = ref(false)
 const siblingBase = ref(null)
-const siblingForm = reactive({ name: '', image: '', color: '', unit: null, retail_price: null, wholesale_price: null })
+const siblingForm = reactive({ name: '', category: null, image: '', color: '', unit: null, retail_price: null, wholesale_price: null })
 
 // Image upload modal state
 const showImageModal = ref(false)
 const currentUploadItemId = ref(null)
 
-// Template selection state
-const showTemplateSelectModal = ref(false)
-const loadingTemplateList = ref(false)
-const templateList = ref([])
-const selectedTemplate = ref(null)
 const copySourceId = ref(null)
 const copySourceName = ref('')
-
-// Auto-fill unit based on category
-watch(
-  () => form.category,
-  (cat) => {
-    if (cat === '套装') form.unit = '套'
-    else if (cat === '单件') form.unit = '个'
-    else if (cat === '单对') form.unit = '对'
-  }
-)
 
 const load = async () => {
   loading.value = true
@@ -362,12 +309,12 @@ const load = async () => {
     const params = {}
     if (searchName.value) params.name = searchName.value
     if (filterStatus.value) params.status = filterStatus.value
-    if (filterCategory.value && filterCategory.value !== '__none__') params.category = filterCategory.value
+    if (filterCategory.value && filterCategory.value !== '__pending__') params.category = filterCategory.value
     const { data: jewelries } = await listJewelries(params)
     const stockMap = jewelries.length
       ? (await batchGetStock('jewelry', jewelries.map((j) => j.id))).data : {}
     let mapped = jewelries.map((j) => ({ ...j, stock: stockMap[j.id] ?? 0 }))
-    if (filterCategory.value === '__none__') mapped = mapped.filter((j) => !j.category)
+    if (filterCategory.value === '__pending__') mapped = mapped.filter((j) => !isJewelryType(j.category))
     rows.value = mapped
   } finally { loading.value = false }
 }
@@ -378,29 +325,8 @@ const debouncedLoad = () => {
   _searchTimer = setTimeout(load, 300)
 }
 
-const openTemplateSelect = async () => {
-  showTemplateSelectModal.value = true
-  loadingTemplateList.value = true
-  try {
-    const { data } = await listTemplates()
-    templateList.value = data
-  } finally {
-    loadingTemplateList.value = false
-  }
-}
-
-const selectTemplate = (tpl) => {
-  selectedTemplate.value = tpl
-  copySourceId.value = null
-  showTemplateSelectModal.value = false
-  editingId.value = null
-  Object.assign(form, { name: '', image: tpl.image || '', category: null, color: '', unit: null, retail_price: null, wholesale_price: null })
-  showModal.value = true
-}
-
 const openCreate = () => {
   editingId.value = null
-  selectedTemplate.value = null
   copySourceId.value = null
   Object.assign(form, { name: '', image: '', category: null, color: '', unit: null, retail_price: null, wholesale_price: null })
   showModal.value = true
@@ -409,7 +335,7 @@ const openCreate = () => {
 const openEdit = (row) => {
   copySourceId.value = null
   editingId.value = row.id
-  const cat = row.category && VALID_CATEGORIES.includes(row.category) ? row.category : null
+  const cat = isJewelryType(row.category) ? row.category : null
   Object.assign(form, {
     name: row.name,
     image: row.image || '',
@@ -424,10 +350,9 @@ const openEdit = (row) => {
 
 const openCopy = (row) => {
   editingId.value = null
-  selectedTemplate.value = null
   copySourceId.value = row.id
   copySourceName.value = row.name
-  const cat = row.category && VALID_CATEGORIES.includes(row.category) ? row.category : null
+  const cat = isJewelryType(row.category) ? row.category : null
   Object.assign(form, {
     name: `${row.name}-副本`,
     image: row.image || '',
@@ -443,20 +368,22 @@ const openCopy = (row) => {
 function openAddSibling(row) {
   siblingBase.value = row
   Object.assign(siblingForm, {
-    name: row.name, image: row.image || '', color: row.color || '',
+    name: row.name, category: isJewelryType(row.category) ? row.category : null, image: row.image || '', color: row.color || '',
     unit: row.unit || null, retail_price: row.retail_price ?? null, wholesale_price: row.wholesale_price ?? null,
   })
   showSiblingModal.value = true
 }
 
 async function saveSibling() {
+  if (!isJewelryType(siblingForm.category) || !siblingForm.unit) {
+    message.warning('请分别选择饰品类型和计量单位')
+    return
+  }
   siblingSaving.value = true
   try {
-    const { data } = await addJewelrySibling(siblingBase.value.id, { ...siblingForm })
+    await addJewelrySibling(siblingBase.value.id, { ...siblingForm })
     message.success('已添加同款')
     showSiblingModal.value = false
-    const gid = data.style_group
-    if (gid) expanded.value = new Set([...expanded.value, gid])
     await load()
   } catch (e) {
     message.error(e.response?.data?.detail || '添加失败')
@@ -482,36 +409,22 @@ const save = async () => {
   saving.value = true
   try {
     if (editingId.value) {
-      const { category, ...updateData } = form
-      await updateJewelry(editingId.value, updateData)
+      await updateJewelry(editingId.value, { ...form })
       message.success('保存成功')
       showModal.value = false
       await load()
     } else if (copySourceId.value) {
-      const { category, ...copyData } = form
-      const { data: newJewelry } = await copyJewelry(copySourceId.value, copyData)
+      const { data: newJewelry } = await copyJewelry(copySourceId.value, { ...form })
       message.success('复制成功')
       copySourceId.value = null
       copySourceName.value = ''
       showModal.value = false
       router.push(`/jewelries/${newJewelry.id}`)
     } else {
-      const { data: newJewelry } = await createJewelry(form)
-      if (selectedTemplate.value) {
-        try {
-          await applyTemplate(selectedTemplate.value.id, newJewelry.id)
-          message.success('饰品已创建并导入模板 BOM')
-        } catch (_) {
-          message.success('饰品已创建，但模板导入失败')
-        }
-        selectedTemplate.value = null
-        showModal.value = false
-        router.push(`/jewelries/${newJewelry.id}`)
-      } else {
-        message.success('保存成功')
-        showModal.value = false
-        await load()
-      }
+      await createJewelry(form)
+      message.success('保存成功')
+      showModal.value = false
+      await load()
     }
   } finally {
     saving.value = false
@@ -549,13 +462,7 @@ const columns = [
     title: '编号',
     key: 'id',
     width: 170,
-    render: (row) => {
-      const caret = row._isHeader && row._children.length
-        ? h('span', { class: 'jw-caret', style: expanded.value.has(row._group) ? 'transform:rotate(90deg)' : '',
-            onClick: (e) => { e.stopPropagation(); toggleGroup(row._group) } }, '▸')
-        : h('span', { class: 'jw-caret jw-caret-spacer' }, '▸')
-      return h('span', { class: 'cell-id' }, [caret, ' ', row.id])
-    },
+    render: (row) => h('span', { class: 'cell-id' }, row.id),
   },
   {
     title: '饰品',
@@ -565,12 +472,12 @@ const columns = [
       const nodes = [renderNamedImage(row.name, row.image, row.name)]
       if (row._isHeader && row._children.length)
         nodes.push(h('span', { class: 'jw-count-pill' }, `同款×${row._children.length}`))
-      return h('div', { class: row._isChild ? 'jw-name jw-indent' : 'jw-name' }, nodes)
+      return h('div', { class: 'jw-name' }, nodes)
     },
   },
-  { title: '类目', key: 'category' },
+  { title: '类目', key: 'category', render: (row) => jewelryCategoryLabel(row.category) },
   { title: '颜色', key: 'color' },
-  { title: '单位', key: 'unit', width: 60 },
+  { title: '计量单位', key: 'unit', width: 85 },
   { title: '零售价', key: 'retail_price', render: (r) => renderInlinePrice(r, 'retail_price') },
   { title: '批发价', key: 'wholesale_price', render: (r) => renderInlinePrice(r, 'wholesale_price') },
   {
@@ -821,6 +728,13 @@ onMounted(load)
   margin-left: auto;
 }
 
+.form-hint {
+  margin: -4px 0 16px;
+  color: #8B9096;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 /* ── Table wrap ── */
 .table-wrap {
   margin: 0 28px 28px;
@@ -867,29 +781,6 @@ onMounted(load)
 }
 
 /* ── Style group styles ── */
-.jw-caret {
-  display: inline-flex;
-  width: 18px;
-  height: 18px;
-  border-radius: 5px;
-  cursor: pointer;
-  color: #6b7280;
-  font-size: 10px;
-  align-items: center;
-  justify-content: center;
-  transition: transform .12s;
-  flex-shrink: 0;
-}
-
-.jw-caret:hover {
-  background: #ECEDEF;
-}
-
-.jw-caret-spacer {
-  visibility: hidden;
-  cursor: default;
-}
-
 .jw-count-pill {
   font-size: 10.5px;
   font-weight: 600;
@@ -907,7 +798,4 @@ onMounted(load)
   gap: 8px;
 }
 
-.jw-indent {
-  padding-left: 26px;
-}
 </style>

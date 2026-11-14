@@ -62,8 +62,7 @@ def test_upload_policy_rejects_invalid_extension(client):
     assert resp.status_code == 400
 
 
-def test_upload_policy_jewelry_template_string_entity_id(client, monkeypatch):
-    """Regression: jewelry template IDs are integers; frontend converts to string before sending."""
+def test_upload_policy_rejects_retired_template_kind(client, monkeypatch):
     monkeypatch.setattr(settings, "OSS_BUCKET", "allenop-images")
     monkeypatch.setattr(settings, "OSS_ENDPOINT", "oss-cn-guangzhou.aliyuncs.com")
     monkeypatch.setattr(settings, "OSS_ACCESS_KEY_ID", "test-id")
@@ -79,9 +78,7 @@ def test_upload_policy_jewelry_template_string_entity_id(client, monkeypatch):
             "entity_id": "3",
         },
     )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["public_url"].startswith("https://img.ycbhomeland.top/jewelry-templates/3/")
+    assert resp.status_code == 400
 
 
 def test_upload_policy_rejects_integer_entity_id(client):
@@ -89,7 +86,7 @@ def test_upload_policy_rejects_integer_entity_id(client):
     resp = client.post(
         "/api/uploads/policy",
         json={
-            "kind": "jewelry-template",
+            "kind": "jewelry",
             "filename": "photo.jpg",
             "content_type": "image/jpeg",
             "entity_id": 3,

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="560" viewBox="0 0 640 560">
+  <rect width="640" height="560" fill="#fafbf9"/>
+  <g fill="none" stroke="#8ca898" stroke-width="2">
+    <path d="M198 111C113 321 173 412 319 412S531 321 443 111" stroke-dasharray="5 5"/>
+    <path d="M199 111 319 74 443 111"/>
+    <ellipse cx="321" cy="76" rx="9" ry="5"/>
+    <path d="M257 407v36m104-36v36"/>
+    <path d="m257 443 6 14 15 1-12 10 4 15-13-9-13 9 4-15-12-10 15-1Z" fill="#e7dbc1" stroke="#baa273"/>
+    <path d="M349 449q13-15 24 0t-12 32q-23-16-12-32" fill="#e7dbc1" stroke="#baa273"/>
+    <path d="M182 205H95m382 0h67M320 413v95M319 75V38" stroke="#b5c0b8" stroke-width="1"/>
+    <g fill="#f8f6ed" stroke="#baa273" stroke-width="1.5">
+      <circle cx="178" cy="238" r="10"/><circle cx="175" cy="264" r="10"/><circle cx="178" cy="290" r="10"/><circle cx="185" cy="316" r="10"/><circle cx="197" cy="341" r="10"/><circle cx="214" cy="364" r="10"/><circle cx="237" cy="384" r="10"/><circle cx="265" cy="400" r="10"/><circle cx="293" cy="409" r="10"/><circle cx="321" cy="412" r="10"/><circle cx="349" cy="409" r="10"/><circle cx="377" cy="400" r="10"/><circle cx="405" cy="384" r="10"/><circle cx="428" cy="364" r="10"/><circle cx="445" cy="341" r="10"/><circle cx="457" cy="316" r="10"/><circle cx="464" cy="290" r="10"/><circle cx="467" cy="264" r="10"/><circle cx="464" cy="238" r="10"/>
+    </g>
+  </g>
+  <g fill="#6c8274" font-family="sans-serif" font-size="15" text-anchor="middle"><text x="319" y="27">扣头 / 尾链</text><text x="83" y="190">珍珠</text><text x="547" y="190">金珠</text><text x="320" y="535">逐件搭配吊坠</text><text x="320" y="285" font-size="12" fill="#a0aaa3">结构位置示意 · 非生产尺寸图</text></g>
+</svg>

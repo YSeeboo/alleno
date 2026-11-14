@@ -27,7 +27,7 @@ from api.purchase_order import router as purchase_order_router
 from api.plating_receipt import router as plating_receipt_router
 from api.handcraft_receipt import router as handcraft_receipt_router
 from api.supplier import router as supplier_router
-from api.jewelry_template import router as jewelry_template_router
+from api.jewelry_structure import router as jewelry_structure_router
 from api.plating_summary import router as plating_summary_router
 from api.plating_reconciliation import router as plating_reconciliation_router
 from api.restock import router as restock_router
@@ -116,11 +116,22 @@ app.include_router(purchase_order_router, dependencies=[require_permission("purc
 app.include_router(plating_receipt_router, dependencies=[require_permission("plating")])
 app.include_router(handcraft_receipt_router, dependencies=[require_permission("handcraft")])
 app.include_router(supplier_router, dependencies=[Depends(get_current_user)])
-app.include_router(jewelry_template_router, dependencies=[require_permission("parts")])
+app.include_router(jewelry_structure_router, dependencies=[require_permission("parts")])
 
 
 @app.get("/")
 def root():
+    return {"status": "ok", "app": "Allenop"}
+
+
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["health"])
+@app.api_route("/api/health", methods=["GET", "HEAD"], tags=["health"])
+async def health():
+    """Public liveness probe; deliberately does not query or initialize the DB.
+
+    The /api alias supports deployments that proxy only /api to this backend.
+    A successful response means HTTP is serving, not that the DB is ready.
+    """
     return {"status": "ok", "app": "Allenop"}
 
 

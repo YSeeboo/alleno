@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>饰品结构工作台 · 交互 Demo</title>
+  <style>
+    :root{--ink:#1a2522;--muted:#7b8580;--green:#227654;--soft:#eaf3ed;--line:#e5eae6;--bg:#f5f6f2;--amber:#9d651c;--red:#b04439}
+    *{box-sizing:border-box} [hidden]{display:none!important}
+    body{margin:0;color:var(--ink);background:var(--bg);font:13px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+    button,input,select{font:inherit;color:inherit} button,select{cursor:pointer} button{border:1px solid var(--line);background:#fff;padding:8px 14px;border-radius:7px;font-weight:550;white-space:nowrap} button:hover{border-color:#9fb7a7;background:#f7faf8}button:disabled{opacity:.45;cursor:not-allowed}
+    button.primary{background:var(--green);border-color:var(--green);color:#fff}button.ink{background:var(--ink);border-color:var(--ink);color:#fff}button.text{border:0;background:transparent;color:var(--green);padding:5px 7px}button.danger{color:var(--red)}button.small{font-size:12px;padding:5px 10px}
+    input,select{width:100%;min-width:0;background:#fff;border:1px solid #dfe5df;border-radius:6px;padding:8px 9px;outline:none}input:focus,select:focus{border-color:var(--green);box-shadow:0 0 0 2px #22765412}input[type=number]{font-variant-numeric:tabular-nums}button:focus-visible,a:focus-visible{outline:2px solid var(--green);outline-offset:3px}
+    h1,h2,h3,p{margin:0}h1{font-size:27px;letter-spacing:-.8px;font-weight:650}h2{font-size:16px;font-weight:650}h3{font-size:14px}a{color:var(--green)}.muted{color:var(--muted)}.tiny{font-size:11px}.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-variant-numeric:tabular-nums}.flex{display:flex;align-items:center;gap:10px}.between{justify-content:space-between}.wrap{flex-wrap:wrap}.grow{flex:1;min-width:0}.spaced{margin-top:16px}.pill{display:inline-block;border-radius:5px;padding:2px 7px;background:var(--soft);color:var(--green);font-size:11px;font-weight:550;white-space:nowrap}.pill.gray{background:#f0f2ef;color:#737d77}.pill.amber{background:#fff2df;color:var(--amber)}
+    .rail{position:fixed;inset:0 auto 0 0;width:194px;background:#17251f;color:#a6b6aa;display:flex;flex-direction:column;padding:28px 17px;z-index:5}.brand{color:#f4f5e9;font:24px Georgia,serif;letter-spacing:3px;padding:0 13px}.brand-note{font-size:10px;letter-spacing:2px;margin:3px 13px 44px;color:#819c88}.nav-label{font-size:10px;letter-spacing:2px;color:#6e8a78;padding:0 13px;margin:18px 0 10px}.nav-item{padding:10px 13px;border-radius:7px;margin:2px 0;display:flex;align-items:center;gap:10px}.nav-item.active{background:#2c4033;color:#e5efdf}.nav-icon{font-size:17px;line-height:1}.rail-bottom{margin-top:auto;padding:18px 12px 0;border-top:1px solid #34463a;font-size:11px}.rail-bottom strong{display:block;color:#e0e9dd;font-size:12px;margin-bottom:5px}
+    main{margin-left:194px;padding:26px 34px 50px;max-width:1700px}.crumb{font-size:11px;color:var(--muted);margin-bottom:13px}.page-head{display:flex;justify-content:space-between;align-items:center;gap:20px}.subtitle{margin-top:6px;color:var(--muted);font-size:12px}.notice{margin:23px 0 19px;border:1px solid #dbe6d6;border-radius:9px;padding:11px 15px;background:#edf3e9;display:flex;gap:10px;align-items:center;font-size:12px;color:#526c4f}.notice b{font-weight:650}.notice .dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0}
+    .flow{display:grid;grid-template-columns:1fr 25px 1fr 25px 1fr;align-items:center;gap:8px;margin:20px 0 24px}.flow-card{display:flex;gap:13px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:9px;padding:14px 18px}.flow-num{color:#9aab9e;font:22px Georgia,serif}.flow-card strong{display:block;font-size:12px;font-weight:600}.flow-card span{display:block;font-size:11px;color:var(--muted);margin-top:2px}.arrow{text-align:center;color:#9fae9e}
+    .tabs{display:flex;gap:25px;border-bottom:1px solid #dce3da;margin-bottom:22px}.tab{border:0;border-radius:0;background:none;padding:11px 0 13px;color:var(--muted);position:relative;font-size:13px}.tab:hover{background:none;border-color:transparent}.tab.active{color:var(--green)}.tab.active:after{content:"";height:2px;background:var(--green);position:absolute;bottom:-1px;left:0;right:0}.counter{background:#e8ece5;padding:1px 6px;font-size:10px;border-radius:4px;margin-left:6px}
+    .workspace{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:20px;align-items:start}.panel{border:1px solid var(--line);border-radius:10px;background:#fff;overflow:hidden}.panel-head{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}.section-num{color:var(--green);font:italic 16px Georgia,serif;margin-right:9px}.panel-head p{font-size:11px;color:var(--muted);margin-top:3px}.panel-body{padding:18px 20px}.field-label{font-size:11px;color:var(--muted);display:block;margin-bottom:6px}.template-select{font-size:14px;font-weight:600;background:#fafbf8;padding:11px}.structure-chain{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:16px 0}.structure-chip{border:1px solid #dfe7dc;border-radius:5px;background:#f5f8f2;padding:5px 10px;font-size:11px}.plus{font-size:11px;color:#a3aea2}.helper{font-size:11px;color:var(--muted);line-height:1.8}.row-list{border-top:1px solid var(--line)}.structure-row{display:grid;grid-template-columns:minmax(70px,.7fr) minmax(100px,1.4fr) 68px 24px;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid #eff2ed}.structure-row input,.structure-row select{font-size:11px;padding:7px 6px}.structure-row.header{font-size:10px;color:var(--muted);padding:8px 0;border-bottom:0}.unit-hint{font-size:9px;color:#8b948d;margin-top:2px}.delete{border:0;padding:3px;background:transparent;color:#a4ada4;font-size:17px;font-weight:400}.delete:hover{color:var(--red);background:#fff4ef}.panel-foot{border-top:1px solid var(--line);padding:13px 20px;display:flex;gap:10px;align-items:center;justify-content:space-between;background:#fcfdfb}
+    .scheme-cards{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}.scheme-card{flex:1;min-width:95px;border:1px solid var(--line);border-radius:7px;background:#fff;padding:10px;text-align:left}.scheme-card.active{border-color:var(--green);background:#f0f6ed}.scheme-card strong{display:block;font-size:12px}.scheme-card span{font-size:10px;color:var(--muted);display:block;margin-top:3px}.scheme-table{width:100%;border-collapse:collapse}.scheme-table td,.scheme-table th{text-align:left;font-size:11px;padding:9px 6px;border-bottom:1px solid #eff2ed;font-weight:400}.scheme-table th{color:var(--muted);font-size:10px}.scheme-table td:first-child{padding-left:0;width:60px}.scheme-table input,.scheme-table select{padding:6px;font-size:11px}.scheme-table td:last-child{width:75px}.scheme-caption{margin:15px 0 0;font-size:11px;color:var(--muted)}.linked{background:#f2f6ed;border-left:2px solid #91a881;margin-top:15px;padding:10px 12px;color:#607153;font-size:11px}.warning{background:#fff5e9;border:1px solid #ecd7b9;color:var(--amber);border-radius:7px;padding:10px 12px;font-size:12px;margin-top:12px}
+    .batch{margin-top:22px}.batch-bar{padding:15px 20px;background:#fafbf8;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap}.batch-bar select{width:155px;padding:6px 8px;font-size:12px}.table-wrap{overflow-x:auto}.batch-table{width:100%;border-collapse:collapse;white-space:nowrap}.batch-table th{font-size:10px;font-weight:500;color:var(--muted);text-align:left;padding:11px 15px;background:#fcfdfb;border-bottom:1px solid var(--line)}.batch-table td{padding:13px 15px;border-bottom:1px solid #eef1eb;font-size:12px}.batch-table td:first-child{width:40px;color:#9fa89f}.batch-table input,.batch-table select{padding:7px 8px;font-size:12px}.batch-table input{min-width:130px}.batch-table select{min-width:135px}.batch-table th:nth-child(2){min-width:155px}.batch-table td .description{font-size:10px;color:var(--muted);margin-top:5px;white-space:normal;max-width:220px}.batch-table .row-actions{display:flex;align-items:center;gap:5px}.batch-footer{padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap}.batch-footer strong{font-size:13px}.batch-footer p{font-size:11px;color:var(--muted);margin-top:2px}.error-inline{font-size:10px;color:var(--red);margin-top:5px;white-space:normal}.bottom-note{margin-top:16px;font-size:11px;color:#899183;display:flex;gap:20px;flex-wrap:wrap}
+    .saved-intro{background:#edf3e9;border:1px solid #dce5d5;border-radius:9px;padding:18px 20px;margin-bottom:20px}.saved-intro p{font-size:12px;color:#6a7e62;margin-top:5px}.saved-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:17px}.saved-card{background:#fff;border:1px solid var(--line);border-radius:9px;padding:20px}.saved-card h3{margin:10px 0 4px;font-size:16px}.saved-card .bom-mini{margin:16px 0;border-top:1px solid var(--line)}.bom-mini div{display:flex;justify-content:space-between;gap:15px;padding:7px 0;border-bottom:1px solid #f0f2ee;font-size:11px}.empty{padding:40px;text-align:center;color:var(--muted)}
+    dialog{border:0;padding:0;border-radius:13px;width:700px;max-width:calc(100vw - 28px);max-height:90vh;color:var(--ink);box-shadow:0 20px 90px #14231e35;background:#fff}dialog::backdrop{background:#18251f70;backdrop-filter:blur(2px)}.dialog-head{padding:22px 25px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:1}.dialog-body{padding:20px 25px}.dialog-foot{padding:16px 25px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;background:#fafbf8;position:sticky;bottom:0}.bom-row{display:grid;grid-template-columns:minmax(90px,.8fr) minmax(130px,1.4fr) 90px 28px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}.bom-row input,.bom-row select{font-size:12px;padding:7px}.bom-row .source{font-size:10px;color:var(--muted);margin-top:3px}.bom-row .quantity{text-align:right}.preview-item{border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:12px}.preview-item h3{margin-bottom:10px}.preview-line{display:flex;justify-content:space-between;gap:15px;font-size:12px;border-top:1px solid #f0f2ee;padding:7px 0}.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#22372b;color:#fff;padding:12px 22px;border-radius:8px;z-index:30;box-shadow:0 8px 24px #19332525;max-width:90vw;font-size:12px}.dialog-fields{display:grid;gap:13px}.readonly-tag{font-size:10px;color:var(--green);margin:9px 0 14px}.legend{display:flex;gap:14px;font-size:10px;color:var(--muted);margin-top:15px}.legend span:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#a8b5a0;margin-right:5px}.legend span:last-child:before{background:#d5b47a}
+    .scheme-card{white-space:normal;overflow-wrap:anywhere}.mobile-hint{display:none}
+    @media(min-width:1450px){main{padding-left:45px;padding-right:45px}.panel-body{padding:22px 24px}.structure-row{gap:12px}.batch-table td,.batch-table th{padding-left:20px;padding-right:20px}}
+    @media(max-width:1150px){.rail{width:160px;padding-left:12px;padding-right:12px}main{margin-left:160px;padding:24px}.workspace{grid-template-columns:1fr}.scheme-table td:first-child{width:100px}.flow-card{padding:12px}.flow-num{font-size:18px}.flow-card span{font-size:10px}}
+    @media(max-width:700px){.mobile-hint{display:block;padding:9px 15px;border-bottom:1px solid var(--line)}.rail{display:none}main{margin-left:0;padding:18px 14px 35px}.page-head{align-items:flex-start;gap:10px}h1{font-size:22px}.page-head .flex{gap:5px}.page-head button{padding:7px 9px;font-size:11px}.subtitle{font-size:11px}.crumb{margin-bottom:10px}.notice{margin-top:17px;align-items:flex-start;font-size:11px}.notice .dot{margin-top:6px}.flow{gap:5px;grid-template-columns:1fr 12px 1fr 12px 1fr;margin:16px 0}.flow-card{padding:10px 7px;gap:5px;align-items:flex-start}.flow-num{display:none}.flow-card strong{font-size:10px}.flow-card span{font-size:9px}.arrow{font-size:11px}.workspace{gap:16px}.panel-head,.panel-body{padding:15px}.panel-head{align-items:flex-start}.panel-head h2{font-size:14px}.panel-head .pill{font-size:10px}.panel-foot{padding:12px 15px}.structure-row{grid-template-columns:64px minmax(100px,1fr) 55px 22px;gap:6px}.structure-row input,.structure-row select{padding:7px 4px}.batch{margin-top:16px}.batch-bar,.batch-footer{padding:13px 15px}.batch-table th,.batch-table td{padding:10px}.batch-footer .primary{width:100%;margin-top:3px}.bottom-note{gap:5px}.dialog-head,.dialog-body,.dialog-foot{padding:16px}.bom-row{grid-template-columns:65px minmax(95px,1fr) 65px 22px;gap:6px}.bom-row input,.bom-row select{font-size:11px;padding:6px 4px}.bom-row .source{font-size:9px}.dialog-foot{flex-wrap:wrap}.dialog-foot button{font-size:11px}.tabs{gap:22px}.scheme-table td:first-child{width:65px}.saved-grid{grid-template-columns:1fr}.batch-bar select{width:140px}}
+  </style>
+</head>
+<body>
+  <aside class="rail" aria-label="演示导航">
+    <div class="brand">ALLEN</div><div class="brand-note">JEWELRY WORKSPACE</div>
+    <div class="nav-label">商品工作台</div><div class="nav-item"><span class="nav-icon">◇</span>配件管理</div><div class="nav-item"><span class="nav-icon">⌘</span>饰品管理</div><div class="nav-item active"><span class="nav-icon">⊞</span>结构与搭配</div>
+    <div class="nav-label">业务管理</div><div class="nav-item">订单管理</div><div class="nav-item">生产管理</div><div class="nav-item">库存管理</div>
+    <div class="rail-bottom"><strong>一个结构，多种搭配。</strong>只维护真正不同的部分，<br>不再复制整份模板。</div>
+  </aside>
+  <main>
+    <div class="crumb">商品 / 饰品管理 / 结构与搭配</div>
+    <header class="page-head"><div><div class="flex"><h1>饰品结构工作台</h1><span class="pill gray">交互 DEMO</span></div><p class="subtitle">先搭好结构，再选搭配，最后批量生成确定的用料清单。</p></div><button id="reset">↺ 重置演示</button></header>
+    <div class="notice"><span class="dot"></span><span><b>仅供方案体验。</b> 配件、数量及链长均为虚构示例；所有操作只在当前页面内生效，不连接业务系统，刷新即恢复初始状态。</span></div>
+    <div class="flow"><div class="flow-card"><div class="flow-num">01</div><div><strong>结构模板</strong><span>需要哪些组成位置</span></div></div><div class="arrow">→</div><div class="flow-card"><div class="flow-num">02</div><div><strong>搭配方案</strong><span>配件与用量一起变化</span></div></div><div class="arrow">→</div><div class="flow-card"><div class="flow-num">03</div><div><strong>具体饰品</strong><span>选择吊坠，保存独立 BOM</span></div></div></div>
+    <nav class="tabs" aria-label="工作区"><button class="tab active" id="work-tab">配置与批量创建</button><button class="tab" id="saved-tab">已生成饰品 <span class="counter" id="saved-count">1</span></button></nav>
+    <section id="work-view">
+      <div class="workspace">
+        <section class="panel">
+          <div class="panel-head"><div><h2><span class="section-num">01</span>结构模板</h2><p>自由增删组成位置，不限制为某几类配件</p></div><span id="revision" class="pill gray"></span></div>
+          <div class="panel-body">
+            <label class="field-label" for="template-select">选一个常用结构</label><select id="template-select" class="template-select"></select>
+            <p class="helper" style="margin-top:6px">切换结构会重置未保存草稿和本批行，已生成饰品不受影响。</p>
+            <div class="structure-chain" id="structure-chain"></div>
+            <div class="structure-row header"><span>组成位置</span><span>默认配件</span><span>用量</span><span></span></div><div id="structure-rows" class="row-list"></div>
+            <button class="text small spaced" id="add-slot">＋ 添加组成位置</button>
+            <p class="helper spaced">吊坠可留空，创建时逐件选择。位置名称可自行修改；用量均按生产 <b>1 对</b>饰品填写。</p>
+            <div id="structure-error" class="warning" hidden></div>
+          </div>
+          <div class="panel-foot"><span id="draft-status" class="helper"></span><div class="flex"><button class="small" id="save-as-template">另存新结构</button><button class="small ink" id="save-template">保存模板</button></div></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><div><h2><span class="section-num">02</span>联动搭配方案</h2><p>珠子、数量和链长作为一组设置复用</p></div><span class="pill">不绑定吊坠</span></div>
+          <div class="panel-body">
+            <p class="field-label">选择要编辑的方案（本批使用哪个方案，在下方批量表中指定）</p>
+            <div class="scheme-cards" id="scheme-cards"></div>
+            <div id="scheme-warning" class="warning" hidden></div>
+            <div id="scheme-editor"></div>
+            <div class="linked">联动来自你保存的搭配设置，不根据珠子直径自动推算。吊坠仍由每件饰品独立选择。</div>
+            <p class="scheme-caption">此处编辑的是方案草稿，点击保存后才用于本批；只保存相对模板的差异。</p>
+          </div>
+          <div class="panel-foot"><span id="scheme-status" class="helper"></span><div class="flex"><button class="small" id="save-as-scheme">另存方案</button><button class="small ink" id="save-scheme">保存方案</button></div></div>
+        </section>
+      </div>
+      <section class="panel batch">
+        <div class="panel-head"><div><h2><span class="section-num">03</span>批量创建饰品</h2><p>共用结构，只填写每一件真正不同的部分；不自动排列组合</p></div><button class="small" id="add-jewelry">＋ 添加一行</button></div>
+        <div class="batch-bar"><span class="muted tiny">本批默认搭配</span><select id="batch-default" aria-label="本批默认搭配"></select><span class="helper">标记为“沿用默认”的行会一起切换；单独指定的方案不变。</span></div>
+        <p class="helper mobile-hint">← 左右滑动表格，选择吊坠或进入单件调整 →</p>
+        <div class="table-wrap" tabindex="0" aria-label="批量饰品配置表，可左右滚动"><table class="batch-table"><thead><tr><th>#</th><th>饰品名称</th><th>搭配方案</th><th>吊坠</th><th>最终用料摘要</th><th>单件调整</th></tr></thead><tbody id="batch-rows"></tbody></table></div>
+        <div class="batch-footer"><div><strong id="batch-total"></strong><p>每行生成一件独立饰品，单位为“对”；不是生产数量，也不合并库存或款式分组。</p></div><button class="primary" id="preview">预览最终 BOM →</button></div>
+      </section>
+      <div class="bottom-note"><span>◌ 模板草稿实时用于本批预览，保存后才可复用。</span><span>◌ 方案若引用已删除位置，会阻止生成，不会偷偷加回配件。</span><span>◌ 本例链条库存单位为 cm，不演示 cm 与克的换算。</span></div>
+    </section>
+    <section id="saved-view" hidden><div class="saved-intro"><h2>生成后，就是独立的用料清单。</h2><p>这里包含一件预先生成的示例。回工作台修改模板或方案，再来对比：已有饰品保留原配件、原用量，不会被追溯修改。</p></div><div class="saved-grid" id="saved-grid"></div></section>
+  </main>
+  <dialog id="detail-dialog"><div class="dialog-head flex between"><div><h2 id="detail-title"></h2><p class="helper" id="detail-subtitle"></p></div><button class="text" data-close="detail-dialog" aria-label="关闭用料窗口">✕</button></div><div class="dialog-body"><div id="detail-warning" class="warning" hidden></div><div id="detail-rows"></div><button id="add-detail-slot" class="text small spaced">＋ 添加单件配件</button><p class="helper spaced" id="detail-note"></p><div id="detail-error" class="warning" hidden></div></div><div class="dialog-foot"><div class="flex"><button id="clear-overrides" class="small">清除单件调整</button><button id="detail-to-template" class="small">另存为常用结构</button></div><button class="primary" id="save-detail">保存单件调整</button><button id="close-detail" data-close="detail-dialog" hidden>关闭</button></div></dialog>
+  <dialog id="preview-dialog"><div class="dialog-head flex between"><div><h2>确认最终用料</h2><p class="helper">以下是每件饰品将保存的确定 BOM，不是动态模板引用。</p></div><button class="text" data-close="preview-dialog" aria-label="关闭最终用料预览">✕</button></div><div class="dialog-body" id="preview-content"></div><div class="dialog-foot"><span class="helper">确认仅写入演示页面，不产生订单、库存或生产记录。</span><button class="primary" id="generate">确认生成（演示）</button></div></dialog>
+  <dialog id="name-dialog"><form id="name-form"><div class="dialog-head"><h2 id="name-title"></h2></div><div class="dialog-body dialog-fields"><label><span class="field-label">名称</span><input id="new-name" required maxlength="40" autocomplete="off"></label><p class="helper" id="name-note"></p></div><div class="dialog-foot"><button type="button" data-close="name-dialog">取消</button><button class="primary" type="submit">保存（演示）</button></div></form></dialog>
+  <dialog id="reset-dialog"><div class="dialog-head"><h2>重置这次演示？</h2></div><div class="dialog-body"><p>将清除本页新建的结构、方案和饰品，恢复初始示例。不会影响业务系统。</p></div><div class="dialog-foot"><button data-close="reset-dialog">取消</button><button id="confirm-reset" class="primary">重置演示</button></div></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script>
+    'use strict';
+    const $ = id => document.getElementById(id);
+    const clone = value => structuredClone(value);
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const parts = [
+      {id:'stud',name:'圆头耳钉 · 金色',unit:'个'}, {id:'stud-s',name:'圆头耳钉 · 银色',unit:'个'},
+      {id:'chain',name:'细链 A · 金色',unit:'cm'}, {id:'chain-s',name:'细链 A · 银色',unit:'cm'},
+      {id:'bead4',name:'圆珠 · 4mm',unit:'颗'}, {id:'bead6',name:'圆珠 · 6mm',unit:'颗'},
+      {id:'flower',name:'花朵吊坠',unit:'个',pendant:true}, {id:'star',name:'星星吊坠',unit:'个',pendant:true},
+      {id:'moon',name:'月亮吊坠',unit:'个',pendant:true}, {id:'butterfly',name:'蝴蝶吊坠',unit:'个',pendant:true},
+      {id:'ring',name:'开口圈 · 3mm',unit:'个'}, {id:'ring4',name:'开口圈 · 4mm',unit:'个'},
+      {id:'tail',name:'尾链 · 金色',unit:'cm'}, {id:'tail-s',name:'尾链 · 银色',unit:'cm'}
+    ];
+    const part = id => parts.find(p => p.id === id);
+    const fmt = n => Number(n).toLocaleString('zh-CN',{maximumFractionDigits:4});
+    let serial = 0, state, draft, schemeDraft, editingScheme, detail, previewSnapshot, naming, toastTimer;
+    const uid = prefix => prefix + (++serial);
+    function initial(){
+      return {active:'A', defaultScheme:'small', templates:[
+        {id:'A',name:'耳钉链条吊坠款',revision:1,slots:[{id:'stud',name:'耳钉',part:'stud',qty:2},{id:'chain',name:'链条',part:'chain',qty:5},{id:'bead',name:'珠子',part:'bead4',qty:6},{id:'pendant',name:'吊坠',part:'',qty:2,pendant:true}],schemes:[
+          {id:'small',name:'小珠版',note:'4mm · 6 颗 · 链长 5cm',overrides:{bead:{part:'bead4',qty:6},chain:{part:'chain',qty:5}}},
+          {id:'large',name:'大珠版',note:'6mm · 4 颗 · 链长 4cm',overrides:{bead:{part:'bead6',qty:4},chain:{part:'chain',qty:4}}}
+        ]},
+        {id:'B',name:'耳钉尾链吊坠款',revision:1,slots:[{id:'stud',name:'耳钉',part:'stud',qty:2},{id:'pendant',name:'吊坠',part:'',qty:2,pendant:true},{id:'ring',name:'开口圈',part:'ring',qty:4},{id:'tail',name:'尾链',part:'tail',qty:6}],schemes:[
+          {id:'tail-normal',name:'标准尾链版',note:'开口圈 4 个 · 尾链 6cm',overrides:{ring:{part:'ring',qty:4},tail:{part:'tail',qty:6}}},
+          {id:'tail-long',name:'长尾链版',note:'开口圈 6 个 · 尾链 8cm',overrides:{ring:{part:'ring4',qty:6},tail:{part:'tail',qty:8}}}
+        ]}
+      ],rows:sampleRows('large'),saved:[{id:'DEMO-001',name:'花朵款 · 初始示例',templateName:'耳钉链条吊坠款',revision:1,schemeName:'小珠版',time:'预先生成的示例',bom:[{id:'stud',name:'耳钉',part:'stud',qty:2},{id:'chain',name:'链条',part:'chain',qty:5},{id:'bead',name:'珠子',part:'bead4',qty:6},{id:'pendant',name:'吊坠',part:'flower',qty:2}]}]};
+    }
+    function sampleRows(special){return ['花朵款','星星款','月亮款','蝴蝶款'].map((name,i)=>({id:uid('j'),name,scheme:i===2?special:'',pendant:['flower','star','moon','butterfly'][i],overrides:{},removed:[],extras:[]}));}
+    const template = () => state.templates.find(t=>t.id===state.active);
+    const scheme = id => template().schemes.find(s=>s.id===id);
+    function loadTemplate(){draft=clone(template().slots);editingScheme=template().schemes[0].id;schemeDraft=clone(scheme(editingScheme).overrides);}
+    function toast(text){clearTimeout(toastTimer);$('toast').textContent=text;$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,4500);}
+    function partOptions(value,empty='待选择',pendantsOnly=false){return `<option value="">${esc(empty)}</option>`+parts.filter(p=>!pendantsOnly||p.pendant).map(p=>`<option value="${p.id}" ${p.id===value?'selected':''}>${esc(p.name)}</option>`).join('');}
+    function schemeOptions(value,withDefault=false){return (withDefault?`<option value="" ${!value?'selected':''}>沿用默认搭配</option>`:'')+template().schemes.map(s=>`<option value="${s.id}" ${s.id===value?'selected':''}>${esc(s.name)}</option>`).join('');}
+    function schemeMissing(overrides){return Object.keys(overrides).filter(id=>!draft.some(s=>s.id===id));}
+    function resolved(row){
+      const selected=scheme(row.scheme||state.defaultScheme);
+      return draft.filter(s=>!row.removed.includes(s.id)).map(s=>({...s,...selected?.overrides[s.id],...(s.pendant&&row.pendant?{part:row.pendant}:{}),...row.overrides[s.id],source:row.overrides[s.id]?'单件调整':s.pendant&&row.pendant?'逐件选择':selected?.overrides[s.id]?'搭配方案':'结构默认'})).concat(row.extras.map(s=>({...s,source:'单件新增'})));
+    }
+    function validateBom(bom){
+      if(!bom.length)return '至少需要一个配件';
+      if(bom.some(s=>!s.name.trim()))return '请填写所有组成位置名称';
+      if(bom.some(s=>!part(s.part)))return '仍有配件待选择';
+      if(bom.some(s=>!Number.isFinite(Number(s.qty))||Number(s.qty)<=0||Number(s.qty)>99999))return '用量须大于 0，且不超过 99999';
+      return '';
+    }
+    function structureError(){
+      if(!draft.length)return '结构至少需要一个组成位置';
+      if(draft.some(s=>!s.name.trim()))return '请填写组成位置名称';
+      if(draft.some(s=>!Number.isFinite(Number(s.qty))||Number(s.qty)<=0||Number(s.qty)>99999))return '默认用量须大于 0，且不超过 99999';
+      return '';
+    }
+    function rowError(row){
+      const selected=scheme(row.scheme||state.defaultScheme);
+      if(!selected)return '请选择搭配方案';
+      if(schemeMissing(selected.overrides).length)return '方案引用了已删除的位置，请修复方案或换用其他方案';
+      if(!row.name.trim())return '请填写饰品名称';
+      return structureError()||validateBom(resolved(row));
+    }
+    function changed(row){return Object.keys(row.overrides).length+row.removed.length+row.extras.length;}
+    function summary(bom){return bom.filter(s=>['chain','bead','tail','ring'].includes(s.id)).map(s=>`${part(s.part)?.name||'待选择'} × ${fmt(s.qty)}${part(s.part)?.unit||''}`).join(' / ')||bom.map(s=>`${s.name} × ${fmt(s.qty)}`).join(' / ');}
+    function renderStructure(){
+      $('template-select').innerHTML=state.templates.map(t=>`<option value="${t.id}" ${t.id===state.active?'selected':''}>${esc(t.name)}</option>`).join('');
+      $('revision').textContent='模板 v'+template().revision;
+      $('structure-chain').innerHTML=draft.map(s=>`<span class="structure-chip">${esc(s.name)||'未命名'}</span>`).join('<span class="plus">＋</span>');
+      $('structure-rows').innerHTML=draft.map(s=>`<div class="structure-row" data-slot="${s.id}"><input aria-label="${esc(s.name)}位置名称" data-field="name" value="${esc(s.name)}" maxlength="24"><div><select aria-label="${esc(s.name)}默认配件" data-field="part">${partOptions(s.part,s.pendant?'创建时选择吊坠':'创建时选择')}</select><div class="unit-hint">${s.pendant?'逐件配置位置 · ':''}用量单位：${esc(part(s.part)?.unit||'随配件确定')}</div></div><input type="number" aria-label="${esc(s.name)}默认用量" data-field="qty" value="${esc(s.qty)}" min="0.0001" max="99999" step="0.0001"><button class="delete" data-delete-slot="${s.id}" aria-label="删除${esc(s.name)}位置">×</button></div>`).join('');
+      const dirty=JSON.stringify(draft)!==JSON.stringify(template().slots);
+      $('draft-status').textContent=dirty?'● 有草稿改动 · 本批即时预览':'已保存 · 可复用';
+      $('structure-error').hidden=!structureError();$('structure-error').textContent=structureError();
+    }
+    function renderSchemes(){
+      $('scheme-cards').innerHTML=template().schemes.map(s=>`<button class="scheme-card ${editingScheme===s.id?'active':''}" data-scheme="${s.id}"><strong>${esc(s.name)}</strong><span>${esc(summary(draft.map(slot=>({...slot,...s.overrides[slot.id]}))))}</span></button>`).join('');
+      const missing=schemeMissing(schemeDraft);
+      $('scheme-warning').hidden=!missing.length;
+      $('scheme-warning').innerHTML=missing.length?`此方案引用了 ${missing.length} 个已删除位置，不能用于生成。<br><button class="text small" id="repair-scheme">移除失效引用并保存方案</button>`:'';
+      $('scheme-editor').innerHTML=`<table class="scheme-table"><thead><tr><th>组成位置</th><th>本方案使用的配件</th><th>用量</th></tr></thead><tbody>${draft.map(s=>{const v={...s,...schemeDraft[s.id]};return `<tr data-scheme-slot="${s.id}"><td>${esc(s.name)}${schemeDraft[s.id]?'<div class="tiny muted">方案设置</div>':''}</td><td>${s.pendant?'<span class="muted">创建时逐件选择，不写入方案</span>':`<select aria-label="方案${esc(s.name)}配件" data-field="part">${partOptions(v.part)}</select>`}</td><td>${s.pendant?'<span class="muted">沿用结构</span>':`<div><input aria-label="方案${esc(s.name)}用量" type="number" data-field="qty" min="0.0001" max="99999" step="0.0001" value="${esc(v.qty)}"><span class="tiny muted">${esc(part(v.part)?.unit||'')}</span></div>`}</td></tr>`;}).join('')}</tbody></table>`;
+      $('scheme-status').textContent=JSON.stringify(schemeDraft)!==JSON.stringify(scheme(editingScheme).overrides)?'● 方案草稿未保存':'已保存 · '+scheme(editingScheme).name;
+    }
+    function renderBatch(){
+      $('batch-default').innerHTML=schemeOptions(state.defaultScheme);
+      const hasPendant=draft.some(s=>s.pendant);
+      $('batch-rows').innerHTML=state.rows.map((r,i)=>{const error=rowError(r);return `<tr data-row="${r.id}"><td class="mono">${String(i+1).padStart(2,'0')}</td><td><input data-field="name" aria-label="第${i+1}行饰品名称" value="${esc(r.name)}" maxlength="60"></td><td><select data-field="scheme" aria-label="${esc(r.name)}搭配方案">${schemeOptions(r.scheme,true)}</select><div class="description">${r.scheme?'单独指定，不随本批默认切换':'当前：'+esc(scheme(state.defaultScheme)?.name)}</div></td><td>${hasPendant?`<select data-field="pendant" aria-label="${esc(r.name)}吊坠">${partOptions(r.pendant,'请选择吊坠',true)}</select>`:'<span class="muted">当前结构无吊坠位置</span>'}</td><td><span class="pill ${error?'amber':changed(r)?'amber':'gray'}">${error?'待完善':changed(r)?'单件调整 '+changed(r)+' 处':'沿用搭配'}</span><div class="description">${esc(summary(resolved(r)))}</div>${error?`<div class="error-inline">${esc(error)}</div>`:''}</td><td><div class="row-actions"><button class="text small" data-edit-row="${r.id}">调整 / 用料</button><button class="delete" data-delete-row="${r.id}" aria-label="删除${esc(r.name)}行">×</button></div></td></tr>`;}).join('')||'<tr><td colspan="6" class="empty">还没有饰品行，点击“添加一行”开始。</td></tr>';
+      const errors=state.rows.filter(r=>rowError(r)).length;
+      $('batch-total').textContent=`本批 ${state.rows.length} 件饰品${errors?' · '+errors+' 件待完善':' · 可预览生成'}`;
+      $('preview').disabled=!state.rows.length||!!errors;
+    }
+    // Keep edited inputs in place while typing. Replacing a row on blur can
+    // swallow the next click (for example, clicking “调整 / 用料” after naming).
+    function liveBatchName(e){
+      if(e.target.dataset.field!=='name')return;
+      const el=e.target.closest('[data-row]'),r=state.rows.find(r=>r.id===el.dataset.row);
+      r.name=e.target.value;
+      const error=rowError(r);
+      el.children[4].innerHTML=`<span class="pill ${error||changed(r)?'amber':'gray'}">${error?'待完善':changed(r)?'单件调整 '+changed(r)+' 处':'沿用搭配'}</span><div class="description">${esc(summary(resolved(r)))}</div>${error?`<div class="error-inline">${esc(error)}</div>`:''}`;
+      el.querySelector('[data-field="scheme"]').setAttribute('aria-label',r.name+'搭配方案');
+      el.querySelector('[data-field="pendant"]')?.setAttribute('aria-label',r.name+'吊坠');
+      el.querySelector('[data-delete-row]').setAttribute('aria-label','删除'+r.name+'行');
+      const errors=state.rows.filter(r=>rowError(r)).length;
+      $('batch-total').textContent=`本批 ${state.rows.length} 件饰品${errors?' · '+errors+' 件待完善':' · 可预览生成'}`;
+      $('preview').disabled=!state.rows.length||!!errors;
+    }
+    function renderSaved(){
+      $('saved-count').textContent=state.saved.length;
+      $('saved-grid').innerHTML=state.saved.map(s=>`<article class="saved-card"><div class="flex between"><span class="pill">独立 BOM · 不随模板变化</span><span class="mono tiny muted">${esc(s.id)}</span></div><h3>${esc(s.name)}</h3><p class="helper">${esc(s.templateName)} · v${s.revision}${s.fromDraft?' ＋ 草稿调整':''} / ${esc(s.schemeName)}</p><div class="bom-mini">${s.bom.map(b=>`<div><span>${esc(part(b.part)?.name)}</span><span class="mono">${fmt(b.qty)} ${esc(part(b.part)?.unit)}</span></div>`).join('')}</div><div class="flex between"><span class="helper">${esc(s.time)}</span><button class="text small" data-view-saved="${s.id}">查看 BOM →</button></div></article>`).join('');
+    }
+    function render(){renderStructure();renderSchemes();renderBatch();renderSaved();}
+    function showTab(saved){$('work-view').hidden=saved;$('saved-view').hidden=!saved;$('work-tab').classList.toggle('active',!saved);$('saved-tab').classList.toggle('active',saved);}
+    function saveTemplate(){if(structureError()){toast(structureError());return false;}template().slots=clone(draft);template().revision++;render();toast('模板已保存；本批使用新配置，已生成饰品保持不变。');return true;}
+    function saveScheme(){
+      if(schemeMissing(schemeDraft).length){toast('请先移除失效引用，或恢复已删除位置。');return;}
+      const bom=draft.filter(s=>!s.pendant).map(s=>({...s,...schemeDraft[s.id]}));
+      if(bom.length&&validateBom(bom)){toast(validateBom(bom));return;}
+      scheme(editingScheme).overrides=clone(schemeDraft);render();toast('方案已保存，珠子与链条用量已一起用于本批；已有饰品未改动。');
+    }
+    function openName(title,note,value,callback){naming=callback;$('name-title').textContent=title;$('name-note').textContent=note;$('new-name').value=value;$('name-dialog').showModal();}
+    function createTemplate(name,slots){
+      const t={id:uid('t'),name,revision:1,slots:clone(slots).map(({source,...s})=>s),schemes:[{id:uid('s'),name:'默认搭配',overrides:{}}]};
+      state.templates.push(t);toast('已另存新结构。可在结构下拉框中选择，不会改变当前批次。');renderStructure();
+    }
+    function detailBom(){return draft.filter(s=>!detail.row.removed.includes(s.id)).map(s=>({...s,...scheme(detail.row.scheme||state.defaultScheme)?.overrides[s.id],...(s.pendant&&detail.row.pendant?{part:detail.row.pendant}:{}),...detail.row.overrides[s.id],source:detail.row.overrides[s.id]?'单件调整':s.pendant?'逐件选择':scheme(detail.row.scheme||state.defaultScheme)?.overrides[s.id]?'搭配方案':'结构默认'})).concat(detail.row.extras.map(s=>({...s,source:'单件新增'})));}
+    function openDetail(rowId,savedId){
+      if(savedId){detail={saved:state.saved.find(s=>s.id===savedId)};}else{detail={row:clone(state.rows.find(r=>r.id===rowId))};}
+      renderDetail();$('detail-dialog').showModal();
+    }
+    function renderDetail(){
+      const readonly=!!detail.saved, bom=readonly?detail.saved.bom:detailBom();
+      $('detail-title').textContent=readonly?detail.saved.name+' · 已保存 BOM':detail.row.name+' · 单件调整';
+      $('detail-subtitle').textContent=readonly?'独立保存的实际配件及用量，不读取当前模板。':'只影响这一件；单件调整优先于方案，切换方案时仍保留，直到手动清除。';
+      $('detail-rows').innerHTML=bom.map(s=>`<div class="bom-row" data-detail-slot="${s.id}"><div>${readonly||!detail.row.extras.some(x=>x.id===s.id)?esc(s.name):`<input aria-label="新增位置名称" data-field="name" value="${esc(s.name)}" maxlength="24">`}<div class="source">${readonly?'已保存':esc(s.source)}</div></div><div>${readonly?esc(part(s.part)?.name):`<select aria-label="单件${esc(s.name)}配件" data-field="part">${partOptions(s.part)}</select>`}</div><div>${readonly?`<div class="quantity mono">${fmt(s.qty)} ${esc(part(s.part)?.unit)}</div>`:`<input aria-label="单件${esc(s.name)}用量" data-field="qty" type="number" min="0.0001" max="99999" step="0.0001" value="${esc(s.qty)}"><div class="tiny muted">${esc(part(s.part)?.unit||'')}</div>`}</div>${readonly?'':`<button class="delete" data-detail-delete="${s.id}" aria-label="单件删除${esc(s.name)}">×</button>`}</div>`).join('');
+      for(const id of ['add-detail-slot','clear-overrides','save-detail','detail-to-template'])$(id).hidden=readonly;
+      $('close-detail').hidden=!readonly;
+      $('detail-note').textContent=readonly?'修改结构或搭配方案不会修改这份清单。正式功能还需要在投产时锁定批次用料版本；本演示不操作生产单。':'可替换配件、改用量、增删组成位置。偶发差异直接保存即可；常用的新结构才值得另存。';
+      const warning=!readonly&&schemeMissing(scheme(detail.row.scheme||state.defaultScheme).overrides).length;
+      $('detail-warning').hidden=!warning;$('detail-warning').textContent='此方案与当前结构不兼容。请回工作台修复方案；此窗口不会加回已删除的位置。';
+      $('detail-error').hidden=true;
+    }
+    $('structure-rows').addEventListener('input',e=>{if(e.target.tagName!=='INPUT')return;const el=e.target.closest('[data-slot]'),s=draft.find(s=>s.id===el.dataset.slot),key=e.target.dataset.field;s[key]=key==='qty'?Number(e.target.value):e.target.value;$('structure-chain').innerHTML=draft.map(s=>`<span class="structure-chip">${esc(s.name)||'未命名'}</span>`).join('<span class="plus">＋</span>');$('draft-status').textContent=JSON.stringify(draft)!==JSON.stringify(template().slots)?'● 有草稿改动 · 本批即时预览':'已保存 · 可复用';$('structure-error').hidden=!structureError();$('structure-error').textContent=structureError();renderSchemes();renderBatch();});
+    $('structure-rows').addEventListener('change',e=>{const el=e.target.closest('[data-slot]');if(!el||!e.target.dataset.field)return;const s=draft.find(s=>s.id===el.dataset.slot),key=e.target.dataset.field,value=key==='qty'?Number(e.target.value):e.target.value;if(s[key]===value)return;s[key]=value;renderStructure();renderSchemes();renderBatch();});
+    $('structure-rows').addEventListener('click',e=>{const id=e.target.closest('[data-delete-slot]')?.dataset.deleteSlot;if(!id)return;draft=draft.filter(s=>s.id!==id);render();toast('位置已从模板草稿删除。相关方案若不兼容，会阻止生成。');});
+    $('add-slot').onclick=()=>{draft.push({id:uid('slot'),name:'新增位置',part:'ring',qty:2});render();};
+    $('template-select').onchange=e=>{state.active=e.target.value;state.defaultScheme=template().schemes[0].id;state.rows=sampleRows(template().schemes[1]?.id||state.defaultScheme);loadTemplate();render();toast('已切换结构，未保存草稿与本批行已重置为对应示例；已生成饰品不变。');};
+    $('save-template').onclick=saveTemplate;
+    $('save-as-template').onclick=()=>{if(structureError()){toast(structureError());return;}openName('另存为新结构','只复制当前结构，不复制旧方案。新结构从“默认搭配”开始。',template().name+' · 新结构',name=>createTemplate(name,draft));};
+    $('scheme-cards').onclick=e=>{const id=e.target.closest('[data-scheme]')?.dataset.scheme;if(!id)return;const dirty=JSON.stringify(schemeDraft)!==JSON.stringify(scheme(editingScheme).overrides);editingScheme=id;schemeDraft=clone(scheme(id).overrides);renderSchemes();if(dirty)toast('已切换方案，未保存的方案草稿已丢弃。');};
+    $('scheme-editor').onchange=e=>{const el=e.target.closest('[data-scheme-slot]');if(!el||!e.target.dataset.field)return;const id=el.dataset.schemeSlot,s=draft.find(s=>s.id===id),key=e.target.dataset.field;if(e.target.tagName==='INPUT'&&schemeDraft[id]?.qty===Number(e.target.value))return;schemeDraft[id]={...schemeDraft[id],[key]:key==='qty'?Number(e.target.value):e.target.value};if(schemeDraft[id].part===s.part&&schemeDraft[id].qty===s.qty)delete schemeDraft[id];renderSchemes();};
+    $('scheme-editor').oninput=e=>{if(e.target.tagName!=='INPUT')return;const el=e.target.closest('[data-scheme-slot]'),id=el.dataset.schemeSlot;schemeDraft[id]={...schemeDraft[id],qty:Number(e.target.value)};$('scheme-status').textContent='● 方案草稿未保存';};
+    $('scheme-warning').onclick=e=>{if(e.target.id!=='repair-scheme')return;for(const id of schemeMissing(schemeDraft))delete schemeDraft[id];saveScheme();};
+    $('save-scheme').onclick=saveScheme;
+    $('save-as-scheme').onclick=()=>{const bom=draft.filter(s=>!s.pendant).map(s=>({...s,...schemeDraft[s.id]}));if(schemeMissing(schemeDraft).length||(bom.length&&validateBom(bom))){toast('请先补全方案用料，移除失效引用。');return;}openName('另存为搭配方案','保存这组联动差异，不绑定吊坠，也不会自动生成新的饰品。',scheme(editingScheme).name+' · 调整版',name=>{const s={id:uid('s'),name,overrides:clone(schemeDraft)};template().schemes.push(s);editingScheme=s.id;schemeDraft=clone(s.overrides);render();toast('常用搭配已保存，可在批量表中选择。');});};
+    $('batch-default').onchange=e=>{state.defaultScheme=e.target.value;renderBatch();toast('已切换本批默认搭配，单独指定方案及单件调整保持不变。');};
+    $('batch-rows').oninput=liveBatchName;
+    $('batch-rows').onchange=e=>{const el=e.target.closest('[data-row]');if(!el||!e.target.dataset.field)return;const row=state.rows.find(r=>r.id===el.dataset.row);if(row[e.target.dataset.field]===e.target.value)return;row[e.target.dataset.field]=e.target.value;renderBatch();};
+    $('batch-rows').onclick=e=>{const edit=e.target.closest('[data-edit-row]')?.dataset.editRow,del=e.target.closest('[data-delete-row]')?.dataset.deleteRow;if(edit)openDetail(edit);if(del){state.rows=state.rows.filter(r=>r.id!==del);renderBatch();}};
+    $('add-jewelry').onclick=()=>{state.rows.push({id:uid('j'),name:'新饰品 '+(state.rows.length+1),scheme:'',pendant:'',overrides:{},removed:[],extras:[]});renderBatch();};
+    $('detail-rows').oninput=e=>{if(detail.saved||e.target.tagName!=='INPUT')return;const el=e.target.closest('[data-detail-slot]'),id=el.dataset.detailSlot,key=e.target.dataset.field;if(!key)return;const extra=detail.row.extras.find(s=>s.id===id),value=key==='qty'?Number(e.target.value):e.target.value;if(extra)extra[key]=value;else detail.row.overrides[id]={...detail.row.overrides[id],[key]:value};el.querySelector('.source').textContent=extra?'单件新增':'单件调整';$('detail-error').hidden=true;};
+    $('detail-rows').onchange=e=>{if(detail.saved)return;const id=e.target.closest('[data-detail-slot]')?.dataset.detailSlot,key=e.target.dataset.field;if(!id||!key)return;const extra=detail.row.extras.find(s=>s.id===id),value=key==='qty'?Number(e.target.value):e.target.value;if((extra?extra[key]:detail.row.overrides[id]?.[key])===value)return;if(extra)extra[key]=value;else detail.row.overrides[id]={...detail.row.overrides[id],[key]:value};renderDetail();};
+    $('detail-rows').onclick=e=>{const id=e.target.closest('[data-detail-delete]')?.dataset.detailDelete;if(!id)return;if(detail.row.extras.some(s=>s.id===id))detail.row.extras=detail.row.extras.filter(s=>s.id!==id);else{detail.row.removed.push(id);delete detail.row.overrides[id];}renderDetail();};
+    $('add-detail-slot').onclick=()=>{detail.row.extras.push({id:uid('extra'),name:'开口圈',part:'ring',qty:2});renderDetail();};
+    $('clear-overrides').onclick=()=>{detail.row.overrides={};detail.row.removed=[];detail.row.extras=[];renderDetail();toast('已清除单件调整；点击保存后应用。');};
+    $('save-detail').onclick=()=>{const error=validateBom(detailBom());if(error){$('detail-error').hidden=false;$('detail-error').textContent=error;return;}const index=state.rows.findIndex(r=>r.id===detail.row.id);state.rows[index]=clone(detail.row);$('detail-dialog').close();renderBatch();toast('单件调整已保存，没有新增模板或更改其他饰品。');};
+    $('detail-to-template').onclick=()=>{const bom=detailBom();if(validateBom(bom)){toast(validateBom(bom));return;}openName('把这件用料另存为常用结构','会以本件的实际配件和用量为默认值。吊坠位置仍保留逐件选择能力；不会切换当前批次。',detail.row.name+' · 常用结构',name=>createTemplate(name,bom));};
+    $('preview').onclick=()=>{
+      if(!state.rows.length||state.rows.some(rowError)){toast('请先补全本批饰品配置。');return;}
+      previewSnapshot=state.rows.map(r=>({name:r.name.trim(),templateName:template().name,revision:template().revision,fromDraft:JSON.stringify(draft)!==JSON.stringify(template().slots),schemeName:scheme(r.scheme||state.defaultScheme).name,bom:clone(resolved(r)).map(({source,...s})=>s)}));
+      $('preview-content').innerHTML=(JSON.stringify(draft)!==JSON.stringify(template().slots)?'<div class="warning" style="margin:0 0 15px">本批使用模板草稿。生成会保存下方实际 BOM，但不会自动保存或发布模板草稿。</div>':'')+previewSnapshot.map(s=>`<div class="preview-item"><div class="flex between"><h3>${esc(s.name)}</h3><span class="pill gray">${esc(s.schemeName)} · 1 对用量</span></div>${s.bom.map(b=>`<div class="preview-line"><span><span class="muted">${esc(b.name)} / </span>${esc(part(b.part)?.name)}</span><span class="mono">${fmt(b.qty)} ${esc(part(b.part)?.unit)}</span></div>`).join('')}</div>`).join('')+'<p class="helper">若同一配件出现在不同位置，实际 BOM 会合并其用量。没有价格和真实库存扣减。</p>';
+      $('preview-dialog').showModal();
+    };
+    function mergeBom(bom){const map=new Map();for(const b of bom){if(map.has(b.part)){const old=map.get(b.part);old.qty=Number((Number(old.qty)+Number(b.qty)).toFixed(4));old.name+=' / '+b.name;}else map.set(b.part,clone(b));}return Array.from(map.values());}
+    $('generate').onclick=()=>{if(!previewSnapshot?.length)return;const snapshots=previewSnapshot;previewSnapshot=null;state.saved.push(...snapshots.map(s=>({...s,bom:mergeBom(s.bom),id:'DEMO-'+String(state.saved.length+(++serial)).padStart(3,'0'),time:'本次演示生成'})));$('preview-dialog').close();state.rows=[];renderBatch();renderSaved();showTab(true);toast('已生成 '+snapshots.length+' 件演示饰品；各自保存独立 BOM，不再跟随模板变化。');};
+    $('name-form').onsubmit=e=>{e.preventDefault();const name=$('new-name').value.trim();if(!name){$('new-name').setCustomValidity('请填写名称');$('new-name').reportValidity();return;}const callback=naming;$('name-dialog').close();callback(name);};
+    $('new-name').oninput=()=>$('new-name').setCustomValidity('');
+    document.addEventListener('click',e=>{const close=e.target.closest('[data-close]')?.dataset.close;if(close)$(close).close();const id=e.target.closest('[data-view-saved]')?.dataset.viewSaved;if(id)openDetail(null,id);});
+    $('work-tab').onclick=()=>showTab(false);$('saved-tab').onclick=()=>{renderSaved();showTab(true);};
+    $('reset').onclick=()=>$('reset-dialog').showModal();
+    $('confirm-reset').onclick=()=>{serial=0;state=initial();loadTemplate();for(const d of document.querySelectorAll('dialog'))d.close();previewSnapshot=null;render();showTab(false);toast('已恢复初始示例。所有真实业务数据均未触碰。');};
+    state=initial();loadTemplate();render();
+  </script>
+</body>
+</html>

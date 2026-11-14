@@ -20,7 +20,7 @@ from .handcraft_receipt import HandcraftReceipt, HandcraftReceiptItem
 from .user import User
 from .supplier import Supplier
 from .order_cost_snapshot import OrderCostSnapshot, OrderCostSnapshotItem
-from .jewelry_template import JewelryTemplate, JewelryTemplateItem
+from .jewelry_structure import JewelryStructure, JewelryStructureScheme, JewelryStructureBatch
 from .id_counter import IdCounter
 from .production_loss import ProductionLoss
 from .restock_request import RestockRequest
@@ -57,8 +57,9 @@ __all__ = [
     "Supplier",
     "OrderCostSnapshot",
     "OrderCostSnapshotItem",
-    "JewelryTemplate",
-    "JewelryTemplateItem",
+    "JewelryStructure",
+    "JewelryStructureScheme",
+    "JewelryStructureBatch",
     "IdCounter",
     "ProductionLoss",
     "RestockRequest",

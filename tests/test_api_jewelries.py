@@ -177,16 +177,16 @@ def test_copy_jewelry_override_fields(client):
     assert new["retail_price"] == 80.0
 
 
-def test_copy_jewelry_category_in_payload_ignored(client):
+def test_copy_jewelry_category_in_payload_is_independent(client):
     src = client.post("/api/jewelries/", json={"name": "S", "category": "套装"}).json()
     resp = client.post(f"/api/jewelries/{src['id']}/copy", json={
         "name": "S-副本",
-        "category": "单件",  # not declared in JewelryCopyRequest; Pydantic drops it
+        "category": "组合套装",
     })
     assert resp.status_code == 201
     new = resp.json()
-    assert new["category"] == "套装"
-    assert new["id"].startswith("SP-SET-")
+    assert new["category"] == "组合套装"
+    assert new["id"].startswith("SP-") and not new["id"].startswith("SP-SET-")
 
 
 def test_jewelry_response_has_style_group_default_null(client):

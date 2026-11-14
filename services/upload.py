@@ -20,7 +20,6 @@ ALLOWED_KINDS = {
     "purchase-orders": "purchase-orders",
     "plating-receipts": "plating-receipts",
     "handcraft-receipts": "handcraft-receipts",
-    "jewelry-template": "jewelry-templates",
     "order": "orders",
 }
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}

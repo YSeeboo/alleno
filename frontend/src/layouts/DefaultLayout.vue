@@ -71,7 +71,7 @@ import {
 import PlatingIcon from '@/components/icons/PlatingIcon.vue'
 import HandcraftIcon from '@/components/icons/HandcraftIcon.vue'
 import SortingIcon from '@/components/icons/SortingIcon.vue'
-import JewelryTemplateIcon from '@/components/icons/JewelryTemplateIcon.vue'
+import JewelryStructureIcon from '@/components/icons/JewelryStructureIcon.vue'
 import OrderIcon from '@/components/icons/OrderIcon.vue'
 import InventoryLogIcon from '@/components/icons/InventoryLogIcon.vue'
 import RestockIcon from '@/components/icons/RestockIcon.vue'
@@ -101,7 +101,7 @@ const allFlatItems = [
   { label: '仪表盘', key: 'dashboard', icon: icon(HomeOutline), perm: 'dashboard' },
   { label: '配件管理', key: 'parts', icon: icon(ExtensionPuzzleOutline), perm: 'parts' },
   { label: '饰品管理', key: 'jewelries', icon: icon(DiamondOutline), perm: 'jewelries' },
-  { label: '饰品模板', key: 'jewelry-templates', icon: icon(JewelryTemplateIcon), perm: 'parts' },
+  { label: '结构与搭配', key: 'jewelry-structures', icon: icon(JewelryStructureIcon), perm: 'parts' },
   { label: '订单管理', key: 'orders', icon: icon(OrderIcon), perm: 'orders' },
   { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
   { label: '待补货清单', key: 'restock', icon: icon(RestockIcon), perm: ['handcraft', 'restock'] },
@@ -133,7 +133,7 @@ const allGroupedItems = [
     children: [
       { label: '配件管理', key: 'parts', icon: icon(ExtensionPuzzleOutline), perm: 'parts' },
       { label: '饰品管理', key: 'jewelries', icon: icon(DiamondOutline), perm: 'jewelries' },
-      { label: '饰品模板', key: 'jewelry-templates', icon: icon(JewelryTemplateIcon), perm: 'parts' },
+      { label: '结构与搭配', key: 'jewelry-structures', icon: icon(JewelryStructureIcon), perm: 'parts' },
     ],
   },
   {

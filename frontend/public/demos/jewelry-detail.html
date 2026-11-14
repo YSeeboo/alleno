@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>饰品详情 · UI Demo | ALLENOP</title>
+  <link rel="icon" href="../favicon.png">
+  <style>
+    :root { --bg:#F6F7F8; --ink:#1A1D21; --muted:#8B9096; --line:#ECEDEF; --green:#1E7A5A; --soft:#E6F2EC; --amber:#B7791F; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:13px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+    button,input,select { font:inherit; }
+    button,a,input,select { -webkit-tap-highlight-color:transparent; }
+    button { cursor:pointer; }
+    button:disabled { cursor:not-allowed; opacity:.45; }
+    button:focus-visible,a:focus-visible { outline:2px solid var(--green); outline-offset:3px; }
+    a { color:inherit; text-decoration:none; }
+    button { color:inherit; }
+    .sidebar { position:fixed; inset:0 auto 0 0; width:220px; background:#10141A; color:#C0C6CD; display:flex; flex-direction:column; z-index:40; border-right:1px solid #20262E; }
+    .brand { display:flex; align-items:center; gap:13px; padding:29px 25px 24px; color:#fff; font-size:16px; font-weight:700; letter-spacing:2.5px; }
+    .brand-mark { width:31px; height:31px; object-fit:contain; }
+    .navigation { padding:0 13px; overflow:auto; flex:1; }
+    .nav-group { color:#68717C; font-size:10px; padding:17px 15px 6px; letter-spacing:1.4px; }
+    .nav-item { width:100%; border:0; background:none; display:flex; align-items:center; gap:12px; padding:10px 15px; border-radius:7px; text-align:left; font-size:13px; color:#B0B7C0; }
+    .nav-item:hover { background:#ffffff0a; }
+    .nav-item.active { background:#1e7a5a30; color:#fff; }
+    .nav-icon { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.5; }
+    .active .nav-icon { color:#3FBF8F; }
+    .user { border-top:1px solid #20262E; display:flex; gap:10px; padding:20px 26px; align-items:center; }
+    .avatar { width:31px; height:31px; border-radius:50%; background:#26312F; color:#93B5A3; display:grid; place-items:center; font-size:12px; }
+    .user small { display:block; color:#68717C; font-size:10px; }
+    main { margin-left:220px; padding:27px 32px 0; max-width:1760px; min-height:100vh; }
+    .demo-banner { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:24px; color:#7B8682; font-size:11px; }
+    .demo-label { display:flex; align-items:center; gap:8px; }
+    .demo-label strong { color:var(--green); font-size:10px; letter-spacing:.7px; border:1px solid #CCDFD4; border-radius:4px; padding:1px 6px; font-weight:600; }
+    .demo-controls { display:flex; align-items:center; gap:9px; }
+    .demo-controls select { background:transparent; font-size:11px; border:0; color:#687570; max-width:130px; }
+    .link { border:0; background:none; padding:0; color:var(--green); font-size:12px; }
+    .link:hover { text-decoration:underline; }
+    .muted { color:var(--muted); }
+    .breadcrumb { color:#9AA1A8; font-size:11px; margin-bottom:10px; }
+    .breadcrumb span { color:#647069; }
+    .page-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:22px; }
+    .title-line { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+    h1 { margin:0; font-size:23px; line-height:1.5; letter-spacing:-.6px; font-weight:650; }
+    .status { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:20px; background:var(--soft); color:var(--green); font-size:11px; white-space:nowrap; }
+    .status.off { color:#7c858c; background:#EBEDF0; }
+    .status::before { content:""; width:5px; height:5px; border-radius:50%; background:currentColor; }
+    .subtitle { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:7px; font-size:11px; color:var(--muted); }
+    .code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-variant-numeric:tabular-nums; }
+    .copy-code { border:0; background:none; padding:0 3px; color:#9DA7A1; font-size:13px; }
+    .btn { display:inline-flex; justify-content:center; align-items:center; gap:6px; min-height:32px; padding:5px 12px; border:1px solid #DFE3E5; border-radius:7px; background:#fff; font-size:12px; white-space:nowrap; }
+    .btn:hover { border-color:#88B49D; color:var(--green); }
+    .btn.primary { background:var(--green); border-color:var(--green); color:#fff; }
+    .btn.primary:hover { background:#19694E; }
+    .btn.soft { background:#EDF5F0; border-color:#D6E7DD; color:var(--green); }
+    .btn.text { background:transparent; border-color:transparent; }
+    .btn.danger { color:#B64747; }
+    .stats { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); background:#fff; border:1px solid var(--line); border-radius:9px; overflow:hidden; margin-bottom:25px; }
+    .stat { padding:15px 19px; border-right:1px solid var(--line); }
+    .stat:last-child { border-right:0; }
+    .stat-label { color:var(--muted); font-size:10px; margin-bottom:6px; }
+    .stat-value { font-size:25px; font-weight:650; line-height:1.3; letter-spacing:-.8px; font-variant-numeric:tabular-nums; }
+    .stat-value small { margin-left:4px; font-size:11px; font-weight:400; color:var(--muted); letter-spacing:0; }
+    .stat-value .currency { margin:0 3px 0 0; font-size:15px; }
+    .stat-note { margin-top:5px; color:#A4ABB1; font-size:10px; }
+    .green { color:var(--green); }
+    .amber { color:var(--amber); }
+    .section { margin-bottom:26px; }
+    .section-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding-bottom:10px; margin-bottom:15px; border-bottom:1px solid var(--line); }
+    .section-title { display:flex; align-items:center; gap:8px; }
+    h2 { margin:0; font-size:11px; letter-spacing:.8px; color:var(--muted); font-weight:650; }
+    .count { border-radius:4px; background:#E9ECEF; color:#879199; padding:1px 6px; font-size:10px; }
+    .hint { color:#939DA5; font-size:10px; }
+    .overview { display:grid; grid-template-columns:240px 1fr; gap:30px; }
+    .gallery { min-width:0; }
+    .main-image { position:relative; display:block; border:1px solid #E9E7E0; border-radius:9px; background:#F5F1E9; padding:0; width:100%; overflow:hidden; }
+    .main-image img { display:block; width:100%; height:207px; object-fit:cover; }
+    .image-label { position:absolute; bottom:9px; left:10px; background:#ffffffc9; color:#8C816C; font-size:9px; border-radius:4px; padding:1px 6px; }
+    .zoom-icon { position:absolute; right:10px; bottom:9px; background:#fff; padding:0 6px; border-radius:4px; font-size:15px; color:#817A6A; }
+    .gallery-foot { display:flex; justify-content:space-between; gap:8px; align-items:center; margin-top:9px; }
+    .image-tabs { display:flex; gap:5px; }
+    .image-tab { background:#fff; border:1px solid #E5E7E6; border-radius:5px; padding:3px 8px; font-size:10px; color:#8B9096; }
+    .image-tab[aria-pressed="true"] { border-color:#87AD98; color:var(--green); background:#F0F6F2; }
+    .gallery-foot .link { font-size:10px; }
+    .info { display:flex; flex-direction:column; min-width:0; }
+    .info-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:24px 18px; padding:8px 0 22px; }
+    .meta-label { color:var(--muted); font-size:10px; margin-bottom:7px; }
+    .meta-value { font-size:13px; font-weight:500; overflow-wrap:anywhere; }
+    .color-dot { display:inline-block; width:9px; height:9px; background:#C3A160; border-radius:50%; margin-right:6px; }
+    .unit-pill { font-size:11px; padding:2px 8px; background:#EBEEEC; border-radius:4px; }
+    .info-note { margin-top:auto; border-top:1px solid var(--line); padding-top:14px; color:#8B9690; font-size:11px; line-height:1.9; }
+    .info-note strong { color:#4F6257; font-weight:500; }
+    .section-actions { display:flex; align-items:center; gap:10px; }
+    .search { display:flex; align-items:center; gap:7px; border:1px solid #E0E4E5; background:#fff; border-radius:6px; padding:0 9px; height:30px; }
+    .search input { width:148px; outline:0; border:0; min-width:0; font-size:11px; background:none; }
+    .search:focus-within { border-color:var(--green); }
+    input::placeholder { color:#ABB2B6; }
+    .notice { display:flex; align-items:flex-start; gap:9px; background:#FFF8EC; color:#A07836; padding:10px 13px; border:1px solid #F0E2C4; border-radius:7px; font-size:11px; margin-bottom:12px; }
+    [hidden] { display:none !important; }
+    .table-wrap { border:1px solid var(--line); border-radius:9px; background:#fff; overflow:auto; }
+    table { width:100%; border-collapse:collapse; white-space:nowrap; text-align:left; font-size:12px; }
+    th { padding:11px 15px; background:#FAFBFB; color:var(--muted); font-size:10px; letter-spacing:.3px; font-weight:500; }
+    td { padding:12px 15px; border-top:1px solid #F0F1F2; }
+    tbody tr:hover { background:#FAFCFA; }
+    .col-num { width:37px; padding-right:0; font-size:10px; color:#AFB6B9; }
+    .part { display:flex; align-items:center; gap:10px; }
+    .part-thumb { display:grid; place-items:center; width:37px; height:37px; border-radius:6px; border:1px solid #EAE9E3; background:#F9F7F1; flex-shrink:0; }
+    .part-thumb svg { width:30px; height:30px; }
+    .part-name { font-size:12px; font-weight:550; }
+    .part-code { margin-top:2px; font-size:9px; color:#A5ADB4; letter-spacing:.2px; }
+    .color-tag { font-size:10px; border-radius:4px; padding:2px 6px; background:#F3F4F5; color:#89918D; }
+    .qty { width:72px; padding:5px 7px; border:1px solid transparent; border-radius:5px; background:transparent; color:var(--green); font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; }
+    .qty:hover { background:#F1F6F2; border-color:#D8E6DD; }
+    .qty:focus { outline:0; border-color:var(--green); background:#fff; }
+    .number { font-variant-numeric:tabular-nums; }
+    .right { text-align:right; }
+    .remove { display:inline-grid; place-items:center; background:none; border:0; padding:5px; color:#9AA4AA; font-size:14px; }
+    .remove:hover { color:#C64B4B; }
+    tfoot td { background:#FAFBFB; padding-top:13px; padding-bottom:13px; }
+    .total-note { font-size:10px; color:#8E9991; }
+    .table-note { display:flex; justify-content:space-between; gap:12px; margin:10px 0 0; color:#939DA5; font-size:10px; }
+    .empty { text-align:center; padding:45px 20px; color:#8B9690; }
+    .empty strong { display:block; color:#57665D; margin-bottom:6px; font-weight:500; }
+    .cost-strip { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; background:#EFF3F0; border:1px solid #E3EAE4; border-radius:8px; padding:15px 18px; margin:23px 0 17px; }
+    .cost-detail { display:flex; align-items:center; gap:12px; flex-wrap:wrap; color:#708177; font-size:11px; }
+    .cost-detail b { color:#3F5749; font-weight:600; }
+    .cost-detail .operator { color:#A0B0A5; }
+    .footer-note { font-size:10px; color:#A0A8AD; margin:0 0 13px; }
+    .action-bar { position:sticky; bottom:0; display:flex; justify-content:center; padding:15px 0 max(15px,env(safe-area-inset-bottom)); z-index:15; pointer-events:none; margin-top:10px; }
+    .action-pill { pointer-events:auto; display:flex; align-items:center; gap:7px; padding:7px 9px; background:#1A1D21; border-radius:13px; box-shadow:0 12px 30px #10141a33; }
+    .action-pill button { border:0; color:#C0C6CD; font-size:12px; padding:10px 15px; border-radius:7px; background:transparent; min-height:40px; }
+    .action-pill button:hover { background:#ffffff0d; color:#fff; }
+    .action-pill button.primary { background:var(--green); color:white; }
+    .action-pill button.primary:hover { background:#248D69; }
+    .action-divider { height:18px; width:1px; background:#ffffff19; margin:0 2px; }
+    dialog { padding:0; color:var(--ink); border:1px solid #E4E8E5; border-radius:14px; width:480px; max-width:calc(100vw - 30px); max-height:calc(100dvh - 40px); box-shadow:0 25px 80px #10141a26; }
+    dialog::backdrop { background:#10141a66; backdrop-filter:blur(2px); }
+    .dialog-head { display:flex; justify-content:space-between; align-items:center; padding:20px 23px 14px; }
+    h3 { font-size:16px; margin:0; font-weight:600; }
+    .close { background:none; border:0; color:#929C96; font-size:22px; width:30px; height:30px; }
+    .dialog-body { padding:0 23px 21px; }
+    .dialog-note { font-size:11px; color:#8E9992; margin:0 0 17px; }
+    .field { display:flex; flex-direction:column; gap:7px; margin-bottom:16px; font-size:11px; color:#7C8880; }
+    .field input,.field select { border:1px solid #DCE2DE; border-radius:6px; width:100%; padding:9px 10px; background:#fff; color:var(--ink); outline:none; font-size:13px; min-width:0; }
+    .field input:focus,.field select:focus { border-color:var(--green); }
+    .fields { display:grid; grid-template-columns:1fr 1fr; gap:15px; }
+    .dialog-actions { display:flex; justify-content:flex-end; gap:9px; margin-top:20px; }
+    #image-dialog { width:720px; }
+    #image-dialog img { width:100%; max-height:65dvh; object-fit:contain; display:block; background:#F6F3EC; }
+    .image-dialog-note { padding:12px 22px; font-size:11px; color:#8E9992; margin:0; }
+    .toast { position:fixed; top:24px; left:50%; transform:translate(-50%,-12px); background:#fff; box-shadow:0 5px 25px #15251b1f; border:1px solid #D5E5DB; border-radius:8px; padding:10px 18px; color:var(--green); font-size:12px; z-index:100; opacity:0; pointer-events:none; transition:.18s ease; max-width:calc(100vw - 32px); }
+    .toast.show { opacity:1; transform:translate(-50%,0); }
+    .mobile-menu { display:none; }
+    .nav-backdrop { display:none; }
+    @media(min-width:1700px) { main { padding-left:50px; padding-right:50px; } }
+    @media(max-width:1150px) {
+      main { padding-left:24px; padding-right:24px; }
+      .sidebar { width:200px; }
+      main { margin-left:200px; }
+      .stat { padding:13px; }
+      .stat-value { font-size:23px; }
+      .overview { grid-template-columns:210px 1fr; gap:23px; }
+      .info-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:17px; padding-top:0; }
+      .main-image img { height:230px; }
+      .bom-hint { display:none; }
+    }
+    @media(max-width:760px) {
+      .sidebar { transform:translateX(-100%); transition:transform .2s; width:220px; }
+      body.nav-open .sidebar { transform:translateX(0); }
+      body.nav-open .nav-backdrop { display:block; position:fixed; inset:0; background:#10141a66; z-index:35; border:0; }
+      .mobile-menu { display:grid; place-items:center; width:34px; height:34px; position:fixed; top:14px; left:14px; border:0; border-radius:8px; background:#10141A; color:white; z-index:30; font-size:17px; box-shadow:0 2px 8px #10141a26; }
+      main { margin-left:0; padding:18px 18px 0; }
+      .demo-banner { margin-left:43px; margin-bottom:22px; }
+      .demo-label > span { display:none; }
+      .demo-controls { gap:4px; }
+      .demo-controls .link { font-size:10px; }
+      .demo-controls select { max-width:110px; font-size:10px; }
+      h1 { font-size:20px; letter-spacing:-.4px; }
+      .page-head { flex-wrap:wrap; margin-bottom:18px; }
+      .page-head > .btn { display:none; }
+      .title-line { gap:8px; }
+      .stats { grid-template-columns:repeat(3,minmax(0,1fr)); margin-bottom:23px; }
+      .stat { padding:13px 12px; border-bottom:1px solid var(--line); }
+      .stat:nth-child(3) { border-right:0; }
+      .stat:nth-child(4),.stat:nth-child(5) { border-bottom:0; }
+      .stat:nth-child(5) { grid-column:span 2; }
+      .stat-value { font-size:23px; }
+      .stat-note { font-size:9px; }
+      .overview { grid-template-columns:1fr; gap:21px; }
+      .gallery { display:grid; grid-template-columns:minmax(0,1fr); }
+      .main-image img { height:245px; object-fit:contain; }
+      .gallery-foot { margin-top:10px; }
+      .image-tab { padding:6px 12px; }
+      .info-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:19px 10px; padding-bottom:17px; }
+      .meta-value { font-size:12px; }
+      .meta-label { font-size:10px; margin-bottom:5px; }
+      .info-note { font-size:10px; }
+      .section-actions { width:100%; justify-content:space-between; gap:8px; }
+      .section-actions .search { flex:1; }
+      .search input { width:100%; }
+      .section-head .hint { font-size:9px; }
+      .section-head { margin-bottom:12px; }
+      table { min-width:700px; }
+      .table-note { flex-direction:column; gap:4px; }
+      .cost-strip { padding:13px; }
+      .cost-detail { gap:8px; font-size:10px; }
+      .action-bar { padding:12px 0 max(12px,env(safe-area-inset-bottom)); }
+      .action-pill { width:100%; justify-content:space-between; gap:2px; }
+      .action-pill button { font-size:11px; padding:10px 9px; min-height:44px; }
+      .action-divider { display:none; }
+      .toast { top:65px; }
+      .btn { min-height:36px; }
+    }
+    @media(prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none !important; scroll-behavior:auto !important; } }
+  </style>
+</head>
+<body>
+  <svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <defs>
+      <radialGradient id="pearl"><stop stop-color="#fff"/><stop offset=".55" stop-color="#f5f1e4"/><stop offset="1" stop-color="#c8bda6"/></radialGradient>
+      <linearGradient id="gold"><stop stop-color="#b28a41"/><stop offset=".45" stop-color="#f3dfa5"/><stop offset="1" stop-color="#b59450"/></linearGradient>
+      <symbol id="art-pearl" viewBox="0 0 40 40"><circle cx="20" cy="20" r="10" fill="url(#pearl)" stroke="#ded7c5" stroke-width=".5"/><circle cx="17" cy="16" r="3" fill="#fff" opacity=".65"/></symbol>
+      <symbol id="art-bead" viewBox="0 0 40 40"><circle cx="20" cy="20" r="10" fill="url(#gold)"/><circle cx="17" cy="16" r="2" fill="#ffedbd"/></symbol>
+      <symbol id="art-chain" viewBox="0 0 40 40"><g fill="none" stroke="#ba9b58" stroke-width="2" transform="rotate(-35 20 20)"><ellipse cx="11" cy="20" rx="6" ry="4"/><ellipse cx="20" cy="20" rx="6" ry="4"/><ellipse cx="29" cy="20" rx="6" ry="4"/></g></symbol>
+      <symbol id="art-star" viewBox="0 0 40 40"><path d="m20 5 4 11 12 1-10 8 3 12-9-7-10 7 3-12-10-8 12-1Z" fill="url(#gold)" stroke="#b59450" stroke-width=".5"/></symbol>
+      <symbol id="art-shell" viewBox="0 0 40 40"><path d="M16 32C4 26 4 13 9 12c3-4 6-3 8-1 4-5 7-3 8 0 5-3 8 0 8 4 7 4 1 13-7 17Z" fill="url(#gold)" stroke="#b59450" stroke-width=".6"/><path d="m20 30-9-15m11 15-4-16m6 16 1-16m1 16 5-13" stroke="#f9e7b9" fill="none"/></symbol>
+      <symbol id="art-ring" viewBox="0 0 40 40"><circle cx="20" cy="20" r="9" fill="none" stroke="#b99a58" stroke-width="2.8"/><path d="m22 10 2 3" stroke="#f9f6ed" stroke-width="3"/></symbol>
+      <symbol id="art-clasp" viewBox="0 0 40 40"><g transform="rotate(25 20 20)" fill="none" stroke="#b99a58" stroke-width="2"><ellipse cx="20" cy="17" rx="7" ry="10"/><circle cx="20" cy="31" r="3"/><path d="M23 12v9h4"/></g></symbol>
+      <symbol id="art-crimp" viewBox="0 0 40 40"><rect x="13" y="14" width="14" height="12" rx="3" fill="url(#gold)"/><ellipse cx="20" cy="15" rx="6" ry="2" fill="#987d44"/></symbol>
+      <symbol id="icon-diamond" viewBox="0 0 24 24"><path d="m3 8 4-5h10l4 5-9 13ZM3 8h18M7 3l5 18 5-18"/></symbol>
+      <symbol id="icon-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+      <symbol id="icon-box" viewBox="0 0 24 24"><path d="m3 7 9-4 9 4v12l-9 3-9-3Zm0 0 9 4 9-4M12 11v11M7 5l10 4"/></symbol>
+      <symbol id="icon-file" viewBox="0 0 24 24"><path d="M5 3h10l4 4v14H5ZM15 3v5h4M8 12h8M8 16h6"/></symbol>
+      <symbol id="icon-drop" viewBox="0 0 24 24"><path d="M12 2S4 11 4 15a8 8 0 0 0 16 0c0-4-8-13-8-13ZM8 15c0 3 2 4 4 4"/></symbol>
+    </defs>
+  </svg>
+  <button class="mobile-menu" id="mobile-menu" aria-label="打开演示导航" aria-expanded="false">☰</button>
+  <button class="nav-backdrop" id="nav-backdrop" aria-label="关闭演示导航"></button>
+  <aside class="sidebar" aria-label="演示导航">
+    <div class="brand"><img class="brand-mark" src="../favicon-white.png" alt="AL"><span>ALLENOP</span></div>
+    <nav class="navigation">
+      <div class="nav-group">工作台</div>
+      <button class="nav-item" data-nav><svg class="nav-icon"><use href="#icon-grid"/></svg>进度看板</button>
+      <button class="nav-item" data-nav><svg class="nav-icon"><use href="#icon-grid"/></svg>仪表盘</button>
+      <div class="nav-group">商品</div>
+      <button class="nav-item" data-nav><svg class="nav-icon"><use href="#icon-box"/></svg>配件管理</button>
+      <button class="nav-item active" data-nav aria-current="page"><svg class="nav-icon"><use href="#icon-diamond"/></svg>饰品管理</button>
+      <button class="nav-item" data-nav><svg class="nav-icon"><use href="#icon-box"/></svg>结构与搭配</button>
+      <div class="nav-group">生产</div>
+      <button class="nav-item" data-nav><svg class="nav-icon"><use href="#icon-file"/></svg>订单管理</button>
+      <button class="nav-item" data-nav><svg class="nav-icon"><use href="#icon-box"/></svg>配件采购</button>
+      <button class="nav-item" data-nav><svg class="nav-icon"><use href="#icon-file"/></svg>待补货清单</button>
+      <button class="nav-item" data-nav><svg class="nav-icon"><use href="#icon-drop"/></svg>电镀管理</button>
+      <button class="nav-item" data-nav><svg class="nav-icon"><use href="#icon-box"/></svg>手工单 <span style="margin-left:auto;color:#68717C">›</span></button>
+      <button class="nav-item" data-nav><svg class="nav-icon"><use href="#icon-box"/></svg>货物分拣</button>
+      <div class="nav-group">库存</div>
+      <button class="nav-item" data-nav><svg class="nav-icon"><use href="#icon-box"/></svg>库存总表</button>
+      <button class="nav-item" data-nav><svg class="nav-icon"><use href="#icon-file"/></svg>库存流水</button>
+    </nav>
+    <div class="user"><div class="avatar">预</div><div>界面预览<small>示例环境 · 无业务连接</small></div></div>
+  </aside>
+  <main>
+    <div class="demo-banner">
+      <div class="demo-label"><strong>UI DEMO</strong><span>独立交互演示，不修改业务数据</span></div>
+      <div class="demo-controls"><label for="scenario" class="hint">预览</label><select id="scenario" aria-label="切换演示状态"><option value="normal">完整成本</option><option value="incomplete">成本待补全</option><option value="empty">暂无 BOM</option></select><button class="link" id="reset">重置</button></div>
+    </div>
+    <div class="breadcrumb">商品 / 饰品管理 / <span>饰品详情</span></div>
+    <header class="page-head">
+      <div>
+        <div class="title-line"><h1 id="product-title">珍珠金珠项链 · 海星＋贝壳</h1><span class="status" id="product-status">启用中</span></div>
+        <div class="subtitle"><span class="code">DEMO-SP-00001</span><button class="copy-code" id="copy-code" title="复制示例编号" aria-label="复制饰品编号">⧉</button><span>饰品详情</span><span>·</span><span>所有数据均为演示示例</span></div>
+      </div>
+      <a class="btn text" href="/jewelries">← 返回饰品列表</a>
+    </header>
+    <section class="stats" aria-label="饰品概览">
+      <div class="stat"><div class="stat-label">当前库存</div><div class="stat-value">128<small class="product-unit">条</small></div><div class="stat-note">库存示例，不随 BOM 改动</div></div>
+      <div class="stat"><div class="stat-label" id="material-label">物料成本</div><div class="stat-value" id="material-stat"></div><div class="stat-note" id="material-note">按当前 BOM 计算</div></div>
+      <div class="stat"><div class="stat-label">手工费</div><div class="stat-value" id="handcraft-stat"></div><div class="stat-note">每 1 <span class="product-unit">条</span>饰品</div></div>
+      <div class="stat"><div class="stat-label">总成本</div><div class="stat-value green" id="total-stat"></div><div class="stat-note" id="total-note">物料成本 + 手工费</div></div>
+      <div class="stat"><div class="stat-label">零售价</div><div class="stat-value" id="retail-stat"></div><div class="stat-note">每 1 <span class="product-unit">条</span>饰品</div></div>
+    </section>
+    <section class="section" aria-labelledby="info-heading">
+      <div class="section-head"><div class="section-title"><h2 id="info-heading">基本信息</h2></div><button class="link" id="edit-info">编辑基本信息 ↗</button></div>
+      <div class="overview">
+        <div class="gallery">
+          <button class="main-image" id="zoom-image" aria-label="放大饰品图片"><img id="product-image" src="assets/pearl-necklace.svg" alt="珍珠金珠海星贝壳项链示意图"><span class="image-label" id="image-label">饰品示意图</span><span class="zoom-icon" aria-hidden="true">⤢</span></button>
+          <div class="gallery-foot"><div class="image-tabs" role="group" aria-label="切换图片"><button class="image-tab" data-image="product" aria-pressed="true">饰品图</button><button class="image-tab" data-image="structure" aria-pressed="false">结构图</button></div><button class="link" id="replace-image">更换图片</button><input type="file" id="image-file" accept="image/png,image/jpeg,image/webp" hidden></div>
+        </div>
+        <div class="info">
+          <div class="info-grid">
+            <div><div class="meta-label">饰品编号</div><div class="meta-value code">DEMO-SP-00001</div></div>
+            <div><div class="meta-label">饰品类目</div><div class="meta-value" id="meta-category">项链</div></div>
+            <div><div class="meta-label">计量单位</div><div class="meta-value"><span class="unit-pill product-unit">条</span></div></div>
+            <div><div class="meta-label">颜色</div><div class="meta-value" id="meta-color"><span class="color-dot"></span>金色</div></div>
+            <div><div class="meta-label">批发价</div><div class="meta-value number" id="meta-wholesale">¥ 28.00 <span class="hint">/ 条</span></div></div>
+            <div><div class="meta-label">BOM 配件</div><div class="meta-value"><span id="part-count">8</span> 种 <span class="hint">· 独立用料</span></div></div>
+          </div>
+          <div class="info-note"><strong>以 1 <span class="product-unit">条</span>饰品为计量基准</strong><br>下方用量、成本与售价均按此单位展示。当前饰品的 BOM 独立维护，不随结构或方案自动变化。</div>
+        </div>
+      </div>
+    </section>
+    <section class="section" aria-labelledby="bom-heading">
+      <div class="section-head"><div class="section-title"><h2 id="bom-heading">BOM 用料明细</h2><span class="count" id="bom-count">8 项</span></div><div class="section-actions"><span class="hint bom-hint">每 1 <span class="product-unit">条</span>饰品的用料</span><label class="search"><span class="muted" aria-hidden="true">⌕</span><input id="bom-search" type="search" placeholder="搜索配件名称 / 编号" aria-label="搜索 BOM 配件"></label><button class="btn soft" id="add-part">＋ 添加配件</button></div></div>
+      <div class="notice" id="cost-notice" role="status" hidden><span aria-hidden="true">ⓘ</span><span id="cost-notice-text"></span></div>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="BOM 用料表，窄屏可左右滚动">
+        <table>
+          <thead><tr><th class="col-num">#</th><th>配件</th><th>颜色</th><th>每 <span class="product-unit">条</span>用量</th><th>配件单位</th><th class="right">单位成本</th><th class="right">成本小计</th><th style="width:40px"></th></tr></thead>
+          <tbody id="bom-body"></tbody>
+          <tfoot id="bom-footer"><tr><td colspan="5"><span class="total-note" id="bom-total-label">物料成本合计</span></td><td colspan="2" class="right number"><strong id="bom-total"></strong></td><td></td></tr></tfoot>
+        </table>
+        <div class="empty" id="bom-empty" hidden></div>
+      </div>
+      <div class="table-note"><span>点击用量可直接修改，回车或失焦确认；不同配件的用量不相加。</span><span>窄屏可左右滑动查看完整表格</span></div>
+    </section>
+    <section class="cost-strip" aria-label="成本构成"><div class="cost-detail"><span>物料 <b id="strip-material"></b></span><span class="operator">＋</span><span>手工 <b id="strip-handcraft"></b></span><span class="operator">＝</span><span>总成本 <b id="strip-total"></b></span></div><span class="hint">每 1 <span class="product-unit">条</span> · 示例核算</span></section>
+    <p class="footer-note">仅为 UI 与交互预览。价格、库存、配件及图片均为示例，所有操作仅在当前页面内存生效，刷新恢复。</p>
+    <div class="action-bar"><div class="action-pill" role="group" aria-label="饰品操作"><button id="stock-action">查看库存</button><button id="status-action">停用饰品</button><span class="action-divider"></span><button id="edit-prices">编辑价格</button><button class="primary" id="bottom-add">＋ 添加配件</button></div></div>
+  </main>
+  <dialog id="edit-dialog" aria-labelledby="edit-heading">
+    <form id="edit-form">
+      <div class="dialog-head"><h3 id="edit-heading">编辑基本信息</h3><button type="button" class="close" data-close aria-label="关闭">×</button></div>
+      <div class="dialog-body"><p class="dialog-note">仅修改本页示例，保存不会调用业务接口。</p>
+        <div id="info-fields"><label class="field">饰品名称<input name="name" maxlength="120" required></label><div class="fields"><label class="field">饰品类目<select name="category"><option>耳饰</option><option>项链</option><option>手链</option><option>戒指</option><option>胸针</option><option>发饰</option><option>组合套装</option><option>其他</option></select></label><label class="field">计量单位<select name="unit"><option>个</option><option>对</option><option>条</option><option>枚</option><option>件</option><option>套</option><option>卡</option></select></label></div><label class="field">颜色<input name="color" maxlength="40" placeholder="如：金色"></label><p class="dialog-note">类目与单位独立。改变单位不会换算库存、售价或 BOM，正式数据需先确认计量基准。</p></div>
+        <div id="price-fields" hidden><div class="fields"><label class="field">零售价（元）<input name="retail" type="number" min="0" max="999999" step="0.01" required></label><label class="field">批发价（元）<input name="wholesale" type="number" min="0" max="999999" step="0.01" required></label></div><label class="field"><span>手工费（元 / <span class="product-unit">条</span>）</span><input name="handcraft" type="number" min="0" max="999999" step="0.01" required></label></div>
+        <div class="dialog-actions"><button type="button" class="btn" data-close>取消</button><button type="submit" class="btn primary">保存示例</button></div>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="add-dialog" aria-labelledby="add-heading">
+    <form id="add-form"><div class="dialog-head"><h3 id="add-heading">添加配件</h3><button type="button" class="close" data-close aria-label="关闭">×</button></div><div class="dialog-body"><p class="dialog-note">添加到当前饰品的独立 BOM，仅在本页演示。</p><label class="field">选择配件<select id="part-select" required></select></label><label class="field"><span>每 1 <span class="product-unit">条</span>饰品的用量</span><input id="part-qty" type="number" min="0.0001" max="999999.9999" step="0.0001" value="1" required></label><p class="dialog-note" id="part-preview"></p><div class="dialog-actions"><button class="btn" type="button" data-close>取消</button><button class="btn primary" type="submit">确认添加（示例）</button></div></div></form>
+  </dialog>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-heading"><div class="dialog-head"><h3 id="confirm-heading"></h3><button type="button" class="close" data-close aria-label="关闭">×</button></div><div class="dialog-body"><p id="confirm-description" style="font-size:12px;color:#7D8981"></p><div class="dialog-actions"><button class="btn" data-close>取消</button><button class="btn primary" id="confirm-action">确认</button></div></div></dialog>
+  <dialog id="image-dialog" aria-labelledby="image-heading"><div class="dialog-head"><h3 id="image-heading">饰品图</h3><button type="button" class="close" data-close aria-label="关闭">×</button></div><img id="zoomed-image" alt="饰品大图"><p class="image-dialog-note">内置图片为绘制示意，不代表实际商品或生产尺寸。</p></dialog>
+  <dialog id="stock-dialog" aria-labelledby="stock-heading"><div class="dialog-head"><h3 id="stock-heading">当前库存 · 示例</h3><button type="button" class="close" data-close aria-label="关闭">×</button></div><div class="dialog-body"><p class="dialog-note">以下为虚构流水，仅用于查看布局。</p><table style="width:100%;min-width:0"><thead><tr><th>记录</th><th class="right">变动数量</th></tr></thead><tbody><tr><td>手工完成入库</td><td class="right green">＋ 160 <span class="product-unit">条</span></td></tr><tr><td>订单出库</td><td class="right">－ 32 <span class="product-unit">条</span></td></tr></tbody><tfoot><tr><td>当前库存</td><td class="right"><strong>128 <span class="product-unit">条</span></strong></td></tr></tfoot></table></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module">
+    const $ = (selector) => document.querySelector(selector)
+    const initialProduct = { name:'珍珠金珠项链 · 海星＋贝壳', category:'项链', unit:'条', color:'金色', retail:49, wholesale:28, handcraft:2.5, active:true }
+    const catalog = [
+      { id:'DEMO-P-001',name:'圆珍珠 · 6mm',color:'原色',unit:'颗',cost:.12,qty:14,art:'pearl' },
+      { id:'DEMO-P-002',name:'光面金珠 · 6mm',color:'金色',unit:'颗',cost:.18,qty:15,art:'bead' },
+      { id:'DEMO-P-003',name:'合仔链 · 70cm',color:'金色',unit:'条',cost:3.2,qty:1,art:'chain' },
+      { id:'DEMO-P-004',name:'坑面海星吊坠',color:'金色',unit:'个',cost:1.8,qty:1,art:'star' },
+      { id:'DEMO-P-005',name:'贝壳吊坠',color:'金色',unit:'个',cost:2.1,qty:1,art:'shell' },
+      { id:'DEMO-P-006',name:'开口圈 · 5mm',color:'金色',unit:'个',cost:.025,qty:2,art:'ring' },
+      { id:'DEMO-P-007',name:'龙虾扣',color:'金色',unit:'个',cost:.35,qty:1,art:'clasp' },
+      { id:'DEMO-P-008',name:'定位珠 · 2mm',color:'金色',unit:'颗',cost:.015,qty:4,art:'crimp' },
+      { id:'DEMO-P-009',name:'尾链 · 5cm',color:'金色',unit:'条',cost:.42,qty:1,art:'chain' },
+      { id:'DEMO-P-010',name:'光面珠 · 4mm',color:'金色',unit:'颗',cost:.09,qty:1,art:'bead' },
+    ]
+    let product = structuredClone(initialProduct)
+    let rows = structuredClone(catalog.slice(0,8))
+    let imageType = 'product'
+    const images = { product:'assets/pearl-necklace.svg',structure:'assets/necklace-structure.svg' }
+    const uploadedUrls = new Set()
+    let editMode = 'info'
+    let confirmation = null
+    let toastTimer
+    const money = (value, digits=2) => value == null ? '—' : '¥ ' + value.toLocaleString('zh-CN',{minimumFractionDigits:digits,maximumFractionDigits:digits})
+    const escape = (value) => String(value).replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
+    const amount = (row) => row.cost == null ? 0 : Math.round(row.cost*1e7)*Math.round(row.qty*1e4)/1e11
+    const costs = () => {
+      const partial = rows.reduce((sum,row)=>sum+amount(row),0)
+      const missing = rows.filter(row=>row.cost==null).length
+      return { partial,missing,incomplete:!rows.length||missing>0 }
+    }
+    function toast(text) {
+      $('#toast').textContent=text
+      $('#toast').classList.add('show')
+      clearTimeout(toastTimer)
+      toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),2700)
+    }
+    function statMoney(selector,value) {
+      const element=$(selector)
+      element.replaceChildren()
+      if(value==null) { element.textContent='—';return }
+      const sign=document.createElement('small');sign.className='currency';sign.textContent='¥'
+      element.append(sign,document.createTextNode(value.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})))
+    }
+    function renderSummary() {
+      const {partial,missing,incomplete}=costs()
+      $('#product-title').textContent=product.name
+      $('#product-status').textContent=product.active?'启用中':'已停用'
+      $('#product-status').classList.toggle('off',!product.active)
+      $('#status-action').textContent=product.active?'停用饰品':'启用饰品'
+      $('#meta-category').textContent=product.category
+      $('#meta-color').textContent=product.color||'未设置'
+      if(product.color==='金色') { const dot=document.createElement('span');dot.className='color-dot';$('#meta-color').prepend(dot) }
+      document.querySelectorAll('.product-unit').forEach(el=>el.textContent=product.unit)
+      $('#meta-wholesale').textContent=money(product.wholesale)+' / '+product.unit
+      $('#part-count').textContent=rows.length
+      $('#bom-count').textContent=rows.length+' 项'
+      statMoney('#material-stat',incomplete?null:partial)
+      statMoney('#handcraft-stat',product.handcraft)
+      statMoney('#total-stat',incomplete?null:partial+product.handcraft)
+      statMoney('#retail-stat',product.retail)
+      $('#material-note').textContent=!rows.length?'暂无 BOM，待配置':missing?`${missing} 项配件缺少成本`:'按当前 BOM 计算'
+      $('#total-note').textContent=incomplete?'成本不完整，暂不展示总额':'物料成本 + 手工费'
+      $('#total-stat').classList.toggle('green',!incomplete)
+      $('#total-stat').classList.toggle('amber',incomplete)
+      $('#cost-notice').hidden=!incomplete
+      $('#cost-notice-text').textContent=!rows.length?'尚未配置 BOM。添加配件后可查看物料成本；缺少 BOM 不按零成本处理。':`${missing} 项配件未录入单位成本。下方仅展示已知成本小计，暂不作为完整物料成本和总成本。`
+      $('#bom-total').textContent=money(partial,4)
+      $('#bom-total-label').textContent=missing?'已知物料成本小计（非完整成本）':'物料成本合计'
+      $('#strip-material').textContent=incomplete?'待补全':money(partial)
+      $('#strip-handcraft').textContent=money(product.handcraft)
+      $('#strip-total').textContent=incomplete?'待补全':money(partial+product.handcraft)
+    }
+    function renderBom() {
+      const tokens=$('#bom-search').value.trim().toLowerCase().split(/\s+/).filter(Boolean)
+      const visible=rows.filter(row=>tokens.every(token=>(row.name+' '+row.id).toLowerCase().includes(token)))
+      $('#bom-body').innerHTML=visible.map(row=>`<tr data-id="${row.id}"><td class="col-num">${String(rows.indexOf(row)+1).padStart(2,'0')}</td><td><div class="part"><span class="part-thumb" aria-hidden="true"><svg><use href="#art-${row.art}"/></svg></span><div><div class="part-name">${escape(row.name)}</div><div class="part-code code">${row.id}</div></div></div></td><td><span class="color-tag">${escape(row.color)}</span></td><td><input class="qty" type="number" aria-label="${escape(row.name)}每${escape(product.unit)}用量" min="0.0001" max="999999.9999" step="0.0001" value="${row.qty}"></td><td class="muted">${escape(row.unit)}</td><td class="right number">${row.cost==null?'<span class="amber">待录入</span>':money(row.cost,4)}</td><td class="right number">${row.cost==null?'—':money(amount(row),4)}</td><td><button class="remove" aria-label="删除${escape(row.name)}" title="移除配件">×</button></td></tr>`).join('')
+      $('#bom-empty').hidden=visible.length>0
+      $('#bom-empty').innerHTML=rows.length?'<strong>没有匹配的配件</strong>试试名称或编号中的其他关键词。':'<strong>尚未配置用料</strong>点击“添加配件”，建立这件饰品的独立 BOM。'
+      $('#bom-footer').hidden=!rows.length
+      renderSummary()
+    }
+    function showImage() {
+      $('#product-image').src=images[imageType]
+      $('#product-image').alt=imageType==='product'?product.name+'示意图':'饰品结构位置示意图'
+      const custom=uploadedUrls.has(images[imageType])
+      $('#image-label').textContent=custom?'本地图片 · 未上传':imageType==='product'?'饰品示意图':'结构示意图'
+      document.querySelectorAll('[data-image]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.image===imageType)))
+    }
+    function openEdit(mode) {
+      editMode=mode
+      const form=$('#edit-form')
+      $('#edit-heading').textContent=mode==='info'?'编辑基本信息':'编辑价格'
+      $('#info-fields').hidden=mode!=='info'
+      $('#price-fields').hidden=mode!=='prices'
+      $('#info-fields').querySelectorAll('input,select').forEach(input=>input.disabled=mode!=='info')
+      $('#price-fields').querySelectorAll('input').forEach(input=>input.disabled=mode!=='prices')
+      for(const key of Object.keys(initialProduct)) if(form.elements.namedItem(key)) form.elements.namedItem(key).value=product[key]
+      $('#edit-dialog').showModal()
+    }
+    function confirm(title,description,action) {
+      $('#confirm-heading').textContent=title
+      $('#confirm-description').textContent=description
+      confirmation=action
+      $('#confirm-dialog').showModal()
+    }
+    function openAdd() {
+      const available=catalog.filter(part=>!rows.some(row=>row.id===part.id))
+      $('#part-select').innerHTML=available.map(part=>`<option value="${part.id}">${escape(part.name)} · ${escape(part.unit)}</option>`).join('')
+      if(!available.length) { toast('示例配件已全部添加，可移除后再试');return }
+      $('#part-qty').value='1'
+      updatePartPreview()
+      $('#add-dialog').showModal()
+    }
+    function updatePartPreview() {
+      const part=catalog.find(part=>part.id===$('#part-select').value)
+      $('#part-preview').textContent=part?`${part.id} · 单位成本 ${money(part.cost,4)} / ${part.unit}`:''
+    }
+    function reset() {
+      product=structuredClone(initialProduct)
+      rows=structuredClone(catalog.slice(0,8))
+      if($('#scenario').value==='incomplete') rows[3].cost=null
+      if($('#scenario').value==='empty') rows=[]
+      $('#bom-search').value=''
+      uploadedUrls.forEach(url=>URL.revokeObjectURL(url));uploadedUrls.clear()
+      images.product='assets/pearl-necklace.svg';images.structure='assets/necklace-structure.svg'
+      imageType='product'
+      showImage();renderBom()
+    }
+    $('#bom-search').addEventListener('input',renderBom)
+    $('#bom-body').addEventListener('keydown',event=>{if(event.key==='Enter'&&event.target.matches('.qty'))event.target.blur()})
+    $('#bom-body').addEventListener('focusout',event=>{
+      if(!event.target.matches('.qty'))return
+      const input=event.target
+      const row=rows.find(row=>row.id===input.closest('tr').dataset.id)
+      const value=Number(input.value)
+      if(!input.value||!input.checkValidity()||!Number.isFinite(value)) { input.value=row.qty;toast('用量须大于 0，最多 4 位小数，且小于 1000000');return }
+      if(value===row.qty)return
+      row.qty=value
+      renderBom()
+      toast('示例用量已更新，成本同步计算；库存不变')
+    })
+    $('#bom-body').addEventListener('click',event=>{
+      if(!event.target.closest('.remove'))return
+      const row=rows.find(row=>row.id===event.target.closest('tr').dataset.id)
+      confirm('移除这项用料？',`${row.name} 将从本页示例 BOM 移除，不删除配件，也不改变库存。`,()=>{rows=rows.filter(item=>item.id!==row.id);renderBom();toast('已从示例 BOM 移除')})
+    })
+    $('#edit-info').addEventListener('click',()=>openEdit('info'))
+    $('#edit-prices').addEventListener('click',()=>openEdit('prices'))
+    $('#edit-form').addEventListener('submit',event=>{
+      event.preventDefault()
+      const data=new FormData(event.target)
+      if(editMode==='info') {
+        const name=data.get('name').trim()
+        if(!name) { toast('请填写饰品名称');return }
+        product={...product,name,category:data.get('category'),unit:data.get('unit'),color:data.get('color').trim()}
+      } else { product={...product,retail:Number(data.get('retail')),wholesale:Number(data.get('wholesale')),handcraft:Number(data.get('handcraft'))} }
+      $('#edit-dialog').close();renderBom();showImage();toast('示例已保存，仅当前页面生效')
+    })
+    $('#add-part').addEventListener('click',openAdd)
+    $('#bottom-add').addEventListener('click',openAdd)
+    $('#part-select').addEventListener('change',updatePartPreview)
+    $('#add-form').addEventListener('submit',event=>{
+      event.preventDefault()
+      const part=catalog.find(part=>part.id===$('#part-select').value)
+      if(!part||rows.some(row=>row.id===part.id))return
+      rows.push({...part,qty:Number($('#part-qty').value)})
+      $('#add-dialog').close();$('#bom-search').value='';renderBom();toast('配件已加入示例 BOM')
+    })
+    $('#confirm-action').addEventListener('click',()=>{$('#confirm-dialog').close();const action=confirmation;confirmation=null;action?.()})
+    document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>button.closest('dialog').close()))
+    $('#status-action').addEventListener('click',()=>confirm(product.active?'停用这件饰品？':'重新启用饰品？','仅切换本页演示状态，不删除饰品、BOM 或库存记录。',()=>{product.active=!product.active;renderSummary();toast('示例状态已更新')}))
+    $('#stock-action').addEventListener('click',()=>$('#stock-dialog').showModal())
+    document.querySelectorAll('[data-image]').forEach(button=>button.addEventListener('click',()=>{imageType=button.dataset.image;showImage()}))
+    $('#zoom-image').addEventListener('click',()=>{$('#zoomed-image').src=images[imageType];$('#image-heading').textContent=imageType==='product'?'饰品图':'结构图';$('#image-dialog').showModal()})
+    $('#replace-image').addEventListener('click',()=>$('#image-file').click())
+    $('#image-file').addEventListener('change',event=>{
+      const file=event.target.files[0]
+      if(!file)return
+      if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>8*1024*1024) { toast('请选择不超过 8MB 的 PNG、JPEG 或 WebP 图片');event.target.value='';return }
+      const previous=images[imageType]
+      if(uploadedUrls.has(previous)) { URL.revokeObjectURL(previous);uploadedUrls.delete(previous) }
+      const url=URL.createObjectURL(file);uploadedUrls.add(url);images[imageType]=url
+      showImage();toast('本地预览已替换，图片没有上传');event.target.value=''
+    })
+    $('#copy-code').addEventListener('click',async()=>{try{await navigator.clipboard.writeText('DEMO-SP-00001');toast('已复制示例编号')}catch{toast('示例编号：DEMO-SP-00001')}})
+    $('#scenario').addEventListener('change',()=>{reset();toast('已切换演示状态，示例改动已重置')})
+    $('#reset').addEventListener('click',()=>confirm('重置示例？','清除本页的用量、价格、图片等修改，恢复当前演示状态。',()=>{reset();toast('已恢复示例')}))
+    function closeNav() { document.body.classList.remove('nav-open');$('#mobile-menu').setAttribute('aria-expanded','false') }
+    $('#mobile-menu').addEventListener('click',()=>{const open=document.body.classList.toggle('nav-open');$('#mobile-menu').setAttribute('aria-expanded',String(open))})
+    $('#nav-backdrop').addEventListener('click',closeNav)
+    document.addEventListener('keydown',event=>{if(event.key==='Escape')closeNav()})
+    document.querySelectorAll('[data-nav]').forEach(button=>button.addEventListener('click',()=>{closeNav();toast('这是独立详情 demo，导航未接入业务页面')}))
+    renderBom()
+  </script>
+</body>
+</html>
