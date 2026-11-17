@@ -1,7 +1,7 @@
 <template>
   <div>
     <n-space align="center" style="margin-bottom: 16px;">
-      <n-button text @click="router.back()">← 返回</n-button>
+      <n-button text @click="goBack">← {{ summaryReturn ? '返回汇总' : '返回' }}</n-button>
       <n-h2 style="margin: 0;">回收单详情</n-h2>
     </n-space>
 
@@ -150,7 +150,7 @@
             <n-button v-if="!isPaid()" size="small" type="primary" @click="openAddItemsModal">+ 增加项目</n-button>
           </div>
         </template>
-        <n-data-table v-if="receipt.items?.length > 0" :columns="itemColumns" :data="receipt.items" :bordered="false" />
+        <n-data-table v-if="receipt.items?.length > 0" :columns="itemColumns" :data="receipt.items" :bordered="false" :row-props="summaryHighlight" />
         <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
       </n-card>
 
@@ -307,6 +307,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useHandcraftSummaryReturn } from '@/composables/useHandcraftSummaryReturn'
 import { useMessage, useDialog } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
 import {
@@ -331,6 +332,11 @@ import ImageUploadModal from '@/components/ImageUploadModal.vue'
 
 const route = useRoute()
 const router = useRouter()
+const { summaryReturn, goBack } = useHandcraftSummaryReturn()
+function summaryHighlight(row) {
+  return summaryReturn.value && route.query.highlight === String(row.id)
+    ? { style: 'outline: 2px solid #1e7a5a; outline-offset: -2px;', title: '汇总回收批次明细' } : {}
+}
 const message = useMessage()
 const dialog = useDialog()
 const { isMobile } = useIsMobile()
@@ -548,7 +554,8 @@ const doDeleteReceipt = () => {
       try {
         await deleteHandcraftReceipt(route.params.id)
         message.success('回收单已删除')
-        router.push('/handcraft-receipts')
+        if (summaryReturn.value) goBack()
+        else router.push('/handcraft-receipts')
       } catch (_) {}
     },
   })
@@ -759,7 +766,7 @@ const itemColumns = [
       if (!row.handcraft_order_id) return '-'
       return h('a', {
         style: 'color: #2080f0; cursor: pointer;',
-        onClick: (e) => { e.stopPropagation(); router.push(`/handcraft/${row.handcraft_order_id}`) },
+        onClick: (e) => { e.stopPropagation(); router.push({ path: `/handcraft/${row.handcraft_order_id}`, query: summaryReturn.value ? { from: 'handcraft-summary' } : {} }) },
       }, row.handcraft_order_id)
     },
   },

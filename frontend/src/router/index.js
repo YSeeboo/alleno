@@ -2,6 +2,8 @@ import { createRouter, createWebHistory } from 'vue-router'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { rememberPlatingLocation, restorePlatingListQuery } from '@/utils/platingNavigation'
 import { createPlatingRoutes } from './plating'
+import { rememberHandcraftLocation, restoreHandcraftListQuery } from '@/utils/handcraftNavigation'
+import { createHandcraftRoutes } from './handcraft'
 
 const ROUTE_PERMISSION_MAP = {
   kanban: 'kanban',
@@ -17,6 +19,7 @@ const ROUTE_PERMISSION_MAP = {
   'plating-management': 'plating',
   handcraft: 'handcraft',
   'handcraft-receipts': 'handcraft',
+  'handcraft-management': 'handcraft',
   'cargo-sorting': 'sorting',
   restock: 'handcraft',
   inventory: 'inventory',
@@ -26,7 +29,7 @@ const ROUTE_PERMISSION_MAP = {
 
 const PERMISSION_ROUTE_ORDER = [
   'kanban', 'dashboard', 'parts', 'jewelries', 'orders',
-  'purchase-orders', 'plating-management', 'handcraft', 'restock', 'cargo-sorting',
+  'purchase-orders', 'plating-management', 'handcraft-management', 'restock', 'cargo-sorting',
   'inventory', 'inventory-log', 'users',
 ]
 
@@ -81,12 +84,7 @@ const router = createRouter({
         { path: 'purchase-orders/create', component: lazyLoad(() => import('@/views/purchase-orders/PurchaseOrderCreate.vue')), meta: { perm: 'purchase_orders' } },
         { path: 'purchase-orders/:id', component: lazyLoad(() => import('@/views/purchase-orders/PurchaseOrderDetail.vue')), meta: { perm: 'purchase_orders' } },
         ...createPlatingRoutes(lazyLoad),
-        { path: 'handcraft-receipts', component: lazyLoad(() => import('@/views/handcraft-receipts/HandcraftReceiptList.vue')), meta: { perm: 'handcraft' } },
-        { path: 'handcraft-receipts/create', component: lazyLoad(() => import('@/views/handcraft-receipts/HandcraftReceiptCreate.vue')), meta: { perm: 'handcraft' } },
-        { path: 'handcraft-receipts/:id', component: lazyLoad(() => import('@/views/handcraft-receipts/HandcraftReceiptDetail.vue')), meta: { perm: 'handcraft' } },
-        { path: 'handcraft', component: lazyLoad(() => import('@/views/handcraft/HandcraftList.vue')), meta: { perm: 'handcraft' } },
-        { path: 'handcraft/create', component: lazyLoad(() => import('@/views/handcraft/HandcraftCreate.vue')), meta: { perm: 'handcraft' } },
-        { path: 'handcraft/:id', component: lazyLoad(() => import('@/views/handcraft/HandcraftDetail.vue')), meta: { perm: 'handcraft' } },
+        ...createHandcraftRoutes(lazyLoad),
         { path: 'cargo-sorting', component: lazyLoad(() => import('@/views/cargo-sorting/CargoSorting.vue')), meta: { perm: 'sorting' } },
         { path: 'restock', component: lazyLoad(() => import('@/views/restock/RestockList.vue')), meta: { perm: ['handcraft', 'restock'] } },
         { path: 'inventory', component: lazyLoad(() => import('@/views/InventoryOverview.vue')), meta: { perm: 'inventory' } },
@@ -140,11 +138,14 @@ router.beforeEach(async (to, from) => {
     return target
   }
 
-  return restorePlatingListQuery(to, from) || true
+  return restorePlatingListQuery(to, from) || restoreHandcraftListQuery(to, from) || true
 })
 
 router.afterEach((to, from, failure) => {
-  if (!failure) rememberPlatingLocation(to)
+  if (!failure) {
+    rememberPlatingLocation(to)
+    rememberHandcraftLocation(to)
+  }
 })
 
 export default router

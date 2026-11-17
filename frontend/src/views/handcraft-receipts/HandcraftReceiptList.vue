@@ -1,19 +1,20 @@
 <template>
   <div>
-    <div class="page-header">
+    <div v-if="embedded" class="handcraft-section-title"><h2>手工回收</h2><span>查看回收单据与付款状态</span></div>
+    <div v-else class="page-header">
       <div class="page-breadcrumb">生产 / 手工回收</div>
       <h2 class="page-title">手工回收单</h2>
       <div class="page-divider"></div>
     </div>
     <div class="filter-bar">
       <n-select v-model:value="filterSupplier" :options="supplierOptions" clearable placeholder="筛选商家"
-        :style="{ width: isMobile ? '100%' : '160px' }" @update:value="load" />
+        :style="{ width: isMobile ? '100%' : '160px' }" />
       <div class="filter-bar-end">
         <n-button type="primary" @click="router.push('/handcraft-receipts/create')">新建回收单</n-button>
       </div>
     </div>
     <n-spin :show="loading">
-      <n-data-table v-if="rows.length > 0" :columns="columns" :data="rows" :bordered="false" :row-props="rowProps" />
+      <n-data-table v-if="rows.length > 0" :columns="columns" :data="rows" :bordered="false" :row-props="rowProps" :scroll-x="760" />
       <n-empty v-else-if="!loading && !loadError" description="暂无回收单" style="margin-top: 24px;" />
       <n-empty v-else-if="!loading && loadError" description="加载失败，请稍后重试" style="margin-top: 24px;" />
     </n-spin>
@@ -21,46 +22,55 @@
 </template>
 
 <script setup>
-import { ref, onMounted, h } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { ref, onMounted, onBeforeUnmount, watch, h } from 'vue'
+import { useRouter } from 'vue-router'
 import { useDialog, useMessage, NButton, NSelect, NDataTable, NSpin, NEmpty } from 'naive-ui'
 import { listHandcraftReceipts, deleteHandcraftReceipt, getHandcraftReceiptSuppliers } from '@/api/handcraftReceipts'
 import { fmtMoney } from '@/utils/ui'
 import { useIsMobile } from '@/composables/useIsMobile'
+import { useHandcraftPageQuery } from '@/composables/useHandcraftPageQuery'
 
+defineProps({ embedded: Boolean })
 const router = useRouter()
-const route = useRoute()
+const { route, active, field } = useHandcraftPageQuery('receipt')
 const dialog = useDialog()
 const message = useMessage()
 const { isMobile } = useIsMobile()
 const loading = ref(true)
 const deletingId = ref(null)
 const rows = ref([])
-const filterSupplier = ref(route.query.supplier_name || null)
+const filterSupplier = field('supplier_name')
 const supplierOptions = ref([])
 const loadError = ref(false)
 
 const statusLabel = { '已付款': '已付款', '未付款': '未付款' }
 const statusBadge = { '已付款': 'badge-green', '未付款': 'badge-red' }
 
+let disposed = false
+let loadVersion = 0
 const load = async () => {
+  if (disposed || !active.value) return
+  const version = ++loadVersion
   loading.value = true
   loadError.value = false
   try {
     const params = filterSupplier.value ? { supplier_name: filterSupplier.value } : {}
     const { data } = await listHandcraftReceipts(params)
+    if (disposed || version !== loadVersion || !active.value) return
     rows.value = data
   } catch (_) {
+    if (disposed || version !== loadVersion || !active.value) return
     rows.value = []
     loadError.value = true
   } finally {
-    loading.value = false
+    if (!disposed && version === loadVersion && active.value) loading.value = false
   }
 }
 
 const loadSuppliers = async () => {
   try {
     const { data } = await getHandcraftReceiptSuppliers()
+    if (disposed) return
     supplierOptions.value = data.map((v) => ({ label: v, value: v }))
   } catch (_) {}
 }
@@ -129,4 +139,12 @@ onMounted(() => {
   loadSuppliers()
   load()
 })
+watch(() => route.fullPath, () => { if (active.value) void load() })
+onBeforeUnmount(() => { disposed = true; loadVersion++ })
 </script>
+
+<style scoped>
+.handcraft-section-title { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-bottom: 14px; }
+.handcraft-section-title h2 { margin: 0; font-size: 15px; font-weight: 650; }
+.handcraft-section-title span { color: #9AA2A9; font-size: 11px; }
+</style>

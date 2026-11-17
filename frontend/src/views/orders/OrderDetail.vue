@@ -1,7 +1,7 @@
 <template>
   <div>
     <n-space align="center" style="margin-bottom: 16px;">
-      <n-button text @click="router.back()">← 返回</n-button>
+      <n-button text @click="goBack">← {{ summaryReturn ? '返回汇总' : '返回' }}</n-button>
       <n-h2 style="margin: 0;">订单详情</n-h2>
     </n-space>
 
@@ -627,6 +627,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useHandcraftSummaryReturn } from '@/composables/useHandcraftSummaryReturn'
 import { useMessage, useDialog } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
 import {
@@ -664,6 +665,7 @@ import { sortPartsSummary, classifyPartRow } from '@/utils/partsSummarySort'
 
 const route = useRoute()
 const router = useRouter()
+const { summaryReturn, goBack } = useHandcraftSummaryReturn()
 const message = useMessage()
 const dialog = useDialog()
 const { isMobile } = useIsMobile()

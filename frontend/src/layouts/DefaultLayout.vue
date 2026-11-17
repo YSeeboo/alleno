@@ -66,7 +66,6 @@ import {
   HomeOutline, ExtensionPuzzleOutline, DiamondOutline,
   CartOutline, GridOutline, ArchiveOutline,
   PeopleOutline, StorefrontOutline,
-  PaperPlaneOutline, DownloadOutline,
 } from '@vicons/ionicons5'
 import PlatingIcon from '@/components/icons/PlatingIcon.vue'
 import HandcraftIcon from '@/components/icons/HandcraftIcon.vue'
@@ -78,6 +77,7 @@ import RestockIcon from '@/components/icons/RestockIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 import logoWhite from '@/assets/logo-white.png'
 import { isPlatingRoute } from '@/utils/platingNavigation'
+import { isHandcraftRoute } from '@/utils/handcraftNavigation'
 
 const router = useRouter()
 const route = useRoute()
@@ -106,8 +106,7 @@ const allFlatItems = [
   { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
   { label: '待补货清单', key: 'restock', icon: icon(RestockIcon), perm: ['handcraft', 'restock'] },
   { label: '电镀管理', key: 'plating-management', icon: icon(PlatingIcon), perm: 'plating' },
-  { label: '手工发出', key: 'handcraft', icon: icon(PaperPlaneOutline), perm: 'handcraft' },
-  { label: '手工回收', key: 'handcraft-receipts', icon: icon(DownloadOutline), perm: 'handcraft' },
+  { label: '手工管理', key: 'handcraft-management', icon: icon(HandcraftIcon), perm: 'handcraft' },
   { label: '货物分拣', key: 'cargo-sorting', icon: icon(SortingIcon), perm: 'sorting' },
   { label: '库存总表', key: 'inventory', icon: icon(ArchiveOutline), perm: 'inventory' },
   { label: '库存流水', key: 'inventory-log', icon: icon(InventoryLogIcon), perm: 'inventory' },
@@ -143,13 +142,7 @@ const allGroupedItems = [
       { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
       { label: '待补货清单', key: 'restock', icon: icon(RestockIcon), perm: ['handcraft', 'restock'] },
       { label: '电镀管理', key: 'plating-management', icon: icon(PlatingIcon), perm: 'plating' },
-      {
-        label: '手工单', key: 'handcraft-group', icon: icon(HandcraftIcon), perm: 'handcraft',
-        children: [
-          { label: '手工发出', key: 'handcraft', icon: icon(PaperPlaneOutline), perm: 'handcraft' },
-          { label: '手工回收', key: 'handcraft-receipts', icon: icon(DownloadOutline), perm: 'handcraft' },
-        ],
-      },
+      { label: '手工管理', key: 'handcraft-management', icon: icon(HandcraftIcon), perm: 'handcraft' },
       { label: '货物分拣', key: 'cargo-sorting', icon: icon(SortingIcon), perm: 'sorting' },
     ],
   },
@@ -181,6 +174,7 @@ const menuOptions = computed(() => collapsed.value ? flatItems.value : groupedIt
 
 const activeKey = computed(() => {
   if (isPlatingRoute(route.path)) return 'plating-management'
+  if (isHandcraftRoute(route.path)) return 'handcraft-management'
   const seg = route.path.split('/')[1]
   return seg || 'dashboard'
 })

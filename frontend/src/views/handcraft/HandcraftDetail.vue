@@ -1,7 +1,7 @@
 <template>
   <div>
     <!-- ── Page header ─────────────────────────────────────── -->
-    <n-button text size="small" class="page-back" @click="router.back()">← 返回</n-button>
+    <n-button text size="small" class="page-back" @click="goBack">← {{ summaryReturn ? '返回汇总' : '返回' }}</n-button>
     <div class="page-breadcrumb">生产 / 手工单 / {{ order?.id || '…' }}</div>
 
     <div class="hc-head">
@@ -161,7 +161,7 @@
             >＋ 添加产出</button>
           </span>
         </div>
-        <n-data-table v-if="jewelryItems.length > 0" :columns="jewelryColumns" :data="jewelryItems" :bordered="false" />
+        <n-data-table v-if="jewelryItems.length > 0" :columns="jewelryColumns" :data="jewelryItems" :bordered="false" :row-props="row => summaryHighlight(row, 'jewelry')" />
         <div v-else class="hc-empty">暂无产出项，点击右上角「＋ 添加产出」添加饰品或组合配件</div>
       </div>
 
@@ -298,7 +298,7 @@
             >＋ 添加配件</button>
           </span>
         </div>
-        <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" />
+        <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" :row-props="row => summaryHighlight(row, 'part')" />
         <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
       </div>
 
@@ -714,6 +714,7 @@
 import ProductionArchiveNotice from '@/components/ProductionArchiveNotice.vue'
 import { ref, reactive, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useHandcraftSummaryReturn } from '@/composables/useHandcraftSummaryReturn'
 import { useMessage, useDialog } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useSendWithStockSupplement } from '@/composables/useSendWithStockSupplement'
@@ -760,6 +761,11 @@ import { attachPartsToOrder } from '@/api/handcraftActions'
 
 const route = useRoute()
 const router = useRouter()
+const { summaryReturn, goBack } = useHandcraftSummaryReturn()
+function summaryHighlight(row, type) {
+  return summaryReturn.value && route.query.item_type === type && route.query.highlight === String(row.id)
+    ? { style: 'outline: 2px solid #1e7a5a; outline-offset: -2px;', title: '汇总来源明细' } : {}
+}
 const message = useMessage()
 const dialog = useDialog()
 const { isMobile } = useIsMobile()

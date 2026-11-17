@@ -1,7 +1,7 @@
 <template>
   <div :style="{ maxWidth: isMobile ? '100%' : '900px' }">
     <n-space align="center" style="margin-bottom: 16px;">
-      <n-button text @click="router.back()">← 返回</n-button>
+      <n-button text @click="goBack">← {{ summaryReturn ? '返回汇总' : '返回' }}</n-button>
       <n-h2 style="margin: 0;">新建手工单</n-h2>
     </n-space>
 
@@ -169,7 +169,7 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useHandcraftSummaryReturn } from '@/composables/useHandcraftSummaryReturn'
 import { useMessage } from 'naive-ui'
 import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NGrid, NGi, NDatePicker, NTag } from 'naive-ui'
 import { listParts, getPartBom } from '@/api/parts'
@@ -181,7 +181,7 @@ import { renderOptionWithImage } from '@/utils/ui'
 import { tsToDateStr } from '@/utils/date'
 import { useIsMobile } from '@/composables/useIsMobile'
 
-const router = useRouter()
+const { summaryReturn, goBack, openCreated } = useHandcraftSummaryReturn()
 const message = useMessage()
 const { isMobile } = useIsMobile()
 const supplierName = ref(null)
@@ -437,7 +437,7 @@ const submit = async () => {
     if (createdAt) payload.created_at = createdAt
     const { data } = await createHandcraft(payload)
     message.success('创建成功')
-    router.push(`/handcraft/${data.id}`)
+    openCreated(`/handcraft/${data.id}`)
   } finally {
     submitting.value = false
   }

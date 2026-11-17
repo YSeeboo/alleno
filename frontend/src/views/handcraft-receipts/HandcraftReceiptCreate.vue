@@ -1,7 +1,7 @@
 <template>
   <div :style="{ maxWidth: isMobile ? '100%' : '1000px' }">
     <n-space align="center" style="margin-bottom: 16px;">
-      <n-button text @click="router.back()">← 返回</n-button>
+      <n-button text @click="goBack">← {{ summaryReturn ? '返回汇总' : '返回' }}</n-button>
       <n-h2 style="margin: 0;">新建手工回收单</n-h2>
     </n-space>
 
@@ -356,7 +356,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, h } from 'vue'
-import { useRouter } from 'vue-router'
+import { useHandcraftSummaryReturn } from '@/composables/useHandcraftSummaryReturn'
 import { useMessage } from 'naive-ui'
 import {
   NSpace, NButton, NSelect, NInput, NInputNumber,
@@ -371,7 +371,7 @@ import { tsToDateStr } from '@/utils/date'
 import { useIsMobile } from '@/composables/useIsMobile'
 import PartReturnModal from './PartReturnModal.vue'
 
-const router = useRouter()
+const { summaryReturn, goBack, openCreated } = useHandcraftSummaryReturn()
 const message = useMessage()
 const { isMobile } = useIsMobile()
 const supplierName = ref(null)
@@ -673,7 +673,7 @@ const handleCostDiffs = (data) => {
     costDiffSourceId.value = data.id
     costDiffVisible.value = true
   } else {
-    router.push(`/handcraft-receipts/${data.id}`)
+    openCreated(`/handcraft-receipts/${data.id}`)
   }
 }
 
@@ -690,7 +690,7 @@ const confirmCostUpdate = async () => {
     })
     message.success('配件手工费成本已更新')
     costDiffVisible.value = false
-    router.push(`/handcraft-receipts/${costDiffSourceId.value}`)
+    openCreated(`/handcraft-receipts/${costDiffSourceId.value}`)
   } catch (_) {
     message.error('成本更新失败，请重试')
   } finally {
@@ -700,7 +700,7 @@ const confirmCostUpdate = async () => {
 
 const skipCostUpdate = () => {
   costDiffVisible.value = false
-  router.push(`/handcraft-receipts/${costDiffSourceId.value}`)
+  openCreated(`/handcraft-receipts/${costDiffSourceId.value}`)
 }
 
 const submit = async () => {

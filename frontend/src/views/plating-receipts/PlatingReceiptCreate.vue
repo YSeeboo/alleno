@@ -3,7 +3,7 @@
     <div class="rc-crumbs">生产 <span>/</span> 电镀回收 <span>/</span> 新建</div>
     <header class="rc-head">
       <div class="rc-title"><h1>新建电镀回收单</h1><span class="rc-badge">录入中</span></div>
-      <button class="rc-btn" type="button" :disabled="locked" @click="backToList"><ArrowBackOutline />返回列表</button>
+      <button class="rc-btn" type="button" :disabled="locked" @click="backToList"><ArrowBackOutline />{{ summaryReturn ? '返回汇总' : '返回列表' }}</button>
     </header>
     <p class="rc-intro">选择电镀厂与待回收配件，填写本次实际回收数量、重量及费用。</p>
     <div v-if="createdReceiptId && !costDiffVisible" class="rc-created" role="status">回收单 {{ createdReceiptId }} 已创建。<n-button text type="primary" @click="goToReceipt">查看已创建回收单</n-button></div>
@@ -127,7 +127,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, h } from 'vue'
-import { useRouter, onBeforeRouteLeave } from 'vue-router'
+import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import {
   NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem,
@@ -140,13 +140,15 @@ import { batchUpdatePartCosts } from '@/api/parts'
 import { fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import { tsToDateStr } from '@/utils/date'
 import { useIsMobile } from '@/composables/useIsMobile'
-import { getPlatingLocation } from '@/utils/platingNavigation'
+import { getPlatingLocation, getPlatingCreateReturnLocation } from '@/utils/platingNavigation'
 import {
   remainingReceiptQuantity as getRemaining, createReceiptInput, filterPendingReceiptItems,
   receiptLineAmount, summarizeReceiptDraft, receiptItemPayload,
 } from '@/utils/platingReceiptCreate'
 
 const router = useRouter()
+const route = useRoute()
+const summaryReturn = computed(() => getPlatingCreateReturnLocation(route.query))
 const message = useMessage()
 const dialog = useDialog()
 const { isMobile } = useIsMobile()
@@ -183,7 +185,7 @@ const allVisibleSelected = computed(() => filteredItems.value.length > 0 && filt
 const someVisibleSelected = computed(() => filteredItems.value.some((item) => selectedIds.value.has(item.id)))
 const draftSummary = computed(() => summarizeReceiptDraft(selectedItems.value, itemInputs))
 const lineAmount = (item) => receiptLineAmount(itemInputs[item.id])
-const backToList = () => { if (!locked.value) router.push(getPlatingLocation('receipt')) }
+const backToList = () => { if (!locked.value) router.push(summaryReturn.value || getPlatingLocation('receipt')) }
 const clearFilters = () => { filterKeyword.value = ''; filterDateOn.value = null }
 
 const fetchPendingItems = async () => {

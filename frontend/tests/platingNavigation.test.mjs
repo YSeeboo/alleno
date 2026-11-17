@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import {
   PLATING_TABS, getPlatingTab, isPlatingRoute, normalizePlatingQuery,
   getPlatingLocation, rememberPlatingLocation, restorePlatingListQuery,
+  rememberPlatingSummaryReturn, getPlatingCreateReturnLocation,
 } from '../src/utils/platingNavigation.js'
 import { createPlatingRoutes } from '../src/router/plating.js'
 
@@ -142,4 +143,53 @@ test('entry redirect, filter restore and explicit reset work with real Vue Route
   assert.deepEqual({ ...router.currentRoute.value.query }, {})
   await router.push('/plating-summary')
   assert.deepEqual({ ...router.currentRoute.value.query }, { tab: 'in', q: '蝴蝶', page: '2' })
+})
+
+test('summary shortcuts remember all filters and reuse the detail return state', () => {
+  const stores = storage()
+  const query = { supplier: '甲厂', tab: 'in', archive: 'all', q: '桃心', page: '3', date_from: '2026-11-01', date_to: '2026-11-17', next: 'https://example.com' }
+  rememberPlatingSummaryReturn(query, stores)
+  const expected = normalizePlatingQuery('summary', query)
+  assert.deepEqual(JSON.parse(stores.session.getItem('plating-summary-return')), expected)
+  assert.deepEqual(getPlatingCreateReturnLocation({ from: 'summary' }, stores), { path: '/plating-summary', query: expected })
+  assert.deepEqual(getPlatingLocation('summary', stores).query, expected)
+})
+
+test('ordinary create links do not inherit a stale summary origin', () => {
+  const stores = storage()
+  rememberPlatingSummaryReturn({ q: '旧搜索', page: '2' }, stores)
+  for (const query of [{}, undefined, { from: 'receipt' }, { from: ['summary'] }, { from: 'https://example.com' }]) {
+    assert.equal(getPlatingCreateReturnLocation(query, stores), null)
+  }
+  rememberPlatingSummaryReturn({}, stores)
+  assert.deepEqual(getPlatingCreateReturnLocation({ from: 'summary' }, stores), { path: '/plating-summary', query: {} })
+  assert.deepEqual(JSON.parse(stores.session.getItem('plating-summary-return')), {})
+})
+
+test('summary shortcut return works with missing, malformed or blocked storage', () => {
+  const blocked = { getItem() { throw Error('blocked') }, setItem() { throw Error('blocked') } }
+  const stores = { preferences: blocked, session: blocked }
+  assert.doesNotThrow(() => rememberPlatingSummaryReturn({ page: '2' }, stores))
+  assert.deepEqual(getPlatingCreateReturnLocation({ from: 'summary' }, stores), { path: '/plating-summary', query: {} })
+  const malformed = { preferences: memoryStorage(), session: { getItem: () => '{broken' } }
+  assert.deepEqual(getPlatingCreateReturnLocation({ from: 'summary' }, malformed), { path: '/plating-summary', query: {} })
+})
+
+test('both shortcut routes can cancel back to the same summary without disturbing list filters', async () => {
+  const stores = storage()
+  const router = testRouter(stores)
+  await router.push('/plating?status=pending&supplier=B')
+  await router.push('/plating-receipts?supplier=C')
+  const query = { tab: 'in', supplier: 'A', q: '桃心', page: '3', archive: 'all' }
+  await router.push({ path: '/plating-summary', query })
+  for (const path of ['/plating/create', '/plating-receipts/create']) {
+    rememberPlatingSummaryReturn(router.currentRoute.value.query, stores)
+    await router.push({ path, query: { from: 'summary' } })
+    assert.equal(router.currentRoute.value.meta.perm, 'plating')
+    await router.push(getPlatingCreateReturnLocation(router.currentRoute.value.query, stores))
+    assert.equal(router.currentRoute.value.path, '/plating-summary')
+    assert.deepEqual({ ...router.currentRoute.value.query }, query)
+  }
+  assert.deepEqual(getPlatingLocation('dispatch', stores).query, { supplier: 'B', status: 'pending' })
+  assert.deepEqual(getPlatingLocation('receipt', stores).query, { supplier: 'C' })
 })

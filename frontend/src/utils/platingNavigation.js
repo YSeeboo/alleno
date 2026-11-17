@@ -96,6 +96,17 @@ export function rememberPlatingLocation(location, storage = {}) {
   }))
 }
 
+export function rememberPlatingSummaryReturn(query, storage = {}) {
+  const normalized = normalizePlatingQuery('summary', query)
+  rememberPlatingLocation({ path: '/plating-summary', query: normalized }, storage)
+  write(storage.session ?? browserStorage('sessionStorage'), 'plating-summary-return', JSON.stringify(normalized))
+}
+
+// Only the explicit summary shortcut changes a creation form's return destination.
+export function getPlatingCreateReturnLocation(query, storage = {}) {
+  return query?.from === 'summary' ? getPlatingLocation('summary', storage) : null
+}
+
 export function restorePlatingListQuery(to, from, storage = {}) {
   const tab = getPlatingTab(to.path)
   // An explicit URL query wins. Clearing filters on the current page must not restore them.

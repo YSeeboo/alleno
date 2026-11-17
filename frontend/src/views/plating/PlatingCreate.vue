@@ -3,7 +3,7 @@
     <div class="pc-crumbs">生产 <span>/</span> 电镀发出 <span>/</span> 新建</div>
     <header class="pc-head">
       <div class="pc-title"><h1>新建电镀单</h1><span class="pc-badge">录入中</span></div>
-      <button class="pc-btn" type="button" @click="router.back()"><ArrowBackOutline />返回列表</button>
+      <button class="pc-btn" type="button" @click="backToSource"><ArrowBackOutline />{{ summaryReturn ? '返回汇总' : '返回列表' }}</button>
     </header>
     <p class="pc-intro">填写电镀信息，添加本次发出的配件与电镀颜色。</p>
 
@@ -143,7 +143,7 @@
         <span>总重量 <strong>{{ summary.weightKg.toLocaleString('zh-CN') }}</strong> kg</span>
       </div>
       <div class="pc-footer-actions">
-        <button class="pc-btn" type="button" @click="router.back()">取消</button>
+        <button class="pc-btn" type="button" @click="backToSource">取消</button>
         <n-button type="primary" :loading="submitting" :disabled="merging" @click="submit"><template #icon><CheckmarkOutline /></template>创建电镀单</n-button>
       </div>
     </footer>
@@ -162,9 +162,12 @@ import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { renderOptionWithImage } from '@/utils/ui'
 import { tsToDateStr } from '@/utils/date'
 import { createPlatingItem, copyPlatingItem, platingItemPayload, summarizePlatingItems } from '@/utils/platingCreate'
+import { getPlatingCreateReturnLocation } from '@/utils/platingNavigation'
 
 const router = useRouter()
 const route = useRoute()
+const summaryReturn = computed(() => getPlatingCreateReturnLocation(route.query))
+const backToSource = () => summaryReturn.value ? router.push(summaryReturn.value) : router.back()
 const message = useMessage()
 const dialog = useDialog()
 const supplierName = ref(null)

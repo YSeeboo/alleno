@@ -1,9 +1,13 @@
 <template>
   <div class="plating-summary">
-    <div v-if="embedded" class="plating-section-title"><h2>电镀汇总</h2><span>按配件明细查看发出与收回</span></div>
-    <div v-else class="page-head">
-      <h2 class="page-title">电镀汇总</h2>
-    </div>
+    <header class="summary-head">
+      <div v-if="embedded" class="plating-section-title"><h2>电镀汇总</h2><span>按配件明细查看发出与收回</span></div>
+      <h2 v-else class="page-title">电镀汇总</h2>
+      <div class="summary-actions" role="group" aria-label="新建电镀单据">
+        <n-button type="primary" :disabled="openingCreate" @click="openCreate('/plating/create')"><template #icon><AddOutline /></template>新建电镀单</n-button>
+        <n-button type="primary" :disabled="openingCreate" @click="openCreate('/plating-receipts/create')"><template #icon><AddOutline /></template>新建回收单</n-button>
+      </div>
+    </header>
 
     <div class="toolbar">
       <n-button-group>
@@ -60,11 +64,13 @@ import {
   NButton, NButtonGroup, NDataTable, NDatePicker, NForm, NFormItem, NInput,
   NInputNumber, NModal, NPagination, NSelect, NSpin, NTag, useMessage,
 } from 'naive-ui'
+import { AddOutline } from '@vicons/ionicons5'
 import api from '@/api/index'
 import { listDispatchedSummary, listReceivedSummary } from '@/api/platingSummary'
 import { getPlatingSuppliers } from '@/api/plating'
 import { renderImageThumb } from '@/utils/ui'
 import { usePlatingPageQuery } from '@/composables/usePlatingPageQuery'
+import { rememberPlatingSummaryReturn } from '@/utils/platingNavigation'
 
 defineProps({ embedded: { type: Boolean, default: false } })
 
@@ -175,8 +181,24 @@ const renderColor = (row) => row.plating_method
 
 function navigateToDetail(kind, id, highlightId) {
   const path = kind === 'plating' ? `/plating/${id}` : `/plating-receipts/${id}`
-  sessionStorage.setItem('plating-summary-return', JSON.stringify(route.query))
+  rememberPlatingSummaryReturn(route.query)
   router.push({ path, query: { highlight: highlightId } })
+}
+
+const openingCreate = ref(false)
+async function openCreate(path) {
+  if (openingCreate.value) return
+  openingCreate.value = true
+  clearTimeout(qTimer)
+  try {
+    // Keep even a search typed immediately before clicking the shortcut.
+    if (qInput.value !== qDebounced.value) await updateQuery({ q: qInput.value })
+    if (!active.value || disposed) return
+    rememberPlatingSummaryReturn(route.query)
+    await router.push({ path, query: { from: 'summary' } })
+  } finally {
+    openingCreate.value = false
+  }
 }
 
 const renderOrderLink = (row) => h('span', {
@@ -319,11 +341,12 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.plating-summary { padding: 4px 0; }
-.plating-section-title { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-bottom: 14px; }
+.plating-summary { padding: 4px 0; container-type: inline-size; }
+.summary-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.plating-section-title { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
 .plating-section-title h2 { margin: 0; font-size: 15px; font-weight: 650; }
 .plating-section-title span { color: #9AA2A9; font-size: 11px; }
-.page-head { margin-bottom: 12px; }
+.summary-actions { display: flex; gap: 9px; flex-shrink: 0; }
 .page-title { font-size: 20px; font-weight: 700; margin: 0; }
 .toolbar {
   display: flex; justify-content: space-between; align-items: center;
@@ -334,6 +357,11 @@ onBeforeUnmount(() => {
 :deep(.row-completed td) {
   background: #F1F5F9 !important;
   color: #94A3B8;
+}
+@container (max-width: 620px) {
+  .summary-head { flex-wrap: wrap; gap: 14px; }
+  .summary-actions { width: 100%; }
+  .summary-actions > .n-button { flex: 1; min-width: 0; padding: 0 10px; font-size: 12px; }
 }
 @media (max-width: 767px) {
   .filters { width: 100%; }
