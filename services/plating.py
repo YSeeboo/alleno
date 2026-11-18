@@ -399,7 +399,7 @@ def update_plating_order_status(db: Session, order_id: str, status: str) -> Plat
     return order
 
 
-def list_pending_receive_items(db: Session, part_keyword: str = None, supplier_name: str = None, date_on: date_type = None, exclude_item_ids: list[int] = None) -> list:
+def list_pending_receive_items(db: Session, part_keyword: str = None, supplier_name: str = None, date_on: date_type = None, exclude_item_ids: list[int] = None, include_settled: bool = False) -> list:
     SendPart = aliased(Part)
     ReceivePart = aliased(Part)
     q = (
@@ -426,10 +426,12 @@ def list_pending_receive_items(db: Session, part_keyword: str = None, supplier_n
         .outerjoin(ReceivePart, PlatingOrderItem.receive_part_id == ReceivePart.id)
         .filter(
             PlatingOrder.archived_at.is_(None),
-            PlatingOrderItem.status == "电镀中",
-            func.coalesce(PlatingOrderItem.received_qty, 0) < PlatingOrderItem.qty,
+            PlatingOrder.status.in_(("processing", "completed")),
+            PlatingOrderItem.status.in_(("电镀中", "已收回") if include_settled else ("电镀中",)),
         )
     )
+    if not include_settled:
+        q = q.filter(func.coalesce(PlatingOrderItem.received_qty, 0) < PlatingOrderItem.qty)
     if supplier_name:
         q = q.filter(PlatingOrder.supplier_name == supplier_name)
     if date_on:

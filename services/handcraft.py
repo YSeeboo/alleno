@@ -1280,9 +1280,31 @@ _HANDCRAFT_VALID_STATUSES = {"pending", "processing", "completed"}
 _HANDCRAFT_STATUS_RANK = {"pending": 0, "processing": 1, "completed": 2}
 
 
+def complete_handcraft_order(db: Session, order_id: str) -> HandcraftOrder:
+    """Safely finish a settled order without inventing receipts or moving stock."""
+    from services.handcraft_receipt import handcraft_order_is_settled
+
+    order = get_handcraft_order(db, order_id)
+    require_unarchived(order)
+    if order is None:
+        raise ValueError(f"HandcraftOrder not found: {order_id}")
+    if order.status == "completed":
+        return order
+    if order.status != "processing":
+        raise ValueError("只有进行中的手工单可以确认完成；请先确认发出")
+    if not handcraft_order_is_settled(db, order_id):
+        raise ValueError("产出尚未全部结清，请先完成回收或确认损耗；无产出的手工单需先结清材料")
+    order.status = "completed"
+    order.completed_at = now_beijing()
+    db.flush()
+    return order
+
+
 def update_handcraft_order_status(db: Session, order_id: str, status: str) -> HandcraftOrder:
     if status not in _HANDCRAFT_VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Valid values: {', '.join(sorted(_HANDCRAFT_VALID_STATUSES))}")
+    if status == "completed":
+        return complete_handcraft_order(db, order_id)
     order = get_handcraft_order(db, order_id)
     require_unarchived(order)
     if order is None:
@@ -1292,8 +1314,6 @@ def update_handcraft_order_status(db: Session, order_id: str, status: str) -> Ha
         raise ValueError(f"Cannot change status from '{current}' to '{status}': only forward transitions are allowed")
     if current == "pending" and status == "processing":
         raise ValueError("Use POST /send to dispatch a pending order; it deducts inventory and updates item statuses")
-    if current == "processing" and status == "completed":
-        raise ValueError("Use POST /receive to complete a processing order; items must be fully received first")
     order.status = status
     db.flush()
     return order
@@ -1307,9 +1327,9 @@ def list_handcraft_pending_receive_items(
     exclude_part_item_ids: list[int] = None,
     exclude_jewelry_item_ids: list[int] = None,
     receipt_code: str = None,
+    include_settled: bool = False,
 ) -> list:
-    """Return part items and jewelry items from processing handcraft orders
-    that still have remaining qty to receive."""
+    """Receipt sources; settled dispatched sources are opt-in for extra receipts."""
     results = []
 
     # Part items. Effective qty = picking actual_qty override when set, else pi.qty.
@@ -1334,10 +1354,12 @@ def list_handcraft_pending_receive_items(
         .outerjoin(HandcraftPickingWeight, handcraft_atomic_picking_join_clause())
         .filter(
             HandcraftOrder.archived_at.is_(None),
-            HandcraftPartItem.status == "制作中",
-            func.coalesce(HandcraftPartItem.received_qty, 0) < effective_qty_expr,
+            HandcraftOrder.status.in_(("processing", "completed")),
+            HandcraftPartItem.status.in_(("制作中", "已收回") if include_settled else ("制作中",)),
         )
     )
+    if not include_settled:
+        pq = pq.filter(func.coalesce(HandcraftPartItem.received_qty, 0) < effective_qty_expr)
     if supplier_name:
         pq = pq.filter(HandcraftOrder.supplier_name == supplier_name)
     if receipt_code:
@@ -1392,10 +1414,12 @@ def list_handcraft_pending_receive_items(
         .outerjoin(Part, HandcraftJewelryItem.part_id == Part.id)
         .filter(
             HandcraftOrder.archived_at.is_(None),
-            HandcraftJewelryItem.status == "制作中",
-            func.coalesce(HandcraftJewelryItem.received_qty, 0) < HandcraftJewelryItem.qty,
+            HandcraftOrder.status.in_(("processing", "completed")),
+            HandcraftJewelryItem.status.in_(("制作中", "已收回") if include_settled else ("制作中",)),
         )
     )
+    if not include_settled:
+        jq = jq.filter(func.coalesce(HandcraftJewelryItem.received_qty, 0) < HandcraftJewelryItem.qty)
     if supplier_name:
         jq = jq.filter(HandcraftOrder.supplier_name == supplier_name)
     if receipt_code:

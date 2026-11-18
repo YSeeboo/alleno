@@ -42,13 +42,14 @@ test('missing weight is not a misleading zero; legacy weight defaults to grams',
   assert.equal(summarizePlatingDetail([{ weight: 0, weight_unit: 'kg' }]).weightKg, 0)
 })
 
-test('receipt linking is only offered for active processing items with a gap', () => {
+test('receipt linking includes settled items but excludes drafts and archives', () => {
   const item = { status: '电镀中', qty: 20, received_qty: 10 }
   assert.equal(canLinkPlatingReceipt({ status: 'processing' }, item), true)
-  for (const order of [null, { status: 'pending' }, { status: 'completed' }, { status: 'processing', archived_at: '2026-11-08' }]) {
+  for (const order of [null, { status: 'pending' }, { status: 'processing', archived_at: '2026-11-08' }]) {
     assert.equal(canLinkPlatingReceipt(order, item), false)
   }
-  assert.equal(canLinkPlatingReceipt({ status: 'processing' }, { ...item, received_qty: 20 }), false)
+  assert.equal(canLinkPlatingReceipt({ status: 'processing' }, { ...item, received_qty: 20 }), true)
+  assert.equal(canLinkPlatingReceipt({ status: 'completed' }, { ...item, status: '已收回', received_qty: 25 }), true)
   assert.equal(canLinkPlatingReceipt({ status: 'processing' }, { ...item, status: '未送出' }), false)
 })
 

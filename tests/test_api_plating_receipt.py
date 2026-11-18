@@ -42,6 +42,35 @@ def test_create_plating_receipt(client, db):
     assert data["items"][0]["qty"] == 5.0
 
 
+@pytest.mark.parametrize("different_received_part", [False, True])
+@pytest.mark.parametrize("image", [None, "/uploads/parts/received-part.jpg"])
+def test_receipt_detail_includes_received_part_image(client, db, different_received_part, image):
+    """Show the received part's image, never the source part's or delivery photos."""
+    target = create_part(db, {"name": "电镀后配件", "category": "小配件"}) if different_received_part else None
+    source, order = _setup_processing_plating(db, receive_part_id=target.id if target else None)
+    received_part = target or source
+    source.image = "/uploads/parts/source-part.jpg"
+    received_part.image = image
+    db.flush()
+    poi_id = get_plating_items(db, order.id)[0].id
+
+    response = client.post("/api/plating-receipts/", json={
+        "vendor_name": "Supplier A",
+        "items": [{"plating_order_item_id": poi_id, "part_id": received_part.id, "qty": 5.0}],
+    })
+    assert response.status_code == 201
+    created = response.json()
+    assert created["items"][0]["part_image"] == image
+
+    response = client.get(f"/api/plating-receipts/{created['id']}")
+    assert response.status_code == 200
+    detail = response.json()
+    assert detail["items"][0]["part_id"] == received_part.id
+    assert detail["items"][0]["part_name"] == received_part.name
+    assert detail["items"][0]["part_image"] == image
+    assert detail["delivery_images"] == []
+
+
 def test_create_receipt_exceeds_remaining(client, db):
     part, order = _setup_processing_plating(db, qty=10.0)
     poi_id = get_plating_items(db, order.id)[0].id
@@ -50,7 +79,7 @@ def test_create_receipt_exceeds_remaining(client, db):
         "vendor_name": "Supplier A",
         "items": [{"plating_order_item_id": poi_id, "part_id": part.id, "qty": 15.0}],
     })
-    assert resp.status_code == 400
+    assert resp.status_code == 201
 
 
 def test_delete_paid_receipt_rejected(client, db):
@@ -529,8 +558,8 @@ def test_add_items_to_paid_receipt_rejected(client, db):
     assert add_resp.status_code == 400
 
 
-def test_add_items_exceeds_remaining_rejected(client, db):
-    """Cannot add more qty than remaining for a plating order item."""
+def test_add_items_exceeds_remaining_allowed(client, db):
+    """Actual receipts may exceed dispatched quantities."""
     p1 = create_part(db, {"name": "扣S", "category": "小配件"})
     p2 = create_part(db, {"name": "扣T", "category": "小配件"})
     add_stock(db, "part", p1.id, 100, "初始")
@@ -554,7 +583,8 @@ def test_add_items_exceeds_remaining_rejected(client, db):
     add_resp = client.post(f"/api/plating-receipts/{receipt_id}/items", json={
         "items": [{"plating_order_item_id": items[1].id, "part_id": p2.id, "qty": 999}],
     })
-    assert add_resp.status_code == 400
+    assert add_resp.status_code == 201
+    assert get_stock(db, "part", p2.id) == pytest.approx(1089)
 
 
 def test_add_items_vendor_mismatch_rejected(client, db):

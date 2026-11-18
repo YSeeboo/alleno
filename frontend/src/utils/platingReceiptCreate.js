@@ -1,9 +1,9 @@
 export function remainingReceiptQuantity(item) {
-  return Number((Number(item.qty) - Number(item.received_qty || 0)).toFixed(4))
+  return Math.max(0, Number((Number(item.qty) - Number(item.received_qty || 0)).toFixed(4)))
 }
 
 export function createReceiptInput(item) {
-  return { qty: remainingReceiptQuantity(item), price: null, weight: null, unit: item.unit || '个' }
+  return { qty: remainingReceiptQuantity(item) || null, price: null, weight: null, unit: item.unit || '个' }
 }
 
 // Filter the vendor's complete pending list, not the selected receipt rows.
@@ -70,7 +70,6 @@ export function receiptItemPayload(item, input, vendor) {
   if (!isNumber(input?.qty) || Number(input.qty) <= 0) throw new Error(`请填写「${label}」的回收数量`)
   const qty = Number(input.qty)
   if (Math.abs(qty * 10000 - Math.round(qty * 10000)) > 0.000001) throw new Error(`「${label}」的数量最多保留 4 位小数`)
-  if (qty > remainingReceiptQuantity(item)) throw new Error(`「${label}」最多可回收 ${remainingReceiptQuantity(item)} ${item.unit || '个'}`)
   for (const [key, name] of [['price', '单价'], ['weight', '重量']]) {
     if (input[key] != null && (!isNumber(input[key]) || Number(input[key]) < 0)) {
       throw new Error(`「${label}」的${name}须为不小于 0 的数字，或留空`)

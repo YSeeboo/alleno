@@ -68,12 +68,13 @@ test('payload preserves source linkage, receive variant, unit and optional weigh
   assert.equal(receiptItemPayload(plain, { ...createReceiptInput(plain), weight: 1 }, plain.supplier_name).weight_unit, 'g')
 })
 
-test('payload rejects missing, nonfinite, too precise and excessive quantities', () => {
+test('payload rejects invalid quantities but accepts actual receipts above remaining', () => {
   const item = source()
-  for (const qty of [null, '', 0, -1, NaN, Infinity, .00001, 8.0001]) {
+  for (const qty of [null, '', 0, -1, NaN, Infinity, .00001]) {
     assert.throws(() => receiptItemPayload(item, { ...createReceiptInput(item), qty }, item.supplier_name))
   }
   assert.equal(receiptItemPayload(item, { ...createReceiptInput(item), qty: .0001 }, item.supplier_name).qty, .0001)
+  assert.equal(receiptItemPayload(item, { ...createReceiptInput(item), qty: 18.0001 }, item.supplier_name).qty, 18.0001)
 })
 
 test('payload rejects unavailable and foreign-vendor sources without silently dropping them', () => {

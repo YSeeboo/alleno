@@ -5,7 +5,7 @@
       <div class="rc-title"><h1>新建电镀回收单</h1><span class="rc-badge">录入中</span></div>
       <button class="rc-btn" type="button" :disabled="locked" @click="backToList"><ArrowBackOutline />{{ summaryReturn ? '返回汇总' : '返回列表' }}</button>
     </header>
-    <p class="rc-intro">选择电镀厂与待回收配件，填写本次实际回收数量、重量及费用。</p>
+    <p class="rc-intro">选择电镀厂与已发出配件（含已结清），按实际回收数量入库、计价；允许超过发出数量。</p>
     <div v-if="createdReceiptId && !costDiffVisible" class="rc-created" role="status">回收单 {{ createdReceiptId }} 已创建。<n-button text type="primary" @click="goToReceipt">查看已创建回收单</n-button></div>
 
     <section aria-labelledby="rc-basic-title">
@@ -42,12 +42,12 @@
         <div v-if="fetchError" class="rc-empty" role="alert"><p>待回收配件加载失败，已填写的明细仍保留。</p><n-button :disabled="locked" @click="fetchPendingItems">重试加载</n-button></div>
         <div v-else-if="!vendorName || !pendingItems.length || !filteredItems.length" class="rc-empty">
           <p>{{ !vendorName ? '请先选择商家 / 电镀厂' : loadingItems ? '正在加载待回收配件…' : !pendingItems.length ? '该商家暂无待回收配件' : '没有符合筛选条件的配件' }}</p>
-          <span>{{ !vendorName ? '仅显示所选商家已发出、尚未全部回收的明细' : '筛选不会移除下方已选的回收明细' }}</span>
+          <span>{{ !vendorName ? '显示所选商家已发出的明细，含已结清来源' : '筛选不会移除下方已选的回收明细' }}</span>
         </div>
         <div v-else class="rc-source-table" :aria-busy="loadingItems">
           <div class="rc-source-grid rc-source-head">
             <n-checkbox :checked="allVisibleSelected" :indeterminate="someVisibleSelected && !allVisibleSelected" :disabled="locked || loadingItems" aria-label="选择当前筛选的全部配件" @update:checked="toggleAllVisible" />
-            <span>发出配件 / 回收配件</span><span>来源电镀单</span><span>电镀方式</span><span>发出 / 已回收</span><span>剩余可回收</span>
+            <span>发出配件 / 回收配件</span><span>来源电镀单</span><span>电镀方式</span><span>发出 / 已结清</span><span>未收 / 超出</span>
           </div>
           <div class="rc-source-scroll">
             <div v-for="item in filteredItems" :key="item.id" class="rc-source-grid rc-source-row" :class="{ 'is-selected': selectedIds.has(item.id) }">
@@ -59,8 +59,8 @@
               </div>
               <div class="rc-source-order"><code>{{ item.plating_order_id }}</code><small>{{ item.created_at?.slice(0, 10) || '—' }}</small></div>
               <span class="rc-method">{{ item.plating_method || '—' }}</span>
-              <span class="rc-source-progress"><span class="rc-mobile-label">发出 / 已回收</span>{{ item.qty }} / {{ item.received_qty ?? 0 }} {{ item.unit || '个' }}</span>
-              <strong class="rc-remaining"><span class="rc-mobile-label">剩余可回收</span>{{ getRemaining(item) }} <small>{{ item.unit || '个' }}</small></strong>
+              <span class="rc-source-progress"><span class="rc-mobile-label">发出 / 已结清</span>{{ item.qty }} / {{ item.received_qty ?? 0 }} {{ item.unit || '个' }}</span>
+              <strong class="rc-remaining"><span class="rc-mobile-label">未收 / 超出</span>{{ sourceBalance(item) }} <small>{{ item.unit || '个' }}</small></strong>
             </div>
           </div>
         </div>
@@ -77,7 +77,7 @@
         <div class="rc-detail-grid rc-detail-head" aria-hidden="true"><span>回收配件 / 来源</span><span>本次回收数量</span><span>回收重量</span><span>回收单价</span><span>小计</span><span>移除</span></div>
         <article v-for="(item, index) in selectedItems" :key="item.id" class="rc-detail-grid rc-detail-row" :aria-label="`第 ${index + 1} 行回收明细`">
           <div class="rc-detail-part"><span class="rc-row-number">{{ String(index + 1).padStart(2, '0') }}</span><div><strong>{{ item.receive_part_name || item.part_name }}</strong><code>{{ item.receive_part_id || item.part_id }}</code><small>来源 {{ item.plating_order_id }} · {{ item.plating_method || '未标方式' }}</small><span v-if="item._unavailable" class="rc-invalid">已不在待回收列表，请移除</span></div></div>
-          <div class="rc-field rc-qty-field"><span class="rc-mobile-label">本次回收数量</span><div class="rc-input-unit"><n-input-number v-model:value="itemInputs[item.id].qty" :disabled="locked || item._unavailable" :min="0.0001" :max="getRemaining(item)" :precision="4" :step="1" :show-button="false" placeholder="回收数量" :input-props="{ 'aria-label': `第 ${index + 1} 行回收数量` }" /><span>{{ itemInputs[item.id].unit }}</span></div><small :class="{ 'rc-invalid': itemInputs[item.id].qty > getRemaining(item) }">最多 {{ getRemaining(item) }} {{ itemInputs[item.id].unit }}</small></div>
+          <div class="rc-field rc-qty-field"><span class="rc-mobile-label">本次回收数量</span><div class="rc-input-unit"><n-input-number v-model:value="itemInputs[item.id].qty" :disabled="locked || item._unavailable" :min="0.0001" :precision="4" :step="1" :show-button="false" placeholder="回收数量" :input-props="{ 'aria-label': `第 ${index + 1} 行回收数量` }" /><span>{{ itemInputs[item.id].unit }}</span></div><small>{{ itemInputs[item.id].qty > getRemaining(item) ? `本次超出未收数量 ${Number((itemInputs[item.id].qty - getRemaining(item)).toFixed(4))}` : '按实际数量填写，允许超收' }}</small></div>
           <div class="rc-field rc-weight-field"><span class="rc-mobile-label">回收重量</span><div class="rc-input-unit"><n-input-number v-model:value="itemInputs[item.id].weight" :disabled="locked" :min="0" :precision="4" :show-button="false" placeholder="选填" :input-props="{ 'aria-label': `第 ${index + 1} 行回收重量` }" /><span>{{ item.weight_unit || 'g' }}</span></div><small>{{ item.weight == null ? '按实际回收填写' : `发出 ${item.weight} ${item.weight_unit || 'g'}` }}</small></div>
           <div class="rc-field rc-price-field"><span class="rc-mobile-label">回收单价</span><n-input-number v-model:value="itemInputs[item.id].price" :disabled="locked" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" :step="0.1" :show-button="false" placeholder="待定价" :input-props="{ 'aria-label': `第 ${index + 1} 行回收单价` }"><template #prefix>¥</template></n-input-number><small>元 / {{ itemInputs[item.id].unit }}</small></div>
           <div class="rc-line-amount" :class="{ 'is-unpriced': lineAmount(item) == null }"><span class="rc-mobile-label">小计</span>{{ lineAmount(item) == null ? '待定价' : `¥ ${fmtMoney(lineAmount(item))}` }}</div>
@@ -138,6 +138,7 @@ import { listPendingReceiveItems } from '@/api/plating'
 import { createPlatingReceipt } from '@/api/platingReceipts'
 import { batchUpdatePartCosts } from '@/api/parts'
 import { fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
+import { sourceBalance } from '@/utils/receiptQuantity'
 import { tsToDateStr } from '@/utils/date'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { getPlatingLocation, getPlatingCreateReturnLocation } from '@/utils/platingNavigation'
@@ -201,7 +202,7 @@ const fetchPendingItems = async () => {
   fetchError.value = false
   try {
     // Fetch the complete vendor list once; local filters never discard selection.
-    const { data } = await listPendingReceiveItems({ supplier_name: vendorName.value })
+    const { data } = await listPendingReceiveItems({ supplier_name: vendorName.value, include_settled: true })
     if (seq !== fetchSeq) return
     pendingItems.value = data
     const byId = new Map(data.map((item) => [item.id, item]))
@@ -341,7 +342,7 @@ const loadVendors = async () => {
   vendorLoadError.value = false
   // Load supplier names from pending items
   try {
-    const { data } = await listPendingReceiveItems({})
+    const { data } = await listPendingReceiveItems({ include_settled: true })
     const suppliers = [...new Set(data.map((i) => i.supplier_name).filter(Boolean))]
     vendorOptions.value = suppliers.map((v) => ({ label: v, value: v }))
   } catch (_) {

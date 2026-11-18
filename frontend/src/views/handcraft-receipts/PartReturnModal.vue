@@ -13,7 +13,7 @@
     <template #header>
       <div>
         <div style="font-size: 16px; font-weight: 600; margin-bottom: 3px;">配件回收</div>
-        <div style="font-size: 12px; color: #9ca3af; font-weight: 400;">该商家发出的配件余料，勾选并填写回收数量</div>
+        <div style="font-size: 12px; color: #9ca3af; font-weight: 400;">含已结清来源，填写实际回收数量，允许超收</div>
       </div>
     </template>
 
@@ -39,7 +39,7 @@
         style="display: flex; align-items: center; gap: 11px; padding: 10px 0; border-bottom: 1px solid #f0f1f3;"
       >
         <n-checkbox
-          :checked="!!localSel[String(part.id)]"
+          :checked="isSelected(part)"
           @update:checked="(v) => togglePart(part, v)"
         />
         <n-image
@@ -61,12 +61,11 @@
         <n-input-number
           :value="localSel[String(part.id)] ?? null"
           :min="0.0001"
-          :max="getRemaining(part)"
           :precision="4"
           :step="1"
           size="small"
           style="width: 110px; flex: none;"
-          :disabled="!localSel[String(part.id)]"
+          :disabled="!isSelected(part)"
           @update:value="(v) => setQty(part, v)"
         />
       </div>
@@ -102,7 +101,7 @@
           <!-- header -->
           <div style="padding: 4px 16px 12px; border-bottom: 1px solid #f0f1f3;">
             <div style="font-size: 16px; font-weight: 600; margin-bottom: 3px;">配件回收</div>
-            <div style="font-size: 12px; color: #9ca3af;">该商家发出的配件余料，勾选并填写回收数量</div>
+            <div style="font-size: 12px; color: #9ca3af;">含已结清来源，填写实际回收数量，允许超收</div>
             <n-input
               v-model:value="filterText"
               placeholder="配件名称 / 编号筛选"
@@ -120,8 +119,8 @@
               v-for="part in filteredParts"
               :key="part.id"
               :style="{
-                border: '1px solid ' + (localSel[String(part.id)] ? '#c7cbf5' : '#e5e7eb'),
-                background: localSel[String(part.id)] ? '#f3f4fe' : '#fff',
+                border: '1px solid ' + (isSelected(part) ? '#c7cbf5' : '#e5e7eb'),
+                background: isSelected(part) ? '#f3f4fe' : '#fff',
                 borderRadius: '9px',
                 padding: '11px',
                 marginTop: '10px',
@@ -129,7 +128,7 @@
             >
               <div style="display: flex; align-items: center; gap: 10px;">
                 <n-checkbox
-                  :checked="!!localSel[String(part.id)]"
+                  :checked="isSelected(part)"
                   @update:checked="(v) => togglePart(part, v)"
                 />
                 <n-image
@@ -146,12 +145,11 @@
                   <div style="font-size: 11px; color: #9ca3af;">{{ part.item_id }}<span v-if="part.color"> · {{ part.color }}</span> · 剩余 {{ getRemaining(part) }}</div>
                 </div>
               </div>
-              <div v-if="localSel[String(part.id)]" style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e5e7eb;">
+              <div v-if="isSelected(part)" style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e5e7eb;">
                 <div style="font-size: 11px; color: #9ca3af; margin-bottom: 3px;">回收数量</div>
                 <n-input-number
                   :value="localSel[String(part.id)] ?? null"
                   :min="0.0001"
-                  :max="getRemaining(part)"
                   :precision="4"
                   :step="1"
                   style="width: 100%;"
@@ -179,8 +177,11 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import {
-  NModal, NInput, NInputNumber, NCheckbox, NImage, NButton, NEmpty,
+  NModal, NInput, NInputNumber, NCheckbox, NImage, NButton, NEmpty, useMessage,
 } from 'naive-ui'
+import { sourceBalance, remainingQuantity } from '@/utils/receiptQuantity'
+
+const message = useMessage()
 
 const props = defineProps({
   show: { type: Boolean, required: true },
@@ -208,7 +209,8 @@ watch(() => props.show, (val) => {
   }
 })
 
-const getRemaining = (part) => part.qty - (part.received_qty || 0)
+const getRemaining = sourceBalance
+const isSelected = (part) => Object.hasOwn(localSel.value, String(part.id))
 
 const filteredParts = computed(() => {
   const q = filterText.value.trim().toLowerCase()
@@ -218,14 +220,13 @@ const filteredParts = computed(() => {
   )
 })
 
-const selectedCount = computed(() => Object.values(localSel.value).filter((v) => v != null && v > 0).length)
+const selectedCount = computed(() => Object.keys(localSel.value).length)
 
 const togglePart = (part, checked) => {
   const key = String(part.id)
   if (checked) {
-    // Default qty = remaining
-    const remaining = getRemaining(part)
-    localSel.value[key] = remaining > 0 ? remaining : 0.0001
+    // A settled source needs an explicit actual quantity, not an invented one.
+    localSel.value[key] = remainingQuantity(part) || null
   } else {
     delete localSel.value[key]
   }
@@ -235,15 +236,17 @@ const setQty = (part, v) => {
   const key = String(part.id)
   if (v != null && v > 0) {
     localSel.value[key] = v
-  } else if (localSel.value[key] !== undefined) {
-    // Keep checked but qty becomes null — store 0 as sentinel to avoid losing selection
-    // Actually: if qty cleared, keep selection but store null to indicate incomplete
+  } else if (isSelected(part)) {
+    // Keep the row checked while its quantity is incomplete.
     localSel.value[key] = v
   }
 }
 
 const onConfirm = () => {
-  // Only pass entries with positive qty
+  if (Object.values(localSel.value).some((v) => !Number.isFinite(v) || v <= 0)) {
+    message.warning('请为每项已选配件填写大于 0 的实际回收数量')
+    return
+  }
   const result = {}
   for (const [k, v] of Object.entries(localSel.value)) {
     if (v != null && v > 0) result[k] = v

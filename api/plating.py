@@ -97,12 +97,14 @@ def api_list_pending_receive_items(
     supplier_name: str = None,
     date_on: date_type = None,
     exclude_item_ids: list[int] = Query(None),
+    include_settled: bool = False,
     db: Session = Depends(get_db),
 ):
     with service_errors():
         return list_pending_receive_items(
             db, part_keyword, supplier_name=supplier_name,
             date_on=date_on, exclude_item_ids=exclude_item_ids or None,
+            include_settled=include_settled,
         )
 
 

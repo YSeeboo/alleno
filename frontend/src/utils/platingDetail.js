@@ -43,6 +43,6 @@ export function summarizePlatingDetail(items) {
 }
 
 export function canLinkPlatingReceipt(order, item) {
-  return !!order && !order.archived_at && order.status === 'processing'
-    && item.status === '电镀中' && platingReceiptQuantities(item).remaining > 0
+  return !!order && !order.archived_at && ['processing', 'completed'].includes(order.status)
+    && ['电镀中', '已收回'].includes(item.status)
 }

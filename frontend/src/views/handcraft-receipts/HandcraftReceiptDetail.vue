@@ -161,6 +161,7 @@
 
     <!-- Edit Item Modal -->
     <n-modal v-model:show="editModalVisible" preset="card" title="修改明细" :style="{ width: isMobile ? '95vw' : '500px' }">
+      <p>允许超过发出数量，库存及金额按实际回收数量调整；产出须为整数。</p>
       <form @submit.prevent="doEditItem">
       <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="90">
         <n-form-item label="数量">
@@ -207,6 +208,7 @@
 
     <!-- Add Items Modal -->
     <n-modal v-model:show="addItemsModalVisible" preset="card" :title="`增加回收项目（${receipt?.supplier_name}）`" :style="{ width: isMobile ? '95vw' : '800px' }">
+      <p>含已结清来源，允许按实际数量超收；本单已有来源请直接修改原明细数量。</p>
       <n-radio-group v-model:value="addItemsActiveTab" size="small" style="margin-bottom: 12px;">
         <n-radio-button value="part">配件</n-radio-button>
         <n-radio-button value="jewelry">产出</n-radio-button>
@@ -328,6 +330,7 @@ import { tsToDateStr, isoToTs } from '@/utils/date'
 import { batchUpdatePartCosts } from '@/api/parts'
 import { confirmHandcraftLoss } from '@/api/productionLoss'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
+import { remainingQuantity, sourceBalance, receiptSourceExcess } from '@/utils/receiptQuantity'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 
 const route = useRoute()
@@ -770,7 +773,9 @@ const itemColumns = [
       }, row.handcraft_order_id)
     },
   },
-  { title: '回收数量', key: 'qty' },
+  { title: '回收数量', key: 'qty', render: (r) => h('div', [String(r.qty),
+    receiptSourceExcess(r) ? h('small', { style: 'display:block;color:#b45309' }, `来源结清超出 ${receiptSourceExcess(r)}`) : null,
+  ]) },
   { title: '单位', key: 'unit', render: (r) => r.unit || '-' },
   { title: '重量', key: 'weight', width: 100, render: (r) => r.weight != null ? `${r.weight} ${r.weight_unit || 'g'}` : '—' },
   { title: '单价', key: 'price', render: (r) => r.price != null ? `¥ ${fmtMoney(r.price)}` : '-' },
@@ -839,7 +844,7 @@ const itemColumns = [
 ]
 
 // Add items helpers
-const getAddRemaining = (item) => item.qty - (item.received_qty || 0)
+const getAddRemaining = remainingQuantity
 
 const getAddInput = (key) => {
   if (!addItemsInputs[key]) {
@@ -860,7 +865,7 @@ const fetchAddItemsPending = async () => {
     const existingJewelryItemIds = receipt.value.items
       .filter((i) => i.handcraft_jewelry_item_id)
       .map((i) => i.handcraft_jewelry_item_id)
-    const params = { supplier_name: receipt.value.supplier_name }
+    const params = { supplier_name: receipt.value.supplier_name, include_settled: true }
     if (existingPartItemIds.length > 0) {
       params.exclude_part_item_ids = existingPartItemIds
     }
@@ -879,7 +884,7 @@ const fetchAddItemsPending = async () => {
     for (const item of data) {
       const key = `${item.is_output ? 'output' : item.item_type}_${item.id}`
       if (!addItemsInputs[key]) {
-        addItemsInputs[key] = { qty: getAddRemaining(item), price: null, unit: item.unit || '个', weight: null, weight_unit: 'g' }
+        addItemsInputs[key] = { qty: getAddRemaining(item) || null, price: null, unit: item.unit || '个', weight: null, weight_unit: 'g' }
       }
       if (item.is_output) {
         jewelries.push(item)
@@ -1024,7 +1029,7 @@ const addItemsPartColumns = [
     width: 100,
     render: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString('zh-CN') : '-',
   },
-  { title: '剩余', key: 'remaining', width: 70, render: (r) => getAddRemaining(r) },
+  { title: '未收 / 超出', key: 'remaining', width: 130, render: sourceBalance },
   {
     title: '本次回收',
     key: 'input_qty',
@@ -1034,7 +1039,6 @@ const addItemsPartColumns = [
       return h(NInputNumber, {
         value: input.qty,
         min: 0.0001,
-        max: getAddRemaining(row),
         precision: 4,
         step: 1,
         size: 'small',
@@ -1104,7 +1108,7 @@ const addItemsJewelryColumns = [
     width: 100,
     render: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString('zh-CN') : '-',
   },
-  { title: '剩余', key: 'remaining', width: 70, render: (r) => getAddRemaining(r) },
+  { title: '未收 / 超出', key: 'remaining', width: 130, render: sourceBalance },
   {
     title: '本次回收',
     key: 'input_qty',
@@ -1114,7 +1118,6 @@ const addItemsJewelryColumns = [
       return h(NInputNumber, {
         value: input.qty,
         min: 1,
-        max: getAddRemaining(row),
         precision: 0,
         step: 1,
         size: 'small',

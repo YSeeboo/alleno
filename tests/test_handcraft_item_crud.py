@@ -452,7 +452,7 @@ def test_delete_jewelry_order_not_found(client):
 # ──────────────────────────────────────────────────────────────
 
 def test_patch_status_processing_to_completed_rejected(client, sent_order):
-    """processing -> completed must go through POST /receive, not PATCH /status."""
+    """Unsettled outputs cannot be completed by changing status."""
     order_id = sent_order["id"]
     resp = client.patch(f"/api/handcraft/{order_id}/status", json={"status": "completed"})
     assert resp.status_code == 400

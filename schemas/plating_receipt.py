@@ -79,6 +79,7 @@ class PlatingReceiptItemResponse(BaseModel):
     note: Optional[str] = None
     # Enriched fields (populated by service, not from ORM)
     part_name: Optional[str] = None
+    part_image: Optional[str] = None
     part_is_composite: Optional[bool] = None
     plating_order_id: Optional[str] = None
     plating_method: Optional[str] = None

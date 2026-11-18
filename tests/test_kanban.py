@@ -262,6 +262,10 @@ def test_kanban_vendor_can_appear_in_pending_return_and_returned_for_handcraft(d
         jewelries=[{"jewelry_id": jewelry.id, "qty": 10}],
     )
     send_handcraft_order(db, completed_order.id)
+    record_vendor_receipt(db, "手工厂A", "handcraft", completed_order.id, [
+        ReceiptItemIn(item_id=part.id, item_type="part", qty=50),
+        ReceiptItemIn(item_id=jewelry.id, item_type="jewelry", qty=10),
+    ])
     change_order_status(db, completed_order.id, "handcraft", "completed")
 
     board = get_kanban(db, order_type="handcraft")
@@ -463,8 +467,13 @@ def test_change_order_status_plating_completed_to_processing(db, plating_vendor)
     assert order.completed_at is None
 
 
-def test_api_change_order_status_syncs_handcraft_jewelry_rows(client, db, handcraft_vendor):
+def test_api_change_order_status_after_real_handcraft_receipt(client, db, handcraft_vendor):
     order, part, jewelry = handcraft_vendor
+    # Completion no longer invents receipts. Record the genuine receipt first;
+    # the completion request is idempotent and reopening still reverses it.
+    record_vendor_receipt(db, order.supplier_name, "handcraft", order.id, [
+        ReceiptItemIn(item_id=jewelry.id, item_type="jewelry", qty=10),
+    ])
 
     resp = client.post("/api/kanban/order-status", json={
         "order_id": order.id,

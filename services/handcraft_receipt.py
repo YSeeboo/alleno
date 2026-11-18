@@ -27,8 +27,7 @@ def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
 
 
 def _effective_qty(db: Session, oi, item_type: str) -> float:
-    """Effective sent quantity used as the receipt cap and the status-flip
-    threshold.
+    """Effective sent quantity used as the settlement threshold/material capacity.
 
     For atomic part items, the picking-side `actual_qty` override is
     authoritative *only when the row was also 勾选'd* (a matching
@@ -74,34 +73,36 @@ def _recalc_total(db: Session, receipt: HandcraftReceipt) -> None:
     receipt.total_amount = total
 
 
-def _check_handcraft_order_completion(db: Session, handcraft_order_id: str) -> None:
-    """If all part items AND jewelry items are fully received, mark order completed.
+def handcraft_order_is_settled(db: Session, handcraft_order_id: str) -> bool:
+    """Outputs settle the order; leftover materials do not block completion.
 
-    "Fully received" uses effective qty (picking actual_qty override when set)
-    for atomic part items, so orders with overrides can reach completed.
+    Output received_qty already includes genuine receipts and confirmed losses.
+    Orders without outputs retain their material-only effective-quantity rule.
+    An empty order is never considered settled. This check never moves stock.
     """
-    part_items = (
-        db.query(HandcraftPartItem)
-        .filter(HandcraftPartItem.handcraft_order_id == handcraft_order_id)
-        .all()
-    )
     jewelry_items = (
         db.query(HandcraftJewelryItem)
         .filter(HandcraftJewelryItem.handcraft_order_id == handcraft_order_id)
         .all()
     )
-    items_with_type = [(pi, "part") for pi in part_items] + [(ji, "jewelry") for ji in jewelry_items]
-    if all(
-        float(i.received_qty or 0) >= _effective_qty(db, i, t)
-        for i, t in items_with_type
-    ):
-        order = db.query(HandcraftOrder).filter(HandcraftOrder.id == handcraft_order_id).first()
-        if order and order.status == "processing":
+    if jewelry_items:
+        return all(Decimal(i.received_qty or 0) >= Decimal(i.qty) for i in jewelry_items)
+    part_items = db.query(HandcraftPartItem).filter_by(handcraft_order_id=handcraft_order_id).all()
+    return bool(part_items) and all(
+        float(i.received_qty or 0) >= _effective_qty(db, i, "part") for i in part_items
+    )
+
+
+def _check_handcraft_order_completion(db: Session, handcraft_order_id: str) -> None:
+    order = db.get(HandcraftOrder, handcraft_order_id)
+    if not order or order.archived_at or order.status not in ("processing", "completed"):
+        return
+    if handcraft_order_is_settled(db, handcraft_order_id):
+        if order.status == "processing":
             order.status = "completed"
             order.completed_at = now_beijing()
     else:
-        order = db.query(HandcraftOrder).filter(HandcraftOrder.id == handcraft_order_id).first()
-        if order and order.status == "completed":
+        if order.status == "completed":
             order.status = "processing"
             order.completed_at = None
 
@@ -261,64 +262,60 @@ def _reverse_receive(db: Session, order_item, item_type: str, qty: float) -> Non
 
 
 def _reverse_auto_consume_parts(db: Session, handcraft_order_id: str, jewelry_id: str, jewelry_qty: float) -> None:
-    """Reverse the auto-consumed parts when jewelry receive is reversed."""
+    """Reverse only consumption no longer needed by the remaining outputs."""
     from models.bom import Bom
-
     bom_rows = db.query(Bom).filter_by(jewelry_id=jewelry_id).all()
-    if not bom_rows:
-        return
-
-    bom_map = {b.part_id: float(b.qty_per_unit) for b in bom_rows}
-    part_items = db.query(HandcraftPartItem).filter_by(handcraft_order_id=handcraft_order_id).all()
-
-    # Group by part_id to handle multiple rows correctly
-    from collections import defaultdict
-    by_part: dict[str, list] = defaultdict(list)
-    for pi in part_items:
-        if pi.part_id in bom_map:
-            by_part[pi.part_id].append(pi)
-
-    for part_id, rows in by_part.items():
-        total_to_reverse = bom_map[part_id] * jewelry_qty
-        # Reverse from rows (last first to undo in order)
-        for pi in reversed(rows):
-            current = float(pi.received_qty or 0)
-            consumed = float(pi.consumed_qty or 0)
-            reverse_amount = min(total_to_reverse, consumed)
-            if reverse_amount <= 0:
-                continue
-            pi.received_qty = current - reverse_amount
-            pi.consumed_qty = consumed - reverse_amount
-            if float(pi.received_qty) >= _effective_qty(db, pi, "part"):
-                pi.status = "已收回"
-            else:
-                pi.status = "制作中"
-            total_to_reverse -= reverse_amount
-            if total_to_reverse <= 0:
-                break
-
-    db.flush()
+    _reverse_surplus_consumption(
+        db, handcraft_order_id,
+        {b.part_id: float(b.qty_per_unit) * jewelry_qty for b in bom_rows},
+    )
 
 
 def _reverse_auto_consume_child_parts(db: Session, handcraft_order_id: str, parent_part_id: str, parent_qty: float) -> None:
-    """Reverse the auto-consumed child parts when part output receive is reversed."""
+    """Composite-output counterpart of _reverse_auto_consume_parts."""
+    from models.part_bom import PartBom
+    bom_rows = db.query(PartBom).filter_by(parent_part_id=parent_part_id).all()
+    _reverse_surplus_consumption(
+        db, handcraft_order_id,
+        {b.child_part_id: float(b.qty_per_unit) * parent_qty for b in bom_rows},
+    )
+
+
+def _reverse_surplus_consumption(db: Session, handcraft_order_id: str, removed_demand: dict) -> None:
+    """Counters have already been reduced; retain demand from ALL output rows.
+
+    received_qty includes confirmed losses. Demand is summed across duplicate
+    products, jewelry and composite outputs sharing materials. Never manufacture
+    missing consumption, reverse returns/losses, or move material stock here.
+    """
+    from collections import defaultdict
+    from models.bom import Bom
     from models.part_bom import PartBom
 
-    bom_rows = db.query(PartBom).filter_by(parent_part_id=parent_part_id).all()
-    if not bom_rows:
-        return
+    demand = defaultdict(float)
+    outputs = db.query(HandcraftJewelryItem).filter_by(handcraft_order_id=handcraft_order_id).all()
+    for output in outputs:
+        settled = max(0, float(output.received_qty or 0))
+        if output.jewelry_id:
+            rows = db.query(Bom).filter_by(jewelry_id=output.jewelry_id).all()
+            for row in rows:
+                demand[row.part_id] += float(row.qty_per_unit) * settled
+        elif output.part_id:
+            rows = db.query(PartBom).filter_by(parent_part_id=output.part_id).all()
+            for row in rows:
+                demand[row.child_part_id] += float(row.qty_per_unit) * settled
 
-    bom_map = {b.child_part_id: float(b.qty_per_unit) for b in bom_rows}
-    part_items = db.query(HandcraftPartItem).filter_by(handcraft_order_id=handcraft_order_id).all()
-
-    from collections import defaultdict
+    part_items = (
+        db.query(HandcraftPartItem).filter_by(handcraft_order_id=handcraft_order_id)
+        .order_by(HandcraftPartItem.id).all()
+    )
     by_part: dict[str, list] = defaultdict(list)
     for pi in part_items:
-        if pi.part_id in bom_map:
+        if pi.part_id in removed_demand:
             by_part[pi.part_id].append(pi)
-
     for part_id, rows in by_part.items():
-        total_to_reverse = bom_map[part_id] * parent_qty
+        consumed_total = sum(float(pi.consumed_qty or 0) for pi in rows)
+        total_to_reverse = min(removed_demand[part_id], max(0, consumed_total - demand[part_id]))
         for pi in reversed(rows):
             current = float(pi.received_qty or 0)
             consumed = float(pi.consumed_qty or 0)
@@ -375,7 +372,7 @@ def _enrich_receipt(db: Session, receipt: HandcraftReceipt) -> HandcraftReceipt:
             oi = db.query(HandcraftPartItem).filter(HandcraftPartItem.id == item.handcraft_part_item_id).first()
             if oi:
                 item.handcraft_order_id = oi.handcraft_order_id
-                item.source_qty = float(oi.qty)
+                item.source_qty = _effective_qty(db, oi, "part")
                 item.source_received_qty = float(oi.received_qty or 0)
             part = db.get(Part, item.item_id)
             if part:
@@ -446,9 +443,8 @@ def create_handcraft_receipt(
             )
 
         qty = item_data["qty"]
-        remaining = _effective_qty(db, order_item, item_type) - float(order_item.received_qty or 0)
-        if qty > remaining:
-            raise ValueError(f"{'HandcraftPartItem' if item_type == 'part' else 'HandcraftJewelryItem'} {order_item.id}: 最多可回收 {remaining}, 当前填写 {qty}")
+        if qty <= 0:
+            raise ValueError("回收数量必须大于 0")
 
         price = Decimal(str(item_data["price"])).quantize(_Q7, rounding=ROUND_HALF_UP) if item_data.get("price") is not None else None
         amount = (Decimal(str(qty)) * price).quantize(_Q7, rounding=ROUND_HALF_UP) if price is not None else None
@@ -515,9 +511,8 @@ def add_handcraft_receipt_items(
             )
 
         qty = item_data["qty"]
-        remaining = _effective_qty(db, order_item, item_type) - float(order_item.received_qty or 0)
-        if qty > remaining:
-            raise ValueError(f"{'HandcraftPartItem' if item_type == 'part' else 'HandcraftJewelryItem'} {order_item.id}: 最多可回收 {remaining}, 当前填写 {qty}")
+        if qty <= 0:
+            raise ValueError("回收数量必须大于 0")
 
         price = Decimal(str(item_data["price"])).quantize(_Q7, rounding=ROUND_HALF_UP) if item_data.get("price") is not None else None
         amount = (Decimal(str(qty)) * price).quantize(_Q7, rounding=ROUND_HALF_UP) if price is not None else None
@@ -687,9 +682,8 @@ def update_handcraft_receipt_item(db: Session, receipt_id: str, item_id: int, da
         new_qty = data["qty"]
         if item.item_type == "jewelry" and new_qty != int(new_qty):
             raise ValueError("饰品收回数量必须为整数")
-        remaining = _effective_qty(db, oi, item.item_type) - float(oi.received_qty or 0) + old_qty
-        if new_qty > remaining:
-            raise ValueError(f"最多可回收 {remaining}, 当前填写 {new_qty}")
+        if new_qty <= 0:
+            raise ValueError("回收数量必须大于 0")
         item.qty = new_qty
 
     new_qty = float(item.qty)

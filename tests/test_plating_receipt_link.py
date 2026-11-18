@@ -132,8 +132,19 @@ def test_link_receipt_exceeds_remaining(db):
     receipt = create_plating_receipt(db, "Supplier A", [
         {"plating_order_item_id": other_poi.id, "part_id": other_part.id, "qty": 5, "price": 1},
     ])
-    with pytest.raises(ValueError, match="最多可回收"):
-        link_plating_item_to_receipt(db, order.id, poi.id, receipt.id, 15.0, 0.5)
+    result = link_plating_item_to_receipt(db, order.id, poi.id, receipt.id, 15.0, 0.5)
+    assert result["qty"] == 15
+    db.refresh(poi)
+    assert float(poi.received_qty) == 15
+    assert float(poi.qty) == 10
+    second = create_plating_receipt(db, "Supplier A", [
+        {"plating_order_item_id": other_poi.id, "part_id": other_part.id, "qty": 1, "price": 1},
+    ])
+    link_plating_item_to_receipt(db, order.id, poi.id, second.id, 2, 0.5)
+    db.refresh(poi)
+    db.refresh(order)
+    assert float(poi.received_qty) == 17
+    assert order.status == "completed"
 
 
 def test_link_receipt_vendor_mismatch(db):

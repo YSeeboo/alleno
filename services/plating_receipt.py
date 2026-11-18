@@ -142,9 +142,8 @@ def create_plating_receipt(
             )
 
         qty = item_data["qty"]
-        remaining = float(poi.qty) - float(poi.received_qty or 0)
-        if qty > remaining:
-            raise ValueError(f"PlatingOrderItem {poi.id}: 最多可回收 {remaining}, 当前填写 {qty}")
+        if qty <= 0:
+            raise ValueError("回收数量必须大于 0")
 
         # Validate part_id matches
         expected_part_id = item_data["part_id"]
@@ -216,9 +215,8 @@ def add_plating_receipt_items(
             )
 
         qty = item_data["qty"]
-        remaining = float(poi.qty) - float(poi.received_qty or 0)
-        if qty > remaining:
-            raise ValueError(f"PlatingOrderItem {poi.id}: 最多可回收 {remaining}, 当前填写 {qty}")
+        if qty <= 0:
+            raise ValueError("回收数量必须大于 0")
 
         expected_part_id = item_data["part_id"]
         receive_id = poi.receive_part_id or poi.part_id
@@ -386,10 +384,8 @@ def update_plating_receipt_item(db: Session, receipt_id: str, item_id: int, data
         item.price = Decimal(str(data["price"])).quantize(_Q7, rounding=ROUND_HALF_UP) if data["price"] is not None else None
     if "qty" in data and data["qty"] is not None:
         new_qty = data["qty"]
-        # Validate: new_qty must not exceed remaining + old_qty
-        remaining = float(poi.qty) - float(poi.received_qty or 0) + old_qty
-        if new_qty > remaining:
-            raise ValueError(f"最多可回收 {remaining}, 当前填写 {new_qty}")
+        if new_qty <= 0:
+            raise ValueError("回收数量必须大于 0")
         item.qty = new_qty
 
     new_qty = float(item.qty)
@@ -544,9 +540,6 @@ def link_plating_item_to_receipt(
         raise ValueError("回收数量必须大于 0")
     if price is not None and price < 0:
         raise ValueError("回收单价不能为负数")
-    remaining = float(poi.qty) - float(poi.received_qty or 0)
-    if qty > remaining:
-        raise ValueError(f"最多可回收 {remaining}，当前填写 {qty}")
 
     # 4. Validate receipt exists and is unpaid
     receipt = db.query(PlatingReceipt).filter(PlatingReceipt.id == receipt_id).first()
@@ -600,7 +593,7 @@ def get_receipt_vendor_names(db: Session) -> list[str]:
 
 
 def _enrich_receipt(db: Session, receipt: PlatingReceipt) -> PlatingReceipt:
-    """Populate enriched fields (part_name, plating_order_id, plating_method) on receipt items."""
+    """Populate received-part display fields and source-order information."""
     for item in receipt.items:
         poi = db.query(PlatingOrderItem).filter(PlatingOrderItem.id == item.plating_order_item_id).first()
         if poi:
@@ -611,5 +604,6 @@ def _enrich_receipt(db: Session, receipt: PlatingReceipt) -> PlatingReceipt:
         part = db.get(Part, item.part_id)
         if part:
             item.part_name = part.name
+            item.part_image = part.image
             item.part_is_composite = part.is_composite
     return receipt

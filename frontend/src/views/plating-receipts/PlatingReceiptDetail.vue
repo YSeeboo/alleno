@@ -65,7 +65,7 @@
             :data="items"
             :bordered="false"
             :row-key="(row) => row.id"
-            :scroll-x="1330"
+            :scroll-x="1380"
             :row-class-name="(row) => row.id === highlightItemId ? 'receipt-highlight-row' : ''"
           />
           <n-empty v-else description="暂无明细" style="padding: 24px;" />
@@ -176,6 +176,7 @@
 
     <!-- Edit Item Modal -->
     <n-modal v-model:show="editModalVisible" preset="card" title="修改明细" :style="{ width: isMobile ? '95vw' : '500px' }">
+      <p>允许超过发出数量，库存及金额按实际回收数量调整。</p>
       <form @submit.prevent="doEditItem">
       <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="90">
         <n-form-item label="数量">
@@ -216,6 +217,7 @@
 
     <!-- Add Items Modal -->
     <n-modal v-model:show="addItemsModalVisible" preset="card" :title="`增加回收配件（${receipt?.vendor_name}）`" :style="{ width: isMobile ? '95vw' : '800px' }">
+      <p>含已结清来源，允许按实际数量超收；本单已有来源请直接修改原明细数量。</p>
       <div class="rd-add-filters">
         <n-input
           v-model:value="addItemsFilterKeyword"
@@ -332,7 +334,8 @@ import { tsToDateStr, isoToTs } from '@/utils/date'
 import { listPendingReceiveItems } from '@/api/plating'
 import { batchUpdatePartCosts } from '@/api/parts'
 import { confirmPlatingLoss } from '@/api/productionLoss'
-import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
+import { renderImageThumb, renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
+import { remainingQuantity, sourceBalance, receiptSourceExcess } from '@/utils/receiptQuantity'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 import { summarizePlatingReceipt } from '@/utils/platingReceiptDetail'
 
@@ -761,11 +764,14 @@ const itemColumns = [
   {
     title: '配件',
     key: 'part_name',
-    width: 210,
+    width: 260,
     render: (row) => h('div', { class: 'rd-part' }, [
-      h('div', { class: 'rd-part-name' }, [row.part_name || row.part_id,
-        row.part_is_composite ? h('span', { class: 'rd-composite' }, '组合') : null]),
-      h('div', { class: 'rd-part-code' }, row.part_id),
+      renderImageThumb(row.part_image, row.part_name || row.part_id, 40),
+      h('div', { class: 'rd-part-info' }, [
+        h('div', { class: 'rd-part-name' }, [row.part_name || row.part_id,
+          row.part_is_composite ? h('span', { class: 'rd-composite' }, '组合') : null]),
+        h('div', { class: 'rd-part-code' }, row.part_id),
+      ]),
     ]),
   },
   {
@@ -782,7 +788,10 @@ const itemColumns = [
     },
   },
   { title: '电镀方式', key: 'plating_method', width: 90, render: (r) => r.plating_method || '-' },
-  { title: '回收数量', key: 'qty', width: 120, render: (r) => h('span', { class: 'rd-qty' }, [String(r.qty), h('small', null, r.unit || '未标单位')]) },
+  { title: '回收数量', key: 'qty', width: 120, render: (r) => h('div', [
+    h('span', { class: 'rd-qty' }, [String(r.qty), h('small', null, r.unit || '未标单位')]),
+    receiptSourceExcess(r) ? h('small', { style: 'display:block;color:#b45309' }, `来源结清超出 ${receiptSourceExcess(r)}`) : null,
+  ]) },
   { title: '重量', key: 'weight', width: 120, render: (r) => r.weight != null ? `${r.weight} ${r.weight_unit || 'g'}` : '—' },
   { title: '单价', key: 'price', width: 120, render: (r) => r.price != null ? `¥ ${fmtMoney(r.price)}` : h('span', { class: 'rd-unpriced' }, '待定价') },
   { title: '金额', key: 'amount', width: 130, render: (r) => r.amount != null ? h('span', { class: 'rd-amount' }, `¥ ${fmtMoney(r.amount)}`) : h('span', { class: 'rd-unpriced' }, '待定价') },
@@ -854,7 +863,7 @@ const itemColumns = [
 ]
 
 // Add items helpers
-const getAddRemaining = (item) => item.qty - (item.received_qty || 0)
+const getAddRemaining = remainingQuantity
 
 const getAddInput = (id) => {
   if (!addItemsInputs[id]) {
@@ -870,7 +879,7 @@ const fetchAddItemsPending = async () => {
   addItemsFetchError.value = false
   try {
     const existingPoiIds = receipt.value.items.map((i) => i.plating_order_item_id).filter(Boolean)
-    const params = { supplier_name: receipt.value.vendor_name }
+    const params = { supplier_name: receipt.value.vendor_name, include_settled: true }
     if (existingPoiIds.length > 0) params.exclude_item_ids = existingPoiIds
     if (addItemsFilterKeyword.value) params.part_keyword = addItemsFilterKeyword.value
     if (addItemsFilterDateOn.value) {
@@ -882,7 +891,7 @@ const fetchAddItemsPending = async () => {
     addItemsPendingItems.value = data
     for (const item of data) {
       if (!addItemsInputs[item.id]) {
-        addItemsInputs[item.id] = { qty: getAddRemaining(item), price: null, unit: item.unit || '个' }
+        addItemsInputs[item.id] = { qty: getAddRemaining(item) || null, price: null, unit: item.unit || '个' }
       }
     }
   } catch (_) {
@@ -998,7 +1007,7 @@ const addItemsColumns = [
     width: 100,
     render: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString('zh-CN') : '-',
   },
-  { title: '剩余', key: 'remaining', width: 70, render: (r) => getAddRemaining(r) },
+  { title: '未收 / 超出', key: 'remaining', width: 130, render: sourceBalance },
   {
     title: '本次回收',
     key: 'input_qty',
@@ -1008,7 +1017,6 @@ const addItemsColumns = [
       return h(NInputNumber, {
         value: input.qty,
         min: 0.0001,
-        max: getAddRemaining(row),
         precision: 4,
         step: 1,
         size: 'small',
@@ -1107,6 +1115,8 @@ onMounted(async () => {
 .rd-table { border: 1px solid #ECEDEF; border-radius: 9px; overflow: hidden; }
 .rd-table :deep(th.n-data-table-th) { background: #FAFBFB; color: #8B9096; font-size: 10px; font-weight: 600; }
 .rd-table :deep(td.n-data-table-td) { padding: 14px 12px; font-size: 12px; }
+.rd-table :deep(.rd-part) { display: flex; align-items: center; gap: 10px; }
+.rd-table :deep(.rd-part-info) { min-width: 0; overflow-wrap: anywhere; }
 .rd-table :deep(.rd-part-name) { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-weight: 600; }
 .rd-table :deep(.rd-part-code) { color: #A5ADB4; font-size: 10px; margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .rd-table :deep(.rd-composite) { font-size: 9px; font-weight: 400; border-radius: 3px; padding: 1px 5px; background: #F0F2F4; color: #879199; }

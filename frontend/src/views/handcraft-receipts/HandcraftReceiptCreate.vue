@@ -71,7 +71,7 @@
     <n-card style="margin-bottom: 16px;">
       <template #header>
         <span style="font-weight: 600;">待回收饰品</span>
-        <span style="font-size: 12px; color: #9ca3af; margin-left: 8px; font-weight: 400;">该商家制作中的产出项</span>
+        <span style="display: block; font-size: 12px; color: #9ca3af; margin-top: 4px; font-weight: 400; line-height: 1.5;">含已结清，允许按实际数量超收（产出整数）</span>
       </template>
       <template #header-extra>
         <n-badge :value="partReturnCount" :max="99" :show="partReturnCount > 0">
@@ -177,7 +177,7 @@
                 </div>
                 <div style="font-size: 11px; color: #9ca3af; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                   <span>{{ row.item_id }}</span>
-                  <span>· 剩余 {{ getRemaining(row) }}</span>
+                  <span>· 未收 {{ sourceBalance(row) }}</span>
                   <span
                     style="color: #6366F1; font-weight: 600; cursor: pointer; border-bottom: 1px dashed #c7cbf5; padding-bottom: 1px;"
                     @click.stop="openOrderPeek(row.handcraft_order_id)"
@@ -196,9 +196,9 @@
                 <n-input-number
                   :value="getInput(rowKey(row)).qty"
                   :min="1"
-                  :max="getRemaining(row)"
                   :precision="0"
                   :step="1"
+                  :input-props="{ 'aria-label': `产出 ${row.id} 本次回收数量` }"
                   style="width: 100%;"
                   @update:value="(v) => { getInput(rowKey(row)).qty = v }"
                 />
@@ -367,6 +367,7 @@ import { getHandcraftSuppliers, getHandcraftByReceiptCode } from '@/api/handcraf
 import HandcraftOrderPeekModal from '@/components/HandcraftOrderPeekModal.vue'
 import { batchUpdatePartCosts } from '@/api/parts'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
+import { remainingQuantity, sourceBalance } from '@/utils/receiptQuantity'
 import { tsToDateStr } from '@/utils/date'
 import { useIsMobile } from '@/composables/useIsMobile'
 import PartReturnModal from './PartReturnModal.vue'
@@ -427,7 +428,7 @@ const unitOptions = [
 ]
 
 const rowKey = (row) => `${row.is_output ? 'output' : row.item_type}_${row.id}`
-const getRemaining = (item) => item.qty - (item.received_qty || 0)
+const getRemaining = remainingQuantity
 
 const getInput = (key) => {
   if (!itemInputs[key]) {
@@ -468,7 +469,7 @@ const fetchPendingItems = async () => {
   loadingItems.value = true
   fetchError.value = false
   try {
-    const params = {}
+    const params = { include_settled: true }
     if (supplierName.value) params.supplier_name = supplierName.value
     if (scopeCode.value) params.receipt_code = scopeCode.value
     if (filterKeyword.value) params.keyword = filterKeyword.value
@@ -483,7 +484,7 @@ const fetchPendingItems = async () => {
     for (const item of data) {
       const key = `${item.is_output ? 'output' : item.item_type}_${item.id}`
       if (!itemInputs[key]) {
-        itemInputs[key] = { qty: getRemaining(item), price: null, unit: item.unit || '个', weight: null, weight_unit: 'g' }
+        itemInputs[key] = { qty: getRemaining(item) || null, price: null, unit: item.unit || '个', weight: null, weight_unit: 'g' }
       }
       if (item.is_output) {
         jewelries.push(item)
@@ -593,7 +594,7 @@ const jewelryPendingColumns = [
   },
   { title: '总数量', key: 'qty', width: 80 },
   { title: '已回收', key: 'received_qty', width: 80, render: (r) => r.received_qty ?? 0 },
-  { title: '剩余', key: 'remaining', width: 80, render: (r) => getRemaining(r) },
+  { title: '未收 / 超出', key: 'remaining', width: 130, render: sourceBalance },
   {
     title: '本次回收',
     key: 'input_qty',
@@ -603,9 +604,9 @@ const jewelryPendingColumns = [
       return h(NInputNumber, {
         value: input.qty,
         min: 1,
-        max: getRemaining(row),
         precision: 0,
         step: 1,
+        inputProps: { 'aria-label': `产出 ${row.id} 本次回收数量` },
         size: 'small',
         style: 'width: 110px;',
         'onUpdate:value': (v) => { input.qty = v },

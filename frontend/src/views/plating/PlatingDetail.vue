@@ -220,7 +220,7 @@
       <floating-action-button variant="excel" :loading="downloadingExcel" @click="doDownloadExcel">导出Excel</floating-action-button>
       <floating-action-button variant="pdf" :loading="downloadingPdf" @click="doDownloadPdf">导出PDF</floating-action-button>
       <floating-action-button v-if="isPending()" variant="primary" :loading="sending" @click="doSend">确认发出</floating-action-button>
-      <floating-action-button v-else-if="order.status === 'processing' && !order.archived_at" variant="primary" :disabled="!linkableItems.length" @click="chooseReceiptItem">关联回收单</floating-action-button>
+      <floating-action-button v-else-if="['processing', 'completed'].includes(order.status) && !order.archived_at" variant="primary" :disabled="!linkableItems.length" @click="chooseReceiptItem">关联回收单</floating-action-button>
     </floating-action-bar>
 
     <n-modal v-model:show="showReceiptList" preset="card" title="本单关联回收单" :style="{ width: isMobile ? '95vw' : '520px' }">
@@ -464,13 +464,12 @@
           <n-input-number
             v-model:value="receiptLinkForm.qty"
             :min="0.0001"
-            :max="receiptLinkItemInfo?.remaining || 0"
             :precision="4"
             placeholder="回收数量"
             style="width: 100%;"
           />
           <span style="font-size: 11px; color: #999; margin-left: 8px; white-space: nowrap;">
-            最多 {{ receiptLinkItemInfo?.remaining }}
+            未收 {{ receiptLinkItemInfo?.remaining }}，允许按实际数量超收
           </span>
         </n-form-item>
         <n-form-item label="回收单价">
@@ -1438,8 +1437,6 @@ const doLinkReceipt = async () => {
   if (!receiptId) { message.warning('请选择回收单'); return }
   if (!qty || qty <= 0) { message.warning('请输入回收数量'); return }
   if (price == null || price < 0) { message.warning('请输入回收单价'); return }
-  const remaining = receiptLinkItemInfo.value?.remaining || 0
-  if (qty > remaining) { message.warning(`回收数量不能超过剩余可收数量 ${remaining}`); return }
   receiptLinkSubmitting.value = true
   try {
     await linkPlatingItemToReceipt(route.params.id, itemId, {
@@ -1683,7 +1680,7 @@ const renderReceiptLinkCell = (row) => {
     }, { default: () => '+' }))
   }
 
-  const hint = `实收 ${actual} / ${qty}${loss ? ` · 损耗 ${loss}` : ''}${remaining === 0 ? ' · 已结清' : ''}`
+  const hint = `实收 ${actual} / ${qty}${loss ? ` · 损耗 ${loss}` : ''}${actual > qty ? ` · 超收 ${Number((actual - qty).toFixed(4))}` : ''}${remaining === 0 ? ' · 已结清' : ''}`
   children.push(h('div', { style: 'font-size: 11px; color: #999; margin-top: 2px; width: 100%;' }, hint))
 
   return h('div', { style: 'display: flex; flex-wrap: wrap; gap: 4px; align-items: center;' }, children)

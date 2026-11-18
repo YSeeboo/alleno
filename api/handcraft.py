@@ -146,6 +146,7 @@ def api_list_handcraft_pending_receive_items(
     exclude_part_item_ids: list[int] = Query(None),
     exclude_jewelry_item_ids: list[int] = Query(None),
     receipt_code: Optional[str] = None,
+    include_settled: bool = False,
     db: Session = Depends(get_db),
 ):
     with service_errors():
@@ -155,6 +156,7 @@ def api_list_handcraft_pending_receive_items(
             exclude_part_item_ids=exclude_part_item_ids or None,
             exclude_jewelry_item_ids=exclude_jewelry_item_ids or None,
             receipt_code=receipt_code,
+            include_settled=include_settled,
         )
 
 

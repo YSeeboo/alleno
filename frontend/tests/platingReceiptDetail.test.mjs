@@ -1,6 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { summarizePlatingReceipt } from '../src/utils/platingReceiptDetail.js'
+
+test('receipt detail shows a previewable thumbnail for the received part while retaining name and code', () => {
+  const source = readFileSync(new URL('../src/views/plating-receipts/PlatingReceiptDetail.vue', import.meta.url), 'utf8')
+  const partColumn = source.slice(source.indexOf('const itemColumns = ['), source.indexOf("title: '电镀单号'"))
+  assert.match(partColumn, /renderImageThumb\(row.part_image, row.part_name \|\| row.part_id, 40\)/)
+  assert.match(partColumn, /class: 'rd-part-name'/)
+  assert.match(partColumn, /class: 'rd-part-code'/)
+  assert.match(partColumn, /row.part_is_composite/)
+})
 
 test('receipt summary separates quantity units, counts distinct parts and converts weights', () => {
   const items = [

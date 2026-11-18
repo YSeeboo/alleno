@@ -42,9 +42,13 @@
         <span class="hc-step__dot">3</span>
         <div>
           <div class="hc-step__lab">已完成</div>
-          <div class="hc-step__sub">{{ order.status === 'completed' ? (order.completed_at ? fmt(order.completed_at) : '已完成') : '待产出全部收回' }}</div>
+          <div class="hc-step__sub">{{ order.status === 'completed' ? (order.completed_at ? fmt(order.completed_at) : '已完成') : '待产出结清（回收＋确认损耗）' }}</div>
         </div>
       </div>
+    </div>
+
+    <div v-if="order?.status === 'processing' && !order.archived_at && outputsLoaded" class="hc-completion-note" role="status">
+      {{ completion.hint }}
     </div>
 
     <!-- ── Summary stat cards ──────────────────────────────── -->
@@ -698,6 +702,16 @@
         导出PDF
       </floating-action-button>
       <floating-action-button
+        v-if="order.status === 'processing' && !order.archived_at"
+        variant="primary"
+        :loading="completing"
+        :disabled="loading || !outputsLoaded || !completion.canComplete"
+        :title="outputsLoaded ? completion.hint : '正在读取产出明细'"
+        @click="doComplete"
+      >
+        确认完成
+      </floating-action-button>
+      <floating-action-button
         v-if="isPending()"
         variant="primary"
         :loading="sending"
@@ -715,20 +729,21 @@ import ProductionArchiveNotice from '@/components/ProductionArchiveNotice.vue'
 import { ref, reactive, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useHandcraftSummaryReturn } from '@/composables/useHandcraftSummaryReturn'
+import { handcraftCompletion } from '@/utils/handcraftCompletion'
 import { useMessage, useDialog } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useSendWithStockSupplement } from '@/composables/useSendWithStockSupplement'
 import {
   NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
   NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
-  NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon, NImage,
+  NSelect, NInputNumber, NInput, NTooltip, NIcon, NImage,
   NRadioGroup, NRadio, NRadioButton, NDatePicker, NTabs, NTabPane,
 } from 'naive-ui'
 import { CreateOutline } from '@vicons/ionicons5'
 import {
   getHandcraft, getHandcraftParts, getHandcraftJewelries, sendHandcraft, supplementAndSendHandcraft,
   addHandcraftPart, updateHandcraftPart, deleteHandcraftPart,
-  addHandcraftJewelry, updateHandcraftJewelry, deleteHandcraftJewelry, updateHandcraft,
+  addHandcraftJewelry, updateHandcraftJewelry, deleteHandcraftJewelry, updateHandcraft, updateHandcraftStatus,
   updateHandcraftDeliveryImages, downloadHandcraftExcel, downloadHandcraftPdf,
   getHandcraftPartOrders, deleteHandcraftPartOrderLink,
   getHandcraftJewelryOrders, deleteHandcraftJewelryOrderLink,
@@ -739,7 +754,6 @@ import {
 import BreakdownMatrix from '@/components/BreakdownMatrix.vue'
 import { tsToDateStr, isoToTs } from '@/utils/date'
 import { confirmHandcraftLoss } from '@/api/productionLoss'
-import { changeOrderStatus } from '@/api/kanban'
 import { listParts, updatePart } from '@/api/parts'
 import {
   listHandcraftRestock,
@@ -771,6 +785,9 @@ const dialog = useDialog()
 const { isMobile } = useIsMobile()
 
 const loading = ref(true)
+const outputsLoaded = ref(false)
+const completing = ref(false)
+const completion = computed(() => handcraftCompletion(order.value, jewelryItems.value, items.value))
 const downloadingExcel = ref(false)
 const downloadingPdf = ref(false)
 const order = ref(null)
@@ -872,7 +889,7 @@ const doConfirmLoss = async () => {
     await confirmHandcraftLoss(route.params.id, lossTarget.value.id, payload)
     showLossModal.value = false
     message.success('损耗已确认')
-    await loadData()
+    await Promise.all([loadData(), loadJewelries(), loadBreakdown()])
   } catch (err) {
     // error handled by interceptor
   } finally {
@@ -880,7 +897,6 @@ const doConfirmLoss = async () => {
   }
 }
 
-const statusType = { pending: 'default', processing: 'info', completed: 'success' }
 const statusLabel = { pending: '待发出', processing: '进行中', completed: '已完成' }
 
 // ── Stepper helper ─────────────────────────────────────────────
@@ -909,17 +925,6 @@ const totalLossQty = computed(() =>
 const deliveryImages = computed(() => order.value?.delivery_images || [])
 const totalDeliveryImageCount = computed(() => deliveryImages.value.length + pendingDeliveryImages.value.length)
 const canAddDeliveryImage = computed(() => !order.value?.archived_at && totalDeliveryImageCount.value < 10)
-const statusOptions = computed(() => {
-  if (!order.value || order.value.archived_at) return []
-  const s = order.value.status
-  if (s === 'pending') return [{ label: '进行中', value: 'processing' }]
-  if (s === 'processing') return [
-    { label: '待发出', value: 'pending' },
-    { label: '已完成', value: 'completed' },
-  ]
-  if (s === 'completed') return [{ label: '进行中', value: 'processing' }]
-  return []
-})
 const fmt = (dt) => new Date(dt).toLocaleString('zh-CN')
 
 const unitOptions = [
@@ -1405,24 +1410,26 @@ async function doCuttingStatsPdfExport() {
   }
 }
 
-const doChangeStatus = (newStatus) => {
-  const currentLabel = statusLabel[order.value?.status] || order.value?.status
-  const newLabel = statusLabel[newStatus] || newStatus
+const doComplete = () => {
+  if (completing.value || !outputsLoaded.value || !completion.value.canComplete) return
+  const orderId = order.value.id
   dialog.warning({
-    title: '确认状态变更',
-    content: `请确认将「${order.value?.supplier_name}」的订单「${order.value?.id}」状态从「${currentLabel}」转为「${newLabel}」`,
-    positiveText: '确认',
+    title: '确认完成手工单',
+    content: `确认将手工单「${orderId}」标记为已完成？系统会重新校验结清情况，不补记回收、不增加库存，也不自动处理材料余额。`,
+    positiveText: '确认完成',
     negativeText: '取消',
     onPositiveClick: async () => {
-      const loadingMsg = message.loading('正在更新状态...', { duration: 0 })
+      if (completing.value) return false
+      completing.value = true
       try {
-        await changeOrderStatus({ order_id: order.value.id, order_type: 'handcraft', new_status: newStatus })
-        loadingMsg.destroy()
-        message.success(`状态已更新为${newLabel}`)
-        await loadData()
+        await updateHandcraftStatus(orderId, 'completed')
+        message.success('手工单已完成')
+        await Promise.all([loadData(), loadJewelries(), loadBreakdown()])
       } catch (_) {
-        loadingMsg.destroy()
-        await loadData()
+        await Promise.all([loadData(), loadJewelries()])
+        return false
+      } finally {
+        completing.value = false
       }
     },
   })
@@ -1752,6 +1759,7 @@ const jewelryMap = ref({})
 const breakdownGroups = ref([])
 
 const loadJewelries = async () => {
+  outputsLoaded.value = false
   try {
     const { data } = await getHandcraftJewelries(route.params.id)
     jewelryItems.value = data.map((j) => {
@@ -1772,6 +1780,7 @@ const loadJewelries = async () => {
         display_image: j.jewelry_image || jewelryMap.value[j.jewelry_id]?.image || '',
       }
     })
+    outputsLoaded.value = true
   } catch (_) {
     jewelryItems.value = []
   }
@@ -2423,6 +2432,17 @@ async function copyReceiptCode() {
 </script>
 
 <style scoped>
+.hc-completion-note {
+  margin: 12px 0 16px;
+  padding: 10px 14px;
+  border: 1px solid #dcebe4;
+  border-radius: 8px;
+  background: #f3f8f5;
+  color: #37634f;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
 .delivery-images-block {
   display: flex;
   flex-direction: column;

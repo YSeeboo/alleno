@@ -144,14 +144,17 @@ def test_only_parts_received_stays_processing(client, db):
     assert order_resp.json()["status"] == "processing"
 
 
-def test_only_jewelry_received_stays_processing(client, db):
+def test_only_jewelry_received_completes_without_returning_materials(client, db):
     part, jewelry, order, pi, ji = _create_sent_handcraft(db)
     client.post("/api/handcraft-receipts/", json={
         "supplier_name": "测试手工商",
         "items": [{"handcraft_jewelry_item_id": ji.id, "qty": 5}],
     })
     order_resp = client.get(f"/api/handcraft/{order.id}")
-    assert order_resp.json()["status"] == "processing"
+    assert order_resp.json()["status"] == "completed"
+    db.refresh(pi)
+    assert float(pi.received_qty or 0) == 0
+    assert get_stock(db, "part", part.id) == pytest.approx(20)
 
 
 # ── Constraint validation ──────────────────────────────────────────────
@@ -163,7 +166,8 @@ def test_qty_exceeds_remaining(client, db):
         "supplier_name": "测试手工商",
         "items": [{"handcraft_part_item_id": pi.id, "qty": 15.0}],
     })
-    assert resp.status_code == 400
+    assert resp.status_code == 201
+    assert get_stock(db, "part", part.id) == pytest.approx(35)
 
 
 def test_paid_receipt_cannot_add_items(client, db):
@@ -611,7 +615,7 @@ def test_jewelry_handcraft_cost_diff_on_add_items(client, db):
     assert float(jewelry.handcraft_cost) == pytest.approx(8.0)
 
 
-# ── actual_qty (picking override) interacts with receipt cap + status ──
+# ── actual_qty (picking override) remains the settlement threshold ──
 
 
 def _create_sent_handcraft_with_actual_qty(db, pi_qty=10.0, actual_qty=8.0):
@@ -647,15 +651,19 @@ def _create_sent_handcraft_with_actual_qty(db, pi_qty=10.0, actual_qty=8.0):
     return part, jewelry, order, pi
 
 
-def test_receipt_cap_rejects_over_effective_qty(client, db):
-    """pi.qty=10, actual_qty=8: trying to receive 9 must fail (cap is 8)."""
+def test_receipt_allows_over_effective_qty(client, db):
+    """Effective quantity remains a settlement threshold, not a receipt cap."""
     part, jewelry, order, pi = _create_sent_handcraft_with_actual_qty(db)
     resp = client.post("/api/handcraft-receipts/", json={
         "supplier_name": "测试手工商",
         "items": [{"handcraft_part_item_id": pi.id, "qty": 9.0}],
     })
-    assert resp.status_code == 400
-    assert "最多可回收 8" in resp.json()["detail"]
+    assert resp.status_code == 201
+    db.refresh(pi)
+    assert pi.status == "已收回"
+    assert float(pi.qty) == 10
+    assert resp.json()["items"][0]["source_qty"] == 8
+    assert get_stock(db, "part", part.id) == pytest.approx(101)
 
 
 def test_receipt_at_effective_qty_flips_to_完成(client, db):
@@ -673,8 +681,8 @@ def test_receipt_at_effective_qty_flips_to_完成(client, db):
     assert get_stock(db, "part", part.id) == pytest.approx(100.0)
 
 
-def test_receipt_add_items_cap_uses_effective_qty(client, db):
-    """The add-items endpoint enforces the same effective cap on subsequent receipts."""
+def test_receipt_add_items_allows_over_effective_qty(client, db):
+    """Appending actual returns may exceed the effective dispatched quantity."""
     part, jewelry, order, pi = _create_sent_handcraft_with_actual_qty(db)
     # First receive 5 (under effective=8)
     create_resp = client.post("/api/handcraft-receipts/", json={
@@ -684,16 +692,18 @@ def test_receipt_add_items_cap_uses_effective_qty(client, db):
     assert create_resp.status_code == 201
     receipt_id = create_resp.json()["id"]
 
-    # Try to add 4 more → would total 9 > effective 8 → reject
+    # Append 4: actual total 9 exceeds effective 8.
     add_resp = client.post(f"/api/handcraft-receipts/{receipt_id}/items", json={
         "items": [{"handcraft_part_item_id": pi.id, "qty": 4.0}],
     })
-    assert add_resp.status_code == 400
-    assert "最多可回收 3" in add_resp.json()["detail"]
+    assert add_resp.status_code == 201
+    db.refresh(pi)
+    assert float(pi.received_qty) == 9
+    assert get_stock(db, "part", part.id) == pytest.approx(101)
 
 
-def test_receipt_edit_qty_cap_uses_effective_qty(client, db):
-    """Edit qty validation also uses effective cap."""
+def test_receipt_edit_qty_allows_over_effective_qty(client, db):
+    """Editing actual returns is uncapped too."""
     part, jewelry, order, pi = _create_sent_handcraft_with_actual_qty(db)
     create_resp = client.post("/api/handcraft-receipts/", json={
         "supplier_name": "测试手工商",
@@ -702,13 +712,15 @@ def test_receipt_edit_qty_cap_uses_effective_qty(client, db):
     receipt_id = create_resp.json()["id"]
     item_id = create_resp.json()["items"][0]["id"]
 
-    # Edit existing item to qty=9 → exceeds effective=8 → reject
+    # Edit existing item to qty=9, above effective=8.
     edit_resp = client.put(
         f"/api/handcraft-receipts/{receipt_id}/items/{item_id}",
         json={"qty": 9.0},
     )
-    assert edit_resp.status_code == 400
-    assert "最多可回收 8" in edit_resp.json()["detail"]
+    assert edit_resp.status_code == 200
+    db.refresh(pi)
+    assert float(pi.received_qty) == 9
+    assert get_stock(db, "part", part.id) == pytest.approx(101)
 
 
 def test_order_auto_completes_when_all_effective_qty_received(client, db):
