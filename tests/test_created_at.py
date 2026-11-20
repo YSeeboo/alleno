@@ -517,13 +517,8 @@ def test_handcraft_explicit_created_at_skips_merge(client, db, setup):
     assert r1.json()["id"] != r2.json()["id"]
 
 
-def test_handcraft_merge_target_is_deterministic(client, db, setup):
-    """When multiple pending handcraft orders exist for the same supplier on
-    the same day (e.g. two backfills stored as midnight), a subsequent default
-    create (no explicit created_at) must deterministically merge into the
-    earliest row by `(created_at ASC, id ASC)` — not into whichever row the
-    database happens to return first.
-    """
+def test_handcraft_append_target_is_explicit_not_earliest_row(client, db, setup):
+    """Multiple pending orders must never cause an implicit target choice."""
     from time_utils import now_beijing
     _, p1, p2, _ = setup
     today = now_beijing().date()
@@ -544,17 +539,18 @@ def test_handcraft_merge_target_is_deterministic(client, db, setup):
     assert hc1.created_at == hc2.created_at  # identical midnight timestamp
     assert hc1.id < hc2.id  # hc1 is the earliest by id
 
-    # Default create (no created_at) must merge into hc1, not hc2.
+    # Explicit choice of hc2 must not be replaced with the earliest hc1.
     hc3 = create_handcraft_order(
         db, "手工坊",
         parts=[{"part_id": p1.id, "qty": 5}],
+        append_to_order_id=hc2.id,
     )
-    assert hc3.id == hc1.id
+    assert hc3.id == hc2.id
     assert getattr(hc3, "merged", False) is True
 
 
-def test_handcraft_without_created_at_still_merges(client, db, setup):
-    """Regression guard: default auto-merge behavior still works."""
+def test_handcraft_without_created_at_defaults_to_new(client, db, setup):
+    """New API calls must not silently append to another order."""
     _, p1, p2, j1 = setup
     r1 = client.post("/api/handcraft/", json={
         "supplier_name": "手工坊",
@@ -565,9 +561,8 @@ def test_handcraft_without_created_at_still_merges(client, db, setup):
         "supplier_name": "手工坊",
         "parts": [{"part_id": p2.id, "qty": 15}],
     })
-    # Second call merges into the first
-    assert r2.status_code == 200
-    assert r1.json()["id"] == r2.json()["id"]
+    assert r2.status_code == 201
+    assert r1.json()["id"] != r2.json()["id"]
 
 
 # --- List endpoints sort by created_at DESC ---

@@ -9,11 +9,14 @@ class OrderItemCreate(BaseModel):
     quantity: int = Field(..., gt=0)
     unit_price: float = Field(..., ge=0)
     remarks: Optional[str] = None
+    customer_code: Optional[str] = None
 
     @model_validator(mode="after")
     def _xor(self):
         if (self.jewelry_id is None) == (self.part_id is None):
             raise ValueError("jewelry_id 和 part_id 必须且只能填一个")
+        if self.part_id is not None and self.customer_code is not None:
+            raise ValueError("配件项不允许设置客户货号")
         return self
 
 
@@ -63,6 +66,7 @@ class OrderResponse(BaseModel):
 
 
 class OrderItemUpdate(BaseModel):
+    remarks: Optional[str] = None
     customer_code: str | None = None
     quantity: Optional[int] = Field(None, gt=0)
     unit_price: Optional[float] = Field(None, ge=0)
@@ -189,6 +193,7 @@ class TodoBatchListResponse(BaseModel):
 
 class LinkSupplierRequest(BaseModel):
     supplier_name: str
+    append_to_order_id: Optional[str] = Field(None, min_length=1)
 
 
 class LinkSupplierResponse(BaseModel):

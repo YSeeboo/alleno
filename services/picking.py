@@ -276,6 +276,8 @@ def mark_picked(
     db: Session, order_id: str, part_id: str, qty_per_unit: float
 ) -> PickingMarkResult:
     """Mark a variant as picked. Idempotent — calling twice produces one row."""
+    from services.order import _editable_order
+    _editable_order(db, order_id)
     _validate_variant_in_order(db, order_id, part_id, qty_per_unit)
 
     existing = (
@@ -310,10 +312,9 @@ def unmark_picked(
     Does NOT validate that (part_id, qty_per_unit) is still in the order's
     aggregation. This allows cleaning up orphan rows left behind after order
     edits (e.g., a jewelry was removed from the order after a variant was
-    marked picked). Requires only that the order exists."""
-    order = db.query(Order).filter_by(id=order_id).one_or_none()
-    if order is None:
-        raise ValueError(f"订单 {order_id} 不存在")
+    marked picked). Requires an editable order."""
+    from services.order import _editable_order
+    _editable_order(db, order_id)
 
     (
         db.query(OrderPickingRecord)
@@ -328,9 +329,8 @@ def unmark_picked(
 def reset_picking(db: Session, order_id: str) -> int:
     """Delete all picking records for the order. Returns the delete count.
     Raises ValueError if the order does not exist."""
-    order = db.query(Order).filter_by(id=order_id).one_or_none()
-    if order is None:
-        raise ValueError(f"订单 {order_id} 不存在")
+    from services.order import _editable_order
+    _editable_order(db, order_id)
 
     deleted = (
         db.query(OrderPickingRecord)

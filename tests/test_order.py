@@ -5,7 +5,8 @@ import pytest
 from services.part import create_part
 from services.jewelry import create_jewelry
 from services.bom import set_bom
-from services.order import create_order, get_order, get_order_items, get_parts_summary, update_order_status
+from services.order import get_order, get_order_items, get_parts_summary, update_order_status
+from tests.order_history_helpers import create_historical_order as create_order
 
 
 @pytest.fixture

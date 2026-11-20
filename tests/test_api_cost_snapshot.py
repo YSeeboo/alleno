@@ -3,10 +3,11 @@ from decimal import Decimal
 from services.jewelry import create_jewelry
 from services.part import create_part, update_part_cost
 from services.bom import set_bom
+from tests.order_history_helpers import as_historical_order
 
 
 def _setup_order_with_cost(db, client):
-    """创建有完整成本的订单。"""
+    """Historical snapshot compatibility, not new-order fulfillment."""
     part_a = create_part(db, {"name": "A珠", "category": "小配件"})
     part_b = create_part(db, {"name": "B链", "category": "链条"})
     update_part_cost(db, part_a.id, "purchase_cost", 0.05)
@@ -23,6 +24,7 @@ def _setup_order_with_cost(db, client):
     })
     assert resp.status_code == 201
     order_id = resp.json()["id"]
+    as_historical_order(db, order_id)
     return order_id, part_a, part_b, jewelry
 
 
@@ -93,6 +95,7 @@ def test_complete_order_missing_part_cost_marks_incomplete(client, db):
         "items": [{"jewelry_id": jewelry.id, "quantity": 1, "unit_price": 10.0}],
     })
     order_id = resp.json()["id"]
+    as_historical_order(db, order_id)
     client.patch(f"/api/orders/{order_id}/status", json={"status": "已完成"})
 
     snapshot = client.get(f"/api/orders/{order_id}/cost-snapshot").json()
@@ -160,6 +163,7 @@ def test_zero_unit_price_preserved_in_snapshot(client, db):
         "items": [{"jewelry_id": jewelry.id, "quantity": 1, "unit_price": 0.0}],
     })
     order_id = resp.json()["id"]
+    as_historical_order(db, order_id)
     client.patch(f"/api/orders/{order_id}/status", json={"status": "已完成"})
 
     snapshot = client.get(f"/api/orders/{order_id}/cost-snapshot").json()
@@ -204,6 +208,7 @@ def test_cost_snapshot_includes_part_items(client, db):
         "items": [{"part_id": "PJ-CS1", "quantity": 5, "unit_price": 15}],
     })
     order_id = r.json()["id"]
+    as_historical_order(db, order_id)
     r = client.patch(f"/api/orders/{order_id}/status", json={"status": "已完成"})
     assert r.status_code == 200
     r = client.get(f"/api/orders/{order_id}/cost-snapshot")

@@ -1,0 +1,39 @@
+/* Layout helpers for the real fulfillment screens. Visual controls use the
+   existing Naive UI theme and page-header/filter-bar styles, not the Demo skin. */
+.fulfillment-page { min-width: 0; }
+.fulfillment-page .page-title { overflow-wrap: anywhere; }
+.fulfillment-page a { color: #1E7A5A; text-decoration: none; }
+.fulfillment-page a:hover { text-decoration: underline; }
+.wf-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.wf-workspace-tabs { margin-bottom: 16px; }
+.wf-notice, .wf-section { margin-bottom: 16px; }
+.wf-section-description { color: #6B7280; margin: 0 0 16px; font-size: 13px; }
+.wf-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.wf-stats > *, .wf-two-col > * { min-width: 0; }
+.wf-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.wf-table-wrap { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.wf-table { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.wf-table th { font-size: 12px; font-weight: 600; letter-spacing: .3px; background: #FFFFFF; color: #8B9096; }
+.wf-product { display: flex; align-items: center; gap: 8px; min-width: 175px; }
+.wf-product img, .wf-product-placeholder { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+.wf-product-placeholder { display: grid; place-items: center; background: #F1F2F4; color: #6B7280; }
+.wf-product strong { font-weight: 500; }
+.wf-subtext { display: block; color: #6B7280; font-size: 12px; margin-top: 4px; }
+.wf-green { color: #1E7A5A; }
+.wf-amber { color: #B7791F; }
+.wf-muted { color: #8B9096; }
+.wf-empty { padding: 24px 0; }
+.wf-dialog .wf-field { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; }
+.wf-dialog-footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+@media (max-width: 1100px) {
+  .wf-two-col { grid-template-columns: 1fr; gap: 0; }
+}
+@media (max-width: 768px) {
+  .fulfillment-page .page-breadcrumb { padding-left: 36px; }
+  .wf-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .fulfillment-page .n-card-header { flex-wrap: wrap; gap: 12px; }
+  .wf-shipment-entry, .wf-shipment-entry tbody { display: block; width: 100%; }
+  .wf-shipment-entry thead { display: none; }
+  .wf-shipment-entry tr { display: flex; flex-direction: column; gap: 12px; padding: 12px 0; border-bottom: 1px solid #ECEDEF; }
+  .wf-shipment-entry td { padding: 0; border: 0; white-space: normal; }
+}

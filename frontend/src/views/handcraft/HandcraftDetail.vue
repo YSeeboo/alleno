@@ -21,6 +21,7 @@
 
     <!-- ── Status stepper ──────────────────────────────────── -->
     <ProductionArchiveNotice :order="order" />
+    <ProductionUses v-if="order" type="handcraft" :order-id="order.id" />
     <div v-if="order" class="hc-stepper">
       <div class="hc-step" :class="stepClass('pending')">
         <span class="hc-step__dot">{{ order.status !== 'pending' ? '✓' : '1' }}</span>
@@ -725,6 +726,7 @@
 </template>
 
 <script setup>
+import ProductionUses from '@/components/ProductionUses.vue'
 import ProductionArchiveNotice from '@/components/ProductionArchiveNotice.vue'
 import { ref, reactive, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

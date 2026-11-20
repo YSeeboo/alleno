@@ -36,8 +36,8 @@ def test_create_handcraft_order(setup):
     assert part_item.part_id == p1.id
 
 
-def test_auto_merge_same_supplier_same_day(setup):
-    """同一天同一供应商的手工单自动合并到一张单"""
+def test_explicit_append_to_selected_pending_order(setup):
+    """只有明确选择追加目标时才复用原单，明细身份保持独立。"""
     db, p1, p2, j1 = setup
     order1 = create_handcraft_order(
         db, "手工坊",
@@ -49,6 +49,7 @@ def test_auto_merge_same_supplier_same_day(setup):
         db, "手工坊",
         parts=[{"part_id": p2.id, "qty": 30}],
         note="第二批",
+        append_to_order_id=order1.id,
     )
     # Should reuse the same order
     assert order2.id == order1.id
@@ -61,6 +62,73 @@ def test_auto_merge_same_supplier_same_day(setup):
     # Notes should be merged
     assert "第一批" in order1.note
     assert "第二批" in order1.note
+
+
+def test_same_supplier_same_day_defaults_to_separate_orders(setup):
+    db, p1, _, _ = setup
+    first = create_handcraft_order(db, "手工坊", parts=[{"part_id": p1.id, "qty": 10}])
+    second = create_handcraft_order(db, "手工坊", parts=[{"part_id": p1.id, "qty": 20}])
+    assert first.id != second.id
+    assert not second.merged
+    assert len(get_handcraft_parts(db, first.id)) == 1
+    assert get_stock(db, "part", p1.id) == 200
+
+
+@pytest.mark.parametrize("invalid", ["missing", "supplier", "processing", "completed", "archived", "date"])
+def test_explicit_append_revalidates_target_and_never_falls_back_to_new(setup, invalid):
+    from time_utils import now_beijing
+    from models.handcraft_order import HandcraftOrder
+    db, p1, _, _ = setup
+    first = create_handcraft_order(db, "手工坊", parts=[{"part_id": p1.id, "qty": 10}])
+    if invalid in {"processing", "completed"}: first.status = invalid
+    if invalid == "archived": first.archived_at = now_beijing()
+    db.flush()
+    kwargs = {"append_to_order_id": "missing" if invalid == "missing" else first.id}
+    if invalid == "date": kwargs["created_at"] = now_beijing().date()
+    with pytest.raises(ValueError):
+        create_handcraft_order(db, "其他商家" if invalid == "supplier" else "手工坊", parts=[{"part_id": p1.id, "qty": 20}], **kwargs)
+    assert db.query(HandcraftOrder).count() == 1
+    assert len(get_handcraft_parts(db, first.id)) == 1
+
+
+def test_dispatch_and_explicit_append_cannot_race_unissued_materials(setup):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from sqlalchemy.orm import Session
+    from sqlalchemy import text
+    db, p1, _, _ = setup
+    first = create_handcraft_order(db, "手工坊", parts=[{"part_id": p1.id, "qty": 10}])
+    order_id, part_id = first.id, p1.id
+    db.commit()
+    barrier = Barrier(2)
+    engine = db.get_bind()
+
+    def run(append):
+        with Session(engine) as session:
+            session.execute(text("SET LOCAL lock_timeout = '5s'"))
+            barrier.wait(timeout=10)
+            try:
+                if append:
+                    create_handcraft_order(session, "手工坊", parts=[{"part_id": part_id, "qty": 20}], append_to_order_id=order_id)
+                else:
+                    send_handcraft_order(session, order_id)
+                session.commit()
+                return "saved"
+            except ValueError:
+                session.rollback()
+                if not append: raise
+                return "rejected"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(run, True), pool.submit(run, False)]
+        results = [f.result(timeout=15) for f in futures]
+    db.expire_all()
+    assert results[1] == "saved"
+    assert db.get(type(first), order_id).status == "processing"
+    parts = get_handcraft_parts(db, order_id)
+    assert all(item.status == "制作中" for item in parts)
+    assert get_stock(db, "part", part_id) == 200 - sum(item.qty for item in parts)
+    assert len(parts) == (2 if results[0] == "saved" else 1)
 
 
 def test_no_merge_different_supplier(setup):

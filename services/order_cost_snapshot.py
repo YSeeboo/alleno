@@ -14,7 +14,7 @@ from services.jewelry_cost import compute_jewelry_cost
 _Q7 = Decimal("0.0000001")
 
 
-def generate_cost_snapshot(db: Session, order_id: str) -> OrderCostSnapshot:
+def generate_cost_snapshot(db: Session, order_id: str, *, allow_missing_bom: bool = False) -> OrderCostSnapshot:
     """订单完成时生成成本快照。"""
     order = db.query(Order).filter(Order.id == order_id).first()
     if order is None:
@@ -47,12 +47,15 @@ def generate_cost_snapshot(db: Session, order_id: str) -> OrderCostSnapshot:
             part_map[p.id] = p
 
     for item in jewelry_items:
-        if not bom_by_jewelry.get(item.jewelry_id):
+        if not bom_by_jewelry.get(item.jewelry_id) and not allow_missing_bom:
             jewelry = jewelry_map.get(item.jewelry_id)
             name = jewelry.name if jewelry else item.jewelry_id
             raise ValueError(f"饰品「{name}」({item.jewelry_id}) 没有 BOM，无法生成成本快照")
 
-    has_incomplete = False
+    # Actual shipment of existing finished stock must not depend on having a
+    # manufacturing BOM. Preserve legacy strict behavior unless explicitly used
+    # by the shipment ledger; missing costs remain visibly incomplete.
+    has_incomplete = any(not bom_by_jewelry.get(item.jewelry_id) for item in jewelry_items)
     total_cost = Decimal(0)
     snapshot_items: list[dict] = []
 

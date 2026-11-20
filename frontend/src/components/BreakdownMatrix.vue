@@ -16,6 +16,9 @@
       </div>
     </div>
     <div class="bm-body">
+      <p v-if="hasQuantityAllocations" class="bm-allocation-note">
+        订单安排的份额已计入已分数量并锁定；请在来源订单的「手工生产安排」调整。剩余未分配数量不会自动归给该客户，也不代表已收货或已出货。
+      </p>
       <div class="mx-scroll">
         <table class="mx">
         <thead>
@@ -89,7 +92,7 @@
             </td>
             <td v-for="c in cols" :key="c.key" :class="cellClass(r.cells[c.key], r.customer_name, c.key)">
               <CellEditable
-                v-if="!r.is_locked_customer || r.cells[c.key].manualQty > 0 || canAddNewManual"
+                v-if="r.cells[c.key].manualQty > 0 || (!c.quantity_managed && (!r.is_locked_customer || canAddNewManual))"
                 :cell="r.cells[c.key]"
                 :qty-editable="canEditQty"
                 :on-change="(v) => setCellManual(r, c.key, v)"
@@ -132,7 +135,7 @@
                   />
                 </n-popover>
                 <span v-if="!canBulkAssign" class="add-bar__hint">
-                  {{ props.hcStatus !== 'pending' ? '仅 pending 状态可用' : '已无剩余可分' }}
+                  {{ props.hcStatus !== 'pending' ? '仅 pending 状态可用' : hasQuantityRemainder ? '剩余订单份额请通过「订单关联」分配' : '已无剩余可分' }}
                 </span>
               </div>
             </td>
@@ -165,6 +168,7 @@ import { ref, computed, h, defineComponent } from 'vue'
 import { NButton, NPopover, useMessage } from 'naive-ui'
 import CustomerNameSelect from './CustomerNameSelect.vue'
 import BulkAssignPopover from './BulkAssignPopover.vue'
+import { sortingPlaceholders, editableSortingIndex } from '@/utils/handcraftBreakdown'
 import {
   addHandcraftJewelry,
   updateHandcraftJewelry,
@@ -263,16 +267,7 @@ const draft = ref(null)  // { rows: [...], placeholderEntries: [...], entriesInd
 function enterEdit() {
   // Deep-clone for safe local mutation. JSON round-trip is fine here:
   // no Date / Map / function values in this state.
-  const index = new Map()
-  for (const g of props.groups || []) {
-    for (const e of g.entries || []) {
-      index.set(e.hc_jewelry_item_id, {
-        qty: Number(e.qty),
-        customer_name: e.customer_name || null,
-        is_locked: !!e.is_locked,
-      })
-    }
-  }
+  const index = editableSortingIndex(props.groups)
   draft.value = {
     rows: JSON.parse(JSON.stringify(rows.value)),
     placeholderEntries: JSON.parse(JSON.stringify(placeholderEntries.value)),
@@ -614,6 +609,9 @@ function computeDiff() {
 }
 
 const canEdit = computed(() => !props.archived && props.hcStatus !== 'completed')
+const hasQuantityAllocations = computed(() => props.groups.some(g => g.quantity_managed))
+const hasQuantityRemainder = computed(() => props.groups.some(g =>
+  (g.entries || []).some(entry => entry.is_quantity_remainder && Number(entry.qty) > 0)))
 
 // --- Transpose backend groups → rows (customer-major) + cols (jewelry-major) ---
 
@@ -625,6 +623,7 @@ const cols = computed(() =>
     jewelry_id: g.jewelry_id,
     jewelry_name: g.jewelry_name,
     total_qty: Number(g.total_qty),
+    quantity_managed: !!g.quantity_managed,
   })),
 )
 
@@ -689,18 +688,7 @@ const rows = computed(() => {
 })
 
 // Placeholder entries: customer_name is null/empty, is_locked false
-const placeholderEntries = computed(() => {
-  const out = []
-  for (const g of props.groups || []) {
-    for (const e of g.entries || []) {
-      const name = (e.customer_name || '').trim()
-      if (!name && !e.is_locked) {
-        out.push({ ...e, _col_key: `${g.kind}:${g.jewelry_id}` })
-      }
-    }
-  }
-  return out
-})
+const placeholderEntries = computed(() => sortingPlaceholders(props.groups))
 
 const placeholderQtySum = computed(() =>
   placeholderEntries.value.reduce((s, e) => s + Number(e.qty), 0),
@@ -769,6 +757,15 @@ function lockedSourceLine(row) {
 </script>
 
 <style scoped>
+.bm-allocation-note {
+  margin: 0;
+  padding: 12px 16px;
+  color: #647568;
+  background: #f3f7f3;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
 /* ── Design tokens ── */
 :root {
   --ink: #1A1D21;

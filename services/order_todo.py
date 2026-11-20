@@ -11,6 +11,7 @@ from models.bom import Bom
 from models.jewelry import Jewelry
 from services.bom import get_bom
 from services.inventory import get_stock, batch_get_stock
+from services.production_allocation import guard_legacy_order_write, guard_legacy_source_write, mark_production_started
 
 
 def generate_todo(db: Session, order_id: str) -> list[dict]:
@@ -196,6 +197,12 @@ def create_link(db: Session, data: dict) -> OrderItemLink:
         if todo is None:
             raise ValueError(f"OrderTodoItem not found: {data['order_todo_item_id']}")
 
+    guard_legacy_order_write(db, todo.order_id if todo else data["order_id"])
+    if data.get("plating_order_item_id"):
+        guard_legacy_source_write(db, "plating", data["plating_order_item_id"])
+    if data.get("handcraft_jewelry_item_id"):
+        guard_legacy_source_write(db, "handcraft", data["handcraft_jewelry_item_id"])
+
     # 校验 order 存在
     if has_order:
         order = db.query(Order).filter(Order.id == data["order_id"]).first()
@@ -227,7 +234,7 @@ def create_link(db: Session, data: dict) -> OrderItemLink:
             poi = db.get(PlatingOrderItem, data["plating_order_item_id"])
             if poi is None:
                 raise ValueError(f"PlatingOrderItem not found: {data['plating_order_item_id']}")
-            prod_part_id = poi.part_id
+            prod_part_id = poi.receive_part_id or poi.part_id
         elif data.get("handcraft_part_item_id"):
             hpi = db.get(HandcraftPartItem, data["handcraft_part_item_id"])
             if hpi is None:
@@ -259,6 +266,8 @@ def create_link(db: Session, data: dict) -> OrderItemLink:
         purchase_order_item_id=data.get("purchase_order_item_id"),
     )
     db.add(link)
+    if prod_key != "purchase_order_item_id":
+        mark_production_started(db.get(Order, todo.order_id if todo else data["order_id"]))
     db.flush()
     return link
 
@@ -284,12 +293,17 @@ def batch_link(
     返回 {"linked": 成功数, "skipped": [未匹配的配件名]}
     """
     # 获取订单的 TodoList，按 part_id 索引
+    guard_legacy_order_write(db, order_id)
+    for item_id in sorted(set(plating_order_item_ids or [])):
+        if db.get(PlatingOrderItem, item_id) is not None:
+            guard_legacy_source_write(db, "plating", item_id)
     todos = db.query(OrderTodoItem).filter(OrderTodoItem.order_id == order_id).all()
     if not todos:
         raise ValueError(f"订单 {order_id} 尚未生成配件清单，请先生成")
     todo_by_part: dict[str, int] = {t.part_id: t.id for t in todos}
 
     linked = 0
+    production_linked = False
     skipped = []
 
     # Deduplicate input IDs to preserve idempotency (unique constraint on link columns)
@@ -334,7 +348,7 @@ def batch_link(
     # Batch load part names for skipped items
     all_part_ids = set()
     for poi in poi_map.values():
-        all_part_ids.add(poi.part_id)
+        all_part_ids.add(poi.receive_part_id or poi.part_id)
     for hpi in hpi_map.values():
         all_part_ids.add(hpi.part_id)
     for pui in pui_map.values():
@@ -348,12 +362,13 @@ def batch_link(
         poi = poi_map.get(poi_id)
         if poi is None or poi_id in existing_plating:
             continue
-        todo_id = todo_by_part.get(poi.part_id)
+        todo_id = todo_by_part.get(poi.receive_part_id or poi.part_id)
         if todo_id is None:
-            skipped.append(part_name_map.get(poi.part_id, poi.part_id))
+            skipped.append(part_name_map.get(poi.receive_part_id or poi.part_id, poi.receive_part_id or poi.part_id))
             continue
         db.add(OrderItemLink(order_todo_item_id=todo_id, plating_order_item_id=poi_id))
         linked += 1
+        production_linked = True
 
     for hpi_id in _handcraft_ids:
         hpi = hpi_map.get(hpi_id)
@@ -365,6 +380,7 @@ def batch_link(
             continue
         db.add(OrderItemLink(order_todo_item_id=todo_id, handcraft_part_item_id=hpi_id))
         linked += 1
+        production_linked = True
 
     for poi_id in _purchase_ids:
         pui = pui_map.get(poi_id)
@@ -377,6 +393,8 @@ def batch_link(
         db.add(OrderItemLink(order_todo_item_id=todo_id, purchase_order_item_id=poi_id))
         linked += 1
 
+    if production_linked:
+        mark_production_started(db.get(Order, order_id))
     db.flush()
     return {"linked": linked, "skipped": skipped}
 
@@ -566,6 +584,7 @@ def create_batch(db: Session, order_id: str, items: list[tuple[str, int]]) -> di
 
     items: list of (jewelry_id, quantity) tuples
     """
+    guard_legacy_order_write(db, order_id)
     if not items:
         raise ValueError("items 不能为空")
     jewelry_ids = [jid for jid, _ in items]
@@ -671,13 +690,14 @@ def _build_batch_response(db: Session, batch, batch_jewelries, todo_items) -> di
     from models.handcraft_order import HandcraftOrder as HCOrder
 
     supplier_name = None
+    missing_source = False
     if batch.handcraft_order_id:
         hc = db.query(HCOrder).filter_by(id=batch.handcraft_order_id).first()
         if hc:
             supplier_name = hc.supplier_name
         else:
-            batch.handcraft_order_id = None
-            db.flush()
+            # Reading history must not silently repair/delete its source link.
+            missing_source = True
 
     # Enrich jewelry info
     jewelry_ids = [bj.jewelry_id for bj in batch_jewelries]
@@ -736,14 +756,16 @@ def _build_batch_response(db: Session, batch, batch_jewelries, todo_items) -> di
         "order_id": batch.order_id,
         "handcraft_order_id": batch.handcraft_order_id,
         "supplier_name": supplier_name,
+        "missing_source": missing_source,
         "created_at": batch.created_at.isoformat() if batch.created_at else None,
         "jewelries": jewelry_list,
         "items": items_list,
     }
 
 
-def link_supplier(db: Session, order_id: str, batch_id: int, supplier_name: str) -> dict:
+def link_supplier(db: Session, order_id: str, batch_id: int, supplier_name: str, append_to_order_id: str | None = None) -> dict:
     """Link a handcraft supplier to a batch, creating a HandcraftOrder."""
+    guard_legacy_order_write(db, order_id)
     supplier_name = supplier_name.strip()
     if not supplier_name:
         raise ValueError("供应商名称不能为空")
@@ -811,23 +833,10 @@ def link_supplier(db: Session, order_id: str, batch_id: int, supplier_name: str)
         db.add(supplier)
         db.flush()
 
-    # Auto-merge: reuse existing pending order for same supplier on same day
-    from sqlalchemy import Date, func as sa_func
-    from time_utils import now_beijing
-    today_beijing = now_beijing().date()
-    existing_hc = (
-        db.query(HCOrder)
-        .filter(
-            HCOrder.supplier_name == supplier_name,
-            HCOrder.status == "pending",
-            HCOrder.archived_at.is_(None),
-            sa_func.cast(HCOrder.created_at, Date) == today_beijing,
-        )
-        .order_by(HCOrder.created_at.asc())
-        .first()
-    )
-    if existing_hc:
-        hc = existing_hc
+    # No silent same-day merge, including this legacy batch entry point.
+    if append_to_order_id is not None:
+        from services.handcraft import require_append_target
+        hc = require_append_target(db, append_to_order_id, supplier_name)
         hc_id = hc.id
     else:
         from services.handcraft import _gen_receipt_code
@@ -876,6 +885,7 @@ def link_supplier(db: Session, order_id: str, batch_id: int, supplier_name: str)
         db.add(link)
 
     batch.handcraft_order_id = hc_id
+    mark_production_started(db.get(Order, order_id))
     db.flush()
 
     return {"handcraft_order_id": hc_id}

@@ -72,10 +72,15 @@ def create_order(
             quantity=item["quantity"],
             unit_price=unit_price,
             remarks=item.get("remarks"),
+            customer_code=item.get("customer_code"),
         ))
         if item.get("part_id"):
             _writeback_part_wholesale_price(db, item["part_id"], unit_price)
     order.total_amount = total
+    # Only orders created through this service join the unified flow. Never
+    # infer or activate historical rows while reading them or during startup.
+    from models.order_fulfillment import OrderFulfillment
+    db.add(OrderFulfillment(order_id=order_id))
     db.flush()
     return order
 
@@ -385,12 +390,16 @@ def _recalc_total(db: Session, order: Order) -> None:
     db.flush()
 
 
+def _editable_order(db: Session, order_id: str) -> Order:
+    from services.production_allocation import lock_order
+    order = lock_order(db, order_id)
+    if order.status not in {"待生产", "生产中"}:
+        raise ValueError("已完成或已取消的订单只读，不允许修改")
+    return order
+
+
 def add_order_item(db: Session, order_id: str, data: dict) -> OrderItem:
-    order = get_order(db, order_id)
-    if order is None:
-        raise ValueError(f"Order not found: {order_id}")
-    if order.status != "待生产":
-        raise ValueError(f"订单状态为「{order.status}」，只有「待生产」状态可以修改饰品明细")
+    order = _editable_order(db, order_id)
     if (data.get("jewelry_id") is None) == (data.get("part_id") is None):
         raise ValueError("jewelry_id 和 part_id 必须且只能填一个")
     unit_price = Decimal(str(data["unit_price"])).quantize(_Q7, rounding=ROUND_HALF_UP)
@@ -401,6 +410,7 @@ def add_order_item(db: Session, order_id: str, data: dict) -> OrderItem:
         quantity=data["quantity"],
         unit_price=unit_price,
         remarks=data.get("remarks"),
+        customer_code=data.get("customer_code"),
     )
     db.add(item)
     if data.get("part_id"):
@@ -413,16 +423,21 @@ def add_order_item(db: Session, order_id: str, data: dict) -> OrderItem:
 
 
 def delete_order_item(db: Session, order_id: str, item_id: int) -> None:
-    order = get_order(db, order_id)
-    if order is None:
-        raise ValueError(f"Order not found: {order_id}")
-    if order.status != "待生产":
-        raise ValueError(f"订单状态为「{order.status}」，只有「待生产」状态可以修改饰品明细")
+    order = _editable_order(db, order_id)
+    from services.production_allocation import guard_order_item_change
+    guard_order_item_change(db, order_id, item_id)
+    from services.order_fulfillment import guard_fulfillment_change
+    guard_fulfillment_change(db, order_id, line_id=item_id, deleting=True)
     item = db.query(OrderItem).filter(
         OrderItem.id == item_id, OrderItem.order_id == order_id
     ).first()
     if item is None:
         raise ValueError(f"OrderItem not found: {item_id}")
+    from services.production_allocation import legacy_demand_claim
+    if legacy_demand_claim(db, item):
+        raise ValueError("存在历史生产关联或批次，请先核对，不能删除明细")
+    if db.query(OrderItem).filter_by(order_id=order_id).count() <= 1:
+        raise ValueError("订单至少保留一条明细")
     db.delete(item)
     db.flush()
     order = get_order(db, order_id)
@@ -430,6 +445,12 @@ def delete_order_item(db: Session, order_id: str, item_id: int) -> None:
 
 
 def update_order_status(db: Session, order_id: str, status: str) -> Order:
+    from services.production_allocation import guard_order_item_change, lock_order
+    lock_order(db, order_id)
+    from services.order_fulfillment import guard_fulfillment_change
+    guard_fulfillment_change(db, order_id, status=status)
+    if status == "已取消":
+        guard_order_item_change(db, order_id)
     if status not in _VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Must be one of: {_VALID_STATUSES}")
     order = get_order(db, order_id)
@@ -474,10 +495,14 @@ def update_order_status(db: Session, order_id: str, status: str) -> Order:
 
 
 def update_extra_info(db: Session, order_id: str, data: dict) -> Order:
-    order = db.query(Order).filter_by(id=order_id).first()
+    order = _editable_order(db, order_id)
     if not order:
         raise ValueError(f"订单 {order_id} 不存在")
     for key, value in data.items():
+        if key == "customer_name" and (not isinstance(value, str) or not value.strip()):
+            raise ValueError("客户名不能为空")
+        if key == "created_at" and value is None:
+            raise ValueError("创建日期不能为空")
         if key == "has_barcode" and value is None:
             # has_barcode is a NOT NULL boolean; ignore explicit null
             # (omit the field entirely to leave it unchanged)
@@ -500,6 +525,14 @@ def _check_order_not_cancelled(db: Session, order_id: str) -> None:
 
 def update_order_item(db: Session, order_id: str, item_id: int, fields: dict) -> OrderItem:
     """Update order item fields (quantity, unit_price, customer_code)."""
+    from services.production_allocation import guard_order_item_change, lock_order
+    _editable_order(db, order_id)
+    if any(key in fields and fields[key] is None for key in ("quantity", "unit_price")):
+        raise ValueError("数量与单价不能为空")
+    if "quantity" in fields and fields["quantity"] is not None:
+        guard_order_item_change(db, order_id, item_id, fields["quantity"])
+        from services.order_fulfillment import guard_fulfillment_change
+        guard_fulfillment_change(db, order_id, line_id=item_id, quantity=fields["quantity"])
     order = get_order(db, order_id)
     if order is None:
         raise ValueError(f"订单 {order_id} 不存在")
@@ -582,7 +615,7 @@ def batch_fill_customer_code(
     start_number: int,
     padding: int = 2,
 ) -> int:
-    _check_order_not_cancelled(db, order_id)
+    _editable_order(db, order_id)
     if not item_ids:
         raise ValueError("item_ids 不能为空")
     if not prefix:
@@ -609,7 +642,7 @@ def batch_fill_customer_code(
 
 
 def update_packaging_cost(db: Session, order_id: str, packaging_cost: float) -> Order:
-    order = get_order(db, order_id)
+    order = _editable_order(db, order_id)
     if order is None:
         raise ValueError(f"Order not found: {order_id}")
     order.packaging_cost = packaging_cost
@@ -678,6 +711,10 @@ def delete_order(db: Session, order_id: str) -> None:
     delete_batch 会连带清理这些 pending 手工数据，且在手工单已发出（非 pending）
     时抛错 —— 已发出意味着真实库存已被扣，此时拒绝删除整张订单。
     """
+    from services.production_allocation import guard_order_item_change
+    guard_order_item_change(db, order_id)
+    from services.order_fulfillment import guard_fulfillment_change
+    guard_fulfillment_change(db, order_id, deleting=True)
     order = get_order(db, order_id)
     if order is None:
         raise ValueError(f"订单 {order_id} 不存在")

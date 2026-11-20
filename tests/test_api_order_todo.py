@@ -906,8 +906,9 @@ def test_link_supplier_already_linked(client, db):
     assert resp.status_code == 400
 
 
-def test_link_supplier_merges_same_supplier_same_day(client, db):
-    """Two batches linked to the same supplier on the same day share one HC order."""
+@pytest.mark.parametrize("append", [False, True])
+def test_link_supplier_explicitly_appends_to_selected_order(client, db, append):
+    """Two batches share a production order only when explicitly selected."""
     from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
     order_id, part_a, part_b, jewelry = _setup_order_with_bom(db, client)
     add_stock(db, "part", part_a.id, 2000, "入库")
@@ -935,23 +936,23 @@ def test_link_supplier_merges_same_supplier_same_day(client, db):
 
     resp2 = client.post(
         f"/api/orders/{order_id}/todo-batch/{batch2_id}/link-supplier",
-        json={"supplier_name": "合并商家"},
+        json={"supplier_name": "合并商家", "append_to_order_id": hc_id_1 if append else None},
     )
     assert resp2.status_code == 200
     hc_id_2 = resp2.json()["handcraft_order_id"]
 
     # Same handcraft order
-    assert hc_id_1 == hc_id_2
+    assert (hc_id_1 == hc_id_2) is append
 
     # Total HC orders should be 1
     hc_count = db.query(HandcraftOrder).filter_by(supplier_name="合并商家").count()
-    assert hc_count == 1
+    assert hc_count == (1 if append else 2)
 
     # Items from both batches are on the same order
     hc_parts = db.query(HandcraftPartItem).filter_by(handcraft_order_id=hc_id_1).all()
     hc_jewelries = db.query(HandcraftJewelryItem).filter_by(handcraft_order_id=hc_id_1).all()
-    assert len(hc_jewelries) == 2  # one per batch
-    assert len(hc_parts) == 4  # 2 parts × 2 batches
+    assert len(hc_jewelries) == (2 if append else 1)
+    assert len(hc_parts) == (4 if append else 2)
 
 
 # --- Delete Batch ---
@@ -1750,7 +1751,7 @@ def test_parts_summary_merged_handcraft_isolates_own_parts(client, db):
     add_stock(db, "part", part_b.id, 150, "入库")
     db.flush()
 
-    # Link both orders to same supplier → auto-merge into one handcraft order
+    # Explicitly append the second batch to the first production order.
     batch_a = client.post(
         f"/api/orders/{order_id_a}/todo-batch",
         json={"items": [{"jewelry_id": jewelry.id, "quantity": 100}]},
@@ -1767,7 +1768,7 @@ def test_parts_summary_merged_handcraft_isolates_own_parts(client, db):
     ).json()
     link_b = client.post(
         f"/api/orders/{order_id_b}/todo-batch/{batch_b['id']}/link-supplier",
-        json={"supplier_name": "SharedSupplier"},
+        json={"supplier_name": "SharedSupplier", "append_to_order_id": link_a.json()["handcraft_order_id"]},
     )
     assert link_b.status_code == 200, link_b.json()
     # Verify both merged into same handcraft order
@@ -2174,8 +2175,10 @@ def test_update_item_quantity_allowed_in_processing(client, db):
 def test_update_item_quantity_rejected_when_completed(client, db):
     """PATCH quantity is rejected when order is 已完成."""
     order_id, *_ = _setup_order_with_bom(db, client)
-    client.patch(f"/api/orders/{order_id}/status", json={"status": "生产中"})
-    client.patch(f"/api/orders/{order_id}/status", json={"status": "已完成"})
+    from models.order import Order
+    # Existing completed history, not a new order manually completed by status.
+    db.get(Order, order_id).status = "已完成"
+    db.flush()
     item = db.query(OrderItem).filter_by(order_id=order_id).first()
     resp = client.patch(
         f"/api/orders/{order_id}/items/{item.id}",

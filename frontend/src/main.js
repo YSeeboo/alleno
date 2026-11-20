@@ -4,6 +4,7 @@ import App from './App.vue'
 import router from './router'
 import './styles/global.css'
 import './styles/responsive.css'
+import './styles/fulfillment.css'
 
 // Favicon by environment: local development (`npm run dev`) shows the white
 // AL so it's obvious you're not on the live site; production build stays red.

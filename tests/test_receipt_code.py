@@ -46,7 +46,7 @@ def test_create_handcraft_order_assigns_receipt_code(db):
     assert len(order.receipt_code) == 5
 
 
-def test_create_handcraft_order_auto_merge_does_not_regenerate_code(db):
+def test_create_handcraft_order_explicit_append_does_not_regenerate_code(db):
     from models.part import Part
     db.add(Part(id="PJ-DZ-00002", name="测试2", category="吊坠"))
     db.flush()
@@ -58,8 +58,9 @@ def test_create_handcraft_order_auto_merge_does_not_regenerate_code(db):
     second = create_handcraft_order(
         db, supplier_name="陈师傅",
         parts=[{"part_id": "PJ-DZ-00002", "qty": 7}],
+        append_to_order_id=first.id,
     )
-    # auto-merge: same id and same code
+    # Explicit append preserves the selected order's code.
     assert second.id == first.id
     assert second.receipt_code == original_code
 

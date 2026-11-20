@@ -19,6 +19,7 @@
     <n-spin :show="loading">
       <template v-if="order">
         <ProductionArchiveNotice :order="order" />
+        <ProductionUses type="plating" :order-id="order.id" />
         <div class="pd-stepper" aria-label="单据业务进度">
           <template v-for="(stage, index) in stages" :key="stage">
             <div v-if="index" class="pd-step-line" :class="{ 'is-done': stageIndex >= index }"></div>
@@ -528,6 +529,7 @@
 </template>
 
 <script setup>
+import ProductionUses from '@/components/ProductionUses.vue'
 import ProductionArchiveNotice from '@/components/ProductionArchiveNotice.vue'
 import FloatingActionBar from '@/components/FloatingActionBar.vue'
 import FloatingActionButton from '@/components/FloatingActionButton.vue'

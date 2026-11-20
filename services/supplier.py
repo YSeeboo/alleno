@@ -1,8 +1,19 @@
 from typing import Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects.postgresql import insert
 
 from models.supplier import Supplier
+
+
+def ensure_supplier(db: Session, name: str, type: str) -> None:
+    """Register an inline supplier atomically, including concurrent creators.
+
+    No commit: the registration rolls back with its enclosing business action.
+    Existing supplier identity and metadata must remain untouched.
+    """
+    db.execute(insert(Supplier).values(name=name, type=type).on_conflict_do_nothing(
+        index_elements=[Supplier.name, Supplier.type]))
 
 
 def create_supplier(db: Session, name: str, type: str) -> Supplier:

@@ -355,6 +355,7 @@ import { batchGetStock, addStock } from '@/api/inventory'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import ImageUploadModal from '../../components/ImageUploadModal.vue'
 import BatchImageUpload from '@/components/BatchImageUpload.vue'
+import PartGroupToggle from '@/components/PartGroupToggle.vue'
 import { pushBatch } from '@/utils/recentImports'
 import { useAuthStore } from '@/stores/auth'
 
@@ -393,9 +394,10 @@ const lowStockCount = computed(() => rows.value.filter((r) => r.stock < 10).leng
 
 // Grouping tree: root parts (parent_part_id == null) with their variant children
 const expanded = ref(new Set())
-function toggleGroup(rootId) {
+function toggleGroup(row) {
+  if (row._isChild || !row._children?.length) return
   const s = new Set(expanded.value)
-  s.has(rootId) ? s.delete(rootId) : s.add(rootId)
+  s.has(row.id) ? s.delete(row.id) : s.add(row.id)
   expanded.value = s
 }
 const displayRows = computed(() => {
@@ -826,12 +828,13 @@ const columns = [
     key: 'id',
     width: 150,
     render: (row) => {
-      const hasKids = !row._isChild && row._children && row._children.length
-      const caret = hasKids
-        ? h('span', { class: 'pt-caret', style: expanded.value.has(row.id) ? 'transform:rotate(90deg)' : '',
-            onClick: (e) => { e.stopPropagation(); toggleGroup(row.id) } }, '▸')
-        : h('span', { class: 'pt-caret pt-caret-spacer' }, '▸')
-      return h('span', { class: 'cell-id mono' }, [caret, ' ', row.id])
+      return h(PartGroupToggle, {
+        partId: row.id,
+        partName: row.name,
+        childCount: row._isChild ? 0 : (row._children?.length || 0),
+        expanded: expanded.value.has(row.id),
+        onToggle: () => toggleGroup(row),
+      })
     },
   },
   {
@@ -1105,12 +1108,6 @@ onMounted(() => {
 }
 
 /* ── Table cell styles ── */
-.cell-id {
-  font-size: 12.5px;
-  color: #6b7280;
-  font-variant-numeric: tabular-nums;
-}
-
 .cell-name-wrap {
   display: flex;
   align-items: center;
@@ -1310,22 +1307,6 @@ onMounted(() => {
 }
 
 /* ── Variant grouping tree ── */
-.pt-caret {
-  display: inline-flex;
-  width: 18px;
-  height: 18px;
-  border-radius: 5px;
-  cursor: pointer;
-  color: #6b7280;
-  font-size: 10px;
-  align-items: center;
-  justify-content: center;
-  transition: transform .12s;
-}
-.pt-caret-spacer {
-  visibility: hidden;
-  cursor: default;
-}
 .count-pill {
   font-size: 10.5px;
   font-weight: 600;

@@ -10,6 +10,7 @@ from models.vendor_receipt import VendorReceipt
 from services._helpers import _next_id, keyword_filter
 from services.inventory import add_stock, batch_get_stock, deduct_stock, supplement_shortfall
 from services.production_archive import filter_archive, require_unarchived
+from services.production_allocation import guard_source_update, guard_source_delete
 
 
 def _user_date_to_datetime(d: Optional[date_type]) -> Optional[datetime]:
@@ -241,6 +242,10 @@ def update_plating_item(db: Session, order_id: str, item_id: int, data: dict) ->
     ).first()
     if item is None:
         raise ValueError(f"PlatingOrderItem {item_id} not found in order {order_id}")
+    new_input = data.get("part_id") or item.part_id
+    new_target = data.get("receive_part_id", item.receive_part_id if new_input == item.part_id else None) or new_input
+    guard_source_update(db, "plating", item.id, quantity=data.get("qty"),
+                        target=("part", new_target), unit=data.get("unit"))
     if "part_id" in data:
         if data["part_id"] is None:
             raise ValueError("发出配件不能为空")
@@ -287,6 +292,7 @@ def delete_plating_item(db: Session, order_id: str, item_id: int) -> None:
     ).first()
     if item is None:
         raise ValueError(f"PlatingOrderItem {item_id} not found in order {order_id}")
+    guard_source_delete(db, "plating", [item.id])
     remaining = db.query(PlatingOrderItem).filter(
         PlatingOrderItem.plating_order_id == order_id,
         PlatingOrderItem.id != item_id,
@@ -305,6 +311,7 @@ def delete_plating_order(db: Session, order_id: str) -> None:
         raise ValueError(f"PlatingOrder not found: {order_id}")
 
     items = get_plating_items(db, order_id)
+    guard_source_delete(db, "plating", [item.id for item in items])
     require_unarchived(order)
     vendor_received = _vendor_receipt_totals_for_plating(db, order_id)
 

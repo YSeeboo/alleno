@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from api._errors import service_errors
 from api.production_archive import guard_plating_archive
 from database import get_db
+from services.production_allocation import production_uses
 from schemas.plating import (
     PendingReceiveItemResponse,
     PlatingCreate,
@@ -65,6 +66,12 @@ class StatusUpdate(BaseModel):
     status: str
 
 router = APIRouter(prefix="/api/plating", tags=["plating"], dependencies=[Depends(guard_plating_archive)])
+
+
+@router.get("/{order_id}/production-uses")
+def api_plating_production_uses(order_id: str, db: Session = Depends(get_db)):
+    with service_errors():
+        return production_uses(db, "plating", order_id)
 
 
 @router.post("/", response_model=PlatingResponse, status_code=201)

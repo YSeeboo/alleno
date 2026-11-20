@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import models  # noqa: F401 — ensures all models are registered with Base.metadata
+from api.order_fulfillment import router as fulfillment_router
 from config import settings
 from database import Base, SessionLocal, engine, ensure_schema_compat
 from api.deps import get_current_user, require_any_permission, require_permission
@@ -108,6 +109,7 @@ app.include_router(plating_summary_router, dependencies=[require_permission("pla
 app.include_router(plating_reconciliation_router, dependencies=[require_permission("plating")])
 app.include_router(cargo_sorting_router, dependencies=[require_permission("sorting")])
 app.include_router(handcraft_router, dependencies=[require_permission("handcraft")])
+app.include_router(fulfillment_router)
 app.include_router(handcraft_summary_router, dependencies=[require_permission("handcraft")])
 app.include_router(customers_router, dependencies=[require_permission("handcraft")])
 app.include_router(restock_router, dependencies=[require_any_permission("handcraft", "restock")])

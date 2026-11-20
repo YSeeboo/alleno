@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <title>配件与加工规格 · Allen Shop Demo</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">跳到内容</a>
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">a.</span><div>ALLEN<span>JEWELRY WORKSPACE</span></div></div>
+    <div class="nav-label">商品与生产</div>
+    <nav aria-label="演示页面">
+      <button data-page="parts" class="nav active"><span>▦</span> 配件管理 <small>02</small></button>
+      <button data-page="process" class="nav"><span>⇄</span> 加工流转</button>
+      <button data-page="bom" class="nav"><span>◇</span> 饰品 BOM</button>
+    </nav>
+    <div class="side-note"><span class="badge">交互原型 / DEMO</span><p>沿用独立配件库存<br>只优化规格创建与管理</p><p>虚拟数据 · 不连接业务接口<br>刷新页面会重置演示</p></div>
+  </aside>
+  <div class="shell">
+    <header class="topbar"><span>Allen Shop <i>/</i> <b id="crumb">配件管理</b></span><div><span class="offline">● 独立演示环境</span><button class="text-button" id="reset">重置演示</button><span class="avatar">A</span></div></header>
+    <main id="main" tabindex="-1"></main>
+    <footer class="footer">一个基础款，多种加工规格。每个规格仍有独立配件 ID、库存和 BOM 引用。</footer>
+  </div>
+  <dialog id="modal" aria-labelledby="modal-title"></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

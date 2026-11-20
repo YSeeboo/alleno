@@ -103,6 +103,8 @@ const allFlatItems = [
   { label: '饰品管理', key: 'jewelries', icon: icon(DiamondOutline), perm: 'jewelries' },
   { label: '结构与搭配', key: 'jewelry-structures', icon: icon(JewelryStructureIcon), perm: 'parts' },
   { label: '订单管理', key: 'orders', icon: icon(OrderIcon), perm: 'orders' },
+  { label: '库存备货', key: 'stock-readiness', icon: icon(ArchiveOutline), perm: 'orders' },
+  { label: '出货管理', key: 'shipments', icon: icon(CartOutline), perm: 'orders' },
   { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
   { label: '待补货清单', key: 'restock', icon: icon(RestockIcon), perm: ['handcraft', 'restock'] },
   { label: '电镀管理', key: 'plating-management', icon: icon(PlatingIcon), perm: 'plating' },
@@ -139,6 +141,8 @@ const allGroupedItems = [
     type: 'group', label: '生产', key: 'group-production',
     children: [
       { label: '订单管理', key: 'orders', icon: icon(OrderIcon), perm: 'orders' },
+      { label: '库存备货', key: 'stock-readiness', icon: icon(ArchiveOutline), perm: 'orders' },
+      { label: '出货管理', key: 'shipments', icon: icon(CartOutline), perm: 'orders' },
       { label: '配件采购', key: 'purchase-orders', icon: icon(CartOutline), perm: 'purchase_orders' },
       { label: '待补货清单', key: 'restock', icon: icon(RestockIcon), perm: ['handcraft', 'restock'] },
       { label: '电镀管理', key: 'plating-management', icon: icon(PlatingIcon), perm: 'plating' },

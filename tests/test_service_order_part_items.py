@@ -102,6 +102,7 @@ def test_create_order_mixed_jewelry_and_part(db, part_chain):
 
 
 def test_complete_order_deducts_part_stock(db, part_chain):
+    from tests.order_history_helpers import create_historical_order as create_order
     add_stock(db, "part", part_chain.id, 100, "测试入库")
     order = create_order(db, "客户A", [{
         "part_id": part_chain.id, "quantity": 5, "unit_price": 15, "remarks": None,
@@ -111,6 +112,7 @@ def test_complete_order_deducts_part_stock(db, part_chain):
 
 
 def test_complete_order_rejects_when_part_stock_insufficient(db, part_chain):
+    from tests.order_history_helpers import create_historical_order as create_order
     add_stock(db, "part", part_chain.id, 3, "测试入库")
     order = create_order(db, "客户A", [{
         "part_id": part_chain.id, "quantity": 5, "unit_price": 15, "remarks": None,
@@ -123,6 +125,7 @@ def test_complete_order_rejects_when_part_stock_insufficient(db, part_chain):
 
 
 def test_uncomplete_restores_part_stock(db, part_chain):
+    from tests.order_history_helpers import create_historical_order as create_order
     add_stock(db, "part", part_chain.id, 100, "测试入库")
     order = create_order(db, "客户A", [{
         "part_id": part_chain.id, "quantity": 5, "unit_price": 15, "remarks": None,
@@ -133,6 +136,7 @@ def test_uncomplete_restores_part_stock(db, part_chain):
 
 
 def test_complete_aggregates_same_part_across_items(db, part_chain):
+    from tests.order_history_helpers import create_historical_order as create_order
     add_stock(db, "part", part_chain.id, 10, "测试入库")
     order = create_order(db, "客户A", [
         {"part_id": part_chain.id, "quantity": 4, "unit_price": 15, "remarks": None},
@@ -143,6 +147,7 @@ def test_complete_aggregates_same_part_across_items(db, part_chain):
 
 
 def test_complete_order_jewelry_only_does_not_touch_stock(db):
+    from tests.order_history_helpers import create_historical_order as create_order
     from models.jewelry import Jewelry
     from models.bom import Bom
     db.add(Jewelry(id="SP-T2", name="j", status="active",
@@ -257,16 +262,15 @@ def test_add_order_item_with_missing_part_raises_value_error(db, part_chain):
         })
 
 
-def test_update_order_item_with_null_unit_price_does_not_crash(db, part_chain):
-    """PATCH with explicit unit_price=null should not crash."""
+def test_update_order_item_rejects_null_unit_price_without_partial_change(db, part_chain):
     order = create_order(db, "客户A", [{
         "part_id": part_chain.id, "quantity": 1, "unit_price": 15, "remarks": None,
     }])
     item = db.query(OrderItem).filter_by(order_id=order.id).first()
-    # Should not raise — null unit_price is treated as "no price change"
-    update_order_item(db, order.id, item.id, {"unit_price": None, "quantity": 2})
+    with pytest.raises(ValueError, match="不能为空"):
+        update_order_item(db, order.id, item.id, {"unit_price": None, "quantity": 2})
     db.refresh(item)
-    assert item.quantity == 2
+    assert item.quantity == 1
     # Wholesale price unchanged because unit_price was null
     db.refresh(part_chain)
     assert part_chain.wholesale_price == Decimal("15")

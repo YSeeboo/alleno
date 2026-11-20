@@ -24,8 +24,13 @@ from .jewelry_structure import JewelryStructure, JewelryStructureScheme, Jewelry
 from .id_counter import IdCounter
 from .production_loss import ProductionLoss
 from .restock_request import RestockRequest
+from .production_allocation import ProductionAllocation
+from .production_creation import ProductionCreation
+from .order_fulfillment import OrderFulfillment, StockReservation, CustomerShipment, CustomerShipmentItem
 
 __all__ = [
+    "ProductionAllocation",
+    "ProductionCreation",
     "PlatingReconciliation",
     "Part",
     "PartCostLog",

@@ -1,9 +1,11 @@
 <template>
-  <div :style="{ maxWidth: isMobile ? '100%' : '900px' }">
+  <div class="fulfillment-page" :style="{ maxWidth: isMobile ? '100%' : '1100px' }">
     <n-space align="center" style="margin-bottom: 16px;">
       <n-button text @click="goBack">← {{ summaryReturn ? '返回汇总' : '返回' }}</n-button>
-      <n-h2 style="margin: 0;">新建手工单</n-h2>
+      <n-h2 style="margin: 0;">安排手工制作</n-h2>
     </n-space>
+
+    <n-alert type="info" :bordered="false" class="wf-notice">默认新建独立制作单；只有明确选择一张同商家、未发出的手工单，才会追加。此处安排的是生产，不代表客户预留或已出货。</n-alert>
 
     <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="110" style="margin-bottom: 16px;">
       <n-form-item label="手工商家名称">
@@ -16,6 +18,7 @@
           :style="{ width: isMobile ? '100%' : '300px' }"
         />
       </n-form-item>
+      <HandcraftTargetPicker v-model="appendToOrderId" :supplier-name="supplierName" :disabled="submitting" />
       <n-form-item label="备注">
         <n-input v-model:value="note" type="textarea" :rows="2" :style="{ width: isMobile ? '100%' : '300px' }" />
       </n-form-item>
@@ -24,7 +27,8 @@
           v-model:value="createdAtTs"
           type="date"
           clearable
-          placeholder="不填则使用当前时间，填写后不触发同日合并"
+          :disabled="!!appendToOrderId || submitting"
+          placeholder="新单可补录日期；追加不改变原单日期"
           :style="{ width: isMobile ? '100%' : '360px' }"
         />
       </n-form-item>
@@ -171,11 +175,12 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useHandcraftSummaryReturn } from '@/composables/useHandcraftSummaryReturn'
 import { useMessage } from 'naive-ui'
-import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NGrid, NGi, NDatePicker, NTag } from 'naive-ui'
+import { NAlert, NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NCard, NH2, NGrid, NGi, NDatePicker, NTag } from 'naive-ui'
 import { listParts, getPartBom } from '@/api/parts'
 import { listJewelries } from '@/api/jewelries'
 import { getBom } from '@/api/bom'
 import { createHandcraft } from '@/api/handcraft'
+import HandcraftTargetPicker from '@/components/fulfillment/HandcraftTargetPicker.vue'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { renderOptionWithImage } from '@/utils/ui'
 import { tsToDateStr } from '@/utils/date'
@@ -185,6 +190,7 @@ const { summaryReturn, goBack, openCreated } = useHandcraftSummaryReturn()
 const message = useMessage()
 const { isMobile } = useIsMobile()
 const supplierName = ref(null)
+const appendToOrderId = ref(null)
 const supplierOptions = ref([])
 const note = ref('')
 const createdAtTs = ref(null)
@@ -417,6 +423,7 @@ const normalizedJewelries = () => groups
   })
 
 const submit = async () => {
+  if (submitting.value) return
   const validParts = normalizedParts()
   const validJewelries = normalizedJewelries()
   if (!supplierName.value?.trim()) { message.warning('请输入手工商家名称'); return }
@@ -432,11 +439,12 @@ const submit = async () => {
       parts: validParts,
       jewelries: validJewelries,
       note: note.value,
+      append_to_order_id: appendToOrderId.value,
     }
     const createdAt = tsToDateStr(createdAtTs.value)
-    if (createdAt) payload.created_at = createdAt
+    if (createdAt && !appendToOrderId.value) payload.created_at = createdAt
     const { data } = await createHandcraft(payload)
-    message.success('创建成功')
+    message.success(appendToOrderId.value ? `已追加到 ${data.id}` : '已新建独立手工单')
     openCreated(`/handcraft/${data.id}`)
   } finally {
     submitting.value = false

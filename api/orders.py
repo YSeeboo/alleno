@@ -8,6 +8,9 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel as _BaseModel, Field as _Field
 
 from database import get_db
+from schemas.production_allocation import AllocationReplace, OrderHandcraftCreate
+from api.deps import require_permission
+from services.production_allocation import order_production, replace_order_source
 from schemas.order import (
     OrderCreate, OrderResponse, OrderItemResponse, StatusUpdate,
     OrderTodoItemResponse, LinkCreateRequest, LinkResponse,
@@ -109,6 +112,32 @@ def api_get_order_items(order_id: str, db: Session = Depends(get_db)):
     return enrich_order_items(db, items)
 
 
+@router.get("/{order_id}/production")
+def api_order_production(order_id: str, db: Session = Depends(get_db)):
+    if get_order(db, order_id) is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    with service_errors():
+        return order_production(db, order_id)
+
+
+@router.post("/{order_id}/production/handcraft", status_code=201, dependencies=[require_permission("handcraft")])
+def api_create_order_handcraft(order_id: str, body: OrderHandcraftCreate, db: Session = Depends(get_db)):
+    from services.order_production_creation import create_order_handcraft
+    if get_order(db, order_id) is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    with service_errors():
+        return create_order_handcraft(db, order_id, body.model_dump())
+
+
+@router.put("/{order_id}/production")
+def api_replace_order_production(order_id: str, body: AllocationReplace, db: Session = Depends(get_db)):
+    if get_order(db, order_id) is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    with service_errors():
+        return replace_order_source(db, order_id, body.source_type, body.source_item_id,
+                                    body.revision, [row.model_dump() for row in body.allocations])
+
+
 @router.post("/{order_id}/items", response_model=OrderItemResponse, status_code=201)
 def api_add_order_item(order_id: str, body: OrderItemCreate, db: Session = Depends(get_db)):
     order = get_order(db, order_id)
@@ -133,6 +162,8 @@ def api_batch_customer_code(order_id: str, body: BatchCustomerCodeRequest, db: S
 
 @router.patch("/{order_id}/items/{item_id}", response_model=OrderItemResponse)
 def api_update_order_item(order_id: str, item_id: int, body: OrderItemUpdate, db: Session = Depends(get_db)):
+    if get_order(db, order_id) is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
     fields = body.model_dump(exclude_unset=True)
     if not fields:
         raise HTTPException(status_code=400, detail="请提供至少一个要修改的字段")
@@ -376,7 +407,7 @@ def api_link_batch_supplier(
     db: Session = Depends(get_db),
 ):
     with service_errors():
-        return link_supplier(db, order_id, batch_id, req.supplier_name)
+        return link_supplier(db, order_id, batch_id, req.supplier_name, req.append_to_order_id)
 
 
 @router.delete("/{order_id}/todo-batch/{batch_id}", status_code=204)

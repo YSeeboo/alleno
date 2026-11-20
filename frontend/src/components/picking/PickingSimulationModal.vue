@@ -14,6 +14,7 @@ const { isMobile } = useIsMobile()
 const props = defineProps({
   show: { type: Boolean, required: true },
   orderId: { type: String, required: true },
+  readonly: Boolean,
 })
 const emit = defineEmits(['update:show'])
 
@@ -56,6 +57,7 @@ watch(() => props.show, (v) => {
 })
 
 async function toggleVariant(row, variant) {
+  if (props.readonly) return
   const prev = variant.picked
   variant.picked = !prev
   data.value.progress.picked += variant.picked ? 1 : -1
@@ -71,6 +73,7 @@ async function toggleVariant(row, variant) {
 }
 
 async function doReset() {
+  if (props.readonly) return
   try {
     await resetPicking(props.orderId)
     await load()
@@ -141,7 +144,7 @@ function fmtQty(v) {
             <n-button type="primary" :loading="exporting" @click="doExport">
               导出 PDF
             </n-button>
-            <n-popconfirm @positive-click="doReset">
+            <n-popconfirm v-if="!readonly" @positive-click="doReset">
               <template #trigger>
                 <n-button>重置勾选</n-button>
               </template>
@@ -191,7 +194,7 @@ function fmtQty(v) {
                   {{ fmtQty(row.current_stock) }}
                 </td>
                 <td class="num">
-                  <n-checkbox :checked="v.picked"
+                  <n-checkbox :checked="v.picked" :disabled="readonly"
                               @update:checked="toggleVariant(row, v)" />
                 </td>
               </tr>

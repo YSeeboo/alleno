@@ -195,6 +195,7 @@ def create_handcraft_order(
     jewelries: Optional[list] = None,
     note: str = None,
     created_at: Optional[date_type] = None,
+    append_to_order_id: Optional[str] = None,
 ) -> HandcraftOrder:
     for p in parts:
         _require_part(db, p["part_id"])
@@ -210,23 +211,14 @@ def create_handcraft_order(
         else:
             raise ValueError("产出项必须指定 jewelry_id 或 part_id")
 
-    # Auto-merge: reuse existing pending order for same supplier on same day.
-    # Skip merge when user explicitly provides created_at (补录历史单据的场景).
+    # Default is ALWAYS a new order. Append only to the exact order explicitly
+    # selected by the user; lock/revalidate so dispatch cannot race the append.
     merged = False
     existing = None
-    if created_at is None:
-        today_beijing = now_beijing().date()
-        existing = (
-            db.query(HandcraftOrder)
-            .filter(
-                HandcraftOrder.supplier_name == supplier_name,
-                HandcraftOrder.status == "pending",
-                HandcraftOrder.archived_at.is_(None),
-                func.cast(HandcraftOrder.created_at, Date) == today_beijing,
-            )
-            .order_by(HandcraftOrder.created_at.asc(), HandcraftOrder.id.asc())
-            .first()
-        )
+    if append_to_order_id is not None:
+        if created_at is not None:
+            raise ValueError("追加已有手工单不能修改原单创建日期")
+        existing = require_append_target(db, append_to_order_id, supplier_name)
 
     if existing:
         order = existing
@@ -304,6 +296,18 @@ def create_handcraft_order(
     return order
 
 
+def require_append_target(db: Session, order_id: str, supplier_name: str) -> HandcraftOrder:
+    order = db.query(HandcraftOrder).filter_by(id=order_id).populate_existing().with_for_update().first()
+    if order is None:
+        raise ValueError("所选追加手工单不存在")
+    require_unarchived(order)
+    if order.status != "pending":
+        raise ValueError("只能追加到尚未发出的 pending 手工单，请重新选择")
+    if order.supplier_name != supplier_name:
+        raise ValueError("所选追加手工单与当前手工商家不一致")
+    return order
+
+
 def _compute_effective_part_totals(
     db: Session, handcraft_order_id: str, part_items: list
 ) -> dict[str, float]:
@@ -322,7 +326,7 @@ def _compute_effective_part_totals(
 
 
 def send_handcraft_order(db: Session, handcraft_order_id: str) -> HandcraftOrder:
-    order = get_handcraft_order(db, handcraft_order_id)
+    order = db.query(HandcraftOrder).filter_by(id=handcraft_order_id).populate_existing().with_for_update().first()
     require_unarchived(order)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {handcraft_order_id}")
@@ -433,7 +437,8 @@ def get_handcraft_jewelry_breakdown(
     per-row entries with the resolved customer name + its source
     ("order" via OrderItemLink, or "manual" via customer_name override).
     """
-    from models.order import Order, OrderItemLink
+    from models.order import Order, OrderItem, OrderItemLink
+    from models.production_allocation import ProductionAllocation
     from collections import defaultdict
 
     rows = (
@@ -458,6 +463,21 @@ def get_handcraft_jewelry_breakdown(
         .all()
     )
     link_by_item = {lr.handcraft_jewelry_item_id: lr for lr in link_rows}
+
+    # Quantity allocations are the source of truth for shared production rows.
+    # Project them into sorting without splitting/duplicating the physical output
+    # or guessing which customer's goods have actually been received.
+    allocation_rows = (
+        db.query(ProductionAllocation, OrderItem, Order)
+        .join(OrderItem, OrderItem.id == ProductionAllocation.order_item_id)
+        .join(Order, Order.id == OrderItem.order_id)
+        .filter(ProductionAllocation.handcraft_jewelry_item_id.in_(row_ids))
+        .order_by(ProductionAllocation.id)
+        .all()
+    )
+    allocations_by_item = defaultdict(list)
+    for allocation, line, order in allocation_rows:
+        allocations_by_item[allocation.handcraft_jewelry_item_id].append((allocation, line, order))
 
     # Resolve jewelry / part display name + image
     jewelry_ids = {r.jewelry_id for r in rows if r.jewelry_id}
@@ -493,6 +513,36 @@ def get_handcraft_jewelry_breakdown(
 
         entries = []
         for r in group_rows:
+            allocations = allocations_by_item.get(r.id, [])
+            if allocations:
+                assigned = sum((allocation.quantity for allocation, _, _ in allocations), Decimal(0))
+                for allocation, line, order in allocations:
+                    entries.append({
+                        "hc_jewelry_item_id": r.id,
+                        "qty": float(allocation.quantity),
+                        "received_qty": None,
+                        "customer_name": order.customer_name,
+                        "source": "order",
+                        "source_order_id": order.id,
+                        "source_order_item_id": line.id,
+                        "source_allocation_id": allocation.id,
+                        "is_locked": True,
+                        "quantity_managed": True,
+                    })
+                remaining = max(Decimal(0), Decimal(r.qty) - assigned)
+                if remaining:
+                    entries.append({
+                        "hc_jewelry_item_id": r.id,
+                        "qty": float(remaining),
+                        "received_qty": None,
+                        "customer_name": None,
+                        "source": "manual",
+                        "source_order_id": None,
+                        "is_locked": False,
+                        "quantity_managed": True,
+                        "is_quantity_remainder": True,
+                    })
+                continue
             if r.customer_name is not None:
                 customer = r.customer_name
                 source = "manual"
@@ -540,9 +590,30 @@ def get_handcraft_jewelry_breakdown(
             "total_qty": sum(float(r.qty) for r in group_rows),
             "received_qty": sum(float(r.received_qty or 0) for r in group_rows),
             "status": status,
+            "quantity_managed": any(r.id in allocations_by_item for r in group_rows),
             "entries": entries,
         })
     return result
+
+
+def _quantity_sorting_claim():
+    """A confirmed order share also qualifies an output for customer sorting."""
+    from sqlalchemy import exists, func, select
+    from sqlalchemy.orm import aliased
+    from models.order import Order, OrderItem
+    from models.production_allocation import ProductionAllocation
+
+    customer_order, line = aliased(Order), aliased(OrderItem)
+    return exists(
+        select(ProductionAllocation.id)
+        .join(line, line.id == ProductionAllocation.order_item_id)
+        .join(customer_order, customer_order.id == line.order_id)
+        .where(
+            ProductionAllocation.handcraft_jewelry_item_id == HandcraftJewelryItem.id,
+            func.trim(customer_order.customer_name) != "",
+        )
+        .correlate(HandcraftJewelryItem)
+    )
 
 
 def list_suppliers_with_sorting(db: Session) -> list[str]:
@@ -566,6 +637,7 @@ def list_suppliers_with_sorting(db: Session) -> list[str]:
         .where(
             HandcraftJewelryItem.handcraft_order_id == HandcraftOrder.id,
             or_(
+                _quantity_sorting_claim(),
                 and_(
                     HandcraftJewelryItem.customer_name.isnot(None),
                     func.trim(HandcraftJewelryItem.customer_name) != "",
@@ -618,6 +690,7 @@ def list_handcraft_orders_with_sorting(
         .where(
             HandcraftJewelryItem.handcraft_order_id == HandcraftOrder.id,
             or_(
+                _quantity_sorting_claim(),
                 and_(
                     HandcraftJewelryItem.customer_name.isnot(None),
                     func.trim(HandcraftJewelryItem.customer_name) != "",
@@ -1066,6 +1139,10 @@ def update_handcraft_jewelry(db: Session, order_id: str, item_id: int, data: dic
     if item is None:
         raise ValueError(f"HandcraftJewelryItem {item_id} not found in order {order_id}")
 
+    from services.production_allocation import guard_source_update
+    guard_source_update(db, "handcraft", item.id, quantity=data.get("qty"), unit=data.get("unit"),
+                        customer_change="customer_name" in data)
+
     # customer_name has looser rules than the production-affecting fields:
     # editable in pending OR processing (it's pure metadata, doesn't move stock).
     # But order-linked rows derive their customer from Order.customer_name; the
@@ -1117,6 +1194,8 @@ def delete_handcraft_jewelry(db: Session, order_id: str, item_id: int) -> None:
     ).first()
     if item is None:
         raise ValueError(f"HandcraftJewelryItem {item_id} not found in order {order_id}")
+    from services.production_allocation import guard_source_delete
+    guard_source_delete(db, "handcraft", [item.id])
     # Two non-cascading inbound FKs point at handcraft_jewelry_item.id:
     #   - OrderItemLink.handcraft_jewelry_item_id (the live link)
     #   - OrderTodoBatchJewelry.handcraft_jewelry_item_id (the batch ref,
@@ -1152,6 +1231,9 @@ def delete_handcraft_jewelry(db: Session, order_id: str, item_id: int) -> None:
 
 
 def delete_handcraft_order(db: Session, order_id: str) -> None:
+    from services.production_allocation import guard_source_delete
+    output_ids = [row.id for row in db.query(HandcraftJewelryItem).filter_by(handcraft_order_id=order_id).all()]
+    guard_source_delete(db, "handcraft", output_ids)
     from models.handcraft_receipt import HandcraftReceipt, HandcraftReceiptItem
     from sqlalchemy import or_
 

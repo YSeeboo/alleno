@@ -35,6 +35,8 @@ def batch_get_stock(db: Session, item_type: str, item_ids: list[str]) -> dict[st
 def add_stock(db: Session, item_type: str, item_id: str, qty: float, reason: str, note: str = None) -> InventoryLog:
     if qty <= 0:
         raise ValueError(f"qty must be positive, got {qty}")
+    from services.order_fulfillment import lock_product
+    lock_product(db, item_type, item_id)
     log = InventoryLog(item_type=item_type, item_id=item_id, change_qty=qty, reason=reason, note=note)
     db.add(log)
     db.flush()
@@ -44,9 +46,15 @@ def add_stock(db: Session, item_type: str, item_id: str, qty: float, reason: str
 def deduct_stock(db: Session, item_type: str, item_id: str, qty: float, reason: str, note: str = None) -> InventoryLog:
     if qty <= 0:
         raise ValueError(f"qty must be positive, got {qty}")
-    current = get_stock(db, item_type, item_id)
-    if current < qty:
+    from decimal import Decimal
+    from services.order_fulfillment import lock_product, stock_balance
+    lock_product(db, item_type, item_id)
+    balance = stock_balance(db, item_type, item_id)
+    current = balance["stock"]
+    if current < Decimal(str(qty)):
         raise ValueError(f"库存不足：{item_type} {item_id} 当前库存 {current}，需要 {qty}")
+    if balance["public_available"] < Decimal(str(qty)):
+        raise ValueError(f"公共可用库存不足：{item_type} {item_id}，不能占用订单预留库存")
     log = InventoryLog(item_type=item_type, item_id=item_id, change_qty=-qty, reason=reason, note=note)
     db.add(log)
     db.flush()

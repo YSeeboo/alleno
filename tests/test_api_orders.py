@@ -1,5 +1,6 @@
 import pytest
 from sqlalchemy import text
+from models.order import Order
 from services.jewelry import create_jewelry
 from services.part import create_part
 from services.bom import set_bom
@@ -118,9 +119,12 @@ def test_update_order_status(client, db):
         "items": [{"jewelry_id": jewelry.id, "quantity": 1, "unit_price": 50.0}]
     }).json()
     resp = client.patch(f"/api/orders/{created['id']}/status", json={"status": "已完成"})
+    assert resp.status_code == 400
+    assert "足量出货" in resp.json()["detail"]
+    resp = client.patch(f"/api/orders/{created['id']}/status", json={"status": "生产中"})
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "已完成"
+    assert data["status"] == "生产中"
 
 
 def test_update_status_not_found(client, db):
@@ -155,28 +159,59 @@ def test_delete_order_item(client, db):
     order = _create_order(client, jewelry)
     items = client.get(f"/api/orders/{order['id']}/items").json()
     resp = client.delete(f"/api/orders/{order['id']}/items/{items[0]['id']}")
+    assert resp.status_code == 400  # Last line must remain.
+    added = client.post(f"/api/orders/{order['id']}/items", json={
+        "jewelry_id": jewelry.id, "quantity": 2, "unit_price": 10,
+    })
+    assert added.status_code == 201
+    resp = client.delete(f"/api/orders/{order['id']}/items/{items[0]['id']}")
     assert resp.status_code == 204
     updated = client.get(f"/api/orders/{order['id']}").json()
-    assert float(updated["total_amount"]) == 0.0
+    assert float(updated["total_amount"]) == 20.0
 
 
-def test_add_item_blocked_when_not_pending(client, db):
+@pytest.mark.parametrize("status", ["已完成", "已取消"])
+def test_add_item_blocked_when_closed(client, db, status):
     _, jewelry = _setup(db)
     order = _create_order(client, jewelry)
-    client.patch(f"/api/orders/{order['id']}/status", json={"status": "生产中"})
+    db.get(Order, order['id']).status = status
+    db.flush()
     resp = client.post(f"/api/orders/{order['id']}/items", json={
         "jewelry_id": jewelry.id, "quantity": 1, "unit_price": 10.0,
     })
     assert resp.status_code == 400
 
 
-def test_delete_item_blocked_when_not_pending(client, db):
+@pytest.mark.parametrize("status", ["已完成", "已取消"])
+def test_delete_item_blocked_when_closed(client, db, status):
     _, jewelry = _setup(db)
     order = _create_order(client, jewelry)
     items = client.get(f"/api/orders/{order['id']}/items").json()
-    client.patch(f"/api/orders/{order['id']}/status", json={"status": "生产中"})
+    client.post(f"/api/orders/{order['id']}/items", json={"jewelry_id": jewelry.id, "quantity": 2, "unit_price": 10})
+    db.get(Order, order['id']).status = status
+    db.flush()
     resp = client.delete(f"/api/orders/{order['id']}/items/{items[0]['id']}")
     assert resp.status_code == 400
+
+
+def test_processing_order_can_add_and_delete_an_independent_duplicate_item(client, db):
+    _, jewelry = _setup(db)
+    order = _create_order(client, jewelry)
+    original = client.get(f"/api/orders/{order['id']}/items").json()[0]
+    client.patch(f"/api/orders/{order['id']}/status", json={"status": "生产中"})
+    added = client.post(f"/api/orders/{order['id']}/items", json={
+        "jewelry_id": jewelry.id, "quantity": 3, "unit_price": 0.1234567, "customer_code": "独立货号",
+    })
+    assert added.status_code == 201
+    assert added.json()["id"] != original["id"]
+    assert client.get(f"/api/orders/{order['id']}").json()["total_amount"] == pytest.approx(50.3703701)
+    assert client.delete(f"/api/orders/{order['id']}/items/{added.json()['id']}").status_code == 204
+    remaining = client.get(f"/api/orders/{order['id']}/items").json()
+    assert [item["id"] for item in remaining] == [original["id"]]
+    updated = client.get(f"/api/orders/{order['id']}").json()
+    assert updated["status"] == "生产中"
+    assert updated["total_amount"] == pytest.approx(50)
+    assert client.delete(f"/api/orders/{order['id']}/items/{original['id']}").status_code == 400
 
 
 def test_add_item_invalid_quantity_rejected(client, db):
@@ -315,15 +350,16 @@ def test_delete_preview(client, db):
     assert body["link_count"] == 0
 
 
-def test_delete_pending_order(client, db):
+def test_new_pending_order_is_retained_in_unified_flow(client, db):
     _, jewelry = _setup(db)
     created = client.post("/api/orders/", json={
         "customer_name": "Dave",
         "items": [{"jewelry_id": jewelry.id, "quantity": 1, "unit_price": 50.0}]
     }).json()
     resp = client.delete(f"/api/orders/{created['id']}")
-    assert resp.status_code == 204
-    assert client.get(f"/api/orders/{created['id']}").status_code == 404
+    assert resp.status_code == 400
+    assert "保留记录" in resp.json()["detail"]
+    assert client.get(f"/api/orders/{created['id']}").status_code == 200
 
 
 def test_delete_order_not_found(client, db):

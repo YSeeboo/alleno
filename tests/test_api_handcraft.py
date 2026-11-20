@@ -47,8 +47,9 @@ def test_create_handcraft_order_with_note(client, db):
     assert data["note"] == "urgent order"
 
 
-def test_create_handcraft_order_merge_returns_200(client, db):
-    """Second create for same supplier on same day merges and returns 200."""
+@pytest.mark.parametrize("append", [False, True])
+def test_create_handcraft_order_defaults_new_and_only_explicit_append_returns_200(client, db, append):
+    """Same-day creation is independent unless the exact target is selected."""
     part, jewelry = _setup(db)
     resp1 = client.post("/api/handcraft/", json={
         "supplier_name": "Supplier Merge",
@@ -60,13 +61,14 @@ def test_create_handcraft_order_merge_returns_200(client, db):
     resp2 = client.post("/api/handcraft/", json={
         "supplier_name": "Supplier Merge",
         "parts": [{"part_id": part.id, "qty": 3.0}],
+        "append_to_order_id": order_id if append else None,
     })
-    assert resp2.status_code == 200
-    assert resp2.json()["id"] == order_id
+    assert resp2.status_code == (200 if append else 201)
+    assert (resp2.json()["id"] == order_id) is append
 
     # Verify items accumulated
     parts_resp = client.get(f"/api/handcraft/{order_id}/parts")
-    assert len(parts_resp.json()) == 2
+    assert len(parts_resp.json()) == (2 if append else 1)
 
 
 def test_create_handcraft_order_different_supplier_no_merge(client, db):

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from api._errors import service_errors
 from api.production_archive import guard_handcraft_archive
 from database import get_db
+from services.production_allocation import production_uses
 from schemas.handcraft import (
     HandcraftCreate,
     HandcraftDeliveryImagesUpdate,
@@ -102,7 +103,13 @@ class StatusUpdate(BaseModel):
 router = APIRouter(prefix="/api/handcraft", tags=["handcraft"], dependencies=[Depends(guard_handcraft_archive)])
 
 
-@router.post("/", response_model=HandcraftResponse, status_code=201, responses={200: {"model": HandcraftResponse, "description": "Merged into existing pending order"}})
+@router.get("/{order_id}/production-uses")
+def api_handcraft_production_uses(order_id: str, db: Session = Depends(get_db)):
+    with service_errors():
+        return production_uses(db, "handcraft", order_id)
+
+
+@router.post("/", response_model=HandcraftResponse, status_code=201, responses={200: {"model": HandcraftResponse, "description": "Explicitly appended to selected pending order"}})
 def api_create_handcraft_order(body: HandcraftCreate, db: Session = Depends(get_db)):
     with service_errors():
         order = create_handcraft_order(
@@ -112,6 +119,7 @@ def api_create_handcraft_order(body: HandcraftCreate, db: Session = Depends(get_
             jewelries=[j.model_dump() for j in body.jewelries],
             note=body.note,
             created_at=body.created_at,
+            append_to_order_id=body.append_to_order_id,
         )
     from fastapi.responses import JSONResponse
     status_code = 200 if getattr(order, "merged", False) else 201

@@ -40,6 +40,7 @@ class HandcraftCreate(BaseModel):
     jewelries: List[HandcraftJewelryIn] = Field(default_factory=list)
     note: Optional[str] = None
     created_at: Optional[date] = None
+    append_to_order_id: Optional[str] = Field(None, min_length=1)
 
     @field_validator("supplier_name")
     @classmethod
@@ -221,11 +222,16 @@ class HandcraftJewelryBreakdownEntry(BaseModel):
 
     hc_jewelry_item_id: int
     qty: float
-    received_qty: float
+    # Order shares are plans; actual receipts cannot be attributed by inference.
+    received_qty: Optional[float] = None
     customer_name: Optional[str] = None
     source: Literal["order", "manual"]
     source_order_id: Optional[str] = None
+    source_order_item_id: Optional[int] = None
+    source_allocation_id: Optional[int] = None
     is_locked: bool
+    quantity_managed: bool = False
+    is_quantity_remainder: bool = False
 
 
 class HandcraftJewelryBreakdownGroup(BaseModel):
@@ -238,6 +244,7 @@ class HandcraftJewelryBreakdownGroup(BaseModel):
     total_qty: float
     received_qty: float
     status: str
+    quantity_managed: bool = False
     entries: List[HandcraftJewelryBreakdownEntry]
 
 

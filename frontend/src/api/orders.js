@@ -28,8 +28,8 @@ export const createTodoBatch = (orderId, items) =>
   api.post(`/orders/${orderId}/todo-batch`, { items })
 export const getTodoBatches = (orderId) => api.get(`/orders/${orderId}/todo-batches`)
 export const deleteTodoBatch = (orderId, batchId) => api.delete(`/orders/${orderId}/todo-batch/${batchId}`)
-export const linkBatchSupplier = (orderId, batchId, supplierName) =>
-  api.post(`/orders/${orderId}/todo-batch/${batchId}/link-supplier`, { supplier_name: supplierName }, { _silentError: true })
+export const linkBatchSupplier = (orderId, batchId, supplierName, appendToOrderId = null) =>
+  api.post(`/orders/${orderId}/todo-batch/${batchId}/link-supplier`, { supplier_name: supplierName, append_to_order_id: appendToOrderId }, { _silentError: true })
 export const downloadBatchPdf = (orderId, batchId) =>
   api.get(`/orders/${orderId}/todo-pdf`, { params: { batch_id: batchId }, responseType: 'blob' })
 // --- Customer Code ---
