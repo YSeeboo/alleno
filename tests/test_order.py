@@ -218,10 +218,9 @@ def _order_with_pending_handcraft(db, p1, p2, j1):
     return order, batch, hc
 
 
-def test_delete_order_cleans_pending_handcraft(setup):
-    """link_supplier 把批次迁移成 pending 手工单后，删除订单必须连带清掉手工单
-    及其 HandcraftPartItem / HandcraftJewelryItem，否则会产生孤儿手工单和幽灵库存
-    预留。"""
+@pytest.mark.parametrize("historical_status", ["待生产", "已取消"])
+def test_delete_order_cleans_pending_handcraft(setup, historical_status):
+    """历史可删除状态仍清理 pending 手工关联；新关联默认自动进入生产中。"""
     db, p1, p2, j1, j2 = setup
     from models.handcraft_order import (
         HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem,
@@ -229,6 +228,11 @@ def test_delete_order_cleans_pending_handcraft(setup):
     from models.order import OrderItemLink, OrderTodoItem
 
     order, batch, hc = _order_with_pending_handcraft(db, p1, p2, j1)
+    assert order.status == "生产中"
+    # Explicitly model a historical deletable order, without changing the new
+    # automatic-start rule or weakening the processing-order deletion guard.
+    order.status = historical_status
+    db.flush()
     hc_id = hc.id
     assert db.query(HandcraftPartItem).filter_by(handcraft_order_id=hc_id).count() > 0
     assert db.query(HandcraftJewelryItem).filter_by(handcraft_order_id=hc_id).count() > 0
@@ -245,17 +249,38 @@ def test_delete_order_cleans_pending_handcraft(setup):
     assert db.query(OrderTodoItem).filter_by(order_id=order.id).count() == 0
 
 
-def test_delete_order_refused_when_handcraft_sent(setup):
+def test_delete_auto_started_order_preserves_pending_handcraft(setup):
+    """关联后自动开工的客户订单不可整单删除，即使手工单尚未发出。"""
+    db, p1, p2, j1, j2 = setup
+    from models.handcraft_order import HandcraftOrder, HandcraftPartItem, HandcraftJewelryItem
+    from models.order import OrderTodoBatch
+
+    order, batch, hc = _order_with_pending_handcraft(db, p1, p2, j1)
+    assert order.status == "生产中"
+    with pytest.raises(ValueError, match="生产中"):
+        delete_order(db, order.id)
+    assert get_order(db, order.id) is not None
+    assert db.get(HandcraftOrder, hc.id) is not None
+    assert db.get(OrderTodoBatch, batch.id) is not None
+    assert db.query(HandcraftPartItem).filter_by(handcraft_order_id=hc.id).count() > 0
+    assert db.query(HandcraftJewelryItem).filter_by(handcraft_order_id=hc.id).count() > 0
+
+
+@pytest.mark.parametrize("customer_status", ["生产中", "待生产", "已取消"])
+def test_delete_order_refused_when_handcraft_sent(setup, customer_status):
     """手工单已发出（非 pending）意味着真实库存已被扣 —— 此时删除订单必须被拒绝，
     不能留下已扣料的孤儿手工单。"""
     db, p1, p2, j1, j2 = setup
     from models.handcraft_order import HandcraftOrder
 
     order, batch, hc = _order_with_pending_handcraft(db, p1, p2, j1)
+    assert order.status == "生产中"
+    order.status = customer_status  # Include historical deletable customer states.
     hc.status = "processing"  # 模拟已发出
     db.flush()
 
-    with pytest.raises(ValueError, match="已发出|无法删除"):
+    expected = "生产中" if customer_status == "生产中" else "已发出|无法删除"
+    with pytest.raises(ValueError, match=expected):
         delete_order(db, order.id)
     # 订单与手工单都还在
     assert get_order(db, order.id) is not None
