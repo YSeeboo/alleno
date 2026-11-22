@@ -328,82 +328,27 @@
       </div>
     </n-spin>
 
-    <n-modal v-model:show="addModalVisible" preset="card" title="添加配件明细" :style="{ width: isMobile ? '95vw' : '560px' }">
-      <n-tabs v-model:value="addModalTab" type="line" animated>
-        <n-tab-pane name="single" tab="单条添加">
-          <form @submit.prevent="doAddItem">
-            <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="90">
-              <n-form-item label="配件">
-                <n-select
-                  v-model:value="addForm.part_id"
-                  :options="partOptions"
-                  :render-label="renderOptionWithImage"
-                  filterable
-                  clearable
-                  placeholder="选择配件"
-                  @update:value="onAddPartSelect"
-                />
-              </n-form-item>
-              <n-form-item label="数量">
-                <n-input-number v-model:value="addForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
-              </n-form-item>
-              <n-form-item label="单位">
-                <n-select v-model:value="addForm.unit" :options="unitOptions" />
-              </n-form-item>
-              <n-form-item label="重量">
-                <div style="display: flex; gap: 8px; width: 100%;">
-                  <n-input-number
-                    v-model:value="addForm.weight"
-                    :min="0"
-                    :precision="2"
-                    :step="0.1"
-                    placeholder="可选"
-                    clearable
-                    style="flex: 1;"
-                  />
-                  <n-select
-                    v-model:value="addForm.weight_unit"
-                    :options="weightUnitOptions"
-                    style="width: 90px;"
-                  />
-                </div>
-              </n-form-item>
-              <n-form-item label="备注">
-                <n-input v-model:value="addForm.note" placeholder="备注（可选）" />
-              </n-form-item>
-            </n-form>
-          </form>
-        </n-tab-pane>
-
-        <n-tab-pane name="recent" tab="最近导入">
+    <BatchAddDialog v-if="addModalVisible" scene="material" :entity-id="String(route.params.id)" :allowed="isPending()" :external-busy="attachSubmitting" :refresh="loadData" @close="addModalVisible = false">
+      <template #recent>
+        <n-spin :show="attachSubmitting">
           <RecentImportsPicker
             :existing-items="items"
             @change="onRecentChange"
           />
-        </n-tab-pane>
-      </n-tabs>
-
-      <template #footer>
+        </n-spin>
         <n-space justify="space-between" style="width: 100%;">
-          <span v-if="addModalTab === 'recent' && recentAttachPayload.rows.length > 0" style="font-size: 12px; color: #6b7280;">
+          <span v-if="recentAttachPayload.rows.length > 0" style="font-size: 12px; color: #6b7280;">
             新增 <strong>{{ recentAttachPayload.newCount }}</strong> 项 ·
             累加 <strong>{{ recentAttachPayload.updateCount }}</strong> 项 ·
             共 <strong>{{ recentAttachPayload.totalQty }}</strong> 件
           </span>
           <span v-else style="font-size: 12px; color: #9ca3af;">
-            <span v-if="addModalTab === 'recent'">请勾选要加入的项</span>
+            请勾选要加入的项
           </span>
 
           <n-space>
-            <n-button @click="addModalVisible = false">取消</n-button>
+            <n-button :disabled="attachSubmitting" @click="addModalVisible = false">取消</n-button>
             <n-button
-              v-if="addModalTab === 'single'"
-              type="primary"
-              :loading="addSubmitting"
-              @click="doAddItem"
-            >确认添加</n-button>
-            <n-button
-              v-else
               type="primary"
               :loading="attachSubmitting"
               :disabled="recentAttachPayload.rows.length === 0 || recentAttachPayload.hasZeroQty"
@@ -418,74 +363,10 @@
           </n-space>
         </n-space>
       </template>
-    </n-modal>
+    </BatchAddDialog>
 
     <!-- 添加产出（饰品 / 组合配件） -->
-    <n-modal v-model:show="outputModalVisible" preset="card" title="添加产出" :style="{ width: isMobile ? '95vw' : '480px' }">
-      <form @submit.prevent="doAddOutput">
-        <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="90">
-          <n-form-item label="产出类型">
-            <n-radio-group v-model:value="outputForm.output_type" @update:value="onOutputTypeChange">
-              <n-radio-button value="jewelry">饰品</n-radio-button>
-              <n-radio-button value="part">组合配件</n-radio-button>
-            </n-radio-group>
-          </n-form-item>
-          <n-form-item :label="outputForm.output_type === 'jewelry' ? '饰品' : '组合配件'">
-            <n-select
-              v-if="outputForm.output_type === 'jewelry'"
-              v-model:value="outputForm.jewelry_id"
-              :options="jewelryOptions"
-              :render-label="renderOptionWithImage"
-              filterable
-              clearable
-              placeholder="选择饰品"
-            />
-            <n-select
-              v-else
-              v-model:value="outputForm.part_id"
-              :options="partOptions"
-              :render-label="renderOptionWithImage"
-              filterable
-              clearable
-              placeholder="选择组合配件"
-            />
-          </n-form-item>
-          <n-form-item label="数量">
-            <n-input-number v-model:value="outputForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
-          </n-form-item>
-          <n-form-item label="单位">
-            <n-select v-model:value="outputForm.unit" :options="outputUnitOptions" />
-          </n-form-item>
-          <n-form-item label="重量">
-            <div style="display: flex; gap: 8px; width: 100%;">
-              <n-input-number
-                v-model:value="outputForm.weight"
-                :min="0"
-                :precision="2"
-                :step="0.1"
-                placeholder="可选"
-                clearable
-                style="flex: 1;"
-              />
-              <n-select
-                v-model:value="outputForm.weight_unit"
-                :options="weightUnitOptions"
-                style="width: 90px;"
-              />
-            </div>
-          </n-form-item>
-          <n-form-item label="备注">
-            <n-input v-model:value="outputForm.note" placeholder="备注（可选）" />
-          </n-form-item>
-        </n-form>
-      </form>
-      <template #footer>
-        <n-space justify="end" style="width: 100%;">
-          <n-button @click="outputModalVisible = false">取消</n-button>
-          <n-button type="primary" :loading="outputSubmitting" @click="doAddOutput">确认添加</n-button>
-        </n-space>
-      </template>
-    </n-modal>
+    <BatchAddDialog v-if="outputModalVisible" scene="output" :entity-id="String(route.params.id)" :allowed="canAddOutput" :refresh="refreshAfterOutputBatch" @close="outputModalVisible = false" />
 
     <n-modal v-model:show="editModalVisible" preset="card" title="修改配件明细" :style="{ width: isMobile ? '95vw' : '500px' }">
       <form @submit.prevent="doEditItem">
@@ -726,6 +607,7 @@
 </template>
 
 <script setup>
+import BatchAddDialog from '@/components/BatchAddDialog.vue'
 import ProductionUses from '@/components/ProductionUses.vue'
 import ProductionArchiveNotice from '@/components/ProductionArchiveNotice.vue'
 import { ref, reactive, computed, onMounted, h, nextTick } from 'vue'
@@ -744,8 +626,8 @@ import {
 import { CreateOutline } from '@vicons/ionicons5'
 import {
   getHandcraft, getHandcraftParts, getHandcraftJewelries, sendHandcraft, supplementAndSendHandcraft,
-  addHandcraftPart, updateHandcraftPart, deleteHandcraftPart,
-  addHandcraftJewelry, updateHandcraftJewelry, deleteHandcraftJewelry, updateHandcraft, updateHandcraftStatus,
+  updateHandcraftPart, deleteHandcraftPart,
+  updateHandcraftJewelry, deleteHandcraftJewelry, updateHandcraft, updateHandcraftStatus,
   updateHandcraftDeliveryImages, downloadHandcraftExcel, downloadHandcraftPdf,
   getHandcraftPartOrders, deleteHandcraftPartOrderLink,
   getHandcraftJewelryOrders, deleteHandcraftJewelryOrderLink,
@@ -931,21 +813,14 @@ const fmt = (dt) => new Date(dt).toLocaleString('zh-CN')
 
 const unitOptions = [
   { label: '个', value: '个' },
+  { label: '包', value: '包' },
   { label: '条', value: '条' },
   { label: '米', value: '米' },
   { label: 'g', value: 'g' },
   { label: 'kg', value: 'kg' },
 ]
 
-const weightUnitOptions = [
-  { label: 'kg', value: 'kg' },
-  { label: 'g', value: 'g' },
-]
-
 const addModalVisible = ref(false)
-const addSubmitting = ref(false)
-const addForm = ref({ part_id: null, qty: 1, unit: '个', weight: null, weight_unit: 'kg', note: '' })
-const addModalTab = ref(null) // set by openAddModal based on whether batches exist
 const recentAttachPayload = ref({ rows: [], newCount: 0, updateCount: 0, totalQty: 0, hasZeroQty: false })
 const attachSubmitting = ref(false)
 
@@ -958,54 +833,17 @@ const editSubmitting = ref(false)
 const editForm = ref({ id: null, qty: 1, unit: '个' })
 
 // --- 添加产出（饰品 / 组合配件）---
-const jewelryOptions = ref([])
-const outputUnitOptions = [
-  { label: '套', value: '套' },
-  { label: '个', value: '个' },
-  { label: '条', value: '条' },
-  { label: '对', value: '对' },
-]
 const outputModalVisible = ref(false)
-const outputSubmitting = ref(false)
-const outputForm = ref({ output_type: 'jewelry', jewelry_id: null, part_id: null, qty: 1, unit: '套', weight: null, weight_unit: 'kg', note: '' })
 const canAddOutput = computed(() => !order.value?.archived_at && ['pending', 'processing'].includes(order.value?.status))
 
 function openAddOutput() {
-  outputForm.value = { output_type: 'jewelry', jewelry_id: null, part_id: null, qty: 1, unit: '套', weight: null, weight_unit: 'kg', note: '' }
+  if (!canAddOutput.value) return
   outputModalVisible.value = true
 }
 
-function onOutputTypeChange(val) {
-  outputForm.value.jewelry_id = null
-  outputForm.value.part_id = null
-  outputForm.value.unit = val === 'jewelry' ? '套' : '个'
-}
-
-async function doAddOutput() {
-  const t = outputForm.value.output_type
-  if (t === 'jewelry' && !outputForm.value.jewelry_id) { message.warning('请选择饰品'); return }
-  if (t === 'part' && !outputForm.value.part_id) { message.warning('请选择组合配件'); return }
-  if (!outputForm.value.qty || outputForm.value.qty < 1) { message.warning('请填写数量'); return }
-  outputSubmitting.value = true
-  try {
-    const payload = {
-      qty: outputForm.value.qty,
-      unit: outputForm.value.unit,
-      weight: outputForm.value.weight ?? null,
-      weight_unit: outputForm.value.weight != null ? outputForm.value.weight_unit : null,
-      note: outputForm.value.note || null,
-    }
-    if (t === 'jewelry') payload.jewelry_id = outputForm.value.jewelry_id
-    else payload.part_id = outputForm.value.part_id
-    await addHandcraftJewelry(route.params.id, payload)
-    message.success('已添加产出')
-    outputModalVisible.value = false
-    await Promise.all([loadJewelries(), loadBreakdown()])
-  } catch (e) {
-    message.error(e?.response?.data?.detail || '添加失败')
-  } finally {
-    outputSubmitting.value = false
-  }
+async function refreshAfterOutputBatch() {
+  const results = await Promise.all([loadData(), loadJewelries(), loadBreakdown()])
+  return results.every(result => result !== false)
 }
 const editingCellKey = ref('')
 const editingCellValue = ref('')
@@ -1438,35 +1276,13 @@ const doComplete = () => {
 }
 
 const openAddModal = () => {
-  addForm.value = { part_id: null, qty: 1, unit: '个', weight: null, weight_unit: 'kg', note: '' }
-  addModalTab.value = 'single'
+  if (!isPending()) return
+  recentAttachPayload.value = { rows: [], newCount: 0, updateCount: 0, totalQty: 0, hasZeroQty: false }
   addModalVisible.value = true
 }
 
-const onAddPartSelect = (val) => {
-  const found = partOptions.value.find((p) => p.value === val)
-  if (found && found.unit) {
-    addForm.value.unit = found.unit
-  } else {
-    addForm.value.unit = '个'
-  }
-}
-
-const doAddItem = async () => {
-  if (!addForm.value.part_id) { message.warning('请选择配件'); return }
-  if (!addForm.value.qty || addForm.value.qty < 1) { message.warning('数量不能小于 1'); return }
-  addSubmitting.value = true
-  try {
-    await addHandcraftPart(route.params.id, addForm.value)
-    message.success('明细已添加')
-    addModalVisible.value = false
-    await loadData()
-  } finally {
-    addSubmitting.value = false
-  }
-}
-
 const attachRecentBatch = async () => {
+  if (attachSubmitting.value || !isPending()) return
   const payload = recentAttachPayload.value
   if (payload.rows.length === 0 || payload.hasZeroQty) return
 
@@ -1783,8 +1599,10 @@ const loadJewelries = async () => {
       }
     })
     outputsLoaded.value = true
+    return true
   } catch (_) {
     jewelryItems.value = []
+    return false
   }
 }
 
@@ -1792,8 +1610,10 @@ const loadBreakdown = async () => {
   try {
     const { data } = await getHandcraftJewelryBreakdown(route.params.id)
     breakdownGroups.value = data || []
+    return true
   } catch (_) {
     breakdownGroups.value = []
+    return false
   }
 }
 
@@ -2395,13 +2215,6 @@ onMounted(async () => {
   try {
     const { data: jewels } = await listJewelries()
     jewels.forEach((j) => { jewelryMap.value[j.id] = j })
-    jewelryOptions.value = jewels.map((j) => ({
-      label: `${j.id} ${j.name}`,
-      value: j.id,
-      code: j.id,
-      name: j.name,
-      image: j.image,
-    }))
     await loadData()
     listSuppliers({ type: 'handcraft' }).then(({ data }) => {
       supplierOptions.value = data.map((s) => ({ label: s.name, value: s.name }))

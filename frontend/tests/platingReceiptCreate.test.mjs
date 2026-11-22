@@ -24,6 +24,12 @@ test('pending filters match all tokens across source/target IDs/names and the so
   assert.equal(filterPendingReceiptItems(rows, '', null).length, 2)
 })
 
+test('pending candidates hide fully received and over-received sources, retaining partial/null receipts', () => {
+  const rows = [source(), source({ id: 2, received_qty: 10 }), source({ id: 3, received_qty: 12 }), source({ id: 4, received_qty: null })]
+  assert.deepEqual(filterPendingReceiptItems(rows, '', null).map(row => row.id), [1, 4])
+  assert.deepEqual(filterPendingReceiptItems(rows, '桃心', null).map(row => row.id), [1, 4])
+})
+
 test('filtering candidates never changes selected rows, entered values or draft totals', () => {
   const selected = [source(), source({ id: 2 })]
   const inputs = { 1: { qty: 2, price: 3, unit: '包' }, 2: { qty: 1, price: 2, unit: '个' } }

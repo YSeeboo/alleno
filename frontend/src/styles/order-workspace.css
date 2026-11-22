@@ -48,6 +48,7 @@
 .order-workspace .ow-line-remarks { max-width: 225px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .order-workspace .ow-num { text-align: right; font-variant-numeric: tabular-nums; }
 .order-workspace .ow-row-actions { flex-wrap: nowrap; gap: 14px; }
+.order-workspace .ow-reservation-actions { justify-content: flex-end; gap: 8px; margin-top: 5px; }
 .order-workspace .ow-progress { width: 76px; height: 3px; display: block; margin: 7px 0 0 auto; border: 0; border-radius: 3px; overflow: hidden; background: #EEF0F2; }
 .order-workspace .ow-progress::-webkit-progress-bar { background: #EEF0F2; }
 .order-workspace .ow-progress::-webkit-progress-value { background: #4B9E7C; }

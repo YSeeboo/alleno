@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'none'; img-src 'self' data:; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="color-scheme" content="light">
+  <title>批量添加 · 交互方案预览 · ALLENOP</title>
+  <link rel="icon" href="../../favicon-white.png">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#preview">跳到交互预览</a>
+  <header class="site-head"><div class="brand"><span class="brand-mark">a.</span>ALLENOP <span class="head-divider"></span><span class="head-label">设计实验室</span></div><div class="prototype-label"><span></span>交互原型 · 不写入业务数据</div></header>
+  <main>
+    <section class="intro"><div><p class="eyebrow">WORKFLOW / BATCH ADD</p><h1>一次选好，一起添加<span>批量添加体验提案</span></h1></div><button class="button" id="survey-open">入口盘点与场景差异 ↗</button></section>
+    <nav class="plans" aria-label="布局方案" id="plans"></nav>
+    <section class="scene-bar" aria-label="业务场景"><span class="bar-label">切换场景</span><div id="scenes"></div></section>
+    <div class="design-note" id="design-note"></div>
+    <section class="stage" id="preview" tabindex="-1" aria-label="批量添加交互预览">
+      <div class="context-head"><div><span class="context-icon">▤</span><span id="context-path"></span></div><span>演示数据 / 可自由操作</span></div>
+      <section class="picker" aria-labelledby="picker-title">
+        <header class="picker-head"><div><div class="dialog-eyebrow" id="dialog-eyebrow"></div><h2 id="picker-title"></h2><p id="scene-description"></p></div><button class="icon-button" id="close-picker" aria-label="关闭添加预览">×</button></header>
+        <div id="picker-content"></div>
+        <footer class="picker-footer" id="picker-footer"></footer>
+      </section>
+      <section class="result-panel" id="result-panel" hidden></section>
+    </section>
+    <footer class="page-foot"><span>共用选品框架，保留每个业务的表达。</span><span>所有金额、库存与 BOM 关联均为虚构示例；本页不会调用业务接口。</span></footer>
+  </main>
+  <dialog id="survey" aria-labelledby="survey-title"><header><div><p class="eyebrow">SCOPE REVIEW</p><h2 id="survey-title">入口盘点与适配边界</h2></div><button class="icon-button" data-close="survey" aria-label="关闭入口盘点">×</button></header><div class="dialog-scroll">
+    <p class="survey-lead">本次先选布局，不更改真实页面。以下按现有代码梳理，不把“批量选择”误当作所有窗口都执行相同业务。</p>
+    <h3>本次 Demo 覆盖 · 6 个场景</h3><div class="survey-table"><table><thead><tr><th>入口</th><th>逐行保留的内容</th><th>特殊规则</th></tr></thead><tbody>
+      <tr><td>电镀单 → 增加配件</td><td>发出配件、颜色、对应配件、数量、单位、重量、备注</td><td>对应颜色配件需独立校验；不能静默创建变体或改变发出状态。</td></tr>
+      <tr><td>手工单 → 添加产出</td><td>饰品 / 组合配件、数量、单位、重量、备注</td><td>产出关联 BOM 材料，应预览影响；生产安排不等于入库。</td></tr>
+      <tr><td>手工单 → 添加配件</td><td>数量、单位、重量、备注</td><td>保留“最近导入”原有批量入口与其累加规则；普通添加的重复规则另行适配。</td></tr>
+      <tr><td>订单 → 添加商品</td><td>饰品 / 配件、订购数量、单位、7 位小数单价、备注</td><td>添加时不填客户货号，之后在订单详情中统一维护；同款可分多行，不自动合并，不同单位不相加。</td></tr>
+      <tr><td>饰品详情 → 添加配件</td><td>每 1 单位饰品的配件用量，支持 4 位小数</td><td>不改库存；已存在的 BOM 配件不可重复添加。</td></tr>
+      <tr class="found"><td>补充：采购单 → 追加配件</td><td>数量、单位、7 位小数单价、备注</td><td>同类单条弹窗，建议一起适配；保留单据状态限制。</td></tr>
+    </tbody></table></div>
+    <h3>可后续复用的相关入口</h3><p>新建订单、新建电镀单、新建手工单（产出 / 配件）、新建采购单：现有表格支持多行，但仍需逐行选择商品，可复用选品器，把选择结果先加入草稿。</p><p>饰品结构工作台 → 单件调整 → 添加单件配件：也是逐行选配件，但同时包含组成位置、方案与单件覆盖关系。建议后续单独适配，不能直接当作普通 BOM 追加。</p>
+    <h3>已有批量能力 · 不重复建设</h3><ul><li>配件详情 → 子配件 BOM：已支持暂存多项、统一提交与复制 BOM，可统一选择体验。</li><li>手工单 → 添加配件 → 最近导入：已有勾选、改数量、批量加入，已存在项按其规则累加。</li><li>电镀 / 手工回收单 → 增加回收项目，以及新建回收单：已有来源明细多选。来源单、实际回收数量、库存与成本确认不能被普通选品器替代。</li><li>订单生产关联、实际出货、补货与库存调整属于不同业务动作，不建议混入本次“添加商品”。</li></ul>
+    <h3>正式开发时需要落实</h3><p>重新校验状态、权限、重复行和颜色变体；批量接口的事务或部分成功反馈、防重复提交与失败行重试；保留已填写草稿。本 Demo 的“一次添加”只模拟前端交互，不代表接口已支持原子批量写入。</p>
+  </div></dialog>
+  <dialog id="row-details" aria-labelledby="details-title"></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <noscript>请启用 JavaScript 体验三个方案。本页面仅使用演示数据。</noscript>
+</body>
+</html>

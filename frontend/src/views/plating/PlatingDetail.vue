@@ -240,127 +240,7 @@
     </n-modal>
 
     <!-- Add Item Modal -->
-    <n-modal v-model:show="addModalVisible" preset="card" title="添加电镀明细" :style="{ width: isMobile ? '95vw' : '500px' }">
-      <form @submit.prevent="doAddItem">
-      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="90">
-        <n-form-item label="发出配件">
-          <n-select
-            v-model:value="addForm.part_id"
-            :options="partOptions"
-            :render-label="renderOptionWithImage"
-            filterable
-            clearable
-            placeholder="选择发出配件"
-            @update:value="onAddPartSelect"
-          />
-        </n-form-item>
-        <n-form-item v-if="addForm.part_id" label="电镀颜色">
-          <div>
-            <n-space size="small" style="margin-bottom: 6px;">
-              <span
-                v-for="cv in commonColors"
-                :key="cv.code"
-                :style="{
-                  display: 'inline-block',
-                  fontSize: '11px',
-                  fontWeight: 'bold',
-                  color: addFormColor === cv.code ? '#fff' : badgeOf[cv.code],
-                  background: addFormColor === cv.code ? badgeOf[cv.code] : '#f5f5f5',
-                  padding: '2px 10px',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  border: `1px solid ${badgeOf[cv.code]}`,
-                }"
-                @click="toggleAddColor(cv.code)"
-              >{{ cv.code }}</span>
-              <span
-                v-if="moreColors.length"
-                :style="{
-                  display: 'inline-block',
-                  fontSize: '11px',
-                  fontWeight: 'bold',
-                  color: '#666',
-                  background: '#f5f5f5',
-                  padding: '2px 10px',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  border: '1px dashed #aaa',
-                }"
-                @click="addColorShowMore = !addColorShowMore"
-              >更多 {{ addColorShowMore ? '▴' : '▾' }}</span>
-              <template v-if="addColorShowMore">
-                <span
-                  v-for="cv in moreColors"
-                  :key="cv.code"
-                  :style="{
-                    display: 'inline-block',
-                    fontSize: '11px',
-                    fontWeight: 'bold',
-                    color: addFormColor === cv.code ? '#fff' : badgeOf[cv.code],
-                    background: addFormColor === cv.code ? badgeOf[cv.code] : '#f5f5f5',
-                    padding: '2px 10px',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    border: `1px solid ${badgeOf[cv.code]}`,
-                  }"
-                  @click="toggleAddColor(cv.code)"
-                >{{ cv.code }}</span>
-              </template>
-            </n-space>
-            <div v-if="addFormColor && addVariantInfo" style="font-size: 13px; color: #333;">
-              <template v-if="addVariantInfo.part">
-                <span>对应配件：{{ addVariantInfo.part.name }} ({{ addVariantInfo.part.id }})</span>
-              </template>
-              <template v-else-if="addVariantInfo.suggested_name">
-                <span style="color: #999;">对应配件：{{ addVariantInfo.suggested_name }}</span>
-                <n-button
-                  size="tiny"
-                  type="primary"
-                  style="margin-left: 8px;"
-                  :loading="addCreatingVariant"
-                  @click="doCreateVariantInAdd"
-                >新建</n-button>
-              </template>
-            </div>
-            <div v-if="addFormColor && addVariantLoading" style="font-size: 13px; color: #999;">查询中...</div>
-          </div>
-        </n-form-item>
-        <n-form-item label="数量">
-          <n-input-number v-model:value="addForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
-        </n-form-item>
-        <n-form-item label="单位">
-          <n-select v-model:value="addForm.unit" :options="unitOptions" />
-        </n-form-item>
-        <n-form-item label="重量">
-          <div style="display: flex; gap: 8px; width: 100%;">
-            <n-input-number
-              v-model:value="addForm.weight"
-              :min="0"
-              :precision="2"
-              :step="0.1"
-              placeholder="可选"
-              clearable
-              style="flex: 1;"
-            />
-            <n-select
-              v-model:value="addForm.weight_unit"
-              :options="weightUnitOptions"
-              style="width: 90px;"
-            />
-          </div>
-        </n-form-item>
-        <n-form-item label="备注">
-          <n-input v-model:value="addForm.note" placeholder="备注（可选）" />
-        </n-form-item>
-      </n-form>
-      </form>
-      <template #footer>
-        <n-space justify="end">
-          <n-button @click="addModalVisible = false">取消</n-button>
-          <n-button type="primary" :loading="addSubmitting" @click="doAddItem">确认添加</n-button>
-        </n-space>
-      </template>
-    </n-modal>
+    <BatchAddDialog v-if="addModalVisible" scene="plating" :entity-id="String(route.params.id)" :allowed="isPending()" :refresh="refreshAfterBatchAdd" @close="addModalVisible = false" />
 
 
     <ImageUploadModal
@@ -529,6 +409,7 @@
 </template>
 
 <script setup>
+import BatchAddDialog from '@/components/BatchAddDialog.vue'
 import ProductionUses from '@/components/ProductionUses.vue'
 import ProductionArchiveNotice from '@/components/ProductionArchiveNotice.vue'
 import FloatingActionBar from '@/components/FloatingActionBar.vue'
@@ -550,7 +431,7 @@ import { tsToDateStr, isoToTs } from '@/utils/date'
 import { CreateOutline } from '@vicons/ionicons5'
 import {
   getPlating, getPlatingItems, sendPlating, supplementAndSendPlating,
-  addPlatingItem, updatePlatingItem, deletePlatingItem,
+  updatePlatingItem, deletePlatingItem,
   updatePlatingDeliveryImages, updatePlatingOrder,
   downloadPlatingExcel, downloadPlatingPdf,
   getPlatingAllItemOrders, deletePlatingItemOrderLink,
@@ -783,27 +664,15 @@ const weightUnitOptions = [
 ]
 
 const colorVariantList = ref([])
-let addVariantRequestSeq = 0
 
 const badgeOf      = computed(() => Object.fromEntries(colorVariantList.value.map(c => [c.code, c.badge])))
 const methodOf     = computed(() => Object.fromEntries(colorVariantList.value.map(c => [c.code, c.method])))
 const codeOfMethod = computed(() => Object.fromEntries(colorVariantList.value.map(c => [c.method, c.code])))
-const codeOfLabel  = computed(() => Object.fromEntries(colorVariantList.value.map(c => [c.label, c.code])))
 const codeOfSuffix = computed(() => Object.fromEntries(colorVariantList.value.map(c => ['_' + c.label, c.code])))
 const commonColors = computed(() => colorVariantList.value.filter(c => c.common))
 const moreColors   = computed(() => colorVariantList.value.filter(c => !c.common))
 const expandedColorRows = ref(new Set())
 function toggleColorRow(id) { const s = new Set(expandedColorRows.value); s.has(id) ? s.delete(id) : s.add(id); expandedColorRows.value = s }
-const addColorShowMore = ref(false)
-
-const getPartColorCode = (part) => {
-  if (!part) return null
-  if (part.color && codeOfLabel.value[part.color]) return codeOfLabel.value[part.color]
-  for (const [suffix, code] of Object.entries(codeOfSuffix.value)) {
-    if (part.name?.endsWith(suffix)) return code
-  }
-  return null
-}
 
 const getColorBadge = (partName) => {
   if (!partName) return null
@@ -876,12 +745,6 @@ const renderInlineSelect = (row, field, options, { renderLabel, placeholder } = 
 
 // Add Item Modal
 const addModalVisible = ref(false)
-const addSubmitting = ref(false)
-const addForm = ref({ part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金', weight: null, weight_unit: 'kg', note: '' })
-const addFormColor = ref(null)
-const addVariantInfo = ref(null)
-const addVariantLoading = ref(false)
-const addCreatingVariant = ref(false)
 
 const editingNoteItemId = ref(null)
 const editingNoteValue = ref('')
@@ -1008,93 +871,16 @@ const doChangeStatus = (newStatus) => {
 }
 
 const openAddModal = () => {
-  addForm.value = { part_id: null, receive_part_id: null, qty: 1, unit: '个', plating_method: '金', weight: null, weight_unit: 'kg', note: '' }
-  addFormColor.value = null
-  addVariantInfo.value = null
-  addVariantLoading.value = false
-  addCreatingVariant.value = false
+  if (!isPending()) return
   addModalVisible.value = true
 }
 
-const onAddPartSelect = (val) => {
-  const found = partOptions.value.find((p) => p.value === val)
-  addForm.value.unit = found?.unit || '个'
-  addForm.value.receive_part_id = null
-  addFormColor.value = null
-  addVariantInfo.value = null
-  addVariantLoading.value = false
-  ++addVariantRequestSeq
-  if (val) {
-    const part = allParts.value.find((p) => p.id === val)
-    const existingCode = getPartColorCode(part)
-    // Default: use existing color if variant, otherwise G
-    toggleAddColor(existingCode || 'G')
-  }
-}
-
-const toggleAddColor = async (code) => {
-  if (addFormColor.value === code) {
-    addFormColor.value = null
-    addVariantInfo.value = null
-    addForm.value.receive_part_id = null
-    addForm.value.plating_method = '金'
-    return
-  }
-  addFormColor.value = code
-  addForm.value.plating_method = methodOf.value[code] || '金'
-  addForm.value.receive_part_id = null
-  addVariantInfo.value = null
-  addVariantLoading.value = true
-  const seq = ++addVariantRequestSeq
-  try {
-    const { data } = await findOrCreateVariant(addForm.value.part_id, { color_code: code })
-    if (addFormColor.value !== code || addVariantRequestSeq !== seq) return // stale
-    addVariantInfo.value = data
-    addForm.value.receive_part_id = data.part?.id || null
-  } catch (e) {
-    if (addFormColor.value === code && addVariantRequestSeq === seq) {
-      message.error(e.response?.data?.detail || '查询变体失败')
-    }
-  } finally {
-    if (addFormColor.value === code && addVariantRequestSeq === seq) {
-      addVariantLoading.value = false
-    }
-  }
-}
-
-const doCreateVariantInAdd = () => {
-  const suggestedName = addVariantInfo.value?.suggested_name
-  dialog.info({
-    title: '确认新建',
-    content: `当前没有 ${suggestedName}，确定新建吗？`,
-    positiveText: '确认',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      addCreatingVariant.value = true
-      try {
-        const { data: newPart } = await createPartVariant(addForm.value.part_id, { color_code: addFormColor.value })
-        addForm.value.receive_part_id = newPart.id
-        addVariantInfo.value = { part: newPart, created: true }
-        // Refresh parts list
-        const { data: parts } = await listParts()
-        allParts.value = parts
-        parts.forEach((p) => { partMap.value[p.id] = p })
-        partOptions.value = parts.map((p) => ({
-          label: `${p.id} ${p.name}`,
-          value: p.id,
-          code: p.id,
-          name: p.name,
-          image: p.image,
-          unit: p.unit,
-        }))
-        message.success('变体创建成功')
-      } catch (e) {
-        message.error(e.response?.data?.detail || '创建变体失败')
-      } finally {
-        addCreatingVariant.value = false
-      }
-    },
-  })
+async function refreshAfterBatchAdd() {
+  const { data: parts } = await listParts()
+  allParts.value = parts
+  partMap.value = Object.fromEntries(parts.map(part => [part.id, part]))
+  partOptions.value = parts.map(p => ({ label: `${p.id} ${p.name}`, value: p.id, code: p.id, name: p.name, image: p.image, unit: p.unit }))
+  await loadData()
 }
 
 const inlineColorSeq = ref({}) // key: row.id, value: request sequence number
@@ -1163,22 +949,6 @@ const toggleInlineColor = async (row, code) => {
     }
   } catch (e) {
     if (!isStale()) message.error(e.response?.data?.detail || '查询变体失败')
-  }
-}
-
-const doAddItem = async () => {
-  if (!addForm.value.part_id) { message.warning('请选择配件'); return }
-  if (!addForm.value.qty || addForm.value.qty < 1) { message.warning('数量不能小于 1'); return }
-  if (addVariantLoading.value) { message.warning('正在查询变体，请稍候'); return }
-  if (addFormColor.value && !addForm.value.receive_part_id) { message.warning('变体配件未就绪，请重新选择颜色'); return }
-  addSubmitting.value = true
-  try {
-    await addPlatingItem(route.params.id, addForm.value)
-    message.success('明细已添加')
-    addModalVisible.value = false
-    await loadData()
-  } finally {
-    addSubmitting.value = false
   }
 }
 

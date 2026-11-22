@@ -74,7 +74,7 @@ def create_plating_order(db: Session, supplier_name: str, items: list, note: str
             received_qty=0,
             status="未送出",
             plating_method=item.get("plating_method"),
-            unit=item.get("unit", "个"),
+            unit=item.get("unit") or db.get(Part, item["part_id"]).unit or "个",
             note=item.get("note"),
             receive_part_id=item.get("receive_part_id"),
         ))
@@ -220,7 +220,7 @@ def add_plating_item(db: Session, order_id: str, item: dict) -> PlatingOrderItem
         received_qty=0,
         status="未送出",
         plating_method=item.get("plating_method"),
-        unit=item.get("unit", "个"),
+        unit=item.get("unit") or db.get(Part, item["part_id"]).unit or "个",
         note=item.get("note"),
         receive_part_id=item.get("receive_part_id"),
     )

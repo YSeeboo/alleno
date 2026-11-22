@@ -5,7 +5,7 @@
       <div class="rc-title"><h1>新建电镀回收单</h1><span class="rc-badge">录入中</span></div>
       <button class="rc-btn" type="button" :disabled="locked" @click="backToList"><ArrowBackOutline />{{ summaryReturn ? '返回汇总' : '返回列表' }}</button>
     </header>
-    <p class="rc-intro">选择电镀厂与已发出配件（含已结清），按实际回收数量入库、计价；允许超过发出数量。</p>
+    <p class="rc-intro">选择电镀厂与尚未完全回收的配件，按实际回收数量入库、计价；允许超过发出数量。</p>
     <div v-if="createdReceiptId && !costDiffVisible" class="rc-created" role="status">回收单 {{ createdReceiptId }} 已创建。<n-button text type="primary" @click="goToReceipt">查看已创建回收单</n-button></div>
 
     <section aria-labelledby="rc-basic-title">
@@ -42,12 +42,12 @@
         <div v-if="fetchError" class="rc-empty" role="alert"><p>待回收配件加载失败，已填写的明细仍保留。</p><n-button :disabled="locked" @click="fetchPendingItems">重试加载</n-button></div>
         <div v-else-if="!vendorName || !pendingItems.length || !filteredItems.length" class="rc-empty">
           <p>{{ !vendorName ? '请先选择商家 / 电镀厂' : loadingItems ? '正在加载待回收配件…' : !pendingItems.length ? '该商家暂无待回收配件' : '没有符合筛选条件的配件' }}</p>
-          <span>{{ !vendorName ? '显示所选商家已发出的明细，含已结清来源' : '筛选不会移除下方已选的回收明细' }}</span>
+          <span>{{ !vendorName ? '仅显示所选商家尚未完全回收的明细' : '筛选不会移除下方已选的回收明细' }}</span>
         </div>
         <div v-else class="rc-source-table" :aria-busy="loadingItems">
           <div class="rc-source-grid rc-source-head">
             <n-checkbox :checked="allVisibleSelected" :indeterminate="someVisibleSelected && !allVisibleSelected" :disabled="locked || loadingItems" aria-label="选择当前筛选的全部配件" @update:checked="toggleAllVisible" />
-            <span>发出配件 / 回收配件</span><span>来源电镀单</span><span>电镀方式</span><span>发出 / 已结清</span><span>未收 / 超出</span>
+            <span>发出配件 / 回收配件</span><span>来源电镀单</span><span>电镀方式</span><span>发出 / 已结清</span><span>未收 / 超出</span><span>回收单价</span>
           </div>
           <div class="rc-source-scroll">
             <div v-for="item in filteredItems" :key="item.id" class="rc-source-grid rc-source-row" :class="{ 'is-selected': selectedIds.has(item.id) }">
@@ -61,11 +61,23 @@
               <span class="rc-method">{{ item.plating_method || '—' }}</span>
               <span class="rc-source-progress"><span class="rc-mobile-label">发出 / 已结清</span>{{ item.qty }} / {{ item.received_qty ?? 0 }} {{ item.unit || '个' }}</span>
               <strong class="rc-remaining"><span class="rc-mobile-label">未收 / 超出</span>{{ sourceBalance(item) }} <small>{{ item.unit || '个' }}</small></strong>
+              <div class="rc-source-price">
+                <span class="rc-mobile-label">回收单价</span>
+                <n-input-number
+                  :value="itemInputs[item.id]?.price ?? null"
+                  :disabled="locked || loadingItems"
+                  :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" :step="0.1"
+                  :show-button="false" size="small" placeholder="待定价"
+                  :input-props="{ 'aria-label': `${item.part_name} ${item.plating_order_id} 明细 ${item.id} 回收单价` }"
+                  @update:value="(value) => updateSourcePrice(item, value)"
+                ><template #prefix>¥</template></n-input-number>
+                <small>元 / {{ itemInputs[item.id]?.unit || item.unit || '个' }}</small>
+              </div>
             </div>
           </div>
         </div>
       </n-spin>
-      <p class="rc-hint"><InformationCircleOutline />勾选后在下方录入本次回收；可合并同一商家的多张电镀单，支持分批回收。</p>
+      <p class="rc-hint"><InformationCircleOutline />可直接填写每行回收单价，与下方明细同步；填写单价不会自动勾选，仅勾选的配件计入本次回收。</p>
     </section>
 
     <section class="rc-detail-section" aria-labelledby="rc-detail-title">
@@ -202,7 +214,7 @@ const fetchPendingItems = async () => {
   fetchError.value = false
   try {
     // Fetch the complete vendor list once; local filters never discard selection.
-    const { data } = await listPendingReceiveItems({ supplier_name: vendorName.value, include_settled: true })
+    const { data } = await listPendingReceiveItems({ supplier_name: vendorName.value })
     if (seq !== fetchSeq) return
     pendingItems.value = data
     const byId = new Map(data.map((item) => [item.id, item]))
@@ -243,6 +255,12 @@ const toggleItem = (item, checked) => {
   } else if (!checked) {
     selectedItems.value = selectedItems.value.filter((row) => row.id !== item.id)
   }
+}
+
+const updateSourcePrice = (item, price) => {
+  if (locked.value || loadingItems.value) return
+  if (!itemInputs[item.id]) itemInputs[item.id] = createReceiptInput(item)
+  itemInputs[item.id].price = price
 }
 
 const toggleAllVisible = (checked) => {
@@ -342,7 +360,7 @@ const loadVendors = async () => {
   vendorLoadError.value = false
   // Load supplier names from pending items
   try {
-    const { data } = await listPendingReceiveItems({ include_settled: true })
+    const { data } = await listPendingReceiveItems()
     const suppliers = [...new Set(data.map((i) => i.supplier_name).filter(Boolean))]
     vendorOptions.value = suppliers.map((v) => ({ label: v, value: v }))
   } catch (_) {
@@ -414,7 +432,7 @@ onBeforeUnmount(() => { ++fetchSeq; window.removeEventListener('beforeunload', b
 .rc-text-btn { font: inherit; font-size: 12px; color: var(--rc-green); border: 0; background: transparent; cursor: pointer; padding: 5px 0; }
 .rc-text-btn:hover:not(:disabled) { text-decoration: underline; }
 .rc-source-table, .rc-detail-table { border: 1px solid var(--rc-line); border-radius: 9px; background: #fff; overflow: hidden; }
-.rc-source-grid { display: grid; grid-template-columns: 24px minmax(200px, 2fr) minmax(120px, 1fr) 90px minmax(120px, 1fr) minmax(100px, .8fr); align-items: center; gap: 14px; padding: 12px 16px; }
+.rc-source-grid { display: grid; grid-template-columns: 24px minmax(180px, 2fr) minmax(110px, 1fr) 75px minmax(110px, 1fr) minmax(90px, .8fr) minmax(125px, 1fr); align-items: center; gap: 14px; padding: 12px 16px; }
 .rc-source-head, .rc-detail-head { background: #F8F9FA; color: var(--rc-muted); font-size: 11px; border-bottom: 1px solid var(--rc-line); }
 .rc-source-scroll { max-height: 330px; overflow: auto; overscroll-behavior: contain; }
 .rc-source-row { border-bottom: 1px solid var(--rc-line); font-size: 12px; }
@@ -434,6 +452,9 @@ onBeforeUnmount(() => { ++fetchSeq; window.removeEventListener('beforeunload', b
 .rc-source-progress { color: #7E878E; font-variant-numeric: tabular-nums; }
 .rc-remaining { color: var(--rc-green); font-size: 14px; font-variant-numeric: tabular-nums; }
 .rc-remaining small { font-size: 11px; font-weight: 400; }
+.rc-source-price { min-width: 0; }
+.rc-source-price :deep(.n-input-number) { width: 100%; min-width: 0; }
+.rc-source-price small { display: block; margin-top: 4px; color: var(--rc-muted); font-size: 10px; }
 .rc-hint { display: flex; align-items: flex-start; gap: 6px; color: #9AA1A7; font-size: 11px; margin: 12px 0 25px; }
 .rc-hint svg { width: 13px; height: 13px; margin-top: 2px; }
 .rc-detail-grid { display: grid; grid-template-columns: minmax(190px, 2fr) minmax(135px, 1.1fr) minmax(120px, 1fr) minmax(130px, 1fr) minmax(110px, 1fr) 30px; gap: 16px; align-items: start; padding: 13px 16px; }
@@ -469,7 +490,7 @@ onBeforeUnmount(() => { ++fetchSeq; window.removeEventListener('beforeunload', b
 .rc-total > span { display: block; color: var(--rc-muted); font-size: 10px; }
 .rc-total strong { font-size: 21px; font-weight: 650; color: var(--rc-green); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 @container (max-width: 1050px) {
-  .rc-source-grid { grid-template-columns: 20px minmax(170px, 2fr) 110px 65px minmax(100px, 1fr) 90px; gap: 10px; }
+  .rc-source-grid { grid-template-columns: 20px minmax(145px, 2fr) 100px 60px minmax(95px, 1fr) 80px minmax(120px, 1fr); gap: 10px; }
   .rc-detail-grid { grid-template-columns: minmax(150px, 1.5fr) minmax(112px, 1fr) minmax(95px, .8fr) minmax(112px, 1fr) minmax(85px, .8fr) 28px; gap: 10px; padding-left: 12px; padding-right: 12px; }
   .rc-meta { gap: 14px; }
 }
@@ -485,6 +506,7 @@ onBeforeUnmount(() => { ++fetchSeq; window.removeEventListener('beforeunload', b
   .rc-method { grid-column: 2; grid-row: 2; padding-left: 48px; font-size: 11px; }
   .rc-source-progress { grid-column: 2; font-size: 11px; }
   .rc-remaining { grid-column: 3; font-size: 13px; }
+  .rc-source-price { grid-column: 2 / -1; width: 200px; max-width: 100%; }
   .rc-source-row .rc-mobile-label { display: block; font-size: 10px; color: var(--rc-muted); font-weight: 400; }
   .rc-detail-head { display: none; }
   .rc-detail-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 28px; gap: 14px; }
@@ -518,6 +540,7 @@ onBeforeUnmount(() => { ++fetchSeq; window.removeEventListener('beforeunload', b
   .rc-method { grid-column: 2; grid-row: 3; padding: 0; }
   .rc-source-progress { grid-column: 2; }
   .rc-remaining { grid-column: 2; }
+  .rc-source-price { grid-column: 2; }
   .rc-source-row .rc-mobile-label { display: inline; margin-right: 8px; }
   .rc-source-row > .n-checkbox { align-self: start; padding-top: 9px; }
   .rc-detail-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 13px 12px; padding: 14px 12px; }

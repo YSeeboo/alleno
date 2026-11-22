@@ -252,7 +252,7 @@ def create_handcraft_order(
             weight=None,
             weight_unit=None,
             bom_qty=p.get("bom_qty"),
-            unit=p.get("unit", "个"),
+            unit=p.get("unit") or db.get(Part, p["part_id"]).unit or "个",
             note=p.get("note"),
         )
         db.add(new_item)
@@ -263,7 +263,7 @@ def create_handcraft_order(
     for j in jewelries or []:
         jewelry_id = j.get("jewelry_id")
         part_id = j.get("part_id")
-        default_unit = "套" if jewelry_id else "个"
+        default_unit = "套" if jewelry_id else (db.get(Part, part_id).unit or "个")
         db.add(HandcraftJewelryItem(
             handcraft_order_id=order.id,
             jewelry_id=jewelry_id,
@@ -930,7 +930,7 @@ def add_handcraft_part(db: Session, order_id: str, item: dict) -> HandcraftPartI
         weight=None,
         weight_unit=None,
         bom_qty=item.get("bom_qty"),
-        unit=item.get("unit", "个"),
+        unit=item.get("unit") or db.get(Part, item["part_id"]).unit or "个",
         note=item.get("note"),
     )
     db.add(new_item)
@@ -1083,7 +1083,7 @@ def delete_handcraft_part(db: Session, order_id: str, item_id: int) -> None:
 
 
 def add_handcraft_jewelry(db: Session, order_id: str, item: dict) -> HandcraftJewelryItem:
-    order = get_handcraft_order(db, order_id)
+    order = db.query(HandcraftOrder).filter_by(id=order_id).populate_existing().with_for_update().first()
     require_unarchived(order)
     if order is None:
         raise ValueError(f"HandcraftOrder not found: {order_id}")
@@ -1106,7 +1106,7 @@ def add_handcraft_jewelry(db: Session, order_id: str, item: dict) -> HandcraftJe
     else:
         raise ValueError("产出项必须指定 jewelry_id 或 part_id")
     item_status = "制作中" if order.status == "processing" else "未送出"
-    default_unit = "套" if jewelry_id else "个"
+    default_unit = "套" if jewelry_id else (db.get(Part, part_id).unit or "个")
     new_item = HandcraftJewelryItem(
         handcraft_order_id=order_id,
         jewelry_id=jewelry_id,
@@ -1121,6 +1121,34 @@ def add_handcraft_jewelry(db: Session, order_id: str, item: dict) -> HandcraftJe
         customer_name=customer_name,
     )
     db.add(new_item)
+    # Match the create page: a new production output needs its direct BOM
+    # materials, at BOM quantity × output quantity (no buffer auto-applied).
+    # Keep existing/manual allocations intact by appending separate rows.
+    # Dispatched orders and customer-attribution rows must not change materials.
+    if order.status == "pending" and customer_name is None:
+        if jewelry_id:
+            materials = [
+                (b.part_id, b.qty_per_unit)
+                for b in db.query(Bom).filter_by(jewelry_id=jewelry_id).all()
+            ]
+        else:
+            from models.part_bom import PartBom
+            materials = [
+                (b.child_part_id, b.qty_per_unit)
+                for b in db.query(PartBom).filter_by(parent_part_id=part_id).all()
+            ]
+        for material_id, qty_per_unit in materials:
+            qty = Decimal(str(qty_per_unit)) * Decimal(str(item["qty"]))
+            if qty <= 0:
+                continue
+            material = db.get(Part, material_id)
+            db.add(HandcraftPartItem(
+                handcraft_order_id=order_id,
+                part_id=material_id,
+                qty=qty,
+                bom_qty=qty,
+                unit=material.unit or "个",
+            ))
     db.flush()
     return new_item
 

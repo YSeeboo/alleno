@@ -10,6 +10,7 @@ export function createReceiptInput(item) {
 export function filterPendingReceiptItems(items, keyword, dateOn) {
   const tokens = String(keyword || '').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
   return items.filter((item) => {
+    if (remainingReceiptQuantity(item) <= 0) return false
     const fields = [item.part_id, item.part_name, item.receive_part_id, item.receive_part_name]
       .map((value) => String(value || '').toLocaleLowerCase())
     return (!dateOn || item.created_at?.slice(0, 10) === dateOn)

@@ -203,38 +203,7 @@
     </n-modal>
 
     <!-- Add Item Modal -->
-    <n-modal v-model:show="addItemModalVisible" preset="card" title="追加配件" :style="{ width: isMobile ? '95vw' : '500px' }">
-      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="90">
-        <n-form-item label="配件">
-          <n-select
-            v-model:value="addItemForm.part_id"
-            :options="addItemPartOptions"
-            :render-label="renderOptionWithImage"
-            filterable
-            clearable
-            placeholder="选择配件"
-          />
-        </n-form-item>
-        <n-form-item label="数量">
-          <n-input-number v-model:value="addItemForm.qty" :min="1" :precision="0" :step="1" style="width: 100%;" />
-        </n-form-item>
-        <n-form-item label="单位">
-          <n-select v-model:value="addItemForm.unit" :options="unitOptions" />
-        </n-form-item>
-        <n-form-item label="单价">
-          <n-input-number v-model:value="addItemForm.price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" :step="0.1" style="width: 100%;" />
-        </n-form-item>
-        <n-form-item label="备注">
-          <n-input v-model:value="addItemForm.note" placeholder="备注（可选）" />
-        </n-form-item>
-      </n-form>
-      <template #footer>
-        <n-space justify="end">
-          <n-button @click="addItemModalVisible = false">取消</n-button>
-          <n-button type="primary" :loading="addItemSubmitting" @click="doAddItem">确认添加</n-button>
-        </n-space>
-      </template>
-    </n-modal>
+    <BatchAddDialog v-if="addItemModalVisible" scene="purchase" :entity-id="String(route.params.id)" :allowed="!isPaid() && canAccessParts" :refresh="refreshAfterBatchAdd" @close="addItemModalVisible = false" />
 
     <ImageUploadModal
       v-model:show="showDeliveryImageModal"
@@ -362,6 +331,7 @@
 </template>
 
 <script setup>
+import BatchAddDialog from '@/components/BatchAddDialog.vue'
 import { ref, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
@@ -376,7 +346,7 @@ import { CreateOutline } from '@vicons/ionicons5'
 import {
   getPurchaseOrder, updatePurchaseOrder, updatePurchaseOrderStatus,
   updatePurchaseOrderDeliveryImages,
-  addPurchaseOrderItem, updatePurchaseOrderItem, deletePurchaseOrderItem,
+  updatePurchaseOrderItem, deletePurchaseOrderItem,
   createPurchaseOrderItemAddon, updatePurchaseOrderItemAddon, deletePurchaseOrderItemAddon,
   getPurchaseItemOrders, deletePurchaseItemOrderLink,
 } from '@/api/purchaseOrders'
@@ -804,36 +774,17 @@ const doDeleteItem = (row) => {
 
 // Add Item Modal
 const addItemModalVisible = ref(false)
-const addItemSubmitting = ref(false)
-const addItemForm = ref({ part_id: null, qty: 1, unit: '个', price: null, note: '' })
-const addItemPartOptions = computed(() =>
-  Object.values(partMap.value).map((p) => ({
-    label: `${p.id} ${p.name}`,
-    value: p.id,
-    code: p.id,
-    name: p.name,
-    image: p.image,
-  }))
-)
 
 const openAddItemModal = () => {
-  addItemForm.value = { part_id: null, qty: 1, unit: '个', price: null, note: '' }
+  if (isPaid() || !canAccessParts) return
   addItemModalVisible.value = true
 }
 
-const doAddItem = async () => {
-  if (!addItemForm.value.part_id) { message.warning('请选择配件'); return }
-  if (!addItemForm.value.qty || addItemForm.value.qty <= 0) { message.warning('请填写数量'); return }
-  addItemSubmitting.value = true
-  try {
-    await addPurchaseOrderItem(route.params.id, addItemForm.value)
-    message.success('配件已追加')
-    addItemModalVisible.value = false
-    await loadData()
-    await loadItemOrderLinks()
-  } finally {
-    addItemSubmitting.value = false
-  }
+async function refreshAfterBatchAdd() {
+  const { data: parts } = await listParts()
+  partMap.value = Object.fromEntries(parts.map(part => [part.id, part]))
+  await loadData()
+  await loadItemOrderLinks()
 }
 
 // Delivery images

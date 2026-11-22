@@ -1,8 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { parse, compileScript } from '@vue/compiler-sfc'
+import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
 import { reactive } from 'vue'
+import { makeBatchRow, batchPayload } from '../src/utils/batchAdd.js'
 
 const moduleUrl = code => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
 const runtime = moduleUrl(`
@@ -178,14 +179,13 @@ test('closed, loading, failed or busy orders cannot open an item mutation', () =
   assert.equal(ctx.showLineEditor.value, false)
 })
 
-test('adding duplicate jewelry and part items sends the existing contract without merging identities', async () => {
+test('order addition delegates to batch picker and same-product drafts exclude customer codes', async () => {
+  assert.match(await read('components/fulfillment/OrderLineEditor.vue'), /<BatchAddDialog v-if="!line" scene="order"/)
   for (const kind of ['jewelry', 'part']) {
-    const { ctx, calls, events } = setup(Editor, { orderId: order.id, line: null, canDelete: false })
-    ctx.kind.value = kind
-    Object.assign(ctx.values, { product_id: 'SAME', quantity: 3, unit_price: 0.1234567, customer_code: 'A03', remarks: '新增独立行' })
-    await ctx.save()
-    assert.deepEqual(calls, [['addOrderItem', order.id, { quantity: 3, unit_price: 0.1234567, remarks: '新增独立行', ...(kind === 'jewelry' ? { customer_code: 'A03', jewelry_id: 'SAME' } : { part_id: 'SAME' }) }]])
-    assert.deepEqual(events, [['busy', true], ['saved'], ['busy', false]])
+    const row = { ...makeBatchRow('order', { id: 'SAME', kind }, 'one'), qty: 3, price: 0.1234567, note: '新增独立行' }
+    assert.deepEqual(batchPayload('order', row), { quantity: 3, unit_price: 0.1234567, remarks: '新增独立行', [kind === 'jewelry' ? 'jewelry_id' : 'part_id']: 'SAME' })
+    const copy = { ...row, key: 'two' }
+    assert.notEqual(row.key, copy.key)
   }
 })
 
@@ -201,10 +201,10 @@ test('deletion targets an exact line and cannot bypass the last-line guard', asy
   }
 })
 
-test('failed add/delete retains the editor draft and does not emit a successful save', async () => {
+test('failed edit/delete retains the editor draft and does not emit a successful save', async () => {
   for (const operation of ['save', 'remove']) {
-    const { ctx, events } = setup(Editor, { orderId: order.id, line: operation === 'remove' ? line : null, canDelete: true }, {
-      addOrderItem: async () => { throw new Error('offline') }, deleteOrderItem: async () => { throw new Error('protected') },
+    const { ctx, events } = setup(Editor, { orderId: order.id, line, canDelete: true }, {
+      updateOrderItem: async () => { throw new Error('offline') }, deleteOrderItem: async () => { throw new Error('protected') },
     })
     Object.assign(ctx.values, { product_id: 'J', quantity: 3, remarks: '保留内容' })
     await ctx[operation]()
@@ -246,24 +246,22 @@ test('detail guards navigation during each remaining kind of save and exposes no
   assert.ok(state.guards.every(guard => guard() === true))
 })
 
-test('relocated row actions keep the exact line and cannot reserve a historical or closed order', () => {
+test('reservation column actions keep the exact line and cannot reserve a historical or closed order', () => {
   const { ctx, state, calls } = setup(Detail, {})
   const current = { ...line, reserved: 2 }, sibling = { ...line, id: 8, customer_code: 'A02' }
   ctx.data.value = { status: '生产中', editable: true, lines: [current, sibling] }
-  assert.deepEqual(ctx.lineActions(current).map(action => action.key), ['product', 'production', 'reserve', 'release'])
-  ctx.handleLineAction('reserve', sibling)
+  ctx.editReservation(sibling, false)
   assert.equal(ctx.selectedLine.value.id, 8)
   assert.equal(ctx.release.value, false)
-  ctx.handleLineAction('release', current)
+  ctx.editReservation(current, true)
   assert.equal(ctx.selectedLine.value.id, 7)
   assert.equal(ctx.release.value, true)
   ctx.showReservation.value = false
   ctx.data.value.editable = false
-  assert.deepEqual(ctx.lineActions(current).map(action => action.key), ['product', 'production'])
-  ctx.handleLineAction('reserve', sibling)
+  ctx.editReservation(sibling, false)
   assert.equal(ctx.showReservation.value, false)
-  ctx.handleLineAction('product', sibling)
-  assert.equal(ctx.selectedProduct.value.id, 8)
+  ctx.editReservation(current, true)
+  assert.equal(ctx.showReservation.value, false)
   ctx.openProduction()
   assert.deepEqual(state.navigation, [{ path: '/orders/OR-1/production', query: {} }])
   assert.deepEqual(calls, [])
@@ -278,14 +276,164 @@ test('automatic lifecycle removes the header status menu while row navigation st
   assert.doesNotMatch(source, /updateOrderStatus|开始生产|showCancel|changeStatus/)
   assert.match(header, /新建出货单/)
   ctx.reservationBusy.value = true
-  ctx.handleLineAction('reserve', line)
+  ctx.editReservation(line, false)
   ctx.openProduction()
   assert.equal(ctx.showReservation.value, false)
   assert.deepEqual(state.navigation, [])
-  assert.ok(ctx.lineActions(line).every(action => action.disabled))
+  ctx.openLineEditor(line)
+  assert.equal(ctx.showLineEditor.value, false)
   ctx.reservationBusy.value = false
   assert.ok(state.guards.every(guard => guard() === true))
   assert.deepEqual(calls, [])
+})
+
+test('direct deletion targets the exact row, refreshes totals and blocks duplicate writes and navigation', async () => {
+  let finishDelete, finishRefresh
+  const deleted = [], refreshed = []
+  const sibling = { ...line, id: 8 }
+  const summary = { status: '待生产', editable: true, lines: [sibling], total_items: 1 }
+  const { ctx, state, notices } = setup(Detail, {}, {
+    deleteOrderItem: (...args) => { deleted.push(args); return new Promise(resolve => { finishDelete = resolve }) },
+    getFulfillment: id => { refreshed.push(['fulfillment', id]); return new Promise(resolve => { finishRefresh = () => resolve({ data: summary }) }) },
+    getOrder: async id => { refreshed.push(['order', id]); return { data: { ...order, total_amount: 20 } } },
+    listShipments: async id => { refreshed.push(['shipments', id]); return { data: [] } },
+  })
+  ctx.data.value = { status: '待生产', editable: true, lines: [line, sibling] }
+  ctx.selectedProduct.value = line
+  const pending = ctx.removeLine(line)
+  assert.deepEqual(deleted, [['OR-1', 7]])
+  assert.equal(ctx.deletingLineId.value, 7)
+  assert.equal(ctx.busy.value, true)
+  assert.ok(state.guards.every(guard => guard() === false))
+  await ctx.removeLine(line)
+  await ctx.removeLine(sibling)
+  ctx.openProduction()
+  ctx.openLineEditor(sibling)
+  ctx.editReservation(sibling, false)
+  assert.deepEqual(state.navigation, [])
+  assert.equal(ctx.showLineEditor.value, false)
+  assert.equal(ctx.showReservation.value, false)
+  assert.equal(deleted.length, 1)
+  finishDelete()
+  await Promise.resolve()
+  assert.equal(ctx.busy.value, true)
+  assert.equal(ctx.loading.value, true)
+  assert.equal(ctx.selectedProduct.value, null)
+  assert.deepEqual(refreshed, [['fulfillment', 'OR-1'], ['order', 'OR-1'], ['shipments', 'OR-1']])
+  finishRefresh()
+  await pending
+  assert.equal(ctx.data.value.lines.length, 1)
+  assert.equal(ctx.data.value.lines[0].id, 8)
+  assert.equal(ctx.orderTotal.value, 20)
+  assert.equal(ctx.canDeleteLine.value, false)
+  assert.equal(ctx.deletingLineId.value, null)
+  assert.equal(ctx.busy.value, false)
+  assert.deepEqual(notices, [['success', '商品明细已删除']])
+  assert.ok(state.guards.every(guard => guard() === true))
+})
+
+test('direct deletion keeps the final row and rejects closed, stale, loading, error and busy actions', async () => {
+  const { ctx, calls } = setup(Detail, {})
+  const sibling = { ...line, id: 8 }
+  ctx.data.value = { status: '待生产', lines: [line] }
+  await ctx.removeLine(line)
+  ctx.data.value.lines.push(sibling)
+  for (const status of ['已完成', '已取消']) {
+    ctx.data.value.status = status
+    await ctx.removeLine(line)
+  }
+  ctx.data.value.status = '生产中'
+  await ctx.removeLine({ ...line, id: 999 })
+  await ctx.removeLine(null)
+  ctx.loading.value = true
+  await ctx.removeLine(line)
+  ctx.loading.value = false
+  ctx.error.value = '加载失败'
+  await ctx.removeLine(line)
+  ctx.error.value = ''
+  for (const name of ['activating', 'costBusy', 'lineBusy', 'batchSaving', 'reservationBusy']) {
+    ctx[name].value = true
+    await ctx.removeLine(line)
+    ctx[name].value = false
+  }
+  assert.deepEqual(calls, [])
+})
+
+test('customer code dialog has selectable detail cards, three inline fields and a separate visible footer', async () => {
+  const source = await read('views/orders/OrderDetail.vue')
+  const { descriptor } = parse(source)
+  const script = compileScript(descriptor, { id: 'customer-code-dialog' })
+  assert.deepEqual(compileTemplate({ source: descriptor.template.content, filename: 'OrderDetail.vue', id: 'customer-code-dialog', compilerOptions: { bindingMetadata: script.bindings } }).errors, [])
+  assert.match(source, /class="customer-code-dialog"/)
+  assert.match(source, /class="cc-line-list"/)
+  assert.match(source, /class="cc-line" :class="\{ 'is-selected': batchIds.includes\(line.id\) \}"/)
+  assert.match(source, /<template #footer>\s*<div class="cc-footer">/)
+  assert.match(source, /所选明细已有货号会被覆盖，未选明细不变/)
+  assert.match(source, /按明细编号从小到大生成，不按勾选顺序/)
+  assert.match(source, /\.cc-fields \{ display: grid; grid-template-columns: minmax\(0,1.4fr\) repeat\(2,minmax\(0,1fr\)\)/)
+  assert.match(source, /:global\(\.customer-code-dialog\) \{ max-height: calc\(100dvh - 32px\)/)
+  assert.match(source, /:global\(\.customer-code-dialog \.n-card-content\) \{ min-height: 0; overflow-y: auto/)
+})
+
+test('customer code styling keeps jewelry-only eligibility, optional selection and the existing API payload', async () => {
+  const written = []
+  const summary = { status: '生产中', lines: [line, { ...line, id: 8 }, { ...line, id: 9, product_type: 'part' }] }
+  const { ctx } = setup(Detail, {}, {
+    batchFillCustomerCode: async (...args) => { written.push(args); return { data: { updated_count: 2 } } },
+    getFulfillment: async () => ({ data: summary }), getOrder: async () => ({ data: order }), listShipments: async () => ({ data: [] }),
+  })
+  ctx.data.value = summary
+  assert.deepEqual(ctx.customerCodeLines.value.map(line => line.id), [7, 8])
+  assert.deepEqual(ctx.batchIds.value, [])
+  ctx.batchIds.value = [8, 7]
+  ctx.batchPrefix.value = ' KH- '
+  ctx.batchStart.value = 5
+  ctx.batchPadding.value = 3
+  ctx.showBatchCode.value = true
+  await ctx.saveBatchCode()
+  assert.deepEqual(written, [['OR-1', { item_ids: [8, 7], prefix: 'KH-', start_number: 5, padding: 3 }]])
+  assert.equal(ctx.showBatchCode.value, false)
+  assert.equal(ctx.batchSaving.value, false)
+})
+
+test('customer code dialog retains drafts on failed save and preserves readonly and invalid-input guards', async () => {
+  const written = []
+  const { ctx } = setup(Detail, {}, { batchFillCustomerCode: async (...args) => { written.push(args); throw Error('offline') } })
+  ctx.data.value = { status: '待生产', lines: [line] }
+  ctx.showBatchCode.value = true
+  ctx.batchPrefix.value = 'KH-'
+  await ctx.saveBatchCode()
+  assert.equal(written.length, 0)
+  ctx.batchIds.value = [7]
+  for (const status of ['已完成', '已取消']) {
+    ctx.data.value.status = status
+    await ctx.saveBatchCode()
+  }
+  assert.equal(written.length, 0)
+  ctx.data.value.status = '待生产'
+  ctx.batchSaving.value = true
+  await ctx.saveBatchCode()
+  assert.equal(written.length, 0)
+  ctx.batchSaving.value = false
+  await ctx.saveBatchCode()
+  assert.equal(written.length, 1)
+  assert.equal(ctx.showBatchCode.value, true)
+  assert.deepEqual(ctx.batchIds.value, [7])
+  assert.equal(ctx.batchPrefix.value, 'KH-')
+})
+
+test('failed direct deletion keeps the row, reports no success and releases the busy guard', async () => {
+  const { ctx, calls, state, notices } = setup(Detail, {}, {
+    deleteOrderItem: async () => { throw new Error('有关联业务，不可删除') },
+  })
+  ctx.data.value = { status: '生产中', lines: [line, { ...line, id: 8 }] }
+  await ctx.removeLine(line)
+  assert.equal(ctx.data.value.lines.length, 2)
+  assert.equal(ctx.deletingLineId.value, null)
+  assert.equal(ctx.busy.value, false)
+  assert.deepEqual(calls, [])
+  assert.deepEqual(notices, [])
+  assert.ok(state.guards.every(guard => guard() === true))
 })
 
 test('requirement editing starts from persisted data and cancelling cannot leak draft text to the page', () => {

@@ -406,7 +406,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, h, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, h, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
@@ -532,11 +532,13 @@ const logColumns = [
 ]
 
 const loadPartBom = async () => {
+  const id = partId.value
   try {
-    const { data } = await getPartBom(partId.value)
+    const { data } = await getPartBom(id)
+    if (partId.value !== id) return
     partBomList.value = data.map((b) => ({ ...b, editQty: null }))
   } catch (_) {
-    partBomList.value = []
+    if (partId.value === id) partBomList.value = []
   }
 }
 
@@ -629,25 +631,6 @@ const bomColumns = [
   },
 ]
 
-async function loadVariantFamily() {
-  try {
-    const { data: fam } = await getPartVariants(partId.value)
-    if (part.value && part.value.parent_part_id == null) {
-      variantFamily.value = [part.value, ...fam]      // 根件: fam 仅变体
-    } else {
-      variantFamily.value = fam                        // 变体: fam 含根+全部变体
-    }
-    variantFamily.value.sort((a, b) => a.id.localeCompare(b.id))
-    if (variantFamily.value.length > 0) {
-      const ids = variantFamily.value.map(p => p.id)
-      const { data: smap } = await batchGetStock('part', ids)
-      familyStocks.value = smap
-    }
-  } catch (_) {
-    variantFamily.value = []
-  }
-}
-
 const openEdit = () => {
   if (!part.value) return
   const p = part.value
@@ -669,11 +652,13 @@ const openEdit = () => {
 const COST_FIELDS = ['purchase_cost', 'bead_cost', 'plating_cost']
 
 async function saveBasicInfo() {
+  const id = partId.value
   try {
     await editFormRef.value?.validate()
   } catch {
     return // 校验失败,表单已就地标红
   }
+  if (partId.value !== id) return
   saving.value = true
   try {
     // 成本三项必须走成本端点(重算 unit_cost + 记价格历史 + 级联父件);
@@ -683,7 +668,7 @@ async function saveBasicInfo() {
       const newVal = editForm[f] ?? null
       const oldVal = part.value?.[f] ?? null
       if (newVal != null && newVal !== oldVal) {
-        costUpdates.push({ part_id: partId.value, field: f, value: newVal })
+        costUpdates.push({ part_id: id, field: f, value: newVal })
       }
     }
     // 其余字段走 PATCH(剔除类目与三项成本)
@@ -691,15 +676,16 @@ async function saveBasicInfo() {
     if (editingIsVariant.value) {
       delete data.color
     }
-    await updatePart(partId.value, data)
+    await updatePart(id, data)
     if (costUpdates.length) {
       await batchUpdatePartCosts({ updates: costUpdates })
     }
     message.success('已保存')
-    const { data: fresh } = await getPart(partId.value)
+    const { data: fresh } = await getPart(id)
+    if (partId.value !== id) return
     part.value = fresh
     // 成本可能变 → 刷新价格历史(此时已确有 PartCostLog)
-    getPartCostLogs(partId.value).then(r => { costLogs.value = r.data }).catch(() => {})
+    getPartCostLogs(id).then(r => { if (partId.value === id) costLogs.value = r.data }).catch(() => {})
     showEdit.value = false
   } catch (error) {
     const d = error.response?.data?.detail
@@ -709,19 +695,56 @@ async function saveBasicInfo() {
   }
 }
 
-onMounted(async () => {
-  const id = route.params.id
-  getColorVariants().then(r => { colorVariants.value = r.data })
+onMounted(() => {
+  getColorVariants().then(r => { colorVariants.value = r.data }).catch(() => {})
+})
+
+// Vue Router reuses this component when navigating between family members.
+// Ignore stale responses, including A → B → A navigation, and clear drafts.
+watch(partId, async (id, _, onCleanup) => {
+  let active = true
+  onCleanup(() => { active = false })
+  loading.value = true
+  part.value = null
+  stock.value = 0
+  logs.value = []
+  costLogs.value = []
+  parentPartName.value = ''
+  partBomList.value = []
+  childPartOptions.value = []
+  variantFamily.value = []
+  familyStocks.value = {}
+  staged.value = []
+  batchSelectVal.value = null
+  showCopyBom.value = false
+  showEdit.value = false
+  showImageModal.value = false
   try {
-    const [pRes, sRes, lRes, partsRes] = await Promise.all([
+    const [pRes, sRes, lRes, partsRes, bomRes, costRes, familyRes] = await Promise.all([
       getPart(id),
       getStock('part', id),
       getStockLog('part', id),
       listParts(),
+      getPartBom(id).catch(() => ({ data: [] })),
+      getPartCostLogs(id).catch(() => ({ data: [] })),
+      getPartVariants(id).catch(() => ({ data: [] })),
     ])
+    if (!active) return
+    const family = (pRes.data.parent_part_id ? familyRes.data : [pRes.data, ...familyRes.data])
+      .sort((a, b) => a.id.localeCompare(b.id))
+    const [stocksRes, parentRes] = await Promise.all([
+      family.length ? batchGetStock('part', family.map(p => p.id)).catch(() => ({ data: {} })) : { data: {} },
+      pRes.data.parent_part_id ? getPart(pRes.data.parent_part_id).catch(() => null) : null,
+    ])
+    if (!active) return
     part.value = pRes.data
     stock.value = sRes.data.current
     logs.value = lRes.data
+    partBomList.value = bomRes.data.map(b => ({ ...b, editQty: null }))
+    costLogs.value = costRes.data
+    variantFamily.value = family
+    familyStocks.value = stocksRes.data
+    parentPartName.value = parentRes ? `${parentRes.data.id} ${parentRes.data.name}` : (pRes.data.parent_part_id || '')
     childPartOptions.value = partsRes.data
       .filter((p) => p.id !== id)
       .map((p) => ({
@@ -731,21 +754,12 @@ onMounted(async () => {
         name: p.name,
         image: p.image,
       }))
-    getPartCostLogs(id).then(r => { costLogs.value = r.data }).catch(() => {})
-    loadPartBom()
-    loadVariantFamily()
+  } catch (_) {
+    // API interceptor reports the error; never leave the previous variant shown.
   } finally {
-    loading.value = false
+    if (active) loading.value = false
   }
-  if (part.value?.parent_part_id) {
-    try {
-      const ppRes = await getPart(part.value.parent_part_id)
-      parentPartName.value = `${ppRes.data.id} ${ppRes.data.name}`
-    } catch (_) {
-      parentPartName.value = part.value.parent_part_id
-    }
-  }
-})
+}, { immediate: true })
 </script>
 
 <style scoped>

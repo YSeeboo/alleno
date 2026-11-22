@@ -106,9 +106,7 @@
     <n-modal v-model:show="pricesVisible" preset="card" title="编辑价格" :style="modalStyle" :mask-closable="!busy" :close-on-esc="!busy" :closable="!busy">
       <form @submit.prevent="savePrices"><p class="jd-form-note">以下金额均按 1 {{ unitLabel }}饰品填写。留空表示未填写，0 表示明确为零。</p><n-form label-placement="top" :disabled="busy"><div class="jd-form-grid"><n-form-item label="零售价（元）"><n-input-number v-model:value="priceForm.retail_price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" placeholder="未填写" /></n-form-item><n-form-item label="批发价（元）"><n-input-number v-model:value="priceForm.wholesale_price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" placeholder="未填写" /></n-form-item></div><n-form-item :label="`手工费（元 / ${unitLabel}）`"><n-input-number v-model:value="priceForm.handcraft_cost" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" placeholder="未填写" /></n-form-item></n-form><n-space justify="end"><n-button :disabled="busy" @click="pricesVisible = false">取消</n-button><n-button type="primary" attr-type="submit" :loading="busy">保存</n-button></n-space></form>
     </n-modal>
-    <n-modal v-model:show="addVisible" preset="card" title="添加配件" :style="modalStyle" :mask-closable="!busy" :close-on-esc="!busy" :closable="!busy">
-      <form @submit.prevent="addBom"><p class="jd-form-note">仅添加到当前饰品的独立 BOM，不改变库存。</p><n-form label-placement="top" :disabled="busy"><n-form-item label="选择配件" required><n-select v-model:value="newPartId" :options="availableParts" :render-label="renderOptionWithImage" filterable clearable placeholder="搜索配件名称或编号" /></n-form-item><n-form-item :label="`每 1 ${unitLabel}饰品的用量${selectedPart?.unit ? `（${selectedPart.unit}）` : ''}`" required><n-input-number v-model:value="newQty" :min="0.0001" :max="999999.9999" :precision="4" placeholder="请输入用量" /></n-form-item></n-form><n-space justify="end"><n-button :disabled="busy" @click="addVisible = false">取消</n-button><n-button type="primary" attr-type="submit" :loading="busy" :disabled="!newPartId">确认添加</n-button></n-space></form>
-    </n-modal>
+    <BatchAddDialog v-if="addVisible" scene="bom" :entity-id="String(route.params.id)" :existing-part-ids="bomRows.map(row => row.part_id)" :allowed="canParts && bomReady && partsReady && !loading && !pageError && !writeError" :refresh="loadPage" @close="addVisible = false" @saved="bomKeyword = ''" @busy="busy = $event" @uncertain="writeError = $event" />
     <n-modal v-model:show="stockVisible" preset="card" title="当前库存与流水" :style="{ width: isMobile ? '95vw' : '760px', maxWidth: '95vw' }">
       <p class="jd-form-note">{{ jewelry?.id }} · 当前库存 {{ stock == null ? '加载失败' : `${stock} ${unitLabel}` }} · 这里只读展示，不调整库存。</p>
       <n-spin :show="stockLoading"><n-alert v-if="stockLogError" type="error">库存流水加载失败，<n-button text type="primary" @click="loadStockLog">重新加载</n-button></n-alert><n-data-table v-else :columns="stockColumns" :data="stockLogs" :bordered="false" :pagination="{ pageSize: 20 }" :scroll-x="580" /></n-spin>
@@ -128,12 +126,13 @@ import { getJewelry, updateJewelry, updateJewelryStatus } from '@/api/jewelries'
 import { getBom, setBom, deleteBom } from '@/api/bom'
 import { getStock, getStockLog } from '@/api/inventory'
 import { listParts } from '@/api/parts'
-import { fmtMoney, fmtPrice, parseNum, renderOptionWithImage } from '@/utils/ui'
+import { fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import { jewelryCategoryLabel, jewelryCategoryEditOptions, jewelryUnitOptions } from '@/utils/jewelryOptions'
 import { bomSubtotal, filterJewelryBom, jewelryInfoPatch, jewelryPricePatch, validBomQuantity } from '@/utils/jewelryDetail'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 import FloatingActionBar from '@/components/FloatingActionBar.vue'
 import FloatingActionButton from '@/components/FloatingActionButton.vue'
+import BatchAddDialog from '@/components/BatchAddDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -170,8 +169,6 @@ const stockLogs = ref([])
 const infoForm = reactive({ name: '', category: null, unit: null, color: '' })
 const priceForm = reactive({ retail_price: null, wholesale_price: null, handcraft_cost: null })
 const unitConfirmed = ref(false)
-const newPartId = ref(null)
-const newQty = ref(1)
 let epoch = 0
 let loadSequence = 0
 let uploadTarget = null
@@ -185,8 +182,6 @@ const categoryOptions = computed(() => jewelryCategoryEditOptions(infoForm.categ
 const unitOptions = computed(() => !infoForm.unit || jewelryUnitOptions.some((option) => option.value === infoForm.unit) ? jewelryUnitOptions : [{ label: infoForm.unit, value: infoForm.unit, disabled: true }, ...jewelryUnitOptions])
 const unitChanged = computed(() => infoForm.unit !== jewelry.value?.unit)
 const modalStyle = computed(() => ({ width: isMobile.value ? '95vw' : '500px', maxWidth: '95vw' }))
-const availableParts = computed(() => Object.values(partMap.value).filter((part) => !bomRows.value.some((row) => row.part_id === part.id)).map((part) => ({ label: `${part.id} ${part.name}`, value: part.id, code: part.id, name: part.name, image: part.image })))
-const selectedPart = computed(() => partMap.value[newPartId.value])
 const price = (value) => value == null ? '—' : `¥ ${fmtMoney(value)}`
 watch(() => infoForm.unit, () => { unitConfirmed.value = false })
 
@@ -280,15 +275,7 @@ async function savePrices() {
   const id = jewelry.value.id
   await mutate(() => updateJewelry(id, patch), '价格已更新', () => { pricesVisible.value = false })
 }
-function openAdd() { if (!canAdd.value) return; newPartId.value = null; newQty.value = 1; addVisible.value = true }
-async function addBom() {
-  if (!canAdd.value || !newPartId.value || !validBomQuantity(newQty.value)) { message.warning('请选择配件，用量须大于 0 且最多 4 位小数'); return }
-  if (bomRows.value.some((row) => row.part_id === newPartId.value)) { message.warning('该配件已在 BOM 中，请直接修改原用量'); return }
-  const id = jewelry.value.id
-  const partId = newPartId.value
-  const qty = newQty.value
-  await mutate(() => setBom(id, partId, qty), '配件已加入 BOM', () => { addVisible.value = false; bomKeyword.value = '' })
-}
+function openAdd() { if (canAdd.value) addVisible.value = true }
 async function saveQty(row) {
   if (Number(row.editQty) === Number(row.qty_per_unit)) { row.editQty = String(row.qty_per_unit); return }
   if (locked.value) { row.editQty = String(row.qty_per_unit); return }

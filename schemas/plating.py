@@ -9,7 +9,7 @@ class PlatingItemCreate(BaseModel):
     weight: Optional[float] = Field(None, ge=0)
     weight_unit: Optional[str] = None
     plating_method: Optional[str] = None
-    unit: Optional[str] = "个"
+    unit: Optional[str] = None
     note: Optional[str] = None
     receive_part_id: Optional[str] = None
 

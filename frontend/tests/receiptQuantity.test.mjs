@@ -21,12 +21,13 @@ test('source balances clamp remaining and explicitly label settlement excess', (
   assert.equal(sourceBalance({ qty: 10, received_qty: 8 }), 2)
 })
 
-test('all canonical receipt forms opt into settled sources and have no remaining-quantity max', () => {
+test('new plating receipts hide settled sources while receipt quantities still allow actual over-receipts', () => {
   for (const name of ['plating', 'handcraft']) {
     for (const view of ['Create', 'Detail']) {
       const title = name[0].toUpperCase() + name.slice(1)
       const source = readFileSync(new URL(`../src/views/${name}-receipts/${title}Receipt${view}.vue`, import.meta.url), 'utf8')
-      assert.match(source, /include_settled: true/)
+      if (name === 'plating' && view === 'Create') assert.doesNotMatch(source, /include_settled: true/)
+      else assert.match(source, /include_settled: true/)
       assert.doesNotMatch(source, /(?::max="|max: )get(?:Add)?Remaining/)
     }
   }
