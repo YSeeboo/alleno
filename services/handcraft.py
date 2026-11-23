@@ -477,6 +477,15 @@ def get_handcraft_jewelry_breakdown(
         .order_by(ProductionAllocation.id)
         .all()
     )
+    from models.material_production import OrderMaterialDemand, MaterialProductionAllocation
+    allocation_rows += (
+        db.query(MaterialProductionAllocation, OrderItem, Order)
+        .join(OrderMaterialDemand, OrderMaterialDemand.id == MaterialProductionAllocation.demand_id)
+        .join(OrderItem, OrderItem.id == OrderMaterialDemand.order_item_id)
+        .join(Order, Order.id == OrderItem.order_id)
+        .filter(MaterialProductionAllocation.handcraft_jewelry_item_id.in_(row_ids))
+        .order_by(MaterialProductionAllocation.id).all()
+    )
     allocations_by_item = defaultdict(list)
     for allocation, line, order in allocation_rows:
         allocations_by_item[allocation.handcraft_jewelry_item_id].append((allocation, line, order))
@@ -528,6 +537,7 @@ def get_handcraft_jewelry_breakdown(
                         "source_order_id": order.id,
                         "source_order_item_id": line.id,
                         "source_allocation_id": allocation.id,
+                        "source_purpose": "material" if isinstance(allocation, MaterialProductionAllocation) else "product",
                         "is_locked": True,
                         "quantity_managed": True,
                     })
@@ -600,13 +610,14 @@ def get_handcraft_jewelry_breakdown(
 
 def _quantity_sorting_claim():
     """A confirmed order share also qualifies an output for customer sorting."""
-    from sqlalchemy import exists, func, select
+    from sqlalchemy import exists, func, select, or_
     from sqlalchemy.orm import aliased
     from models.order import Order, OrderItem
     from models.production_allocation import ProductionAllocation
+    from models.material_production import OrderMaterialDemand, MaterialProductionAllocation
 
     customer_order, line = aliased(Order), aliased(OrderItem)
-    return exists(
+    direct = exists(
         select(ProductionAllocation.id)
         .join(line, line.id == ProductionAllocation.order_item_id)
         .join(customer_order, customer_order.id == line.order_id)
@@ -616,6 +627,16 @@ def _quantity_sorting_claim():
         )
         .correlate(HandcraftJewelryItem)
     )
+    material = exists(
+        select(MaterialProductionAllocation.id)
+        .join(OrderMaterialDemand, OrderMaterialDemand.id == MaterialProductionAllocation.demand_id)
+        .join(line, line.id == OrderMaterialDemand.order_item_id)
+        .join(customer_order, customer_order.id == line.order_id)
+        .where(MaterialProductionAllocation.handcraft_jewelry_item_id == HandcraftJewelryItem.id,
+               func.trim(customer_order.customer_name) != "")
+        .correlate(HandcraftJewelryItem)
+    )
+    return or_(direct, material)
 
 
 def list_suppliers_with_sorting(db: Session) -> list[str]:

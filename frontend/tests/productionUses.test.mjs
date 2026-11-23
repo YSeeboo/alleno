@@ -100,5 +100,6 @@ test('order return and allocation links still open the production arrangement pa
   assert.match(source, /row\.order_id === sourceOrder/)
   assert.match(source, /row\.customer_code \|\| '未填客户货号'/)
   assert.match(source, /未自动减少计划或分摊实收/)
-  assert.match(source, /未覆盖上游 BOM 备料/)
+  assert.match(source, /商品制作与 BOM 配件备料共用产出计划容量/)
+  assert.match(source, /row\.material_part_id \? '配件备料' : '商品制作'/)
 })

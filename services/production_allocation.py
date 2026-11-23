@@ -1,6 +1,6 @@
-"""Stage 1: direct-output plans. No inventory, receipt, cost or shipment writes.
+"""Product/material output plans. No inventory, receipt, cost or shipment writes.
 
-Lock order: customer Order -> production parent -> output row. Mutations in the
+Lock order: customer Order -> BOM advisory locks -> production parent -> output row. Mutations in the
 legacy services use the same locks. Historical links are exclusive, unquantified
 claims, never inferred allocations. They must be reviewed at their original UI.
 """
@@ -18,6 +18,10 @@ from models.part import Part
 from models.plating_order import PlatingOrder, PlatingOrderItem
 from models.production_allocation import ProductionAllocation as Allocation
 from models.production_loss import ProductionLoss
+from models.material_production import OrderMaterialDemand, MaterialProductionAllocation
+from services.material_production import (
+    material_demands, material_source_query, order_material_allocations, guard_material_order_change,
+)
 
 
 SOURCE = {
@@ -52,6 +56,10 @@ def lock_source(db, source_type, item_id):
 
 def source_query(db, source_type, item_id):
     return db.query(Allocation).filter(getattr(Allocation, SOURCE[source_type][3]) == item_id)
+
+
+def source_rows(db, source_type, item_id):
+    return source_query(db, source_type, item_id).all() + material_source_query(db, source_type, item_id).all()
 
 
 def product_key(item, source_type=None):
@@ -96,7 +104,8 @@ def legacy_demand_claim(db, line):
 def guard_legacy_order_write(db, order_id):
     """Conservative compatibility boundary for legacy whole-order/batch writers."""
     lock_order(db, order_id)
-    if db.query(Allocation.id).join(OrderItem).filter(OrderItem.order_id == order_id).first():
+    if (db.query(Allocation.id).join(OrderItem).filter(OrderItem.order_id == order_id).first()
+            or order_material_allocations(db, order_id)):
         raise ValueError("本单已有按明细的生产数量安排，请在「本单生产需求」调整；不能混用旧整行关联/批次分配")
 
 
@@ -116,11 +125,14 @@ def guard_source_delete(db, source_type, item_ids):
     field = getattr(Allocation, SOURCE[source_type][3])
     if db.query(Allocation.id).filter(field.in_(item_ids)).first():
         raise ValueError("产出已有订单数量安排，请先在来源订单的「本单生产需求」取消安排")
+    if db.query(MaterialProductionAllocation.id).filter(
+            getattr(MaterialProductionAllocation, SOURCE[source_type][3]).in_(item_ids)).first():
+        raise ValueError("产出已有配件备料安排，请先在来源订单取消安排")
 
 
 def guard_source_update(db, source_type, item_id, *, quantity=None, target=None, unit=None, customer_change=False):
     _, item = lock_source(db, source_type, item_id)
-    rows = source_query(db, source_type, item_id).all()
+    rows = source_rows(db, source_type, item_id)
     if not rows:
         return
     if quantity is not None and Decimal(str(quantity)) < sum((r.quantity for r in rows), Decimal(0)):
@@ -135,12 +147,13 @@ def guard_source_update(db, source_type, item_id, *, quantity=None, target=None,
 
 def guard_legacy_source_write(db, source_type, item_id):
     lock_source(db, source_type, item_id)
-    if source_query(db, source_type, item_id).first():
+    if source_rows(db, source_type, item_id):
         raise ValueError("此产出已有订单数量安排，不能再使用旧整行关联")
 
 
 def guard_order_item_change(db, order_id, item_id=None, quantity=None):
     lock_order(db, order_id)
+    guard_material_order_change(db, order_id, item_id, quantity)
     query = db.query(Allocation).join(OrderItem).filter(OrderItem.order_id == order_id)
     if item_id is not None:
         query = query.filter(Allocation.order_item_id == item_id)
@@ -154,12 +167,13 @@ def _revision(item, parent, rows):
         return format(Decimal(qty).quantize(Decimal("0.0001")), "f")
     value = [quantity_text(item.qty), item.unit, product_key(item, "plating" if isinstance(item, PlatingOrderItem) else "handcraft"),
              parent.status, str(parent.archived_at),
-             sorted((r.order_item_id, quantity_text(r.quantity)) for r in rows)]
+             sorted((r.order_item_id, r.demand.part_id if isinstance(r, MaterialProductionAllocation) else "",
+                     quantity_text(r.quantity)) for r in rows)]
     return hashlib.sha256(json.dumps(value, ensure_ascii=False).encode()).hexdigest()
 
 
 def _source_view(db, source_type, item, parent):
-    rows = source_query(db, source_type, item.id).order_by(Allocation.id).all()
+    rows = source_rows(db, source_type, item.id)
     used = sum((r.quantity for r in rows), Decimal(0))
     legacy = legacy_source_claim(db, source_type, item.id)
     kind, pid = product_key(item, source_type)
@@ -172,7 +186,9 @@ def _source_view(db, source_type, item, parent):
         line = db.get(OrderItem, row.order_item_id)
         order = db.get(Order, line.order_id)
         uses.append({"order_id": order.id, "customer_name": order.customer_name, "order_item_id": line.id,
-                     "customer_code": line.customer_code, "quantity": row.quantity})
+                     "customer_code": line.customer_code, "quantity": row.quantity,
+                     "material_part_id": row.demand.part_id if isinstance(row, MaterialProductionAllocation) else None,
+                     "purpose": "material" if isinstance(row, MaterialProductionAllocation) else "product"})
     linked_order_ids = {value for (value,) in db.query(OrderItemLink.order_id).filter(
         getattr(OrderItemLink, SOURCE[source_type][3]) == item.id).all() if value}
     if source_type == "handcraft":
@@ -201,8 +217,11 @@ def order_production(db: Session, order_id: str):
         raise ValueError("订单不存在")
     lines = db.query(OrderItem).filter_by(order_id=order_id).order_by(OrderItem.id).all()
     keys = {product_key(line) for line in lines}
+    materials = material_demands(db, order_id)
+    keys.update(("part", row["product_id"]) for row in materials)
     own = db.query(Allocation).join(OrderItem).filter(OrderItem.order_id == order_id).all()
-    own_ids = {("plating", r.plating_order_item_id) if r.plating_order_item_id else ("handcraft", r.handcraft_jewelry_item_id) for r in own}
+    all_own = own + order_material_allocations(db, order_id)
+    own_ids = {("plating", r.plating_order_item_id) if r.plating_order_item_id else ("handcraft", r.handcraft_jewelry_item_id) for r in all_own}
     sources = []
     for source_type, (parent_model, model, parent_key, _) in SOURCE.items():
         # Match exact output identity, never the plating input. Retain associated
@@ -243,7 +262,7 @@ def order_production(db: Session, order_id: str):
                              "allocated": sum((row.quantity for row in own if row.order_item_id == line.id), Decimal(0)),
                              "legacy_claim": legacy_demand_claim(db, line)})
     return {"order_id": order.id, "customer_name": order.customer_name, "editable": order.status in EDITABLE_ORDERS,
-            "lines": result_lines, "sources": sources}
+            "lines": result_lines, "materials": materials, "sources": sources}
 
 
 def production_uses(db: Session, source_type: str, order_id: str):
@@ -257,29 +276,54 @@ def production_uses(db: Session, source_type: str, order_id: str):
             db.query(model).filter(getattr(model, parent_key) == order_id).order_by(model.id).all()]
 
 
+def quantity_order_links(db: Session, source_type: str, item_id: int):
+    """Reverse order badges for confirmed shares, grouped across both purposes.
+
+    These are not legacy OrderItemLink IDs and must never use legacy unlink APIs.
+    """
+    orders = {}
+    for allocation in source_rows(db, source_type, item_id):
+        line = db.get(OrderItem, allocation.order_item_id)
+        order = db.get(Order, line.order_id)
+        orders[order.id] = {"order_id": order.id, "customer_name": order.customer_name,
+                            "link_id": None, "quantity_managed": True}
+    return [orders[order_id] for order_id in sorted(orders)]
+
+
 def replace_order_source(db: Session, order_id: str, source_type: str, item_id: int, revision: str, allocations: list[dict]):
     order = lock_order(db, order_id)
     if order.status not in EDITABLE_ORDERS:
         raise ValueError("仅待生产或生产中的订单可调整生产安排")
+    if any(row.get("material_part_id") for row in allocations):
+        from services.bom import lock_bom
+        for (jewelry_id,) in db.query(OrderItem.jewelry_id).filter_by(order_id=order_id).filter(
+                OrderItem.jewelry_id.isnot(None)).distinct().order_by(OrderItem.jewelry_id):
+            lock_bom(db, jewelry_id)
     parent, item = lock_source(db, source_type, item_id)
     if parent.archived_at or parent.status not in {"pending", "processing"}:
         raise ValueError("已完成或归档的生产单仅供追溯，不可调整安排")
-    rows = source_query(db, source_type, item_id).all()
+    rows = source_rows(db, source_type, item_id)
     if revision != _revision(item, parent, rows):
         raise ValueError("生产安排已变化，请刷新后重新核对保存")
     if legacy_source_claim(db, source_type, item_id):
         raise ValueError("此产出存在旧关联、批次或手填客户归属，请先核对并解除旧归属，不能推算历史份额")
     unit_mismatch = _unit_mismatch(_product(db, product_key(item, source_type)), item)
-    own_lines = {line.id: line for line in db.query(OrderItem).filter_by(order_id=order_id).all()}
+    own_lines = {line.id: line for line in db.query(OrderItem).filter_by(order_id=order_id).populate_existing().all()}
+    demands = {(row["order_item_id"], row["material_part_id"]): row for row in material_demands(db, order_id)}
     values = {}
     for data in allocations:
         line_id = data["order_item_id"]
-        if line_id in values:
+        part_id = data.get("material_part_id")
+        key = (line_id, part_id)
+        if key in values:
             raise ValueError("同一订单明细不能重复填写")
         line = own_lines.get(line_id)
         if line is None:
             raise ValueError("只能调整当前订单的明细")
-        if product_key(line) != product_key(item, source_type):
+        demand = demands.get(key) if part_id else None
+        if part_id and (demand is None or product_key(item, source_type) != ("part", part_id)):
+            raise ValueError("生产目标产出与订单 BOM 配件需求不匹配")
+        if not part_id and product_key(line) != product_key(item, source_type):
             raise ValueError("生产目标产出与订单明细不匹配")
         try:
             qty = Decimal(str(data["quantity"]))
@@ -287,17 +331,23 @@ def replace_order_source(db: Session, order_id: str, source_type: str, item_id: 
             raise ValueError("安排数量无效")
         if not qty.is_finite() or qty < 0 or qty >= Decimal("10000000000") or qty != qty.quantize(Decimal("0.0001")):
             raise ValueError("安排数量必须为最多四位小数的非负数")
-        if qty != qty.to_integral_value():
+        if (not part_id or source_type == "handcraft") and qty != qty.to_integral_value():
             raise ValueError("订单商品数量为整数，生产安排也必须为整数")
         if qty and unit_mismatch:
             raise ValueError("生产产出单位与商品基本单位不一致，请先核对单位；不自动换算")
-        if qty and legacy_demand_claim(db, line):
+        if qty and ((demand["legacy_claim"] if part_id else legacy_demand_claim(db, line))):
             raise ValueError("该商品存在无法拆到明细的旧生产安排，请先核对旧关联/批次")
-        other = sum((r.quantity for r in db.query(Allocation).filter_by(order_item_id=line_id).all()
-                     if getattr(r, SOURCE[source_type][3]) != item_id), Decimal(0))
-        if other + qty > line.quantity:
+        if part_id:
+            if qty and data.get("demand_revision") != demand["demand_revision"]:
+                raise ValueError("BOM 或订单需求已变化，请刷新并重新核对配件数量")
+            snapshot = db.query(OrderMaterialDemand).filter_by(order_item_id=line_id, part_id=part_id).first()
+            demand_rows = db.query(MaterialProductionAllocation).filter_by(demand_id=snapshot.id).all() if snapshot else []
+        else:
+            demand_rows = db.query(Allocation).filter_by(order_item_id=line_id).all()
+        other = sum((r.quantity for r in demand_rows if getattr(r, SOURCE[source_type][3]) != item_id), Decimal(0))
+        if qty and other + qty > (demand["quantity"] if part_id else line.quantity):
             raise ValueError("安排数量超过此订单明细需求（含其他生产来源）")
-        values[line_id] = qty
+        values[key] = qty
     other_orders = sum((r.quantity for r in rows if r.order_item_id not in own_lines), Decimal(0))
     if other_orders + sum(values.values(), Decimal(0)) > Decimal(item.qty):
         raise ValueError("生产计划容量不足，不能占用其他订单的安排")
@@ -307,10 +357,66 @@ def replace_order_source(db: Session, order_id: str, source_type: str, item_id: 
         if row.order_item_id in own_lines:
             db.delete(row)
     db.flush()
-    for line_id, qty in values.items():
+    for (line_id, part_id), qty in values.items():
         if qty:
-            db.add(Allocation(order_item_id=line_id, quantity=qty, **{SOURCE[source_type][3]: item_id}))
+            if part_id:
+                demand = demands[(line_id, part_id)]
+                snapshot = db.query(OrderMaterialDemand).filter_by(order_item_id=line_id, part_id=part_id).first()
+                if snapshot is None:
+                    snapshot = OrderMaterialDemand(order_item_id=line_id, part_id=part_id)
+                    db.add(snapshot)
+                snapshot.qty_per_unit = demand["qty_per_unit"]
+                snapshot.order_quantity = own_lines[line_id].quantity
+                snapshot.unit = demand["unit"]
+                db.flush()
+                db.add(MaterialProductionAllocation(demand_id=snapshot.id, quantity=qty,
+                                                    **{SOURCE[source_type][3]: item_id}))
+            else:
+                db.add(Allocation(order_item_id=line_id, quantity=qty, **{SOURCE[source_type][3]: item_id}))
     if any(values.values()):
         mark_production_started(order)
     db.flush()
     return _source_view(db, source_type, item, parent)
+
+
+def replace_order_sources(db, order_id, sources):
+    """One atomic confirmation, with stable lock order across multiple outputs."""
+    keys = [(row["source_type"], row["source_item_id"]) for row in sources]
+    if len(set(keys)) != len(keys):
+        raise ValueError("同一产出不能重复提交")
+    with db.begin_nested():
+        lock_order(db, order_id)
+        if any(entry.get("material_part_id") for row in sources for entry in row["allocations"]):
+            from services.bom import lock_bom
+            for (jewelry_id,) in db.query(OrderItem.jewelry_id).filter_by(order_id=order_id).filter(
+                    OrderItem.jewelry_id.isnot(None)).distinct().order_by(OrderItem.jewelry_id):
+                lock_bom(db, jewelry_id)
+        # Resolve parent identities before locking: different outputs in one parent
+        # must not cause parent locks to be taken in inconsistent order.
+        def lock_key(row):
+            kind, item_id = row["source_type"], row["source_item_id"]
+            if kind not in SOURCE:
+                raise ValueError("不支持的生产来源")
+            item = db.get(SOURCE[kind][1], item_id)
+            return kind, getattr(item, SOURCE[kind][2], ""), item_id
+        ordered = sorted(sources, key=lock_key)
+        locked = []
+        for row in ordered:
+            kind, item_id = row["source_type"], row["source_item_id"]
+            parent, item = lock_source(db, kind, item_id)
+            rows = source_rows(db, kind, item_id)
+            if row["revision"] != _revision(item, parent, rows):
+                raise ValueError("生产安排已变化，请刷新后重新核对保存")
+            locked.append((row, parent, item, rows))
+        # Release this order's submitted shares together before validating the
+        # replacement totals. Otherwise moving demand from a later source to an
+        # earlier one would incorrectly exceed the demand limit mid-batch.
+        own_ids = {line.id for line in db.query(OrderItem).filter_by(order_id=order_id)}
+        for _, _, _, rows in locked:
+            for allocation in rows:
+                if allocation.order_item_id in own_ids:
+                    db.delete(allocation)
+        db.flush()
+        return [replace_order_source(db, order_id, row["source_type"], item.id,
+                                     _revision(item, parent, source_rows(db, row["source_type"], item.id)),
+                                     row["allocations"]) for row, parent, item, _ in locked]

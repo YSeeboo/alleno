@@ -16,7 +16,7 @@
     </header>
     <p v-if="error" class="use-error" role="alert">{{ error }}{{ loaded ? '（当前显示上次加载结果）' : '' }}</p>
     <div v-if="expanded" class="use-body">
-      <p class="use-note">仅为直接产出的需求计划，不代表库存预留、材料发出或客户出货。整批实收不自动分摊，未覆盖上游 BOM 备料。</p>
+      <p class="use-note">商品制作与 BOM 配件备料共用产出计划容量，不代表库存预留、材料发出或客户出货。整批实收不自动分摊。</p>
       <div class="use-sources">
         <p v-if="loaded && !sources.length" class="use-empty">暂无直接产出明细</p>
         <section v-for="source in sources" :key="source.source_item_id" class="use-source">
@@ -36,9 +36,9 @@
             <span v-if="source.risk">已有确认损耗，请核对交付缺口；未自动减少计划或分摊实收。</span>
           </div>
           <p v-if="!source.legacy_claim && !source.allocations.length" class="use-public">公共备库存 · 暂无订单安排</p>
-          <div v-for="row in source.allocations" :key="row.order_item_id" class="use-row" :class="{ current: row.order_id === sourceOrder }">
+          <div v-for="row in source.allocations" :key="`${row.order_item_id}:${row.material_part_id || 'product'}`" class="use-row" :class="{ current: row.order_id === sourceOrder }">
             <button type="button" class="use-order" @click="openOrder(row.order_id)">{{ row.order_id }}<span>{{ row.customer_name }}</span></button>
-            <span class="use-line">明细 #{{ row.order_item_id }} · {{ row.customer_code || '未填客户货号' }}</span>
+            <span class="use-line">{{ row.material_part_id ? '配件备料' : '商品制作' }} · 明细 #{{ row.order_item_id }} · {{ row.customer_code || '未填客户货号' }}</span>
             <span class="use-allocation">安排 <b>{{ row.quantity }}</b> {{ source.unit }}</span>
           </div>
         </section>

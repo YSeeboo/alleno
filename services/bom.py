@@ -4,10 +4,18 @@ from models.bom import Bom
 from services._helpers import _next_id
 
 
+def lock_bom(db, jewelry_id):
+    from sqlalchemy import text
+    db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+               {"key": f"allen-bom:{jewelry_id}"})
+
+
 def set_bom(db: Session, jewelry_id: str, part_id: str, qty_per_unit: float) -> Bom:
+    lock_bom(db, jewelry_id)
     existing = (
         db.query(Bom)
         .filter(Bom.jewelry_id == jewelry_id, Bom.part_id == part_id)
+        .populate_existing()
         .first()
     )
     if existing:
@@ -33,6 +41,7 @@ def delete_bom_item(db: Session, bom_id: str) -> None:
     bom = db.query(Bom).filter(Bom.id == bom_id).first()
     if bom is None:
         raise ValueError(f"BOM item not found: {bom_id}")
+    lock_bom(db, bom.jewelry_id)
     db.delete(bom)
     db.flush()
 

@@ -18,12 +18,19 @@
             </tr>
           </tbody></n-table></div>
         </OrderSection>
-        <OrderSection v-for="type in ['handcraft', 'plating']" :key="type" :title="type === 'handcraft' ? '手工生产安排' : '电镀生产安排'">
+        <OrderSection title="配件备料需求" :count="`${data.materials?.length || 0} 项`">
+          <p class="wf-section-description">按具体订单商品行的 BOM 计算，不扣减公共库存；配件制作不代表最终商品完成或客户出货。无需手动生成配件清单。</p>
+          <n-empty v-if="!data.materials?.length" description="暂无商品 BOM 配件需求" />
+          <div v-else class="wf-table-wrap"><n-table :bordered="false" class="wf-table"><thead><tr><th>用于商品 / 客户货号</th><th>所需配件</th><th>理论需求</th><th>已安排</th><th>核对</th></tr></thead><tbody>
+            <tr v-for="line in data.materials" :key="line.id"><td>{{ line.parent_product_name }} · {{ line.customer_code || '未填货号' }}<small class="wf-subtext">订单明细 #{{ line.order_item_id }}</small></td><td><ProductCell :line="line" /></td><td>{{ line.quantity }} {{ line.unit }}</td><td>{{ line.allocated }}</td><td><span v-if="line.demand_changed" class="warning">BOM／订购量已变化，原需求 {{ line.snapshot_quantity }}；请重新核对安排</span><span v-else>{{ line.legacy_claim ? '旧归属待核对' : '无冲突' }}</span></td></tr>
+          </tbody></n-table></div>
+        </OrderSection>
+        <OrderSection v-for="type in ['handcraft', 'plating']" :key="type" :id="`${type}-production`" tabindex="-1" class="production-arrangement" :title="type === 'handcraft' ? '手工生产安排' : '电镀生产安排'">
           <template v-if="type === 'handcraft'" #header-extra>
             <n-button v-if="data.editable" size="small" type="primary" secondary :disabled="loading || saving" @click="openLinker">订单关联</n-button>
           </template>
-          <p class="wf-section-description">{{ type === 'handcraft' ? '只展示已确认关联本单的手工产出；通过「订单关联」选择已有手工单，确认的份额同步计入客户分拣' : '直接作为订单商品的电镀产出，按收回目标而不是原色投入匹配' }}</p>
-          <n-empty v-if="!visibleSources(type).length" :description="type === 'handcraft' ? '暂无已关联的手工单，可从右上角「订单关联」选择已有手工单' : '暂无直接匹配的电镀产出；上游 BOM 备料尚未接通'" class="wf-empty" />
+          <p class="wf-section-description">{{ type === 'handcraft' ? '只展示已确认关联本单的手工产出；通过「订单关联」选择已有手工单，商品制作／配件备料份额同步计入客户分拣' : '匹配订单商品及 BOM 配件备料，按收回目标而不是原色投入匹配' }}</p>
+          <n-empty v-if="!visibleSources(type).length" :description="type === 'handcraft' ? '暂无已关联的手工单，可从右上角「订单关联」选择已有手工单' : '暂无匹配商品或 BOM 配件的电镀产出'" class="wf-empty" />
           <div v-else class="wf-table-wrap"><n-table :bordered="false" class="wf-table"><thead><tr><th>加工单 / 商家 / 关联</th><th>目标产出</th><th>阶段</th><th>整条计划 / 实收</th><th>本单安排</th><th>其他客户安排</th><th>公共备库存</th><th>操作</th></tr></thead><tbody>
             <tr v-for="source in visibleSources(type)" :key="source.source_item_id" class="source-card"><td><n-button text type="primary" @click="openSource(source)">{{ source.production_order_id }}</n-button><small class="wf-subtext">{{ source.supplier_name }}</small><n-tag size="small" :bordered="false" :type="source.legacy_claim ? 'warning' : ownQuantity(source, data.order_id) ? 'success' : 'default'">{{ source.legacy_claim ? '旧归属待核对' : ownQuantity(source, data.order_id) ? '已关联本单' : '候选，未关联本单' }}</n-tag></td><td><ProductCell :line="{ ...source, id: source.source_item_id }" /><small v-if="type === 'plating'" class="wf-subtext">投入 {{ source.input_part_id }} → 目标 {{ source.product_id }}</small></td><td><n-tag size="small" :bordered="false">{{ source.archived ? '历史归档' : { pending: '待发出', processing: '加工中', completed: '已结清' }[source.status] || source.status }}</n-tag></td><td>{{ source.planned }} {{ source.unit }}<small class="wf-subtext">实收 {{ source.received }} / 损耗 {{ source.loss }}</small><small v-if="source.risk" class="wf-subtext wf-amber">存在损耗，需核对交付缺口</small></td><td class="wf-green"><strong>{{ ownQuantity(source, data.order_id) }}</strong></td><td>{{ Number(source.allocated) - ownQuantity(source, data.order_id) }}<small class="wf-subtext">只读，不在本单修改</small></td><td>{{ source.public_unallocated ?? '待核对' }}</td><td><span v-if="source.legacy_claim" class="wf-muted">先核对旧归属</span><n-button v-else-if="data.editable && !source.archived && ['pending', 'processing'].includes(source.status)" text type="primary" @click="edit(source)">{{ ownQuantity(source, data.order_id) ? '调整本单分配' : '分配给本单' }}</n-button><span v-else class="wf-muted">只读追溯</span><small v-if="source.unit_mismatch" class="wf-subtext wf-amber">单位不一致，不自动换算</small></td></tr>
           </tbody></n-table></div>
@@ -61,9 +68,9 @@
         <h3 v-if="linking">填写本单分配数量</h3>
         <n-alert type="info" :bordered="false">仅保存 {{ data.order_id }} 的份额，不改其他客户。填 0 取消安排，不退料、不回库、不影响实收。</n-alert>
         <p>{{ selected.production_order_id }} · {{ selected.product_name }} · 产出明细 #{{ selected.source_item_id }} · 整批计划 {{ selected.planned }} {{ selected.unit }}</p>
-        <div v-for="line in matchingLines(data.lines, selected)" :key="line.id" class="editor-line">
-          <label :for="`allocation-${line.id}`">{{ line.customer_code || line.product_name }} · 明细 #{{ line.id }}<br><small>订购 {{ line.quantity }} · 旧关联 {{ line.legacy_claim ? '待核对' : '无' }}</small></label>
-          <n-input-number v-model:value="quantities[line.id]" :input-props="{ id: `allocation-${line.id}`, 'aria-label': `明细 ${line.id} 的本单安排数量` }" :min="0" :max="line.quantity" :precision="0" :disabled="saving || line.legacy_claim" style="max-width: 170px;" />
+        <div v-for="line in matchingLines(demandLines, selected)" :key="line.id" class="editor-line">
+          <label :for="`allocation-${line.id}`">{{ line.material_part_id ? '配件备料 · ' + line.parent_product_name : '商品制作 · ' + line.product_name }} · {{ line.customer_code || '未填货号' }} · 明细 #{{ line.order_item_id || line.id }}<br><small>需求 {{ line.quantity }} · 旧关联 {{ line.legacy_claim ? '待核对' : '无' }}</small><br v-if="line.demand_changed"><small v-if="line.demand_changed" class="warning">BOM／订购量已变化，确认将采用当前需求；填 0 可取消原份额。</small></label>
+          <n-input-number v-model:value="quantities[line.id]" :input-props="{ id: `allocation-${line.id}`, 'aria-label': `明细 ${line.id} 的本单安排数量` }" :min="0" :max="Math.max(Number(line.quantity), quantities[line.id] || 0)" :precision="line.material_part_id && selected.source_type === 'plating' ? 4 : 0" :disabled="saving || line.legacy_claim" style="max-width: 170px;" />
         </div>
       </div>
       <p v-else-if="linking" class="link-hint">请从上方列表选择要分配给本单的产出。</p>
@@ -86,7 +93,7 @@ import OrderHandcraftDialog from '@/components/fulfillment/OrderHandcraftDialog.
 import OrderMaterials from '@/components/fulfillment/OrderMaterials.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getOrderProduction, replaceOrderProduction } from '@/api/productionAllocation'
-import { matchingLines, ownQuantity, allocationPayload, associatedSources, handcraftLinkSources, sourceQuantities } from '@/utils/productionAllocation'
+import { matchingLines, ownQuantity, allocationPayload, associatedSources, handcraftLinkSources, sourceQuantities, productionDemandLines } from '@/utils/productionAllocation'
 
 const route = useRoute(), router = useRouter(), message = useMessage()
 const auth = useAuthStore(), creatingLine = ref(null)
@@ -95,8 +102,9 @@ const selected = ref(null), quantities = ref({}), showEditor = ref(false), saveE
 const allocationEditor = ref(null)
 const linking = ref(false), linkSearch = ref(''), linkSupplier = ref(null)
 const visibleSources = type => associatedSources(data.value.sources, type, data.value.order_id)
+const demandLines = computed(() => productionDemandLines(data.value))
 const linkSources = computed(() => handcraftLinkSources(data.value?.sources || [])
-  .filter(source => matchingLines(data.value?.lines || [], source).length > 0))
+  .filter(source => matchingLines(demandLines.value, source).length > 0))
 const linkSupplierOptions = computed(() => [...new Set(linkSources.value.map(source => source.supplier_name || ''))]
   .sort((a, b) => a.localeCompare(b, 'zh-CN'))
   .map(value => ({ value, label: value || '未填写商家' })))
@@ -115,7 +123,7 @@ function linkBlockedReason(source) {
   if (!data.value?.editable) return '订单只读，无法分配'
   if (source.legacy_claim) return '旧归属待核对，暂不可分配'
   if (source.unit_mismatch) return '单位不一致，不自动换算'
-  if (!matchingLines(data.value.lines, source).some(line => !line.legacy_claim)) return '无可分配的本单明细，请先核对商品及旧归属'
+  if (!matchingLines(demandLines.value, source).some(line => !line.legacy_claim)) return '无可分配的本单明细，请先核对商品及旧归属'
   return ''
 }
 let requestId = 0
@@ -131,6 +139,16 @@ async function load() {
   } finally { if (id === requestId) loading.value = false }
 }
 watch(() => route.params.id, () => { showEditor.value = false; creatingLine.value = null; data.value = null; order.value = null; load() }, { immediate: true })
+async function scrollToProductionSection() {
+  const hash = route.hash, orderId = route.params.id
+  if (!['#handcraft-production', '#plating-production'].includes(hash) || loading.value || loadError.value || !data.value) return
+  await nextTick()
+  if (route.hash !== hash || route.params.id !== orderId || loading.value || loadError.value || data.value?.order_id !== String(orderId)) return
+  const section = document.getElementById(hash.slice(1))
+  section?.scrollIntoView({ block: 'start', behavior: 'auto' })
+  section?.focus({ preventScroll: true })
+}
+watch([() => route.hash, () => data.value, () => loading.value], scrollToProductionSection, { flush: 'post' })
 async function created(result) {
   creatingLine.value = null
   message.success(`${result.appended ? '已追加' : '已新建'} ${result.production_order_id}，本行安排 ${result.allocated_quantity}；未扣库或出货`)
@@ -143,7 +161,7 @@ function edit(source) {
 }
 function selectSource(source, suggest = false) {
   selected.value = source
-  quantities.value = sourceQuantities(data.value.lines, source, suggest && !ownQuantity(source, data.value.order_id))
+  quantities.value = sourceQuantities(demandLines.value, source, suggest && !ownQuantity(source, data.value.order_id))
   saveError.value = ''
 }
 function openLinker() {
@@ -173,7 +191,7 @@ async function save() {
   saving.value = true
   saveError.value = ''
   try {
-    const payload = allocationPayload(data.value.lines, selected.value, quantities.value)
+    const payload = allocationPayload(demandLines.value, selected.value, quantities.value)
     if (linking.value && !payload.allocations.some(row => row.quantity > 0)) throw new Error('请填写大于 0 的本单份额，才会确认关联')
     await replaceOrderProduction(data.value.order_id, payload)
     showEditor.value = false
@@ -186,6 +204,7 @@ async function save() {
 
 <style scoped>
 small { color: #777; }
+.production-arrangement { scroll-margin-top: 16px; }
 .warning { color: #a46613; }
 .editor-line { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 16px 0; }
 .link-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 18px 0 12px; }

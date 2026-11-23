@@ -25,10 +25,13 @@ from .id_counter import IdCounter
 from .production_loss import ProductionLoss
 from .restock_request import RestockRequest
 from .production_allocation import ProductionAllocation
+from .material_production import OrderMaterialDemand, MaterialProductionAllocation
 from .production_creation import ProductionCreation
 from .order_fulfillment import OrderFulfillment, StockReservation, CustomerShipment, CustomerShipmentItem
 
 __all__ = [
+    "OrderMaterialDemand",
+    "MaterialProductionAllocation",
     "ProductionAllocation",
     "ProductionCreation",
     "PlatingReconciliation",

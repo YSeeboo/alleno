@@ -447,12 +447,14 @@ def api_delete_handcraft_part_order_link(order_id: str, item_id: int, link_id: i
 
 @router.get("/{order_id}/jewelries/{item_id}/orders")
 def api_get_handcraft_jewelry_orders(order_id: str, item_id: int, db: Session = Depends(get_db)):
-    """获取手工饰品项关联的订单列表"""
+    """获取真实产出的旧关联及商品／BOM 配件数量份额关联订单。"""
     from models.handcraft_order import HandcraftJewelryItem
+    from services.production_allocation import quantity_order_links
     hji = db.get(HandcraftJewelryItem, item_id)
     if hji is None or hji.handcraft_order_id != order_id:
         raise HTTPException(status_code=404, detail="饰品项不存在或不属于该手工单")
-    return get_links_for_production_item(db, handcraft_jewelry_item_id=item_id)
+    return (get_links_for_production_item(db, handcraft_jewelry_item_id=item_id)
+            + quantity_order_links(db, "handcraft", item_id))
 
 
 @router.delete("/{order_id}/jewelries/{item_id}/orders/{link_id}", status_code=204)

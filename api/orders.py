@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel as _BaseModel, Field as _Field
 
 from database import get_db
-from schemas.production_allocation import AllocationReplace, OrderHandcraftCreate
+from schemas.production_allocation import AllocationReplace, AllocationBatch, OrderHandcraftCreate
 from api.deps import require_permission
-from services.production_allocation import order_production, replace_order_source
+from services.production_allocation import order_production, replace_order_source, replace_order_sources
 from schemas.order import (
     OrderCreate, OrderResponse, OrderItemResponse, StatusUpdate,
     OrderTodoItemResponse, LinkCreateRequest, LinkResponse,
@@ -136,6 +136,12 @@ def api_replace_order_production(order_id: str, body: AllocationReplace, db: Ses
     with service_errors():
         return replace_order_source(db, order_id, body.source_type, body.source_item_id,
                                     body.revision, [row.model_dump() for row in body.allocations])
+
+
+@router.post("/{order_id}/production/batch", dependencies=[require_permission("handcraft")])
+def api_replace_order_production_batch(order_id: str, body: AllocationBatch, db: Session = Depends(get_db)):
+    with service_errors():
+        return replace_order_sources(db, order_id, [row.model_dump() for row in body.sources])
 
 
 @router.post("/{order_id}/items", response_model=OrderItemResponse, status_code=201)

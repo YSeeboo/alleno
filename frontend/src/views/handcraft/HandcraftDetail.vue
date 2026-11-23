@@ -21,7 +21,7 @@
 
     <!-- ── Status stepper ──────────────────────────────────── -->
     <ProductionArchiveNotice :order="order" />
-    <ProductionUses v-if="order" type="handcraft" :order-id="order.id" />
+    <ProductionUses v-if="order" :key="productionUsesVersion" type="handcraft" :order-id="order.id" />
     <div v-if="order" class="hc-stepper">
       <div class="hc-step" :class="stepClass('pending')">
         <span class="hc-step__dot">{{ order.status !== 'pending' ? '✓' : '1' }}</span>
@@ -450,27 +450,7 @@
     </n-modal>
 
     <!-- Batch Link Modal -->
-    <n-modal v-model:show="batchLinkModalVisible" preset="card" title="批量关联订单" :style="{ width: isMobile ? '95vw' : '500px' }">
-      <n-form :label-placement="isMobile ? 'top' : 'left'" label-width="80">
-        <n-form-item label="选择订单">
-          <n-select
-            v-model:value="batchLinkOrderId"
-            :options="orderOptions"
-            filterable
-            placeholder="搜索订单号或客户名"
-          />
-        </n-form-item>
-        <div style="color: #666; font-size: 13px; padding: 4px 0;">
-          将自动按配件编号匹配该订单配件清单中的行
-        </div>
-      </n-form>
-      <template #footer>
-        <n-space justify="end">
-          <n-button @click="batchLinkModalVisible = false">取消</n-button>
-          <n-button type="primary" :loading="batchLinkSubmitting" :disabled="!batchLinkOrderId" @click="doBatchLink">确认批量关联</n-button>
-        </n-space>
-      </template>
-    </n-modal>
+    <ProductionOrderLinkDialog v-if="batchLinkModalVisible" :production-order-id="String(route.params.id)" @close="batchLinkModalVisible = false" @saved="onProductionLinked" />
 
     <!-- Cutting stats modal -->
     <n-modal v-model:show="cuttingStatsVisible" preset="card" title="裁剪统计" :style="{ width: isMobile ? '95vw' : '720px' }">
@@ -609,6 +589,7 @@
 <script setup>
 import BatchAddDialog from '@/components/BatchAddDialog.vue'
 import ProductionUses from '@/components/ProductionUses.vue'
+import ProductionOrderLinkDialog from '@/components/fulfillment/ProductionOrderLinkDialog.vue'
 import ProductionArchiveNotice from '@/components/ProductionArchiveNotice.vue'
 import { ref, reactive, computed, onMounted, h, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -648,7 +629,7 @@ import {
 } from '@/api/restock'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { listJewelries } from '@/api/jewelries'
-import { listOrders, getTodo, createLink, batchLink } from '@/api/orders'
+import { listOrders, getTodo, createLink } from '@/api/orders'
 import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 import HandcraftPickingSimulationModal from '@/components/picking/HandcraftPickingSimulationModal.vue'
@@ -1634,8 +1615,7 @@ const jewelryLinkOrderId = ref(null)
 const jewelryLinkSubmitting = ref(false)
 
 const batchLinkModalVisible = ref(false)
-const batchLinkOrderId = ref(null)
-const batchLinkSubmitting = ref(false)
+const productionUsesVersion = ref(0)
 
 const loadOrderOptions = async () => {
   try {
@@ -1742,32 +1722,14 @@ const doCreateJewelryLink = async () => {
 }
 
 const openBatchLinkModal = () => {
-  batchLinkOrderId.value = null
   batchLinkModalVisible.value = true
-  loadOrderOptions()
 }
 
-const doBatchLink = async () => {
-  if (!batchLinkOrderId.value) return
-  batchLinkSubmitting.value = true
-  try {
-    const allItemIds = items.value.map((i) => i.id)
-    const { data } = await batchLink(batchLinkOrderId.value, {
-      order_id: batchLinkOrderId.value,
-      handcraft_part_item_ids: allItemIds,
-    })
-    const msg = [`成功关联 ${data.linked} 项`]
-    if (data.skipped.length > 0) {
-      msg.push(`跳过: ${data.skipped.join(', ')}`)
-    }
-    message.success(msg.join('，'))
-    batchLinkModalVisible.value = false
-    await loadPartItemOrderLinks()
-  } catch (e) {
-    message.error(e.response?.data?.detail || '批量关联失败')
-  } finally {
-    batchLinkSubmitting.value = false
-  }
+const onProductionLinked = async () => {
+  batchLinkModalVisible.value = false
+  productionUsesVersion.value += 1
+  message.success('产出份额已关联订单并同步客户分拣，未改变库存或实收')
+  await Promise.all([loadJewelries(), loadBreakdown(), loadJewelryItemOrderLinks()])
 }
 
 const doUnlinkPartItem = (itemId, link) => {
@@ -1827,8 +1789,8 @@ const renderPartOrderLinkCell = (row) => {
 
 const renderJewelryOrderLinkCell = (row) => {
   const links = jewelryItemOrderLinks.value[row.id] || []
-  if (order.value?.archived_at) return links.map((link) => link.order_id).join('、') || '—'
   if (links.length === 0) {
+    if (order.value?.archived_at) return '—'
     return h(NButton, {
       size: 'small', text: true, type: 'primary',
       onClick: () => openJewelryLinkModal(row),
@@ -1838,13 +1800,17 @@ const renderJewelryOrderLinkCell = (row) => {
     ...links.map((link) => h('span', {
       style: 'display: inline-flex; align-items: center; gap: 2px; background: #f0f9eb; border: 1px solid #c2e7b0; border-radius: 4px; padding: 1px 6px; font-size: 12px;',
     }, [
-      h('span', null, link.order_id),
       h(NButton, {
+        size: 'small', text: true, type: 'primary',
+        onClick: () => router.push({ path: `/orders/${encodeURIComponent(link.order_id)}/production`, hash: '#handcraft-production' }),
+      }, { default: () => link.order_id }),
+      !order.value?.archived_at && !link.quantity_managed && link.link_id != null ? h(NButton, {
         size: 'tiny', quaternary: true, type: 'error', style: 'padding: 0 2px;',
         onClick: () => doUnlinkJewelryItem(row.id, link),
-      }, { default: () => '×' }),
+      }, { default: () => '×' }) : null,
     ])),
-    h(NButton, { size: 'tiny', text: true, type: 'primary', onClick: () => openJewelryLinkModal(row) }, { default: () => '+' }),
+    !order.value?.archived_at && !links.some(link => link.quantity_managed)
+      ? h(NButton, { size: 'tiny', text: true, type: 'primary', onClick: () => openJewelryLinkModal(row) }, { default: () => '+' }) : null,
   ])
 }
 

@@ -10,8 +10,8 @@ const { descriptor } = parse(pageSource)
 const script = compileScript(descriptor, { id: 'production-association' })
 const moduleUrl = code => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
 const Production = (await import(moduleUrl(script.content
-  .replace(/from ['"]vue['"]/g, `from ${JSON.stringify(moduleUrl(`export { ref, computed, nextTick } from ${JSON.stringify(import.meta.resolve('vue'))}; export const watch = () => {};`))}`)
-  .replace(/import \{ useRoute, useRouter \} from ['"]vue-router['"]/, "const useRoute = () => ({ params: { id: 'OR-A' } }), useRouter = () => ({ push() {} })")
+  .replace(/from ['"]vue['"]/g, `from ${JSON.stringify(moduleUrl(`export { ref, computed, nextTick } from ${JSON.stringify(import.meta.resolve('vue'))}; export const watch = (...args) => globalThis.__association.watches.push(args);`))}`)
+  .replace(/import \{ useRoute, useRouter \} from ['"]vue-router['"]/, "const useRoute = () => globalThis.__association.route, useRouter = () => ({ push() {} })")
   .replace(/import \{ ([^}]+) \} from ['"]naive-ui['"]/g, (_, names) => `const ${names.split(',').map(n => `${n.trim()} = ${n.trim() === 'useMessage' ? '() => ({ success() {} })' : '{}'}`).join(', ')}`)
   .replace(/import (\w+) from ['"][^'"]+\.vue['"]/g, 'const $1 = {}')
   .replace(/import \{ useAuthStore \} from ['"]@\/stores\/auth['"]/, 'const useAuthStore = () => ({ hasPermission: () => true })')
@@ -21,13 +21,13 @@ const Production = (await import(moduleUrl(script.content
 
 function setup(sources = [source()], api = {}) {
   const calls = [], data = { order_id: 'OR-A', editable: true, lines: structuredClone(lines), sources }
-  globalThis.__association = { api: {
+  globalThis.__association = { route: { params: { id: 'OR-A' }, hash: '' }, watches: [], api: {
     getOrderProduction: async () => ({ data }), getOrder: async () => ({ data: { id: 'OR-A' } }),
     replaceOrderProduction: async (...args) => { calls.push(args) }, ...api,
   } }
   const ctx = Production.setup({}, { expose() {} })
   ctx.data.value = data
-  return { ctx, calls }
+  return { ctx, calls, state: globalThis.__association }
 }
 
 const source = overrides => ({
@@ -39,6 +39,55 @@ const lines = [
   { id: 10, product_type: 'jewelry', product_id: 'SP-1', quantity: 30, allocated: 0 },
   { id: 11, product_type: 'jewelry', product_id: 'SP-1', quantity: 20, allocated: 0 },
 ]
+
+test('production deep links wait for loaded content, then scroll and focus the requested section', async () => {
+  const { ctx, state } = setup()
+  const actions = [], previous = globalThis.document
+  globalThis.document = { getElementById: id => {
+    actions.push(['find', id])
+    return { scrollIntoView: options => actions.push(['scroll', options]), focus: options => actions.push(['focus', options]) }
+  } }
+  try {
+    state.route.hash = '#handcraft-production'
+    ctx.loading.value = true
+    await ctx.scrollToProductionSection()
+    assert.deepEqual(actions, [])
+    ctx.loading.value = false
+    await ctx.scrollToProductionSection()
+    assert.deepEqual(actions, [['find', 'handcraft-production'], ['scroll', { block: 'start', behavior: 'auto' }], ['focus', { preventScroll: true }]])
+    const watcher = state.watches.find(([sources]) => Array.isArray(sources))
+    assert.equal(watcher[1], ctx.scrollToProductionSection)
+    assert.equal(watcher[2].flush, 'post')
+    assert.match(pageSource, /:id="`\$\{type\}-production`" tabindex="-1"/)
+    actions.length = 0
+    state.route.hash = '#plating-production'
+    await ctx.scrollToProductionSection()
+    assert.equal(actions[0][1], 'plating-production')
+  } finally { globalThis.document = previous }
+})
+
+test('failed, stale, unknown, or superseded deep links never scroll the wrong order', async () => {
+  const { ctx, state } = setup()
+  const actions = [], previous = globalThis.document
+  globalThis.document = { getElementById: id => { actions.push(id); return null } }
+  try {
+    for (const hash of ['', '#unknown', '#handcraft-production,body']) {
+      state.route.hash = hash
+      await ctx.scrollToProductionSection()
+    }
+    state.route.hash = '#handcraft-production'
+    ctx.loadError.value = 'offline'
+    await ctx.scrollToProductionSection()
+    ctx.loadError.value = ''
+    const pending = ctx.scrollToProductionSection()
+    state.route.params.id = 'OR-B'
+    await pending
+    await ctx.scrollToProductionSection() // OR-A data cannot scroll OR-B.
+    ctx.data.value = null
+    await ctx.scrollToProductionSection()
+    assert.deepEqual(actions, [])
+  } finally { globalThis.document = previous }
+})
 
 test('the main handcraft table includes confirmed shares and exact historical links only', () => {
   const rows = [source({ source_item_id: 1 }),
@@ -271,4 +320,34 @@ test('changing list filters preserves an explicit selected draft without creatin
   assert.equal(ctx.selected.value.source_item_id, 1)
   assert.deepEqual(ctx.quantities.value, { 10: 5, 11: 7 })
   assert.deepEqual(calls, [])
+})
+
+test('BOM-only handcraft candidates link exact parent demands and appear in the main list only after confirmation', async () => {
+  const { ctx, calls } = setup([source({ product_type: 'part', product_id: 'A' })])
+  ctx.data.value.materials = [{ id: 'material:10:A', order_item_id: 10, material_part_id: 'A', demand_revision: 'd'.repeat(64),
+    product_type: 'part', product_id: 'A', quantity: 60, allocated: 0 }]
+  assert.equal(ctx.visibleSources('handcraft').length, 0)
+  assert.equal(ctx.linkSources.value.length, 1)
+  ctx.openLinker(); ctx.selectLinkOutput(1)
+  assert.deepEqual(ctx.quantities.value, { 'material:10:A': 40 })
+  await ctx.save()
+  assert.deepEqual(calls[0][1].allocations, [{ order_item_id: 10, material_part_id: 'A', demand_revision: 'd'.repeat(64), quantity: 40 }])
+  ctx.data.value.sources[0].allocations = [{ order_id: 'OR-A', order_item_id: 10, material_part_id: 'A', quantity: 40 }]
+  assert.equal(ctx.visibleSources('handcraft').length, 1)
+  assert.equal(ctx.data.value.lines[0].allocated, 0)
+})
+
+test('editing a source shared by direct orders and BOM demands sends both purposes and supports releasing obsolete BOM shares', async () => {
+  const { ctx, calls } = setup([source({ product_type: 'part', product_id: 'A', allocations: [
+    { order_id: 'OR-A', order_item_id: 10, quantity: 3 },
+    { order_id: 'OR-A', order_item_id: 11, material_part_id: 'A', quantity: 7 },
+  ] })])
+  ctx.data.value.lines = [{ id: 10, product_type: 'part', product_id: 'A', quantity: 5, allocated: 3 }]
+  ctx.data.value.materials = [{ id: 'material:11:A', order_item_id: 11, material_part_id: 'A', demand_revision: 'd'.repeat(64),
+    product_type: 'part', product_id: 'A', quantity: 0, allocated: 7, demand_changed: true }]
+  ctx.edit(ctx.data.value.sources[0])
+  assert.deepEqual(ctx.quantities.value, { 10: 3, 'material:11:A': 7 })
+  ctx.quantities.value['material:11:A'] = 0
+  await ctx.save()
+  assert.deepEqual(calls[0][1].allocations.map(row => [row.order_item_id, row.material_part_id, row.quantity]), [[10, undefined, 3], [11, 'A', 0]])
 })

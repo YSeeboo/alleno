@@ -229,6 +229,7 @@ class HandcraftJewelryBreakdownEntry(BaseModel):
     source_order_id: Optional[str] = None
     source_order_item_id: Optional[int] = None
     source_allocation_id: Optional[int] = None
+    source_purpose: Optional[Literal["product", "material"]] = None
     is_locked: bool
     quantity_managed: bool = False
     is_quantity_remainder: bool = False
