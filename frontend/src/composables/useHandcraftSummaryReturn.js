@@ -11,7 +11,7 @@ export function useHandcraftSummaryReturn() {
     router.back()
   }
   function openCreated(path) {
-    return router.push(summaryReturn.value ? { path, query: { from: 'handcraft-summary' } } : path)
+    return router.push(summaryReturn.value ? { path, query: { from: route.query.from } } : path)
   }
   return { summaryReturn, goBack, openCreated }
 }

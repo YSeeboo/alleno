@@ -64,10 +64,14 @@ import {
   NEmpty, NModal, NForm, NFormItem, NSpace,
 } from 'naive-ui'
 import { listSuppliers, createSupplier, updateSupplier, deleteSupplier } from '@/api/suppliers'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { handcraftOutputLocation } from '@/utils/handcraftOutput'
 
 const message = useMessage()
 const dialog = useDialog()
 const { isMobile } = useIsMobile()
+const router = useRouter(), auth = useAuthStore()
 
 const tabs = [
   { label: '电镀厂', value: 'plating' },
@@ -110,8 +114,9 @@ const columns = [
   { title: '商家名称', key: 'name' },
   { title: '创建时间', key: 'created_at', width: 180, render: (row) => fmt(row.created_at) },
   {
-    title: '操作', key: 'actions', width: 140,
+    title: '操作', key: 'actions', width: 210,
     render: (row) => h(NSpace, { size: 'small' }, () => [
+      row.type === 'handcraft' && auth.hasPermission('handcraft') ? h(NButton, { size: 'small', text: true, type: 'primary', onClick: () => router.push(handcraftOutputLocation({ suppliers: [row.name], archive: 'all' })) }, () => '查看产出') : null,
       h(NButton, { size: 'small', text: true, type: 'primary', onClick: () => openEdit(row) }, () => '编辑'),
       h(NButton, { size: 'small', text: true, type: 'error', onClick: () => confirmDelete(row) }, () => '删除'),
     ]),

@@ -10,6 +10,7 @@ export function createHandcraftRoutes(loadComponent, homeLocation = getHandcraft
       children: [
         { path: '', redirect: () => homeLocation() },
         { path: '/handcraft-summary', component: loadComponent(() => import('@/views/handcraft/HandcraftSummary.vue')), props: { embedded: true } },
+        { path: '/handcraft-output', component: loadComponent(() => import('@/views/handcraft/HandcraftOutput.vue')), props: { embedded: true } },
         { path: '/handcraft', component: loadComponent(() => import('@/views/handcraft/HandcraftList.vue')), props: { embedded: true } },
         { path: '/handcraft-receipts', component: loadComponent(() => import('@/views/handcraft-receipts/HandcraftReceiptList.vue')), props: { embedded: true } },
       ],

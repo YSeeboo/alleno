@@ -80,6 +80,9 @@ class HandcraftJewelryItem(Base):
     # Manual customer attribution. From-order rows leave this NULL and
     # derive the customer name via OrderItemLink → Order.customer_name.
     customer_name = Column(String, nullable=True)
+    # Recorded only by new dispatch/processing-append operations. NULL means
+    # legacy history, NOT the order's creation time; never backfill by guessing.
+    dispatched_at = Column(DateTime, nullable=True)
 
 
 class HandcraftPickingRecord(Base):

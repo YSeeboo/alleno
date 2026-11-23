@@ -8,6 +8,7 @@
         <div class="title-l">
           <h1 class="page-title">{{ part.name }}</h1>
           <span class="id-chip">{{ part.id }}</span>
+          <n-button v-if="auth.hasPermission('handcraft')" text type="primary" size="small" @click="router.push(handcraftOutputLocation({ outputs: [`part:${part.id}`], view: 'product', archive: 'all' }))">查看手工产出 ↗</n-button>
           <span v-if="part.category" class="cat-tag">{{ part.category }}</span>
           <span class="root-tag" :class="{ 'variant-tag': part.parent_part_id }">
             {{ part.parent_part_id ? '变体' : '根件' }}
@@ -408,6 +409,8 @@
 <script setup>
 import { ref, reactive, computed, h, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { handcraftOutputLocation } from '@/utils/handcraftOutput'
 import { useMessage } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
 import {
@@ -425,6 +428,7 @@ import ImageUploadModal from '@/components/ImageUploadModal.vue'
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
 const message = useMessage()
 const { isMobile } = useIsMobile()
 

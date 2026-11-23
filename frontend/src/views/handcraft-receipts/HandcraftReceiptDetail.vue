@@ -1,7 +1,7 @@
 <template>
   <div>
     <n-space align="center" style="margin-bottom: 16px;">
-      <n-button text @click="goBack">← {{ summaryReturn ? '返回汇总' : '返回' }}</n-button>
+      <n-button text @click="goBack">← {{ summaryReturn?.path === '/handcraft-output' ? '返回产出总览' : summaryReturn ? '返回汇总' : '返回' }}</n-button>
       <n-h2 style="margin: 0;">回收单详情</n-h2>
     </n-space>
 

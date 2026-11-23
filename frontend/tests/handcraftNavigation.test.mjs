@@ -15,8 +15,8 @@ function memoryStorage() {
 }
 function storage() { return { preferences: memoryStorage(), session: memoryStorage() } }
 
-test('summary precedes the two legacy list URLs', () => {
-  assert.deepEqual(HANDCRAFT_TABS.map((tab) => tab.path), ['/handcraft-summary', '/handcraft', '/handcraft-receipts'])
+test('summary and output overview precede the two legacy list URLs', () => {
+  assert.deepEqual(HANDCRAFT_TABS.map((tab) => tab.path), ['/handcraft-summary', '/handcraft-output', '/handcraft', '/handcraft-receipts'])
   assert.equal(getHandcraftTab('/handcraft-summary').key, 'summary')
   assert.equal(getHandcraftTab('/handcraft/').key, 'dispatch')
   assert.equal(getHandcraftTab('/handcraft-receipts').key, 'receipt')
@@ -111,7 +111,7 @@ function testRouter(stores = storage()) {
 
 test('real route records share the shell only for lists, inherit permissions and keep standalone forms/details', () => {
   const router = testRouter()
-  for (const path of ['/handcraft-summary', '/handcraft', '/handcraft-receipts']) {
+  for (const path of ['/handcraft-summary', '/handcraft-output', '/handcraft', '/handcraft-receipts']) {
     const route = router.resolve(path)
     assert.equal(route.meta.perm, 'handcraft')
     assert.equal(route.matched.length, 3)

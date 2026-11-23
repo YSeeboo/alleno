@@ -365,8 +365,10 @@ def send_handcraft_order(db: Session, handcraft_order_id: str) -> HandcraftOrder
         raise
     for pi in part_items:
         pi.status = "制作中"
+    dispatched_at = now_beijing()
     for ji in jewelry_items:
         ji.status = "制作中"
+        ji.dispatched_at = dispatched_at
     order.status = "processing"
     db.flush()
     return order
@@ -1119,6 +1121,7 @@ def add_handcraft_jewelry(db: Session, order_id: str, item: dict) -> HandcraftJe
         unit=item.get("unit") or default_unit,
         note=item.get("note"),
         customer_name=customer_name,
+        dispatched_at=now_beijing() if order.status == "processing" else None,
     )
     db.add(new_item)
     # Match the create page: a new production output needs its direct BOM

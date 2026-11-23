@@ -12,6 +12,7 @@ export function useHandcraftPageQuery(key) {
     if (!active.value) return
     const next = { ...query.value, ...patch }
     if (key === 'summary' && resetPage) delete next[next.tab === 'in' ? 'in_page' : 'page']
+    if (key === 'output' && resetPage) delete next.page
     return router.replace({ path: route.path, query: normalizeHandcraftQuery(key, next) })
   }
 

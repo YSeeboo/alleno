@@ -1,5 +1,8 @@
+import { normalizeOutputQuery } from './handcraftOutput.js'
+
 export const HANDCRAFT_TABS = [
   { key: 'summary', path: '/handcraft-summary', label: '手工汇总' },
+  { key: 'output', path: '/handcraft-output', label: '产出总览' },
   { key: 'dispatch', path: '/handcraft', label: '手工发出' },
   { key: 'receipt', path: '/handcraft-receipts', label: '手工回收' },
 ]
@@ -22,6 +25,7 @@ export function isHandcraftRoute(path) {
 export function normalizeHandcraftQuery(key, query = {}) {
   if (!HANDCRAFT_TABS.some((tab) => tab.key === key) || !query || typeof query !== 'object') return {}
   const result = {}
+  if (key === 'output') return normalizeOutputQuery(query)
   if (key === 'summary') {
     if (query.tab === 'in') result.tab = 'in'
     for (const prefix of ['', 'in_']) {
@@ -105,5 +109,6 @@ export function rememberHandcraftSummaryReturn(query, storage = {}) {
 }
 
 export function getHandcraftSummaryReturn(query, storage = {}) {
+  if (query?.from === 'handcraft-output') return getHandcraftLocation('output', storage)
   return query?.from === 'handcraft-summary' ? getHandcraftLocation('summary', storage) : null
 }

@@ -1,7 +1,7 @@
 <template>
   <div>
     <!-- ── Page header ─────────────────────────────────────── -->
-    <n-button text size="small" class="page-back" @click="goBack">← {{ summaryReturn ? '返回汇总' : '返回' }}</n-button>
+    <n-button text size="small" class="page-back" @click="goBack">← {{ summaryReturn?.path === '/handcraft-output' ? '返回产出总览' : summaryReturn ? '返回汇总' : '返回' }}</n-button>
     <div class="page-breadcrumb">生产 / 手工单 / {{ order?.id || '…' }}</div>
 
     <div class="hc-head">

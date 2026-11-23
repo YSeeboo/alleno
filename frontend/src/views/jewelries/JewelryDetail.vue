@@ -9,7 +9,7 @@
         </div>
         <div v-if="jewelry" class="jd-subtitle"><span class="jd-code">{{ jewelry.id }}</span><button class="jd-copy" aria-label="复制饰品编号" title="复制编号" @click="copyId">⧉</button><span>饰品详情</span></div>
       </div>
-      <n-button text size="small" @click="router.push('/jewelries')">← 返回饰品列表</n-button>
+      <div><n-button v-if="jewelry && auth.hasPermission('handcraft')" text type="primary" size="small" @click="router.push(handcraftOutputLocation({ outputs: [`jewelry:${jewelry.id}`], view: 'product', archive: 'all' }))">查看手工产出 ↗</n-button><n-button text size="small" @click="router.push('/jewelries')">← 返回饰品列表</n-button></div>
     </header>
 
     <n-spin :show="loading">
@@ -122,6 +122,7 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vu
 import { NAlert, NButton, NCheckbox, NDataTable, NEmpty, NForm, NFormItem, NImage, NInput, NInputNumber, NModal, NPopconfirm, NSelect, NSpace, NSpin, useDialog, useMessage } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useAuthStore } from '@/stores/auth'
+import { handcraftOutputLocation } from '@/utils/handcraftOutput'
 import { getJewelry, updateJewelry, updateJewelryStatus } from '@/api/jewelries'
 import { getBom, setBom, deleteBom } from '@/api/bom'
 import { getStock, getStockLog } from '@/api/inventory'

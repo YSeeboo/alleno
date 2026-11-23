@@ -5,7 +5,7 @@
       <div class="hm-heading">
         <div>
           <h1>手工管理</h1>
-          <p>汇总、发出与回收，在同一个入口切换。</p>
+          <p>汇总、产出、发出与回收，在同一个入口切换。</p>
         </div>
         <span class="hm-memory"><n-icon :component="TimeOutline" />自动记住上次打开的页面</span>
       </div>
@@ -41,7 +41,7 @@ const route = useRoute()
 const router = useRouter()
 const tabList = ref(null)
 const activeTab = computed(() => getHandcraftTab(route.path) || HANDCRAFT_TABS[0])
-const tabIcons = { summary: BarChartOutline, dispatch: PaperPlaneOutline, receipt: DownloadOutline }
+const tabIcons = { summary: BarChartOutline, output: BarChartOutline, dispatch: PaperPlaneOutline, receipt: DownloadOutline }
 
 async function revealActiveTab() {
   await nextTick()
