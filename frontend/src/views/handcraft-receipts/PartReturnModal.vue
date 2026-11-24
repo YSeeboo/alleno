@@ -1,260 +1,78 @@
 <template>
-  <!-- Desktop: n-modal card -->
-  <n-modal
-    v-if="!isMobile"
-    :show="show"
-    preset="card"
-    :title="null"
-    :style="{ width: '620px', maxHeight: '90vh' }"
-    :mask-closable="false"
-    @update:show="emit('update:show', $event)"
-  >
-    <!-- Header -->
-    <template #header>
-      <div>
-        <div style="font-size: 16px; font-weight: 600; margin-bottom: 3px;">配件回收</div>
-        <div style="font-size: 12px; color: #9ca3af; font-weight: 400;">含已结清来源，填写实际回收数量，允许超收</div>
-      </div>
-    </template>
-
-    <!-- Filter -->
-    <div style="margin-bottom: 12px;">
-      <n-input
-        v-model:value="filterText"
-        placeholder="配件名称 / 编号筛选"
-        clearable
-        style="width: 100%;"
-      >
-        <template #prefix>
-          <span style="color: #9ca3af;">🔍</span>
-        </template>
-      </n-input>
-    </div>
-
-    <!-- Part rows -->
-    <div style="overflow-y: auto; max-height: 380px;">
-      <div
-        v-for="part in filteredParts"
-        :key="part.id"
-        style="display: flex; align-items: center; gap: 11px; padding: 10px 0; border-bottom: 1px solid #f0f1f3;"
-      >
-        <n-checkbox
-          :checked="isSelected(part)"
-          @update:checked="(v) => togglePart(part, v)"
-        />
-        <n-image
-          :src="part.item_image || ''"
-          width="38"
-          height="38"
-          object-fit="cover"
-          style="border-radius: 7px; flex: none; background: linear-gradient(135deg, #f3d9b1, #d9a441); cursor: zoom-in;"
-          :fallback-src="''"
-          :preview-disabled="!part.item_image"
-        />
-        <div style="flex: 1; min-width: 0;">
-          <div style="font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ part.item_name }}</div>
-          <div style="font-size: 11px; color: #9ca3af;">{{ part.item_id }}<span v-if="part.color"> · {{ part.color }}</span></div>
+  <n-modal :show="show" preset="card" title="配件退料" :style="modalStyle" :content-style="{ overflow: 'auto', minHeight: '0', flex: '1' }" :mask-closable="false" @update:show="onCancel">
+    <p class="return-hint">未用完的材料单独退回，不计手工费。含已结清来源，按实际数量退料，允许超收。</p>
+    <n-input v-model:value="filterText" clearable placeholder="配件名称 / 编号 / 手工单筛选" :input-props="{ 'aria-label': '搜索退料来源' }" />
+    <div class="return-list">
+      <article v-for="part in filteredParts" :key="part.id" class="return-source" :class="{ 'is-selected': isSelected(part) }">
+        <div class="return-product">
+          <n-checkbox :checked="isSelected(part)" :aria-label="`选择退料 ${part.item_name} ${part.handcraft_order_id} ${part.id}`" @update:checked="v => togglePart(part, v)" />
+          <n-image v-if="part.item_image" :src="part.item_image" :alt="part.item_name" :width="38" :height="38" object-fit="cover" />
+          <div class="return-copy"><strong>{{ part.item_name }}</strong><small>{{ part.item_id }}<span v-if="part.color"> · {{ part.color }}</span></small><small>{{ part.handcraft_order_id }} · 单据 {{ part.created_at?.slice(0, 10) || '—' }}</small></div>
+          <div class="return-balance"><small>尚未退回</small><span>{{ getRemaining(part) }} {{ part.unit || '个' }}</span></div>
         </div>
-        <span style="font-size: 12px; color: #6b7280; width: 74px; text-align: right; flex: none;">
-          剩余 {{ getRemaining(part) }}
-        </span>
-        <n-input-number
-          :value="localSel[String(part.id)] ?? null"
-          :min="0.0001"
-          :precision="4"
-          :step="1"
-          size="small"
-          style="width: 110px; flex: none;"
-          :disabled="!isSelected(part)"
-          @update:value="(v) => setQty(part, v)"
-        />
-      </div>
-      <n-empty
-        v-if="filteredParts.length === 0"
-        description="无配件"
-        style="padding: 24px 0;"
-      />
+        <div v-if="isSelected(part)" class="return-entry"><label :for="`return-qty-${part.id}`">本次退料</label><n-input-number :value="localSel[String(part.id)] ?? null" :min="0.0001" :precision="4" :step="1" :show-button="false" placeholder="实际数量" :input-props="{ id: `return-qty-${part.id}`, 'aria-label': `退料 ${part.id} 本次数量` }" @update:value="v => setQty(part, v)" /><span>{{ part.unit || '个' }}</span><small v-if="localSel[String(part.id)] > remainingQuantity(part)" class="return-over">超出未退 {{ Number((localSel[String(part.id)] - remainingQuantity(part)).toFixed(4)) }} · 允许实际超收</small></div>
+      </article>
+      <n-empty v-if="!filteredParts.length" description="没有符合条件的退料来源" class="return-empty" />
     </div>
-
-    <!-- Footer -->
-    <template #footer>
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <span style="font-size: 12px; color: #9ca3af;">已选 {{ selectedCount }} 项</span>
-        <div style="flex: 1;" />
-        <n-button @click="onCancel">取消</n-button>
-        <n-button type="primary" @click="onConfirm">确定（{{ selectedCount }}）</n-button>
-      </div>
-    </template>
+    <p class="return-hint">筛选不清空已选退料；取消不修改主单。未退数为包含实收与已确认损耗的来源结清余额。</p>
+    <template #footer><div class="return-footer"><span>已选 {{ selectedCount }} 项 · 不计费</span><n-button @click="onCancel">取消</n-button><n-button type="primary" @click="onConfirm">确定（{{ selectedCount }}）</n-button></div></template>
   </n-modal>
-
-  <!-- Mobile: bottom sheet -->
-  <teleport v-else to="body">
-    <transition name="sheet-fade">
-      <div
-        v-if="show"
-        style="position: fixed; inset: 0; background: rgba(17,17,17,0.4); z-index: 2000; display: flex; align-items: flex-end;"
-        @click.self="onCancel"
-      >
-        <div style="width: 100%; height: 86%; background: #fff; border-radius: 18px 18px 0 0; display: flex; flex-direction: column; overflow: hidden;">
-          <!-- grab bar -->
-          <div style="width: 38px; height: 4px; background: #dcdfe4; border-radius: 2px; margin: 9px auto 4px;" />
-          <!-- header -->
-          <div style="padding: 4px 16px 12px; border-bottom: 1px solid #f0f1f3;">
-            <div style="font-size: 16px; font-weight: 600; margin-bottom: 3px;">配件回收</div>
-            <div style="font-size: 12px; color: #9ca3af;">含已结清来源，填写实际回收数量，允许超收</div>
-            <n-input
-              v-model:value="filterText"
-              placeholder="配件名称 / 编号筛选"
-              clearable
-              style="width: 100%; margin-top: 10px;"
-            >
-              <template #prefix>
-                <span style="color: #9ca3af;">🔍</span>
-              </template>
-            </n-input>
-          </div>
-          <!-- body -->
-          <div style="flex: 1; overflow-y: auto; padding: 0 16px;">
-            <div
-              v-for="part in filteredParts"
-              :key="part.id"
-              :style="{
-                border: '1px solid ' + (isSelected(part) ? '#c7cbf5' : '#e5e7eb'),
-                background: isSelected(part) ? '#f3f4fe' : '#fff',
-                borderRadius: '9px',
-                padding: '11px',
-                marginTop: '10px',
-              }"
-            >
-              <div style="display: flex; align-items: center; gap: 10px;">
-                <n-checkbox
-                  :checked="isSelected(part)"
-                  @update:checked="(v) => togglePart(part, v)"
-                />
-                <n-image
-                  :src="part.item_image || ''"
-                  width="38"
-                  height="38"
-                  object-fit="cover"
-                  style="border-radius: 7px; flex: none; background: linear-gradient(135deg, #f3d9b1, #d9a441);"
-                  :fallback-src="''"
-                  :preview-disabled="!part.item_image"
-                />
-                <div style="flex: 1; min-width: 0;">
-                  <div style="font-size: 13.5px; font-weight: 500;">{{ part.item_name }}</div>
-                  <div style="font-size: 11px; color: #9ca3af;">{{ part.item_id }}<span v-if="part.color"> · {{ part.color }}</span> · 剩余 {{ getRemaining(part) }}</div>
-                </div>
-              </div>
-              <div v-if="isSelected(part)" style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e5e7eb;">
-                <div style="font-size: 11px; color: #9ca3af; margin-bottom: 3px;">回收数量</div>
-                <n-input-number
-                  :value="localSel[String(part.id)] ?? null"
-                  :min="0.0001"
-                  :precision="4"
-                  :step="1"
-                  style="width: 100%;"
-                  @update:value="(v) => setQty(part, v)"
-                />
-              </div>
-            </div>
-            <n-empty
-              v-if="filteredParts.length === 0"
-              description="无配件"
-              style="padding: 24px 0;"
-            />
-          </div>
-          <!-- footer -->
-          <div style="padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid #f0f1f3; display: flex; gap: 10px;">
-            <n-button style="flex: 1; height: 44px; border-radius: 10px;" @click="onCancel">取消</n-button>
-            <n-button type="primary" style="flex: 1.4; height: 44px; border-radius: 10px;" @click="onConfirm">确定（{{ selectedCount }}）</n-button>
-          </div>
-        </div>
-      </div>
-    </transition>
-  </teleport>
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import {
-  NModal, NInput, NInputNumber, NCheckbox, NImage, NButton, NEmpty, useMessage,
-} from 'naive-ui'
+import { NModal, NInput, NInputNumber, NCheckbox, NImage, NButton, NEmpty, useMessage } from 'naive-ui'
 import { sourceBalance, remainingQuantity } from '@/utils/receiptQuantity'
 
 const message = useMessage()
-
 const props = defineProps({
   show: { type: Boolean, required: true },
   parts: { type: Array, default: () => [] },
   selections: { type: Object, default: () => ({}) },
   isMobile: { type: Boolean, default: false },
 })
-
 const emit = defineEmits(['update:show', 'confirm', 'cancel'])
-
 const filterText = ref('')
-
-// Local selection: {String(partId): qty}
+// Independent draft: cancelling must never mutate the receipt selections.
 const localSel = ref({})
-
-// Initialize localSel from selections whenever modal opens
-watch(() => props.show, (val) => {
+watch(() => props.show, val => {
   if (val) {
     filterText.value = ''
-    // Deep copy from props.selections
-    localSel.value = {}
-    for (const [k, v] of Object.entries(props.selections)) {
-      if (v > 0) localSel.value[String(k)] = v
-    }
+    localSel.value = { ...props.selections }
   }
-})
-
+}, { immediate: true })
+const modalStyle = computed(() => ({ width: '640px', maxWidth: 'calc(100vw - 24px)', maxHeight: props.isMobile ? '86dvh' : '90dvh', display: 'flex', flexDirection: 'column' }))
 const getRemaining = sourceBalance
-const isSelected = (part) => Object.hasOwn(localSel.value, String(part.id))
-
+const isSelected = part => Object.hasOwn(localSel.value, String(part.id))
 const filteredParts = computed(() => {
-  const q = filterText.value.trim().toLowerCase()
-  if (!q) return props.parts
-  return props.parts.filter(
-    (p) => (p.item_name || '').toLowerCase().includes(q) || (p.item_id || '').toLowerCase().includes(q),
-  )
+  const tokens = filterText.value.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  return props.parts.filter(part => tokens.every(token => [part.item_name, part.item_id, part.handcraft_order_id, part.color].some(value => String(value || '').toLowerCase().includes(token))))
 })
-
 const selectedCount = computed(() => Object.keys(localSel.value).length)
-
 const togglePart = (part, checked) => {
   const key = String(part.id)
-  if (checked) {
-    // A settled source needs an explicit actual quantity, not an invented one.
-    localSel.value[key] = remainingQuantity(part) || null
-  } else {
-    delete localSel.value[key]
-  }
+  if (checked) localSel.value[key] = remainingQuantity(part) || null
+  else delete localSel.value[key]
 }
-
 const setQty = (part, v) => {
   const key = String(part.id)
-  if (v != null && v > 0) {
-    localSel.value[key] = v
-  } else if (isSelected(part)) {
-    // Keep the row checked while its quantity is incomplete.
-    localSel.value[key] = v
-  }
+  if (isSelected(part)) localSel.value[key] = v
 }
-
 const onConfirm = () => {
-  if (Object.values(localSel.value).some((v) => !Number.isFinite(v) || v <= 0)) {
+  if (Object.values(localSel.value).some(v => !Number.isFinite(v) || v <= 0)) {
     message.warning('请为每项已选配件填写大于 0 的实际回收数量')
     return
   }
-  const result = {}
-  for (const [k, v] of Object.entries(localSel.value)) {
-    if (v != null && v > 0) result[k] = v
+  if (Object.values(localSel.value).some(v => Math.abs(v * 10000 - Math.round(v * 10000)) > 0.000001)) {
+    message.warning('退料数量最多保留 4 位小数')
+    return
   }
-  emit('confirm', result)
-  emit('update:show', false)
+  if (Object.keys(localSel.value).some(key => !props.parts.some(part => String(part.id) === key))) {
+    message.warning('部分退料来源已不可用，请取消后刷新来源并移除失效退料')
+    return
+  }
+  emit('confirm', { ...localSel.value })
 }
-
 const onCancel = () => {
   emit('cancel')
   emit('update:show', false)
@@ -262,12 +80,26 @@ const onCancel = () => {
 </script>
 
 <style scoped>
-.sheet-fade-enter-active,
-.sheet-fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-.sheet-fade-enter-from,
-.sheet-fade-leave-to {
-  opacity: 0;
+.return-hint { font-size: 12px; color: #8B9096; line-height: 1.7; margin: 0 0 14px; }
+.return-list { margin: 14px 0; display: grid; gap: 10px; }
+.return-source { border: 1px solid #ECEDEF; border-radius: 8px; padding: 13px; }
+.return-source.is-selected { background: #F1F8F4; border-color: #DCE7E0; }
+.return-product { display: flex; align-items: center; gap: 10px; }
+.return-product :deep(.n-image) { flex-shrink: 0; border-radius: 6px; overflow: hidden; }
+.return-copy { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.return-copy strong { font-size: 13px; font-weight: 550; }
+.return-copy small { display: block; margin-top: 3px; color: #8B9096; font-size: 11px; }
+.return-balance { text-align: right; font-size: 12px; max-width: 150px; overflow-wrap: anywhere; }
+.return-balance small { display: block; color: #8B9096; font-size: 11px; margin-bottom: 3px; }
+.return-balance span { color: #1E7A5A; }
+.return-entry { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 0 26px; padding-top: 12px; border-top: 1px dashed #DCE7E0; font-size: 12px; color: #747C83; }
+.return-entry :deep(.n-input-number) { width: 150px; }
+.return-over { color: #A57933; font-size: 11px; }
+.return-empty { padding: 24px 0; }
+.return-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.return-footer > span { flex: 1; font-size: 12px; color: #8B9096; }
+@media (max-width: 540px) {
+  .return-product { flex-wrap: wrap; }.return-copy { flex-basis: calc(100% - 80px); }.return-balance { max-width: none; text-align: left; margin-left: 26px; display: flex; gap: 8px; }
+  .return-entry { margin-left: 0; }.return-entry :deep(.n-input-number) { flex: 1; min-width: 80px; width: auto; }.return-over { flex-basis: 100%; }.return-footer > span { flex-basis: 100%; }
 }
 </style>
