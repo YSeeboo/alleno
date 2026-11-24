@@ -1344,10 +1344,17 @@ const doDeleteJewelryItem = (row) => {
     onPositiveClick: async () => {
       try {
         await deleteHandcraftJewelry(route.params.id, row.id)
+        jewelryItems.value = jewelryItems.value.filter(item => item.id !== row.id)
         message.success('已删除')
-        await loadData()
       } catch (e) {
         message.error(e.response?.data?.detail || '删除失败')
+        return false
+      }
+      try {
+        const refreshed = await refreshAfterOutputBatch()
+        if (!refreshed) message.warning('产出已删除，部分数据刷新失败，请刷新页面核对')
+      } catch (_) {
+        message.warning('产出已删除，部分数据刷新失败，请刷新页面核对')
       }
     },
   })

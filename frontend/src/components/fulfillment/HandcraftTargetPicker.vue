@@ -1,8 +1,8 @@
 <template>
   <div class="handcraft-target-picker">
-    <label :for="id">制作单处理方式</label>
-    <n-select :id="id" :value="modelValue || ''" :options="selectOptions" :disabled="disabled" :loading="loading" aria-label="制作单处理方式" @update:value="$emit('update:modelValue', $event || null)" />
-    <small>{{ modelValue ? '只追加本次新增明细，不合并或改写原明细；保存时重新检查商家、状态和归档。' : '不会因为同商家、同一天而自动合单。需要追加时，请明确选择上方具体单号。' }}</small>
+    <label :for="id">{{ appendOnly ? '明确选择追加单据' : '制作单处理方式' }}</label>
+    <n-select :id="id" :value="modelValue || ''" :options="selectOptions" :disabled="disabled || (appendOnly && (!supplierName?.trim() || loading || !!error))" :loading="loading" :aria-label="appendOnly ? '明确选择追加单据' : '制作单处理方式'" @update:value="$emit('update:modelValue', $event || null)" />
+    <small>{{ modelValue ? '只追加本次新增明细，不合并或改写原明细；保存时重新检查商家、状态和归档。' : appendOnly ? '必须选择同商家、未归档的待发出单据；不会自动选择或合单。' : '不会因为同商家、同一天而自动合单。需要追加时，请明确选择上方具体单号。' }}</small>
     <small v-if="loading">正在查询本商家的可追加单…</small>
     <small v-if="error" role="alert">{{ error }} <n-button text type="primary" :disabled="disabled" @click="load">重试查询</n-button></small>
   </div>
@@ -11,11 +11,11 @@
 import { computed, ref, watch, useId } from 'vue'
 import { NButton, NSelect } from 'naive-ui'
 import { listHandcraft } from '@/api/handcraft'
-const props = defineProps({ modelValue: String, supplierName: String, disabled: Boolean })
+const props = defineProps({ modelValue: String, supplierName: String, disabled: Boolean, appendOnly: Boolean })
 const emit = defineEmits(['update:modelValue'])
 const id = useId(), options = ref([]), loading = ref(false), error = ref('')
 const selectOptions = computed(() => [
-  { label: '新建独立手工单（默认）', value: '' },
+  { label: props.appendOnly ? '请选择一张同商家的待发出手工单' : '新建独立手工单（默认）', value: '' },
   ...options.value.map(order => ({ label: `追加到 ${order.id} · ${order.created_at?.slice(0,10)}`, value: order.id })),
 ])
 let requestId = 0
