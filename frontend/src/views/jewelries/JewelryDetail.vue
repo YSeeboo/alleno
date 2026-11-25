@@ -53,7 +53,15 @@
         </section>
 
         <section class="jd-section" aria-labelledby="jewelry-bom-title">
-          <div class="jd-section-head"><div class="jd-section-title"><h3 id="jewelry-bom-title">BOM 用料明细</h3><span v-if="bomReady" class="jd-count">{{ bomRows.length }} 项</span></div><div class="jd-section-actions"><span class="jd-hint jd-bom-hint">每 1 {{ unitLabel }}饰品的用料</span><n-input v-model:value="bomKeyword" size="small" clearable placeholder="搜索配件名称 / 编号" aria-label="搜索 BOM 配件" class="jd-search" /><n-button type="primary" secondary size="small" :disabled="!canAdd" @click="openAdd">＋ 添加配件</n-button></div></div>
+          <div class="jd-section-head">
+            <div class="jd-section-title"><h3 id="jewelry-bom-title">BOM 用料明细</h3><span v-if="bomReady" class="jd-count">{{ bomRows.length }} 项</span></div>
+            <div class="jd-section-actions">
+              <span class="jd-hint jd-bom-hint">每 1 {{ unitLabel }}饰品的用料</span>
+              <n-input v-model:value="bomKeyword" size="small" clearable placeholder="搜索配件名称 / 编号" aria-label="搜索 BOM 配件" class="jd-search" />
+              <n-button size="small" :disabled="!canCopy" @click="openCopy">从其他饰品复制用料</n-button>
+              <n-button type="primary" secondary size="small" :disabled="!canAdd" @click="openAdd">＋ 添加配件</n-button>
+            </div>
+          </div>
           <n-alert v-if="!canParts" type="info" class="jd-alert">暂无配件管理权限，无法查看或修改 BOM。上方成本仍以服务端结果为准。</n-alert>
           <n-alert v-else-if="bomError" type="error" class="jd-alert">BOM 加载失败，未按空用料处理。<n-button text type="primary" :disabled="busy" @click="loadPage">重新加载</n-button></n-alert>
           <n-alert v-else-if="partsError" type="warning" class="jd-alert">配件资料加载失败，暂以编号展示用料，配件成本不按零处理。<n-button text type="primary" :disabled="busy" @click="loadPage">重新加载</n-button></n-alert>
@@ -72,7 +80,7 @@
                 </tr></tbody>
                 <tfoot><tr><td colspan="5" class="jd-total-label">{{ bomKeyword ? '全部用料 · ' : '' }}{{ completeCost ? '物料成本合计' : '已知物料成本小计（非完整成本）' }}</td><td colspan="2" class="jd-right mono"><strong>{{ pageError ? '—' : price(jewelry.material_cost) }}</strong></td><td></td></tr></tfoot>
               </table>
-              <n-empty v-else :description="bomRows.length ? '没有匹配的配件，试试其他关键词' : '尚未配置用料，点击“添加配件”建立独立 BOM'" class="jd-empty" />
+              <n-empty v-else :description="bomRows.length ? '没有匹配的配件，试试其他关键词' : '尚未配置用料，可以添加配件或从其他饰品复制用料'" class="jd-empty" />
             </div>
             <div class="jd-table-note"><span>点击用量可直接修改，回车或失焦保存；不同配件的用量不相加。</span><span>窄屏可左右滑动查看完整表格</span></div>
           </template>
@@ -107,6 +115,7 @@
       <form @submit.prevent="savePrices"><p class="jd-form-note">以下金额均按 1 {{ unitLabel }}饰品填写。留空表示未填写，0 表示明确为零。</p><n-form label-placement="top" :disabled="busy"><div class="jd-form-grid"><n-form-item label="零售价（元）"><n-input-number v-model:value="priceForm.retail_price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" placeholder="未填写" /></n-form-item><n-form-item label="批发价（元）"><n-input-number v-model:value="priceForm.wholesale_price" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" placeholder="未填写" /></n-form-item></div><n-form-item :label="`手工费（元 / ${unitLabel}）`"><n-input-number v-model:value="priceForm.handcraft_cost" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" placeholder="未填写" /></n-form-item></n-form><n-space justify="end"><n-button :disabled="busy" @click="pricesVisible = false">取消</n-button><n-button type="primary" attr-type="submit" :loading="busy">保存</n-button></n-space></form>
     </n-modal>
     <BatchAddDialog v-if="addVisible" scene="bom" :entity-id="String(route.params.id)" :existing-part-ids="bomRows.map(row => row.part_id)" :allowed="canParts && bomReady && partsReady && !loading && !pageError && !writeError" :refresh="loadPage" @close="addVisible = false" @saved="bomKeyword = ''" @busy="busy = $event" @uncertain="writeError = $event" />
+    <JewelryBomCopyDialog v-if="copyVisible && jewelry" :target="jewelry" :target-rows="bomRows" :part-map="partMap" :allowed="canCopy" :busy="busy" :save-error="copyError" @close="copyVisible = false" @save="saveCopy" @clear-error="copyError = ''" />
     <n-modal v-model:show="stockVisible" preset="card" title="当前库存与流水" :style="{ width: isMobile ? '95vw' : '760px', maxWidth: '95vw' }">
       <p class="jd-form-note">{{ jewelry?.id }} · 当前库存 {{ stock == null ? '加载失败' : `${stock} ${unitLabel}` }} · 这里只读展示，不调整库存。</p>
       <n-spin :show="stockLoading"><n-alert v-if="stockLogError" type="error">库存流水加载失败，<n-button text type="primary" @click="loadStockLog">重新加载</n-button></n-alert><n-data-table v-else :columns="stockColumns" :data="stockLogs" :bordered="false" :pagination="{ pageSize: 20 }" :scroll-x="580" /></n-spin>
@@ -124,7 +133,7 @@ import { useIsMobile } from '@/composables/useIsMobile'
 import { useAuthStore } from '@/stores/auth'
 import { handcraftOutputLocation } from '@/utils/handcraftOutput'
 import { getJewelry, updateJewelry, updateJewelryStatus } from '@/api/jewelries'
-import { getBom, setBom, deleteBom } from '@/api/bom'
+import { getBom, setBom, deleteBom, copyBomItems } from '@/api/bom'
 import { getStock, getStockLog } from '@/api/inventory'
 import { listParts } from '@/api/parts'
 import { fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
@@ -134,6 +143,7 @@ import ImageUploadModal from '@/components/ImageUploadModal.vue'
 import FloatingActionBar from '@/components/FloatingActionBar.vue'
 import FloatingActionButton from '@/components/FloatingActionButton.vue'
 import BatchAddDialog from '@/components/BatchAddDialog.vue'
+import JewelryBomCopyDialog from '@/components/JewelryBomCopyDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -163,6 +173,8 @@ const showStructureImageModal = ref(false)
 const infoVisible = ref(false)
 const pricesVisible = ref(false)
 const addVisible = ref(false)
+const copyVisible = ref(false)
+const copyError = ref('')
 const stockVisible = ref(false)
 const stockLoading = ref(false)
 const stockLogError = ref(false)
@@ -176,6 +188,7 @@ let uploadTarget = null
 const unitLabel = computed(() => jewelry.value?.unit || '计量单位')
 const locked = computed(() => busy.value || loading.value || !!pageError.value || !!writeError.value)
 const canAdd = computed(() => canParts.value && bomReady.value && partsReady.value && !locked.value)
+const canCopy = computed(() => canAdd.value && auth.hasPermission('jewelries'))
 const completeCost = computed(() => !pageError.value && !writeError.value && jewelry.value?.has_incomplete_cost === false && jewelry.value?.material_cost != null && jewelry.value?.total_cost != null)
 const currentImage = computed(() => imageType.value === 'structure' ? jewelry.value?.structure_image : jewelry.value?.image)
 const filteredBom = computed(() => filterJewelryBom(bomRows.value, bomKeyword.value))
@@ -277,6 +290,50 @@ async function savePrices() {
   await mutate(() => updateJewelry(id, patch), '价格已更新', () => { pricesVisible.value = false })
 }
 function openAdd() { if (canAdd.value) addVisible.value = true }
+function openCopy() {
+  if (!canCopy.value) return
+  copyError.value = ''
+  copyVisible.value = true
+}
+async function saveCopy(payload, previewSkipped) {
+  if (!canCopy.value || !copyVisible.value || copyError.value) return
+  const current = epoch
+  const id = jewelry.value.id
+  busy.value = true
+  try {
+    let result
+    try {
+      const { data } = await copyBomItems(id, payload)
+      result = data
+    } catch (error) {
+      if (current !== epoch) return
+      if ([400, 403, 404, 409, 422].includes(error.response?.status)) {
+        const detail = error.response?.data?.detail
+        copyError.value = typeof detail === 'string' ? detail : '未保存，请检查待添加配件与用量。'
+      } else {
+        copyVisible.value = false
+        writeError.value = '复制结果未能确认。请先刷新核对，再决定是否重试。'
+      }
+      return
+    }
+    if (current !== epoch) return
+    copyVisible.value = false
+    bomKeyword.value = ''
+    let refreshed = false
+    try { refreshed = await loadPage() } catch { /* keep the known save result */ }
+    if (current !== epoch) return
+    if (!refreshed) {
+      writeError.value = '复制请求已处理，但最新资料未加载完整。请刷新核对，不要重复提交。'
+      return
+    }
+    const added = result.added_part_ids.length
+    const skipped = previewSkipped + result.skipped_part_ids.length
+    if (added) message.success(`已添加 ${added} 项${skipped ? `，跳过 ${skipped} 项已有配件` : ''}`)
+    else message.info('所选配件已在当前 BOM 中，未覆盖原用量。')
+  } finally {
+    if (current === epoch) busy.value = false
+  }
+}
 async function saveQty(row) {
   if (Number(row.editQty) === Number(row.qty_per_unit)) { row.editQty = String(row.qty_per_unit); return }
   if (locked.value) { row.editQty = String(row.qty_per_unit); return }
@@ -336,7 +393,7 @@ watch(() => route.params.id, () => {
   busy.value = false; bomReady.value = false; partsReady.value = false; uploadTarget = null
   jewelry.value = null
   pageError.value = ''; writeError.value = ''; bomRows.value = []; stock.value = null; bomKeyword.value = ''; imageType.value = 'product'
-  infoVisible.value = false; pricesVisible.value = false; addVisible.value = false; stockVisible.value = false; showImageModal.value = false; showStructureImageModal.value = false
+  infoVisible.value = false; pricesVisible.value = false; addVisible.value = false; copyVisible.value = false; copyError.value = ''; stockVisible.value = false; showImageModal.value = false; showStructureImageModal.value = false
   loadPage()
 }, { immediate: true })
 function allowNavigation() {
@@ -447,8 +504,8 @@ onBeforeUnmount(() => { epoch++ })
   .jd-meta { gap: 19px 12px; padding-bottom: 17px; }
   .jd-meta-value { font-size: 12px; }
   .jd-image-tabs button { padding: 6px 12px; }
-  .jd-section-actions { width: 100%; }
-  .jd-search { flex: 1; width: 0; min-width: 0; }
+  .jd-section-actions { width: 100%; flex-wrap: wrap; }
+  .jd-search { flex: 1 0 100%; width: 100%; min-width: 0; }
   .jd-table { min-width: 760px; }
   .jd-table-note { flex-direction: column; gap: 4px; }
   .jd-cost-strip { padding: 13px; font-size: 10px; }
