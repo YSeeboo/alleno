@@ -1,33 +1,29 @@
 <template>
-  <div>
-    <n-space align="center" style="margin-bottom: 16px;">
-      <n-button text @click="goBack">← {{ summaryReturn?.path === '/handcraft-output' ? '返回产出总览' : summaryReturn ? '返回汇总' : '返回' }}</n-button>
-      <n-h2 style="margin: 0;">回收单详情</n-h2>
-    </n-space>
+  <div class="receipt-detail">
+    <div class="page-breadcrumb">生产 / 手工回收 / {{ receipt?.id || route.params.id }}</div>
+    <header class="rd-head">
+      <div class="rd-title">
+        <h2 class="page-title">手工回收单 {{ receipt?.id || route.params.id }}</h2>
+        <n-popselect v-if="receipt" :value="receipt.status" :options="statusToggleOptions" trigger="click" @update:value="doChangeStatus">
+          <button type="button" class="rd-status" :class="{ 'is-paid': isPaid() }" aria-label="切换回收单付款状态">{{ receipt.status }} ▾</button>
+        </n-popselect>
+      </div>
+      <n-button text size="small" @click="goBack">← {{ summaryReturn?.path === '/handcraft-output' ? '返回产出总览' : summaryReturn ? '返回汇总' : '返回' }}</n-button>
+    </header>
 
     <n-spin :show="loading">
       <n-empty v-if="!loading && !receipt" description="加载失败，请返回重试" style="margin-top: 24px;" />
-      <n-card v-if="receipt" title="基本信息" style="margin-bottom: 16px;">
-        <n-descriptions :column="isMobile ? 1 : 3" bordered>
-          <n-descriptions-item label="回收单号">{{ receipt.id }}</n-descriptions-item>
-          <n-descriptions-item label="手工商家">{{ receipt.supplier_name }}</n-descriptions-item>
-          <n-descriptions-item label="状态">
-            <n-popselect
-              :value="receipt?.status"
-              :options="statusToggleOptions"
-              trigger="click"
-              @update:value="doChangeStatus"
-            >
-              <n-tag
-                :type="statusType[receipt.status]"
-                style="cursor: pointer;"
-              >
-                {{ receipt.status }} ▾
-              </n-tag>
-            </n-popselect>
-          </n-descriptions-item>
-          <n-descriptions-item label="总金额">{{ receipt.total_amount != null ? `¥ ${fmtMoney(receipt.total_amount)}` : '-' }}</n-descriptions-item>
-          <n-descriptions-item label="创建时间">
+      <template v-if="receipt">
+        <section class="rd-stats" aria-label="回收单统计">
+          <div class="rd-stat"><div class="rd-stat-label">回收明细</div><div class="rd-stat-value">{{ items.length }}<small>项</small></div><div class="rd-stat-note">产出 {{ detailSummary.outputCount }} 项 · 退料 {{ detailSummary.partCount }} 项</div></div>
+          <div class="rd-stat"><div class="rd-stat-label">本单回收数量</div><div class="rd-stat-value rd-quantities"><span v-for="entry in detailSummary.quantities" :key="entry.unit">{{ entry.qty }}<small>{{ entry.unit }}</small></span><template v-if="!detailSummary.quantities.length">—</template></div><div class="rd-stat-note">不同单位分别汇总</div></div>
+          <div class="rd-stat"><div class="rd-stat-label">回收总重量</div><div class="rd-stat-value">{{ detailSummary.weightKg ?? '—' }}<small v-if="detailSummary.weightKg != null">kg</small></div><div class="rd-stat-note">仅汇总已填写重量</div></div>
+          <div class="rd-stat"><div class="rd-stat-label">已定价手工费</div><div class="rd-stat-value rd-total"><small v-if="receipt.total_amount != null">¥</small>{{ receipt.total_amount != null ? fmtMoney(receipt.total_amount) : '—' }}</div><div class="rd-stat-note">按本单已填写单价的明细汇总</div></div>
+        </section>
+
+        <dl class="rd-meta" aria-label="基本信息">
+          <div><dt>手工商家</dt><dd>{{ receipt.supplier_name }}</dd></div>
+          <div><dt>创建时间</dt><dd>
             <template v-if="editingCreatedAt">
               <n-space align="center" size="small">
                 <n-date-picker
@@ -42,14 +38,31 @@
             </template>
             <template v-else>
               {{ fmt(receipt.created_at) }}
-              <n-button text type="primary" size="small" style="margin-left: 6px;" @click="startEditCreatedAt">
+              <n-button text type="primary" size="small" style="margin-left: 6px;" aria-label="修改创建时间" @click="startEditCreatedAt">
                 <template #icon><n-icon :component="CreateOutline" /></template>
               </n-button>
             </template>
-          </n-descriptions-item>
-          <n-descriptions-item label="付款时间">{{ receipt.paid_at ? fmt(receipt.paid_at) : '-' }}</n-descriptions-item>
-          <n-descriptions-item label="备注">{{ receipt.note || '-' }}</n-descriptions-item>
-          <n-descriptions-item label="单据&配件图片" :span="2">
+          </dd></div>
+          <div><dt>付款时间</dt><dd>{{ receipt.paid_at ? fmt(receipt.paid_at) : '—' }}</dd></div>
+          <div><dt>备注</dt><dd class="rd-note">{{ receipt.note || '—' }}</dd></div>
+        </dl>
+
+        <section class="rd-section" aria-labelledby="handcraft-receipt-items-title">
+          <div class="rd-section-head">
+            <div class="rd-section-title"><h3 id="handcraft-receipt-items-title">回收明细</h3><span class="rd-count">{{ items.length }} 项</span></div>
+            <n-button v-if="!isPaid()" size="small" type="primary" @click="openAddItemsModal">＋ 添加回收项</n-button>
+            <span v-else class="rd-hint">已付款 · 明细已锁定</span>
+          </div>
+          <n-data-table v-if="items.length" class="rd-table" :columns="itemColumns" :data="items" :bordered="false" :row-key="row => row.id" :scroll-x="1140" :row-props="summaryHighlight" />
+          <n-empty v-else class="rd-empty" :description="isPaid() ? '暂无回收明细' : '暂无回收明细，可添加产出回收或配件退料'" />
+          <p v-if="items.length" class="rd-hint rd-table-note">数量为本单实际回收数量；损耗针对来源手工单的差额，不计入本单回收数量。</p>
+        </section>
+
+        <section class="rd-section" aria-labelledby="handcraft-receipt-images-title">
+          <div class="rd-section-head">
+            <div class="rd-section-title"><h3 id="handcraft-receipt-images-title">单据与配件图片</h3><span class="rd-count">{{ totalDeliveryImageCount }} / 9</span></div>
+            <span class="rd-hint">点击图片预览</span>
+          </div>
             <div class="delivery-images-block">
               <div v-if="pendingDeliveryImages.length > 0" class="delivery-images-warning">
                 <div class="delivery-images-warning-title">
@@ -108,6 +121,7 @@
                   />
                   <n-button
                     class="delivery-image-delete"
+                    :aria-label="`删除第 ${index + 1} 张图片`"
                     size="tiny"
                     type="error"
                     circle
@@ -120,6 +134,7 @@
                 <button
                   v-if="canAddDeliveryImage"
                   class="delivery-image-add"
+                  aria-label="上传单据或配件图片"
                   :disabled="deliveryImagesSaving"
                   @click="openDeliveryImageModal"
                 >
@@ -127,36 +142,22 @@
                 </button>
               </div>
               <button
-                v-else
+                v-else-if="canAddDeliveryImage"
                 class="delivery-image-add"
+                aria-label="上传单据或配件图片"
                 :disabled="deliveryImagesSaving"
                 @click="openDeliveryImageModal"
               >
                 +
               </button>
-              <div class="delivery-images-meta">
-                {{ totalDeliveryImageCount }}/9 张
-                <span v-if="pendingDeliveryImages.length > 0">（待保存 {{ pendingDeliveryImages.length }} 张）</span>
-              </div>
             </div>
-          </n-descriptions-item>
-        </n-descriptions>
-      </n-card>
+        </section>
 
-      <n-card v-if="receipt">
-        <template #header>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span>回收明细</span>
-            <n-button v-if="!isPaid()" size="small" type="primary" @click="openAddItemsModal">+ 增加项目</n-button>
-          </div>
-        </template>
-        <n-data-table v-if="receipt.items?.length > 0" :columns="itemColumns" :data="receipt.items" :bordered="false" :row-props="summaryHighlight" />
-        <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
-      </n-card>
-
-      <div v-if="receipt" style="margin-top: 16px;">
-        <n-button type="error" :disabled="isPaid()" @click="doDeleteReceipt">删除回收单</n-button>
-      </div>
+        <footer class="rd-footer">
+          <span class="rd-hint">{{ isPaid() ? '已付款后不可修改、添加或删除回收明细。' : '标记为已付款后将锁定回收明细。' }}</span>
+          <n-button text size="small" type="error" :disabled="isPaid()" @click="doDeleteReceipt">删除回收单</n-button>
+        </footer>
+      </template>
     </n-spin>
 
     <!-- Edit Item Modal -->
@@ -206,54 +207,16 @@
       @uploaded="handleDeliveryImageUploaded"
     />
 
-    <!-- Add Items Modal -->
-    <n-modal v-model:show="addItemsModalVisible" preset="card" :title="`增加回收项目（${receipt?.supplier_name}）`" :style="{ width: isMobile ? '95vw' : '800px' }">
-      <p>含已结清来源，允许按实际数量超收；本单已有来源请直接修改原明细数量。</p>
-      <n-radio-group v-model:value="addItemsActiveTab" size="small" style="margin-bottom: 12px;">
-        <n-radio-button value="part">配件</n-radio-button>
-        <n-radio-button value="jewelry">产出</n-radio-button>
-      </n-radio-group>
-      <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
-        <n-input
-          v-model:value="addItemsFilterKeyword"
-          placeholder="编号/名称搜索"
-          clearable
-          :style="{ width: isMobile ? '100%' : '200px' }"
-          @update:value="onAddItemsFilterKeyword"
-        />
-        <span style="font-size: 13px; color: #666;">发出日期</span>
-        <n-date-picker
-          v-model:value="addItemsFilterDateOn"
-          type="date"
-          clearable
-          :style="{ width: isMobile ? '100%' : '160px' }"
-          @update:value="onAddItemsFilterDate"
-        />
-      </div>
-      <n-spin :show="addItemsLoading">
-        <n-empty v-if="!addItemsLoading && addItemsCurrentPending.length === 0" :description="addItemsFetchError ? '加载失败，请重试' : '暂无可添加的待回收项目'" style="margin: 16px 0;" />
-        <n-data-table
-          v-if="addItemsCurrentPending.length > 0"
-          :columns="addItemsCurrentColumns"
-          :data="addItemsCurrentPending"
-          :bordered="false"
-          :row-key="(row) => addRowKey(row)"
-          :checked-row-keys="addItemsCurrentCheckedKeys"
-          @update:checked-row-keys="onAddItemsCheck"
-          size="small"
-          :max-height="400"
-        />
-      </n-spin>
-      <template #footer>
-        <n-space justify="end">
-          <n-button @click="addItemsModalVisible = false">取消</n-button>
-          <n-button type="primary" :loading="addItemsSubmitting" :disabled="allAddCheckedKeys.length === 0" @click="submitAddItems">确认添加</n-button>
-        </n-space>
-      </template>
-    </n-modal>
+    <AddHandcraftReceiptItems
+      v-if="addItemsModalVisible && receipt"
+      :receipt="receipt"
+      @close="addItemsModalVisible = false"
+      @saved="onAddItemsSaved"
+      @verified="onAddItemsVerified"
+    />
 
     <!-- Cost Diff Modal (from add items) -->
-    <n-modal v-model:show="addItemsCostDiffVisible" :mask-closable="false" preset="card" title="手工费成本变动确认" :style="{ width: isMobile ? '95vw' : '550px' }">
+    <n-modal v-model:show="addItemsCostDiffVisible" :mask-closable="false" :closable="!addItemsCostDiffUpdating" :close-on-esc="!addItemsCostDiffUpdating" preset="card" title="手工费成本变动确认" :style="{ width: isMobile ? '95vw' : '550px' }">
       <div style="margin-bottom: 12px; color: #333;">
         当前手工费与配件已有手工费金额不相同，是否更新手工费成本？
       </div>
@@ -266,6 +229,7 @@
         ]"
         :data="addItemsCostDiffs"
         :bordered="false"
+        :scroll-x="520"
         size="small"
       />
       <template #footer>
@@ -307,31 +271,30 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, h, nextTick } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, computed, onMounted, h, nextTick } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useHandcraftSummaryReturn } from '@/composables/useHandcraftSummaryReturn'
 import { useMessage, useDialog } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
 import {
-  NCard, NDescriptions, NDescriptionsItem, NSpin, NDataTable,
-  NSpace, NButton, NH2, NTag, NEmpty, NModal, NForm, NFormItem,
+  NSpin, NDataTable, NSpace, NButton, NEmpty, NModal, NForm, NFormItem,
   NSelect, NInputNumber, NInput, NPopselect, NTooltip, NIcon, NImage, NDatePicker,
-  NRadioGroup, NRadioButton,
 } from 'naive-ui'
 import { CreateOutline } from '@vicons/ionicons5'
 import {
   getHandcraftReceipt, updateHandcraftReceipt, updateHandcraftReceiptStatus,
   updateHandcraftReceiptDeliveryImages,
   updateHandcraftReceiptItem, deleteHandcraftReceiptItem,
-  deleteHandcraftReceipt, addHandcraftReceiptItems,
-  listHandcraftPendingReceiveItems,
+  deleteHandcraftReceipt,
 } from '@/api/handcraftReceipts'
 import { tsToDateStr, isoToTs } from '@/utils/date'
 import { batchUpdatePartCosts } from '@/api/parts'
 import { confirmHandcraftLoss } from '@/api/productionLoss'
-import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
-import { remainingQuantity, sourceBalance, receiptSourceExcess } from '@/utils/receiptQuantity'
+import { fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
+import { receiptSourceExcess } from '@/utils/receiptQuantity'
+import { summarizeHandcraftReceiptDetail } from '@/utils/handcraftReceiptDetail'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
+import AddHandcraftReceiptItems from './AddHandcraftReceiptItems.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -346,6 +309,8 @@ const { isMobile } = useIsMobile()
 
 const loading = ref(true)
 const receipt = ref(null)
+const items = computed(() => receipt.value?.items || [])
+const detailSummary = computed(() => summarizeHandcraftReceiptDetail(items.value))
 
 const editingCreatedAt = ref(false)
 const editingCreatedAtTs = ref(null)
@@ -414,7 +379,6 @@ const deliveryImagesSaving = ref(false)
 const pendingDeliveryImages = ref([])
 const retryingPendingImage = ref('')
 
-const statusType = { '已付款': 'success', '未付款': 'error' }
 const statusToggleOptions = computed(() => {
   if (!receipt.value) return []
   if (receipt.value.status === '未付款') return [{ label: '已付款', value: '已付款' }]
@@ -448,39 +412,23 @@ const noteInputRef = ref(null)
 
 // Add items modal
 const addItemsModalVisible = ref(false)
-const addItemsLoading = ref(false)
-const addItemsSubmitting = ref(false)
-const addItemsActiveTab = ref('part')
-const addItemsPendingParts = ref([])
-const addItemsPendingJewelries = ref([])
-const addItemsPartCheckedKeys = ref([])
-const addItemsJewelryCheckedKeys = ref([])
-const addItemsInputs = reactive({})
-const addItemsFilterKeyword = ref('')
-const addItemsFilterDateOn = ref(null)
-let addItemsDebounceTimer = null
-let addItemsFetchSeq = 0
-const addItemsFetchError = ref(false)
 
 // Cost diff modal (for add-items)
 const addItemsCostDiffVisible = ref(false)
 const addItemsCostDiffs = ref([])
 const addItemsCostDiffUpdating = ref(false)
 
-const addRowKey = (row) => `${row.is_output ? 'output' : row.item_type}_${row.id}`
-const addItemsCurrentPending = computed(() => addItemsActiveTab.value === 'part' ? addItemsPendingParts.value : addItemsPendingJewelries.value)
-const addItemsCurrentCheckedKeys = computed(() => addItemsActiveTab.value === 'part' ? addItemsPartCheckedKeys.value : addItemsJewelryCheckedKeys.value)
-const addItemsCurrentColumns = computed(() => addItemsActiveTab.value === 'part' ? addItemsPartColumns : addItemsJewelryColumns)
-const allAddCheckedKeys = computed(() => [...addItemsPartCheckedKeys.value, ...addItemsJewelryCheckedKeys.value])
-
-const loadData = async () => {
-  const id = route.params.id
-  const { data } = await getHandcraftReceipt(id)
+const applyReceipt = (data) => {
   receipt.value = data
-  pendingDeliveryImages.value = pendingDeliveryImages.value.filter((image) => !data.delivery_images.includes(image))
+  pendingDeliveryImages.value = pendingDeliveryImages.value.filter((image) => !(data.delivery_images || []).includes(image))
   if (isPaid()) {
     stopEditNote()
   }
+}
+
+const loadData = async () => {
+  const { data } = await getHandcraftReceipt(route.params.id)
+  applyReceipt(data)
 }
 
 const doChangeStatus = (newStatus) => {
@@ -741,7 +689,7 @@ const renderNoteCell = (row) => {
         'text-overflow: ellipsis',
         'white-space: nowrap',
         'vertical-align: bottom',
-        !isPaid() ? 'cursor: pointer; color: #2080f0;' : '',
+        !isPaid() ? 'cursor: pointer; color: #1e7a5a;' : '',
       ].join('; '),
       onClick: !isPaid() ? () => startEditNote(row) : undefined,
     },
@@ -749,47 +697,49 @@ const renderNoteCell = (row) => {
   )
 }
 
-const itemTypeLabel = { part: '配件', jewelry: '产出' }
-
 const itemColumns = [
-  { title: '类型', key: 'item_type', width: 60, render: (r) => itemTypeLabel[r.item_type] || r.item_type },
-  { title: '编号', key: 'item_id', width: 160 },
   {
-    title: '名称',
+    title: '回收项',
     key: 'item_name',
-    minWidth: 140,
-    render: (row) => row.item_name || row.item_id,
+    minWidth: 180,
+    render: (row) => h('div', { class: 'rd-product' }, [
+      h('strong', row.item_name || row.item_id),
+      h('small', [row.item_id, row.color].filter(Boolean).join(' · ')),
+    ]),
   },
-  { title: '颜色', key: 'color', width: 80, render: (r) => r.color || '-' },
   {
-    title: '手工单号',
+    title: '类型', key: 'item_type', width: 95,
+    render: row => h('span', { class: ['rd-type', { 'is-output': row.handcraft_jewelry_item_id != null }] },
+      row.handcraft_jewelry_item_id == null ? '配件退料' : row.is_composite ? '组合配件产出' : '产出回收'),
+  },
+  {
+    title: '来源手工单',
     key: 'handcraft_order_id',
     width: 110,
     render: (row) => {
       if (!row.handcraft_order_id) return '-'
-      return h('a', {
-        style: 'color: #2080f0; cursor: pointer;',
-        onClick: (e) => { e.stopPropagation(); router.push({ path: `/handcraft/${row.handcraft_order_id}`, query: summaryReturn.value ? { from: 'handcraft-summary' } : {} }) },
-      }, row.handcraft_order_id)
+      return h(RouterLink, {
+        class: 'rd-source-link',
+        to: { path: `/handcraft/${row.handcraft_order_id}`, query: summaryReturn.value ? { from: 'handcraft-summary' } : {} },
+      }, { default: () => row.handcraft_order_id })
     },
   },
-  { title: '回收数量', key: 'qty', render: (r) => h('div', [String(r.qty),
-    receiptSourceExcess(r) ? h('small', { style: 'display:block;color:#b45309' }, `来源结清超出 ${receiptSourceExcess(r)}`) : null,
+  { title: '回收数量', key: 'qty', width: 110, render: (r) => h('div', [h('strong', { class: 'rd-qty' }, `${r.qty} ${r.unit || ''}`),
+    receiptSourceExcess(r) ? h('small', { class: 'rd-source-excess' }, `结清超出 ${receiptSourceExcess(r)}`) : null,
   ]) },
-  { title: '单位', key: 'unit', render: (r) => r.unit || '-' },
-  { title: '重量', key: 'weight', width: 100, render: (r) => r.weight != null ? `${r.weight} ${r.weight_unit || 'g'}` : '—' },
-  { title: '单价', key: 'price', render: (r) => r.price != null ? `¥ ${fmtMoney(r.price)}` : '-' },
-  { title: '金额', key: 'amount', render: (r) => r.amount != null ? `¥ ${fmtMoney(r.amount)}` : '-' },
+  { title: '重量', key: 'weight', width: 90, render: (r) => r.weight != null ? `${r.weight} ${r.weight_unit || 'g'}` : '—' },
+  { title: '手工单价', key: 'price', width: 105, render: (r) => r.price != null ? `¥ ${fmtPrice(r.price)}` : '—' },
+  { title: '金额', key: 'amount', width: 95, render: (r) => r.amount != null ? `¥ ${fmtMoney(r.amount)}` : '—' },
   {
     title: '备注',
     key: 'note',
-    minWidth: 240,
+    minWidth: 165,
     render: (row) => renderNoteCell(row),
   },
   {
     title: '操作',
     key: 'actions',
-    width: 140,
+    width: 190,
     render: (row) => {
       const canEdit = !isPaid()
       const editBtn = h(
@@ -802,7 +752,6 @@ const itemColumns = [
               {
                 size: 'small',
                 disabled: !canEdit,
-                style: 'margin-right: 6px;',
                 onClick: canEdit ? () => openEditModal(row) : undefined,
               },
               { default: () => '修改' },
@@ -838,155 +787,29 @@ const itemColumns = [
           onClick: () => openLossModal(row),
         }, { default: () => '确认损耗' }))
       }
-      return h(NSpace, { size: 'small' }, { default: () => btns })
+      return h(NSpace, { size: 6 }, { default: () => btns })
     },
   },
 ]
 
-// Add items helpers
-const getAddRemaining = remainingQuantity
-
-const getAddInput = (key) => {
-  if (!addItemsInputs[key]) {
-    addItemsInputs[key] = { qty: null, price: null, unit: '个', weight: null, weight_unit: 'g' }
-  }
-  return addItemsInputs[key]
-}
-
-const fetchAddItemsPending = async () => {
-  if (!receipt.value) return
-  const seq = ++addItemsFetchSeq
-  addItemsLoading.value = true
-  addItemsFetchError.value = false
-  try {
-    const existingPartItemIds = receipt.value.items
-      .filter((i) => i.handcraft_part_item_id)
-      .map((i) => i.handcraft_part_item_id)
-    const existingJewelryItemIds = receipt.value.items
-      .filter((i) => i.handcraft_jewelry_item_id)
-      .map((i) => i.handcraft_jewelry_item_id)
-    const params = { supplier_name: receipt.value.supplier_name, include_settled: true }
-    if (existingPartItemIds.length > 0) {
-      params.exclude_part_item_ids = existingPartItemIds
-    }
-    if (existingJewelryItemIds.length > 0) {
-      params.exclude_jewelry_item_ids = existingJewelryItemIds
-    }
-    if (addItemsFilterKeyword.value) params.keyword = addItemsFilterKeyword.value
-    if (addItemsFilterDateOn.value) {
-      const d = new Date(addItemsFilterDateOn.value)
-      params.date_on = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    }
-    const { data } = await listHandcraftPendingReceiveItems(params)
-    if (seq !== addItemsFetchSeq) return
-    const parts = []
-    const jewelries = []
-    for (const item of data) {
-      const key = `${item.is_output ? 'output' : item.item_type}_${item.id}`
-      if (!addItemsInputs[key]) {
-        addItemsInputs[key] = { qty: getAddRemaining(item) || null, price: null, unit: item.unit || '个', weight: null, weight_unit: 'g' }
-      }
-      if (item.is_output) {
-        jewelries.push(item)
-      } else {
-        parts.push(item)
-      }
-    }
-    addItemsPendingParts.value = parts
-    addItemsPendingJewelries.value = jewelries
-  } catch (_) {
-    if (seq !== addItemsFetchSeq) return
-    addItemsPendingParts.value = []
-    addItemsPendingJewelries.value = []
-    addItemsPartCheckedKeys.value = []
-    addItemsJewelryCheckedKeys.value = []
-    addItemsFetchError.value = true
-    message.error('加载待回收项目失败')
-  } finally {
-    if (seq === addItemsFetchSeq) addItemsLoading.value = false
-  }
-}
-
 const openAddItemsModal = () => {
-  addItemsPartCheckedKeys.value = []
-  addItemsJewelryCheckedKeys.value = []
-  addItemsFilterKeyword.value = ''
-  addItemsFilterDateOn.value = null
-  addItemsActiveTab.value = 'part'
-  Object.keys(addItemsInputs).forEach((k) => delete addItemsInputs[k])
-  addItemsModalVisible.value = true
-  fetchAddItemsPending()
+  if (receipt.value && !isPaid()) addItemsModalVisible.value = true
 }
 
-const onAddItemsCheck = (keys) => {
-  if (addItemsActiveTab.value === 'part') {
-    addItemsPartCheckedKeys.value = keys
-  } else {
-    addItemsJewelryCheckedKeys.value = keys
+const onAddItemsSaved = (data, count) => {
+  applyReceipt(data)
+  addItemsModalVisible.value = false
+  message.success(`已添加 ${count} 项回收明细`)
+  if (data.cost_diffs?.length) {
+    addItemsCostDiffs.value = data.cost_diffs
+    addItemsCostDiffVisible.value = true
   }
 }
 
-const onAddItemsFilterKeyword = () => {
-  clearTimeout(addItemsDebounceTimer)
-  addItemsDebounceTimer = setTimeout(() => {
-    addItemsPartCheckedKeys.value = []
-    addItemsJewelryCheckedKeys.value = []
-    fetchAddItemsPending()
-  }, 300)
-}
-
-const onAddItemsFilterDate = () => {
-  addItemsPartCheckedKeys.value = []
-  addItemsJewelryCheckedKeys.value = []
-  fetchAddItemsPending()
-}
-
-const submitAddItems = async () => {
-  const allKeys = allAddCheckedKeys.value
-  if (allKeys.length === 0) {
-    message.warning('请至少勾选一条待回收项目')
-    return
-  }
-  const items = []
-  for (const key of allKeys) {
-    const [type, idStr] = key.split('_')
-    const id = parseInt(idStr, 10)
-    const allItems = type === 'part' ? addItemsPendingParts.value : addItemsPendingJewelries.value
-    const pending = allItems.find((p) => p.id === id)
-    if (!pending) continue
-    const input = addItemsInputs[key]
-    if (!input?.qty || input.qty <= 0) {
-      message.warning(`请填写「${pending.item_name}」的回收数量`)
-      return
-    }
-    const item = {
-      qty: input.qty,
-      weight: input.weight != null ? input.weight : null,
-      weight_unit: input.weight != null ? (input.weight_unit || 'g') : null,
-      price: input.price != null ? input.price : null,
-      unit: input.unit || '个',
-    }
-    if (type === 'output') {
-      item.handcraft_jewelry_item_id = pending.id
-    } else {
-      item.handcraft_part_item_id = pending.id
-    }
-    items.push(item)
-  }
-
-  addItemsSubmitting.value = true
-  try {
-    const { data } = await addHandcraftReceiptItems(route.params.id, { items })
-    message.success('项目已添加')
-    addItemsModalVisible.value = false
-    if (data.cost_diffs && data.cost_diffs.length > 0) {
-      addItemsCostDiffs.value = data.cost_diffs
-      addItemsCostDiffVisible.value = true
-    }
-    await loadData()
-  } finally {
-    addItemsSubmitting.value = false
-  }
+const onAddItemsVerified = (data) => {
+  applyReceipt(data)
+  addItemsModalVisible.value = false
+  message.warning('已刷新，请核对回收明细后再决定是否补录')
 }
 
 const confirmAddItemsCostUpdate = async () => {
@@ -1013,165 +836,6 @@ const skipAddItemsCostUpdate = () => {
   addItemsCostDiffVisible.value = false
 }
 
-const addItemsPartColumns = [
-  { type: 'selection' },
-  { title: '手工单号', key: 'handcraft_order_id', width: 100 },
-  {
-    title: '配件',
-    key: 'item_name',
-    minWidth: 140,
-    render: (row) => renderNamedImage(row.item_name, row.item_image, row.item_name, 40, row.is_composite ? '组合' : null),
-  },
-  { title: '颜色', key: 'color', width: 80, render: (r) => r.color || '-' },
-  {
-    title: '发出日期',
-    key: 'created_at',
-    width: 100,
-    render: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString('zh-CN') : '-',
-  },
-  { title: '未收 / 超出', key: 'remaining', width: 130, render: sourceBalance },
-  {
-    title: '本次回收',
-    key: 'input_qty',
-    width: 110,
-    render: (row) => {
-      const input = getAddInput(addRowKey(row))
-      return h(NInputNumber, {
-        value: input.qty,
-        min: 0.0001,
-        precision: 4,
-        step: 1,
-        size: 'small',
-        style: 'width: 100px;',
-        'onUpdate:value': (v) => { input.qty = v },
-      })
-    },
-  },
-  {
-    title: '重量',
-    key: 'input_weight',
-    width: 140,
-    render: (row) => {
-      const input = getAddInput(addRowKey(row))
-      return h('div', { style: 'display:flex;gap:4px;align-items:center' }, [
-        h(NInputNumber, {
-          value: input.weight,
-          size: 'small',
-          style: 'width:80px',
-          min: 0,
-          placeholder: '重量',
-          'onUpdate:value': (v) => { input.weight = v },
-        }),
-        h(NSelect, {
-          value: input.weight_unit || 'g',
-          size: 'small',
-          style: 'width:55px',
-          options: [{ label: 'g', value: 'g' }, { label: 'kg', value: 'kg' }],
-          'onUpdate:value': (v) => { input.weight_unit = v },
-        }),
-      ])
-    },
-  },
-  {
-    title: '手工费单价',
-    key: 'input_price',
-    width: 110,
-    render: (row) => {
-      const input = getAddInput(addRowKey(row))
-      return h(NInputNumber, {
-        value: input.price,
-        min: 0,
-        precision: 7,
-        format: fmtPrice,
-        parse: parseNum,
-        step: 0.1,
-        size: 'small',
-        style: 'width: 100px;',
-        'onUpdate:value': (v) => { input.price = v },
-      })
-    },
-  },
-]
-
-const addItemsJewelryColumns = [
-  { type: 'selection' },
-  { title: '手工单号', key: 'handcraft_order_id', width: 100 },
-  {
-    title: '产出项',
-    key: 'item_name',
-    minWidth: 140,
-    render: (row) => renderNamedImage(row.item_name, row.item_image, row.item_name, 40, row.is_composite ? '组合' : null),
-  },
-  {
-    title: '发出日期',
-    key: 'created_at',
-    width: 100,
-    render: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString('zh-CN') : '-',
-  },
-  { title: '未收 / 超出', key: 'remaining', width: 130, render: sourceBalance },
-  {
-    title: '本次回收',
-    key: 'input_qty',
-    width: 110,
-    render: (row) => {
-      const input = getAddInput(addRowKey(row))
-      return h(NInputNumber, {
-        value: input.qty,
-        min: 1,
-        precision: 0,
-        step: 1,
-        size: 'small',
-        style: 'width: 100px;',
-        'onUpdate:value': (v) => { input.qty = v },
-      })
-    },
-  },
-  {
-    title: '重量',
-    key: 'input_weight',
-    width: 140,
-    render: (row) => {
-      const input = getAddInput(addRowKey(row))
-      return h('div', { style: 'display:flex;gap:4px;align-items:center' }, [
-        h(NInputNumber, {
-          value: input.weight,
-          size: 'small',
-          style: 'width:80px',
-          min: 0,
-          placeholder: '重量',
-          'onUpdate:value': (v) => { input.weight = v },
-        }),
-        h(NSelect, {
-          value: input.weight_unit || 'g',
-          size: 'small',
-          style: 'width:55px',
-          options: [{ label: 'g', value: 'g' }, { label: 'kg', value: 'kg' }],
-          'onUpdate:value': (v) => { input.weight_unit = v },
-        }),
-      ])
-    },
-  },
-  {
-    title: '单价',
-    key: 'input_price',
-    width: 110,
-    render: (row) => {
-      const input = getAddInput(addRowKey(row))
-      return h(NInputNumber, {
-        value: input.price,
-        min: 0,
-        precision: 7,
-        format: fmtPrice,
-        parse: parseNum,
-        step: 0.1,
-        size: 'small',
-        style: 'width: 100px;',
-        'onUpdate:value': (v) => { input.price = v },
-      })
-    },
-  },
-]
-
 onMounted(async () => {
   try {
     await loadData()
@@ -1182,6 +846,52 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.receipt-detail { min-width: 0; }
+.rd-head, .rd-title, .rd-section-head, .rd-section-title, .rd-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.rd-head, .rd-section-head, .rd-footer { justify-content: space-between; }
+.rd-head { margin: 8px 0 20px; }
+.rd-title .page-title { margin: 0; }
+.rd-status { padding: 4px 11px; border: 0; border-radius: 20px; font: inherit; font-size: 12px; font-weight: 600; background: #fbf0dc; color: #875817; cursor: pointer; }
+.rd-status.is-paid { background: #e6f2ec; color: #1e7a5a; }
+.rd-status:focus-visible, .delivery-image-add:focus-visible { outline: 2px solid #1e7a5a; outline-offset: 3px; }
+.rd-stats { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, .9fr) minmax(0, 1.15fr); border: 1px solid #e8ecee; border-radius: 9px; background: #e8ecee; gap: 1px; overflow: hidden; }
+.rd-stat { min-width: 0; background: #fff; padding: 14px 17px; }
+.rd-stat-label, .rd-meta dt { font-size: 12px; color: #667179; margin-bottom: 4px; }
+.rd-stat-value { font-size: 25px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rd-stat-value small { font-size: 12px; color: #667179; font-weight: 500; margin: 0 4px; }
+.rd-quantities { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.rd-stat-note, .rd-hint { font-size: 12px; color: #667179; }
+.rd-stat-note { margin-top: 4px; }
+.rd-total { color: #1e7a5a; }
+.rd-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin: 0; padding: 20px 0 26px; }
+.rd-meta dd { font-size: 13px; min-height: 20px; margin: 0; overflow-wrap: anywhere; }
+.rd-note { white-space: pre-wrap; }
+.rd-section { margin-bottom: 24px; }
+.rd-section-head { border-bottom: 1px solid #e8ecee; padding-bottom: 9px; margin-bottom: 12px; }
+.rd-section-title h3 { margin: 0; font-size: 14px; }
+.rd-count { font-size: 11px; border-radius: 4px; padding: 1px 6px; color: #52635b; background: #edf2ef; }
+.rd-table-note { margin: 9px 0 0; }
+.rd-empty { padding: 24px; }
+.rd-table { border: 1px solid #e8ecee; border-radius: 9px; overflow: hidden; }
+.rd-table :deep(th.n-data-table-th) { background: #fafbfb; color: #667179; font-size: 12px; font-weight: 600; }
+.rd-table :deep(td.n-data-table-td) { padding: 12px 10px; font-size: 12px; }
+.rd-table :deep(.rd-product) { display: grid; gap: 3px; overflow-wrap: anywhere; }
+.rd-table :deep(.rd-product small) { color: #667179; font-size: 11px; }
+.rd-table :deep(.rd-type) { font-size: 10px; border-radius: 4px; padding: 3px 5px; background: #eef1f3; color: #526169; white-space: nowrap; }
+.rd-table :deep(.rd-type.is-output) { background: #e8f3ed; color: #1e7a5a; }
+.rd-table :deep(.rd-qty), .rd-table :deep(.rd-source-link) { color: #1e7a5a; }
+.rd-table :deep(.rd-source-link:hover) { text-decoration: underline; }
+.rd-table :deep(.rd-source-excess) { display: block; color: #9c510d; }
+.rd-footer { border-top: 1px solid #e8ecee; padding: 12px 0; }
+@media (max-width: 900px) {
+  .rd-stats, .rd-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .rd-stat { padding: 11px; }
+  .rd-stat-value { font-size: 20px; }
+  .rd-meta { gap: 12px; padding: 16px 0 20px; }
+}
+
 .delivery-images-block {
   display: flex;
   flex-direction: column;
@@ -1236,10 +946,10 @@ onMounted(async () => {
   position: relative;
   width: 88px;
   height: 88px;
-  border-radius: 14px;
+  border-radius: 9px;
   overflow: hidden;
-  border: 1px solid #eadbc1;
-  background: linear-gradient(180deg, #fffdf7, #f7f0e1);
+  border: 1px solid #e5ece8;
+  background: #f6f8f7;
 }
 
 .delivery-image-preview {
@@ -1255,10 +965,10 @@ onMounted(async () => {
 .delivery-image-add {
   width: 88px;
   height: 88px;
-  border: 1px dashed #d6b98d;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #fffaf0, #f6eedc);
-  color: #8a5a17;
+  border: 1px dashed #a6c9b7;
+  border-radius: 9px;
+  background: #f1f7f4;
+  color: #1e7a5a;
   font-size: 30px;
   line-height: 1;
   cursor: pointer;
@@ -1269,8 +979,4 @@ onMounted(async () => {
   opacity: 0.6;
 }
 
-.delivery-images-meta {
-  color: #8a6b39;
-  font-size: 12px;
-}
 </style>

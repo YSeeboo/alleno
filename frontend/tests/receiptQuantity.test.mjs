@@ -25,8 +25,11 @@ test('new plating receipts hide settled sources while receipt quantities still a
   for (const name of ['plating', 'handcraft']) {
     for (const view of ['Create', 'Detail']) {
       const title = name[0].toUpperCase() + name.slice(1)
-      const source = readFileSync(new URL(`../src/views/${name}-receipts/${title}Receipt${view}.vue`, import.meta.url), 'utf8')
+      const splitDetail = name === 'handcraft' && view === 'Detail'
+      const path = splitDetail ? 'handcraft-receipts/AddHandcraftReceiptItems.vue' : `${name}-receipts/${title}Receipt${view}.vue`
+      const source = readFileSync(new URL(`../src/views/${path}`, import.meta.url), 'utf8')
       if (name === 'plating' && view === 'Create') assert.doesNotMatch(source, /include_settled: true/)
+      else if (splitDetail) assert.match(source, /listHandcraftPendingReceiveItems\(handcraftReceiptSourceParams\(props\.receipt\)\)/)
       else assert.match(source, /include_settled: true/)
       assert.doesNotMatch(source, /(?::max="|max: )get(?:Add)?Remaining/)
     }
