@@ -1,5 +1,6 @@
 from typing import Optional, List, Literal
 from datetime import datetime, date
+from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from schemas.part import SizeTier
@@ -92,6 +93,50 @@ class HandcraftPartItemResponse(BaseModel):
     note: Optional[str] = None
     loss_qty: Optional[float] = None
     actual_qty: Optional[float] = None
+
+
+class HandcraftPartMergeRow(BaseModel):
+    id: int
+    qty: Decimal
+    note: Optional[str] = None
+
+
+class HandcraftPartMergeGroup(BaseModel):
+    part_id: str
+    part_name: str
+    unit: Optional[str] = None
+    retain_item_id: int
+    rows: list[HandcraftPartMergeRow]
+    blocked_reason: Optional[str] = None
+    revision: Optional[str] = None
+    merged_qty: Optional[Decimal] = None
+    merged_bom_qty: Optional[Decimal] = None
+    merged_note: Optional[str] = None
+
+
+class HandcraftPartMergeSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    retain_item_id: int = Field(gt=0)
+    revision: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class HandcraftPartMergeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    groups: list[HandcraftPartMergeSelection] = Field(min_length=1)
+
+    @field_validator("groups")
+    @classmethod
+    def unique_groups(cls, groups):
+        if len({group.retain_item_id for group in groups}) != len(groups):
+            raise ValueError("不能重复选择同一组配件")
+        return groups
+
+
+class HandcraftPartMergeResult(BaseModel):
+    merged_groups: int
+    removed_rows: int
 
 
 class HandcraftResponse(BaseModel):

@@ -5,6 +5,10 @@ export const getHandcraftSuppliers = () => api.get('/handcraft/suppliers')
 export const getHandcraft = (id) => api.get(`/handcraft/${id}`)
 export const deleteHandcraft = (id) => api.delete(`/handcraft/${id}`)
 export const getHandcraftParts = (id) => api.get(`/handcraft/${id}/parts`)
+export const previewHandcraftPartMerge = (id) =>
+  api.get(`/handcraft/${encodeURIComponent(id)}/part-merge`, { _silentError: true })
+export const applyHandcraftPartMerge = (id, groups) =>
+  api.post(`/handcraft/${encodeURIComponent(id)}/part-merge`, { groups }, { _silentError: true })
 export const getHandcraftJewelries = (id) => api.get(`/handcraft/${id}/jewelries`)
 export const createHandcraft = (data) => api.post('/handcraft/', data)
 export const sendHandcraft = (id) => api.post(`/handcraft/${id}/send`, null, { _silentError: true })

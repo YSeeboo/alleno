@@ -281,9 +281,15 @@
 
       <!-- ── 发出配件 section ───────────────────────────────────── -->
       <div class="hc-sec">
-        <div class="hc-sec-h">
+        <div class="hc-sec-h hc-parts-head">
           <span class="t">发出配件</span>
           <span class="acts">
+            <button
+              v-if="isPending() && items.length > 1"
+              class="hc-sbtn"
+              :disabled="partMergeOpening || !!partMergePreview || partMergeRefreshing || (partMergeGroups !== null && !eligibleMergeCount)"
+              @click="openPartMerge()"
+            >合并相同配件{{ eligibleMergeCount ? `（${eligibleMergeCount}）` : '' }}</button>
             <button
               v-if="items.length > 0"
               class="hc-sbtn"
@@ -303,7 +309,7 @@
             >＋ 添加配件</button>
           </span>
         </div>
-        <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :bordered="false" :row-props="row => summaryHighlight(row, 'part')" />
+        <n-data-table v-if="items.length > 0" :columns="itemColumns" :data="items" :row-key="row => row.id" :bordered="false" :row-props="row => summaryHighlight(row, 'part')" />
         <n-empty v-else description="暂无明细" style="margin-top: 16px;" />
       </div>
 
@@ -451,6 +457,15 @@
 
     <!-- Batch Link Modal -->
     <ProductionOrderLinkDialog v-if="batchLinkModalVisible" :production-order-id="String(route.params.id)" @close="batchLinkModalVisible = false" @saved="onProductionLinked" />
+
+    <HandcraftPartMergeDialog
+      v-if="partMergePreview"
+      :order-id="partMergePreview.orderId"
+      :groups="partMergePreview.groups"
+      :bulk="partMergePreview.bulk"
+      @close="closePartMerge"
+      @saved="onPartMergeSaved"
+    />
 
     <!-- Cutting stats modal -->
     <n-modal v-model:show="cuttingStatsVisible" preset="card" title="裁剪统计" :style="{ width: isMobile ? '95vw' : '720px' }">
@@ -614,6 +629,7 @@ import {
   getHandcraftJewelryOrders, deleteHandcraftJewelryOrderLink,
   getHandcraftCuttingStats, downloadHandcraftCuttingStatsPdf,
   getHandcraftPicking,
+  previewHandcraftPartMerge,
   getHandcraftJewelryBreakdown,
 } from '@/api/handcraft'
 import BreakdownMatrix from '@/components/BreakdownMatrix.vue'
@@ -633,6 +649,7 @@ import { listOrders, getTodo, createLink } from '@/api/orders'
 import { renderNamedImage, renderOptionWithImage } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
 import HandcraftPickingSimulationModal from '@/components/picking/HandcraftPickingSimulationModal.vue'
+import HandcraftPartMergeDialog from '@/components/HandcraftPartMergeDialog.vue'
 import FloatingActionBar from '@/components/FloatingActionBar.vue'
 import FloatingActionButton from '@/components/FloatingActionButton.vue'
 import RecentImportsPicker from '@/components/RecentImportsPicker.vue'
@@ -865,6 +882,82 @@ const loadPickingWeights = async () => {
   }
 }
 
+const partMergeGroups = ref(null)
+const partMergePreview = ref(null)
+const partMergeOpening = ref(false)
+const partMergeRefreshing = ref(false)
+let partMergeRequest = 0
+const eligibleMergeCount = computed(() => (partMergeGroups.value || []).filter(group => group.revision).length)
+const mergeGroupByRow = computed(() => new Map((partMergeGroups.value || []).flatMap(group =>
+  group.rows.map(row => [row.id, group]),
+)))
+
+async function loadPartMergeGroups({ reportError = false } = {}) {
+  const request = ++partMergeRequest
+  const orderId = String(route.params.id)
+  if (!isPending() || items.value.length < 2) {
+    partMergeGroups.value = []
+    partMergeRefreshing.value = false
+    return []
+  }
+  partMergeRefreshing.value = true
+  try {
+    const { data } = await previewHandcraftPartMerge(orderId)
+    if (request !== partMergeRequest || orderId !== String(route.params.id)) return null
+    partMergeGroups.value = data
+    return data
+  } catch (err) {
+    if (request === partMergeRequest && orderId === String(route.params.id)) {
+      partMergeGroups.value = null
+      if (reportError) message.error(err.response?.data?.detail || '加载合并预览失败')
+    }
+    return null
+  } finally {
+    if (request === partMergeRequest) partMergeRefreshing.value = false
+  }
+}
+
+async function openPartMerge(rowId = null) {
+  if (partMergeOpening.value || partMergePreview.value || !isPending()) return
+  const orderId = String(route.params.id)
+  partMergeOpening.value = true
+  try {
+    const latest = await loadPartMergeGroups({ reportError: true })
+    if (!latest || orderId !== String(route.params.id) || !isPending()) return
+    const bulk = rowId == null
+    const groups = latest.filter(group => group.revision && (bulk || group.retain_item_id === rowId))
+    if (!groups.length) {
+      const reason = latest.find(group => group.retain_item_id === rowId)?.blocked_reason
+      message.warning(reason || '当前没有可合并的配件')
+      return
+    }
+    partMergePreview.value = { orderId, groups, bulk }
+  } finally {
+    partMergeOpening.value = false
+  }
+}
+
+function closePartMerge(stale) {
+  partMergePreview.value = null
+  if (stale) void refreshAfterPartMerge()
+}
+
+async function refreshAfterPartMerge() {
+  partMergeGroups.value = []
+  try {
+    await loadData()
+    await loadPartItemOrderLinks()
+  } catch {
+    message.warning('明细刷新失败，请刷新页面后查看')
+  }
+}
+
+async function onPartMergeSaved({ merged_groups, removed_rows }) {
+  partMergePreview.value = null
+  message.success(`已合并 ${merged_groups} 组，减少 ${removed_rows} 行配件明细`)
+  await refreshAfterPartMerge()
+}
+
 const toKg = (w, unit) => {
   if (w == null) return 0
   return unit === 'g' ? Number(w) / 1000 : Number(w)
@@ -1040,8 +1133,7 @@ const loadData = async () => {
   }
   // Refresh picking weights map so the parts table 重量 column reads from
   // handcraft_picking_weight (the new system of record post-Task 7).
-  await loadPickingWeights()
-  await loadRestock()
+  await Promise.all([loadPickingWeights(), loadRestock(), loadPartMergeGroups()])
 }
 
 const { sending, doSend } = useSendWithStockSupplement({
@@ -1883,7 +1975,21 @@ const itemColumns = [
     title: '配件',
     key: 'part_name',
     minWidth: 180,
-    render: (row) => renderNamedImage(row.part_name, row.part_image, row.part_name, 40, partMap.value[row.part_id]?.is_composite ? '组合' : null),
+    render: (row) => {
+      const part = renderNamedImage(row.part_name, row.part_image, row.part_name, 40, partMap.value[row.part_id]?.is_composite ? '组合' : null)
+      const group = isPending() ? mergeGroupByRow.value.get(row.id) : null
+      if (!group) return part
+      const mergeAction = group.blocked_reason
+        ? h('small', { class: 'hc-merge-note' }, `${group.blocked_reason} · 保留`)
+        : group.retain_item_id === row.id
+          ? h(NButton, {
+            size: 'small', text: true, type: 'primary',
+            disabled: partMergeOpening.value || partMergeRefreshing.value,
+            onClick: () => openPartMerge(row.id),
+          }, { default: () => `合并此配件 · ${group.rows.length} 行` })
+          : h('small', { class: 'hc-merge-note' }, `同组 · 明细 #${group.retain_item_id}`)
+      return h('div', { class: 'hc-merge-part' }, [part, mergeAction])
+    },
   },
   {
     title: '颜色',
@@ -1980,7 +2086,7 @@ const itemColumns = [
               weight: localState.weight,
               weight_unit: localState.weight_unit,
             })
-            await loadPickingWeights()
+            await Promise.all([loadPickingWeights(), loadPartMergeGroups()])
           },
         }),
         h(NSelect, {
@@ -1994,7 +2100,7 @@ const itemColumns = [
               weight_unit: v,
               weight: localState.weight,
             })
-            await loadPickingWeights()
+            await Promise.all([loadPickingWeights(), loadPartMergeGroups()])
           },
         }),
       ])
@@ -2631,6 +2737,11 @@ async function copyReceiptCode() {
   gap: 6px;
 }
 
+.hc-parts-head, .hc-parts-head .acts {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 /* Small bordered action buttons in section headers */
 .hc-sbtn {
   display: inline-flex;
@@ -2656,6 +2767,17 @@ async function copyReceiptCode() {
 .hc-sbtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.hc-merge-note {
+  display: block;
+  color: #626e75;
+}
+
+.hc-merge-part {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
 }
 
 .hc-sbtn--primary {

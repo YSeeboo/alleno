@@ -19,6 +19,9 @@ from schemas.handcraft import (
     HandcraftJewelryItemResponse,
     HandcraftPartIn,
     HandcraftPartItemResponse,
+    HandcraftPartMergeGroup,
+    HandcraftPartMergeRequest,
+    HandcraftPartMergeResult,
     HandcraftPickingActualQtyDeleteRequest,
     HandcraftPickingActualQtyUpsertRequest,
     HandcraftPickingMarkRequest,
@@ -68,6 +71,11 @@ from services.handcraft_picking import (
     mark_picked,
     unmark_picked,
     reset_picking,
+)
+from services.handcraft_part_merge import (
+    HandcraftPartMergeConflict,
+    apply_handcraft_part_merge,
+    preview_handcraft_part_merge,
 )
 from services.handcraft_picking_weight import (
     upsert_weight as upsert_picking_weight,
@@ -612,6 +620,25 @@ def api_handcraft_picking_pdf(order_id: str, db: Session = Depends(get_db)):
             )
         },
     )
+
+
+@router.get("/{order_id}/part-merge", response_model=list[HandcraftPartMergeGroup])
+def api_preview_handcraft_part_merge(order_id: str, db: Session = Depends(get_db)):
+    with service_errors():
+        return preview_handcraft_part_merge(db, order_id)
+
+
+@router.post("/{order_id}/part-merge", response_model=HandcraftPartMergeResult)
+def api_apply_handcraft_part_merge(
+    order_id: str, body: HandcraftPartMergeRequest, db: Session = Depends(get_db),
+):
+    with service_errors():
+        try:
+            return apply_handcraft_part_merge(
+                db, order_id, {group.retain_item_id: group.revision for group in body.groups},
+            )
+        except HandcraftPartMergeConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
 
 
 @router.post("/{order_id}/parts/{part_id}/merge-duplicates")
