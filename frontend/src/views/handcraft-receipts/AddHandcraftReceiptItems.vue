@@ -232,7 +232,7 @@ onBeforeUnmount(() => { active = false })
 .rp-types button:disabled { cursor: default; opacity: .6; }
 .rp-types button:focus-visible { outline: 2px solid #1e7a5a; outline-offset: -2px; }
 .rp-list-tools { margin: 10px 0 8px; font-size: 12px; }
-.rp-source-list, .rp-draft-list { max-height: min(46vh, 500px); overflow-y: auto; }
+.rp-source-list { max-height: min(46vh, 500px); overflow-y: auto; }
 .rp-source-list :deep(.n-empty), .rp-draft-list :deep(.n-empty) { padding: 26px 8px; }
 .rp-source { display: grid; grid-template-columns: auto 42px minmax(0, 1fr) minmax(0, auto); align-items: center; gap: 9px; padding: 9px 7px; border: 1px solid transparent; border-bottom-color: #eef1f0; cursor: pointer; }
 .rp-source:hover { background: #f5f9f7; }
@@ -256,13 +256,18 @@ onBeforeUnmount(() => { active = false })
 .rp-weight { display: grid; grid-template-columns: minmax(0, 140px) 74px; gap: 8px; margin-top: 6px; }
 .rp-footer { font-size: 12px; }
 .rp-footer span { color: #626d74; }
+@media (width > 760px) {
+  .rp-drafts { display: flex; flex-direction: column; }
+  .rp-drafts .rp-panel-head { flex: none; }
+  /* Match the left panel's height instead of letting the draft rows grow the grid. */
+  .rp-draft-list { flex: 1; min-height: 0; contain: size; overflow-y: auto; }
+}
 @media (max-width: 760px) {
   .receipt-picker :deep(.n-card__content), .receipt-picker :deep(.n-card__footer) { padding-left: 12px; padding-right: 12px; }
   .rp-split { grid-template-columns: minmax(0, 1fr); }
   .rp-catalog, .rp-drafts { padding: 10px; }
   .rp-drafts { border-left: 0; border-top: 1px solid #e6ebed; }
   .rp-source-list { max-height: 250px; }
-  .rp-draft-list { max-height: none; overflow: visible; }
   .rp-source { grid-template-columns: auto 32px minmax(0, 1fr) minmax(0, auto); gap: 6px; padding-inline: 2px; }
   .rp-source img, .rp-image-placeholder { width: 32px; height: 32px; }
   .rp-balance { max-width: 74px; }

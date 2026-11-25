@@ -1,4 +1,6 @@
-from models.part import Part
+import pytest
+
+from models.part import Part, PartCostLog
 
 
 def _setup_parts(db):
@@ -230,21 +232,105 @@ def test_assembly_cost_synced_from_handcraft_receipt(client, db):
     db.add_all([hp, hj])
     db.flush()
 
-    # Create receipt with price=3.0 per unit
+    # Multiple priced rows for the same output: initialize from the last price.
     resp = client.post("/api/handcraft-receipts/", json={
         "supplier_name": "手工商C",
-        "items": [{
-            "handcraft_jewelry_item_id": hj.id,
-            "qty": 10,
-            "price": 3.0,
-        }],
+        "items": [
+            {"handcraft_jewelry_item_id": hj.id, "qty": 4, "price": 2.0},
+            {"handcraft_jewelry_item_id": hj.id, "qty": 6, "price": 3.0},
+        ],
     })
     assert resp.status_code == 201
+    assert resp.json()["cost_diffs"] == []
 
     db.refresh(parent)
     # assembly_cost should be 3.0, unit_cost = 10*2 + 3 = 23
     assert float(parent.assembly_cost) == 3.0
     assert float(parent.unit_cost) == 23.0
+
+
+@pytest.mark.parametrize("append", [False, True], ids=["create", "append"])
+@pytest.mark.parametrize("old_cost,new_price", [(None, 0), (0, 4), (2, 0), (4, 4), (2, None)])
+def test_receipt_assembly_cost_confirmation(client_real_get_db, db, append, old_cost, new_price):
+    from models.handcraft_order import HandcraftOrder, HandcraftJewelryItem
+    from services.part_bom import set_part_bom
+
+    client = client_real_get_db
+    output, (child, top, _) = _setup_parts(db)
+    child.unit_cost = 10
+    output.assembly_cost = old_cost
+    db.flush()
+    set_part_bom(db, output.id, child.id, 2)
+    set_part_bom(db, top.id, output.id, 3)
+    order = HandcraftOrder(id="HC-COST-CONFIRM", supplier_name="手工商C", status="processing")
+    db.add(order)
+    db.flush()
+    source = HandcraftJewelryItem(handcraft_order_id=order.id, part_id=output.id, qty=10, status="制作中")
+    db.add(source)
+    db.commit()
+
+    url = "/api/handcraft-receipts/"
+    body = {"items": [{"handcraft_jewelry_item_id": source.id, "qty": 1, "price": new_price}]}
+    if append:
+        initial = client.post(url, json={
+            "supplier_name": order.supplier_name,
+            "items": [{"handcraft_jewelry_item_id": source.id, "qty": 1}],
+        })
+        assert initial.status_code == 201
+        url += f"{initial.json()['id']}/items"
+    else:
+        body["supplier_name"] = order.supplier_name
+
+    resp = client.post(url, json=body)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["items"][-1]["price"] == new_price
+    logs = db.query(PartCostLog).filter_by(part_id=output.id, field="assembly_cost")
+
+    if old_cost is None:
+        assert data["cost_diffs"] == []
+        db.refresh(output)
+        assert output.assembly_cost == new_price
+        log = logs.one()
+        assert (log.cost_before, log.cost_after) == (None, new_price)
+        assert log.source_id == data["id"]
+        return
+
+    # Saving the receipt (and not confirming) must not change costs or logs.
+    db.refresh(output)
+    db.refresh(top)
+    assert output.assembly_cost == old_cost
+    assert output.unit_cost == 20 + old_cost
+    assert top.unit_cost == 3 * (20 + old_cost)
+    assert logs.count() == 0
+    if new_price is None or new_price == old_cost:
+        assert data["cost_diffs"] == []
+        return
+
+    assert data["cost_diffs"] == [{
+        "part_id": output.id, "part_name": output.name, "field": "assembly_cost",
+        "current_value": old_cost, "new_value": new_price,
+    }]
+    update = {"updates": [{
+        "part_id": output.id, "field": "assembly_cost", "value": new_price, "source_id": data["id"],
+    }]}
+    confirmed = client.post("/api/parts/batch-update-costs", json=update)
+    assert confirmed.status_code == 200
+    assert confirmed.json()["updated_count"] == 1
+    db.refresh(output)
+    db.refresh(top)
+    assert output.assembly_cost == new_price
+    assert output.unit_cost == 20 + new_price
+    assert top.unit_cost == 3 * (20 + new_price)
+    log = logs.one()
+    assert (log.cost_before, log.cost_after) == (old_cost, new_price)
+    assert (log.unit_cost_before, log.unit_cost_after) == (20 + old_cost, 20 + new_price)
+    assert log.source_id == data["id"]
+
+    repeated = client.post("/api/parts/batch-update-costs", json=update)
+    assert repeated.status_code == 200
+    assert repeated.json()["updated_count"] == 0
+    assert logs.count() == 1
 
 
 def test_part_response_includes_is_composite(client, db):

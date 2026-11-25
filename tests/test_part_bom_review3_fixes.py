@@ -77,7 +77,7 @@ def test_recalc_survives_if_cycle_somehow_exists(db):
 def test_add_receipt_items_cost_diffs_only_new(client, db):
     """cost_diffs returned by add-items should only reflect new items."""
     parent1 = Part(id="PJ-X-CD1", name="组合件CD1", category="小配件")
-    parent2 = Part(id="PJ-X-CD2", name="组合件CD2", category="小配件")
+    parent2 = Part(id="PJ-X-CD2", name="组合件CD2", category="小配件", assembly_cost=2)
     child1 = Part(id="PJ-X-CDC1", name="子件CD1", category="小配件")
     child2 = Part(id="PJ-X-CDC2", name="子件CD2", category="小配件")
     db.add_all([parent1, parent2, child1, child2])
@@ -121,16 +121,19 @@ def test_add_receipt_items_cost_diffs_only_new(client, db):
 
     # Add parent2 to the same receipt
     resp2 = client.post(f"/api/handcraft-receipts/{receipt_id}/items", json={
-        "items": [{
-            "handcraft_jewelry_item_id": hj2.id,
-            "qty": 5,
-            "price": 4.0,
-        }],
+        "items": [
+            {"handcraft_jewelry_item_id": hj2.id, "qty": 2, "price": 3.0},
+            {"handcraft_jewelry_item_id": hj2.id, "qty": 3, "price": 4.0},
+        ],
     })
     assert resp2.status_code == 201
     data = resp2.json()
 
-    # cost_diffs should only mention parent2 (the new item), not parent1
-    diff_part_ids = [d["part_id"] for d in data.get("cost_diffs", [])]
-    assert parent2.id in diff_part_ids or len(diff_part_ids) == 0  # parent2 may or may not diff
-    assert parent1.id not in diff_part_ids  # parent1 must NOT appear
+    assert data["cost_diffs"] == [{
+        "part_id": parent2.id, "part_name": parent2.name, "field": "assembly_cost",
+        "current_value": 2, "new_value": 4,
+    }]
+    db.refresh(parent1)
+    db.refresh(parent2)
+    assert parent1.assembly_cost == 99
+    assert parent2.assembly_cost == 2

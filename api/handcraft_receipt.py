@@ -5,13 +5,7 @@ from sqlalchemy.orm import Session
 
 from api._errors import service_errors
 from database import get_db
-from schemas.part import CostDiffItem
-from services.cost_sync import (
-    auto_set_initial_assembly_cost,
-    auto_set_initial_handcraft_cost,
-    detect_handcraft_assembly_cost_diffs,
-    detect_handcraft_jewelry_cost_diffs,
-)
+from models.handcraft_order import HandcraftPartItem, HandcraftJewelryItem
 from schemas.handcraft_receipt import (
     HandcraftReceiptAddItemsRequest,
     HandcraftReceiptCreate,
@@ -22,8 +16,9 @@ from schemas.handcraft_receipt import (
     HandcraftReceiptStatusUpdate,
     HandcraftReceiptUpdate,
 )
-from models.handcraft_order import HandcraftPartItem, HandcraftJewelryItem
+from schemas.part import CostDiffItem
 from schemas.production_loss import BatchConfirmLossHandcraftRequest, BatchConfirmLossResponse
+from services.cost_sync import prepare_handcraft_receipt_cost_updates
 from services.production_loss import confirm_handcraft_loss
 from services.handcraft_receipt import (
     add_handcraft_receipt_items,
@@ -63,18 +58,7 @@ def api_create_handcraft_receipt(body: HandcraftReceiptCreate, db: Session = Dep
             note=body.note,
             created_at=body.created_at,
         )
-    # Detect diffs BEFORE auto-setting (so old values are still visible)
-    # A方案: part receipts = pure surplus return; no bead_cost sync
-    cost_diffs = detect_handcraft_jewelry_cost_diffs(db, receipt)
-    cost_diffs += detect_handcraft_assembly_cost_diffs(db, receipt)
-    # Then sync handcraft_cost for jewelry items, assembly_cost for part output items
-    for item in receipt.items:
-        if item.item_type == "jewelry" and item.price is not None:
-            oi = db.get(HandcraftJewelryItem, item.handcraft_jewelry_item_id) if item.handcraft_jewelry_item_id else None
-            if oi and oi.part_id and not oi.jewelry_id:
-                auto_set_initial_assembly_cost(db, oi.part_id, float(item.price))
-            else:
-                auto_set_initial_handcraft_cost(db, item.item_id, float(item.price))
+        cost_diffs = prepare_handcraft_receipt_cost_updates(db, receipt.items, receipt.id)
     resp = HandcraftReceiptResponse.model_validate(receipt)
     resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]
     resp.parts_shortfall = getattr(receipt, "parts_shortfall", []) or []
@@ -98,25 +82,9 @@ def api_add_handcraft_receipt_items(receipt_id: str, body: HandcraftReceiptAddIt
             receipt_id=receipt_id,
             items=[item.model_dump() for item in body.items],
         )
-    # Only process newly added items for cost sync and diffs
-    new_items = [item for item in receipt.items if item.id not in existing_item_ids]
-
-    # Create a view with only new items for diff detection
-    class _NewItemsView:
-        def __init__(self, items):
-            self.items = items
-    new_items_view = _NewItemsView(new_items)
-    # A方案: part receipts = pure surplus return; no bead_cost sync
-    cost_diffs = detect_handcraft_jewelry_cost_diffs(db, new_items_view)
-    cost_diffs += detect_handcraft_assembly_cost_diffs(db, new_items_view)
-    # Then sync — only new items
-    for item in new_items:
-        if item.item_type == "jewelry" and item.price is not None:
-            oi = db.get(HandcraftJewelryItem, item.handcraft_jewelry_item_id) if item.handcraft_jewelry_item_id else None
-            if oi and oi.part_id and not oi.jewelry_id:
-                auto_set_initial_assembly_cost(db, oi.part_id, float(item.price))
-            else:
-                auto_set_initial_handcraft_cost(db, item.item_id, float(item.price))
+        # Only process newly added items for cost sync and diffs.
+        new_items = [item for item in receipt.items if item.id not in existing_item_ids]
+        cost_diffs = prepare_handcraft_receipt_cost_updates(db, new_items, receipt.id)
     resp = HandcraftReceiptResponse.model_validate(receipt)
     resp.cost_diffs = [CostDiffItem(**d) for d in cost_diffs]
     resp.parts_shortfall = getattr(receipt, "parts_shortfall", []) or []

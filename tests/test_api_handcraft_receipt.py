@@ -565,41 +565,60 @@ def test_neither_item_id_rejected_at_service_level(db):
 
 def test_jewelry_handcraft_cost_synced_on_create(client, db):
     """Creating a receipt with jewelry price syncs handcraft_cost to Jewelry."""
-    from models.jewelry import Jewelry
     part, jewelry, order, pi, ji = _create_sent_handcraft(db)
     resp = client.post("/api/handcraft-receipts/", json={
         "supplier_name": "测试手工商",
         "items": [{"handcraft_jewelry_item_id": ji.id, "qty": 3, "price": 5.0}],
     })
     assert resp.status_code == 201
+    assert resp.json()["cost_diffs"] == []
     db.refresh(jewelry)
     assert float(jewelry.handcraft_cost) == pytest.approx(5.0)
 
 
-def test_jewelry_handcraft_cost_diff_returned_and_synced(client, db):
-    """When jewelry has a different handcraft_cost, diff is returned AND value is synced."""
+@pytest.mark.parametrize("append", [False, True], ids=["create", "append"])
+def test_jewelry_handcraft_cost_diff_requires_confirmation(client, db, append):
     part, jewelry, order, pi, ji = _create_sent_handcraft(db)
-    jewelry.handcraft_cost = 3.0
+    jewelry.handcraft_cost = 0
     db.flush()
-    resp = client.post("/api/handcraft-receipts/", json={
+    url = "/api/handcraft-receipts/"
+    body = {
         "supplier_name": "测试手工商",
         "items": [{"handcraft_jewelry_item_id": ji.id, "qty": 2, "price": 7.0}],
-    })
+    }
+    if append:
+        initial = client.post(url, json={
+            "supplier_name": "测试手工商",
+            "items": [{"handcraft_part_item_id": pi.id, "qty": 1, "price": 9.0}],
+        })
+        assert initial.status_code == 201
+        assert initial.json()["cost_diffs"] == []
+        url += f"{initial.json()['id']}/items"
+
+    resp = client.post(url, json=body)
     assert resp.status_code == 201
     data = resp.json()
-    # Diff should show old→new (detected before auto-set)
-    hc_diffs = [d for d in data["cost_diffs"] if d["field"] == "handcraft_cost"]
-    assert len(hc_diffs) == 1
-    assert hc_diffs[0]["current_value"] == pytest.approx(3.0)
-    assert hc_diffs[0]["new_value"] == pytest.approx(7.0)
-    # Value should be synced after
+    assert data["cost_diffs"] == [{
+        "part_id": jewelry.id,
+        "part_name": jewelry.name,
+        "field": "handcraft_cost",
+        "current_value": 0,
+        "new_value": 7.0,
+    }]
+    assert data["items"][-1]["price"] == 7.0
     db.refresh(jewelry)
-    assert float(jewelry.handcraft_cost) == pytest.approx(7.0)
+    assert jewelry.handcraft_cost == 0
+
+    confirmed = client.post("/api/parts/batch-update-costs", json={"updates": [{
+        "part_id": jewelry.id, "field": "handcraft_cost", "value": 7.0, "source_id": data["id"],
+    }]})
+    assert confirmed.status_code == 200
+    assert confirmed.json()["updated_count"] == 1
+    db.refresh(jewelry)
+    assert jewelry.handcraft_cost == 7
 
 
-def test_jewelry_handcraft_cost_diff_on_add_items(client, db):
-    """Adding jewelry items to existing receipt syncs handcraft_cost."""
-    from models.jewelry import Jewelry
+def test_jewelry_handcraft_cost_initialized_on_add_items(client, db):
     part, jewelry, order, pi, ji = _create_sent_handcraft(db)
     create_resp = client.post("/api/handcraft-receipts/", json={
         "supplier_name": "测试手工商",
@@ -611,6 +630,7 @@ def test_jewelry_handcraft_cost_diff_on_add_items(client, db):
         "items": [{"handcraft_jewelry_item_id": ji.id, "qty": 2, "price": 8.0}],
     })
     assert add_resp.status_code == 201
+    assert add_resp.json()["cost_diffs"] == []
     db.refresh(jewelry)
     assert float(jewelry.handcraft_cost) == pytest.approx(8.0)
 

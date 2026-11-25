@@ -23,7 +23,7 @@ _COLOR_PLUS_SPEC_NAME_REGEX = re.compile(
     r"_(" + "|".join(COLOR_SUFFIXES) + r")_\d+(\.\d+)?(cm|mm|m)$"
 )
 
-_COST_FIELDS = {"purchase_cost", "bead_cost", "plating_cost"}
+_COST_FIELDS = {"purchase_cost", "bead_cost", "plating_cost", "assembly_cost"}
 _Q7 = Decimal("0.0000001")
 
 
@@ -417,7 +417,11 @@ def update_part_cost(
         return None
 
     setattr(part, field, new_value)
-    _recalc_unit_cost_and_propagate(db, part)
+    if field == "assembly_cost":
+        from services.part_bom import recalc_part_unit_cost
+        recalc_part_unit_cost(db, part_id)
+    else:
+        _recalc_unit_cost_and_propagate(db, part)
 
     log = PartCostLog(
         part_id=part_id,

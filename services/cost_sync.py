@@ -1,8 +1,11 @@
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
 
 from sqlalchemy.orm import Session
 
+from models.handcraft_order import HandcraftJewelryItem
+from models.handcraft_receipt import HandcraftReceiptItem
+from models.jewelry import Jewelry
 from models.part import Part
 from models.purchase_order import PurchaseOrder, PurchaseOrderItem, PurchaseOrderItemAddon
 from services.part import update_part_cost
@@ -137,84 +140,44 @@ def detect_plating_cost_diffs(db: Session, receipt) -> list[dict]:
     return diffs
 
 
-def detect_handcraft_jewelry_cost_diffs(db: Session, receipt) -> list[dict]:
-    """Detect handcraft_cost diffs for jewelry items in a handcraft receipt."""
-    from models.jewelry import Jewelry
-
-    price_map: Dict[str, Optional[float]] = {}
-    for ri in receipt.items:
-        if ri.item_type != "jewelry" or ri.price is None:
+def prepare_handcraft_receipt_cost_updates(
+    db: Session, items: Iterable[HandcraftReceiptItem], receipt_id: str,
+) -> list[dict]:
+    """Initialize unset output costs; return existing cost changes for confirmation."""
+    prices: dict[tuple[str, str], Decimal] = {}
+    for item in items:
+        # Material returns never update costs. Both kinds of output use "jewelry".
+        if item.item_type != "jewelry" or item.price is None or item.handcraft_jewelry_item_id is None:
             continue
-        price_map[ri.item_id] = float(ri.price)
+        output = db.get(HandcraftJewelryItem, item.handcraft_jewelry_item_id)
+        if output is None:
+            continue
+        # The last priced row for the same output wins.
+        if output.jewelry_id:
+            prices["handcraft_cost", output.jewelry_id] = item.price
+        elif output.part_id:
+            prices["assembly_cost", output.part_id] = item.price
 
     diffs = []
-    for jewelry_id, new_price in price_map.items():
-        jewelry = db.get(Jewelry, jewelry_id)
-        if jewelry is None:
+    for (field, item_id), new_price in prices.items():
+        model = Part if field == "assembly_cost" else Jewelry
+        target = db.get(model, item_id)
+        if target is None:
             continue
-        current = float(jewelry.handcraft_cost) if jewelry.handcraft_cost is not None else None
+        current = getattr(target, field)
+        if current is None:
+            # Recheck under a row lock so a concurrent cost write isn't overwritten.
+            db.refresh(target, with_for_update={"key_share": True})
+            current = getattr(target, field)
+            if current is None:
+                update_part_cost(db, item_id, field, float(new_price), source_id=receipt_id)
+                continue
         if _compare(current, new_price):
             diffs.append({
-                "part_id": jewelry_id,       # 复用 CostDiffItem 结构，part_id 字段存 jewelry_id
-                "part_name": jewelry.name,
-                "field": "handcraft_cost",
-                "current_value": current,
-                "new_value": new_price,
-            })
-    return diffs
-
-
-def auto_set_initial_handcraft_cost(db: Session, jewelry_id: str, price: float) -> None:
-    """Sync handcraft receipt jewelry price to Jewelry.handcraft_cost."""
-    from models.jewelry import Jewelry
-    jewelry = db.get(Jewelry, jewelry_id)
-    if jewelry is None:
-        return
-    new_value = Decimal(str(price)).quantize(_Q7, rounding=ROUND_HALF_UP)
-    current = Decimal(str(jewelry.handcraft_cost)).quantize(_Q7, rounding=ROUND_HALF_UP) if jewelry.handcraft_cost is not None else None
-    if current == new_value:
-        return
-    jewelry.handcraft_cost = new_value
-    db.flush()
-
-
-def auto_set_initial_assembly_cost(db: Session, part_id: str, price: float) -> None:
-    """Sync handcraft receipt part-output price to Part.assembly_cost and recalc unit_cost."""
-    part = db.get(Part, part_id)
-    if part is None:
-        return
-    new_value = Decimal(str(price)).quantize(_Q7, rounding=ROUND_HALF_UP)
-    current = Decimal(str(part.assembly_cost)).quantize(_Q7, rounding=ROUND_HALF_UP) if part.assembly_cost is not None else None
-    if current == new_value:
-        return
-    part.assembly_cost = new_value
-    db.flush()
-    from services.part_bom import recalc_part_unit_cost
-    recalc_part_unit_cost(db, part_id)
-
-
-def detect_handcraft_assembly_cost_diffs(db: Session, receipt) -> list[dict]:
-    """Detect assembly_cost diffs for part output items in a handcraft receipt."""
-    from models.handcraft_order import HandcraftJewelryItem
-
-    diffs = []
-    for ri in receipt.items:
-        if ri.handcraft_jewelry_item_id is None or ri.price is None:
-            continue
-        oi = db.get(HandcraftJewelryItem, ri.handcraft_jewelry_item_id)
-        if oi is None or not oi.part_id:
-            continue
-        part = db.get(Part, oi.part_id)
-        if part is None:
-            continue
-        new_price = float(ri.price)
-        current = float(part.assembly_cost) if part.assembly_cost is not None else None
-        if _compare(current, new_price):
-            diffs.append({
-                "part_id": oi.part_id,
-                "part_name": part.name,
-                "field": "assembly_cost",
-                "current_value": current,
-                "new_value": new_price,
+                "part_id": item_id,  # Also carries jewelry IDs for handcraft_cost.
+                "part_name": target.name,
+                "field": field,
+                "current_value": float(current),
+                "new_value": float(new_price),
             })
     return diffs
