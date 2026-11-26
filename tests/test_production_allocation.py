@@ -134,7 +134,7 @@ def test_legacy_source_not_guessed_or_double_claimed(db, fixture, legacy):
 
 
 def test_legacy_demand_blocks_new_source_even_on_another_row(db, fixture):
-    batch = OrderTodoBatch(order_id="OR-1")
+    batch = OrderTodoBatch(order_id="OR-1", handcraft_order_id="HC-1")
     db.add(batch)
     db.flush()
     db.add(OrderTodoBatchJewelry(batch_id=batch.id, jewelry_id="necklace", quantity=10))

@@ -7,7 +7,7 @@ import { makeBatchRow, batchPayload } from '../src/utils/batchAdd.js'
 
 const moduleUrl = code => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
 const runtime = moduleUrl(`
-  export { ref, reactive, computed, h } from ${JSON.stringify(import.meta.resolve('vue'))};
+  export { ref, reactive, computed, h, nextTick } from ${JSON.stringify(import.meta.resolve('vue'))};
   export const watch = (source, action, options) => globalThis.__orderIntegration.watches.push({ source, action, options });
   export const onMounted = fn => globalThis.__orderIntegration.mounted.push(fn);
 `)
@@ -31,6 +31,8 @@ async function component(path) {
     .replace(/import (\w+) from ['"][^'"]+\.vue['"]/g, 'const $1 = {}')
     .replace(/import \{ useIsMobile \} from ['"][^'"]+['"]/, 'const useIsMobile = () => ({ isMobile: false })')
     .replace(/from ['"]@\/utils\/date['"]/, `from ${JSON.stringify(new URL('../src/utils/date.js', import.meta.url).href)}`)
+    .replace(/from ['"]@\/utils\/orderReadinessFilter['"]/, `from ${JSON.stringify(new URL('../src/utils/orderReadinessFilter.js', import.meta.url).href)}`)
+    .replace(/from ['"]@\/utils\/orderMaterialGroups['"]/, `from ${JSON.stringify(new URL('../src/utils/orderMaterialGroups.js', import.meta.url).href)}`)
     .replace(/import \{ ([^}]+) \} from ['"]@\/utils\/ui['"]/, (_, names) => `const ${names.split(',').map(n => `${n.trim()} = value => value`).join(', ')}`)
   return (await import(moduleUrl(code))).default
 }
@@ -54,6 +56,21 @@ function setup(Component, props, api = {}) {
 const order = { id: 'OR-1', customer_name: '客户', created_at: '2026-11-19T12:00:00', packaging_cost: 0 }
 const line = { id: 7, product_type: 'jewelry', product_id: 'J', quantity: 10, unit_price: '0.1234567', customer_code: 'A01', remarks: '本行' }
 
+test('real product-detail readiness toggle hides only prepared rows, retains unknown history and leaves summary intact', () => {
+  const { ctx, state, calls } = setup(Detail, {})
+  ctx.data.value = { total_items: 3, reserved_ready_items: 1, lines: [{ ...line, id: 1, gap: 0 }, { ...line, id: 2, gap: 4 }, { ...line, id: 3, gap: null }] }
+  assert.deepEqual(ctx.visibleLines.value.map(l => l.id), [1, 2, 3])
+  ctx.readinessFilter.value = 'pending'
+  assert.deepEqual(ctx.visibleLines.value.map(l => l.id), [2, 3])
+  assert.equal(ctx.pendingLineCount.value, 2)
+  assert.equal(ctx.unknownGapCount.value, 1)
+  assert.equal(ctx.data.value.total_items, 3)
+  assert.equal(ctx.data.value.lines.length, 3)
+  state.watches.find(w => w.source === ctx.orderId).action()
+  assert.equal(ctx.readinessFilter.value, 'all')
+  assert.deepEqual(calls, [])
+})
+
 test('workspace tabs put order information last; old URL preserves its query/hash', async () => {
   const header = await read('components/fulfillment/OrderWorkspaceHeader.vue')
   assert.deepEqual([...header.matchAll(/<n-tab name="([^"]+)">([^<]+)</g)].map(m => [m[1], m[2]]), [['fulfillment', '商品详情'], ['production', '生产安排'], ['information', '订单信息']])
@@ -68,7 +85,7 @@ test('workspace tabs put order information last; old URL preserves its query/has
 
 test('product details retains products/costs while metadata lives only in the information tab', async () => {
   const view = await read('views/orders/OrderDetail.vue')
-  assert.equal((view.match(/<tr v-for="line in data.lines"/g) || []).length, 1)
+  assert.equal((view.match(/<tr v-for="line in visibleLines"/g) || []).length, 1)
   for (const name of ['OrderCosts', 'OrderLineEditor', 'ReservationDialog', 'ShipmentTable']) assert.match(view, new RegExp(`<${name}`))
   assert.doesNotMatch(view, /OrderInformation|informationBusy/)
   const information = await read('views/orders/OrderInfo.vue')
@@ -220,6 +237,150 @@ test('same-product BOM rows remain separate by exact order line and customer cod
   })
   await ctx.load()
   assert.deepEqual(ctx.bomRows.value.map(r => [r.key, r.line.id, r.line.customer_code, r.line.quantity * r.qty_per_unit]), [['7:P', 7, 'A01', 20], ['8:P', 8, 'A02', 40]])
+  assert.equal(ctx.bomColumns.find(c => c.key === 'allocated').render(ctx.bomRows.value[0]), '—')
+})
+
+const demand = (orderItemId, overrides = {}) => ({ id:`material:${orderItemId}:P`, order_item_id:orderItemId, material_part_id:'P', qty_per_unit:2, quantity:20, allocated:6, unit:'个', ...overrides })
+
+test('merged materials use authoritative exact-line demands and preserve changed/deleted BOM allocations', async () => {
+  const materials = [demand(7, { quantity:'19.9999', demand_changed:true, legacy_claim:true, snapshot_quantity:30 }), demand(8, { qty_per_unit:0, quantity:0, allocated:9, demand_changed:true, snapshot_quantity:40 })]
+  const { ctx, calls } = setup(Materials, { orderId:order.id, lines:[line, { ...line, id:8, quantity:20, customer_code:'A02' }, { ...line, id:9 }], materials })
+  await ctx.load()
+  const rows = ctx.bomRows.value
+  assert.deepEqual(rows.map(r => [r.key, r.line.id, r.line.customer_code]), [['material:7:P', 7, 'A01'], ['material:8:P', 8, 'A02'], ['8:missing', 8, 'A02'], ['9:missing', 9, 'A01']])
+  assert.equal(ctx.bomColumns.find(c => c.key === 'total').render(rows[0]), '19.9999 个')
+  assert.equal(ctx.bomColumns.find(c => c.key === 'allocated').render(rows[1]), '9 个')
+  assert.match(ctx.reviewText(rows[0]), /原需求 30.*旧归属待核对/)
+  assert.match(ctx.reviewText(rows[2]), /尚未维护 BOM/)
+  assert.deepEqual(calls.map(c => c[0]), ['listParts'])
+})
+
+test('display-only merge toggles exact source rows without any API write and preserves independent expansion', () => {
+  const materials = [demand(7, { quantity:120, allocated:50 }), demand(8, { quantity:120, allocated:70 })]
+  const before = structuredClone(materials)
+  const { ctx, calls } = setup(Materials, { orderId:order.id, lines:[line, { ...line, id:8, customer_code:'A02' }], materials })
+  assert.equal(ctx.mergeSameMaterials.value, false)
+  ctx.mergeSameMaterials.value = true
+  const [group] = ctx.materialGroups.value
+  assert.equal(ctx.materialGroupColumns.find(c => c.key === 'quantity').render(group), '× 240 个')
+  assert.equal(ctx.materialGroupColumns.find(c => c.key === 'allocated').render(group), '120 个')
+  ctx.toggleMaterialGroup(group)
+  assert.deepEqual(ctx.expandedMaterialGroups.value, [group.key])
+  const content = ctx.renderMaterialSources(group)
+  assert.deepEqual(content.children[1].props.data.map(row => [row.line.id, row.line.customer_code, row.quantity]), [[7, 'A01', 120], [8, 'A02', 120]])
+  ctx.expandedBomRows.value = ['material:7:P']
+  ctx.mergeSameMaterials.value = false
+  ctx.mergeSameMaterials.value = true
+  assert.deepEqual(ctx.expandedMaterialGroups.value, [group.key])
+  assert.deepEqual(ctx.expandedBomRows.value, ['material:7:P'])
+  assert.deepEqual(materials, before)
+  assert.deepEqual(calls, [])
+})
+
+test('grouped row click and accessible part button avoid double toggles while preserving warnings', () => {
+  const { ctx } = setup(Materials, { orderId:order.id, lines:[line], materials:[demand(7, { demand_changed:true, legacy_claim:true })] })
+  const [group] = ctx.materialGroups.value
+  assert.match(ctx.materialGroupReview(group), /1 项 BOM.*1 项旧归属待核对/)
+  const rowProps = ctx.materialGroupRowProps(group)
+  rowProps.onClick({ target:{ closest:() => null } })
+  assert.deepEqual(ctx.expandedMaterialGroups.value, [group.key])
+  rowProps.onClick({ target:{ closest:() => ({ tagName:'BUTTON' }) } })
+  assert.deepEqual(ctx.expandedMaterialGroups.value, [group.key])
+  ctx.toggleMaterialGroup(group)
+  assert.deepEqual(ctx.expandedMaterialGroups.value, [])
+  const missing = { missing:true, line }
+  assert.deepEqual(ctx.materialGroupRowProps(missing), {})
+  ctx.toggleMaterialGroup(missing)
+  assert.deepEqual(ctx.expandedMaterialGroups.value, [])
+})
+
+test('standalone BOM groups show theoretical totals but do not invent production allocations', async () => {
+  const { ctx } = setup(Materials, { orderId:order.id, lines:[line, { ...line, id:8, quantity:20 }] }, {
+    listParts:async () => ({ data:[{ id:'P', unit:'个' }] }), getBom:async () => ({ data:[{ part_id:'P', qty_per_unit:0.1 }] }),
+  })
+  await ctx.load()
+  const [group] = ctx.materialGroups.value
+  assert.equal(group.quantity, '3')
+  assert.equal(ctx.materialGroupColumns.find(c => c.key === 'allocated').render(group), '—')
+  assert.match(ctx.materialGroupReview(group), /制作量请在生产安排中核对/)
+})
+
+test('same-order refresh retains merge mode; changing orders clears mode and old group expansion', () => {
+  const props = { orderId:order.id, lines:[line], materials:[demand(7)] }
+  const { ctx, state } = setup(Materials, props)
+  ctx.mergeSameMaterials.value = true
+  ctx.expandedMaterialGroups.value = [ctx.materialGroups.value[0].key]
+  state.watches[0].action()
+  assert.equal(ctx.mergeSameMaterials.value, true)
+  assert.deepEqual(ctx.expandedMaterialGroups.value, [])
+  props.orderId = 'OR-OTHER'
+  state.watches[0].action()
+  assert.equal(ctx.mergeSameMaterials.value, false)
+  assert.deepEqual(ctx.expandedMaterialGroups.value, [])
+})
+
+test('estimate or catalog failures never hide current demands or turn allocated quantities into zero', async () => {
+  const { ctx } = setup(Materials, { orderId:order.id, lines:[line], materials:[demand(7)] }, {
+    getPartsSummary:async () => { throw new Error('estimate offline') }, listParts:async () => { throw new Error('catalog offline') },
+  })
+  await ctx.loadEstimates()
+  assert.match(ctx.estimateError.value, /不影响当前生产需求/)
+  assert.equal(ctx.error.value, '')
+  await ctx.load()
+  assert.ok(ctx.error.value)
+  assert.equal(ctx.bomRows.value[0].allocated, 6)
+  assert.equal(ctx.bomRows.value[0].quantity, 20)
+})
+
+test('inline composite BOM loads independently, deduplicates duplicate lines and supports retry', async () => {
+  let resolve, count = 0
+  const { ctx, state } = setup(Materials, { orderId:order.id, lines:[line, { ...line, id:8 }], materials:[demand(7), demand(8)] }, {
+    listParts:async () => ({ data:[{ id:'P', is_composite:true }] }),
+    getPartBom:() => { count++; return new Promise(done => { resolve = done }) },
+  })
+  await ctx.load()
+  assert.equal(ctx.isComposite(ctx.bomRows.value[0]), true)
+  ctx.expandBomRows(['material:7:P', 'material:8:P'])
+  assert.equal(count, 1)
+  assert.equal(ctx.childBoms.value.P.loading, true)
+  resolve({ data:[{ child_part_id:'RAW', qty_per_unit:3 }] })
+  await new Promise(done => setImmediate(done))
+  assert.equal(ctx.childBoms.value.P.rows[0].child_part_id, 'RAW')
+  state.api.getPartBom = async () => { throw new Error('offline') }
+  await ctx.openChildren('Q')
+  assert.match(ctx.childBoms.value.Q.error, /加载失败/)
+  state.api.getPartBom = async () => ({ data:[] })
+  await ctx.openChildren('Q')
+  assert.equal(ctx.childBoms.value.Q.error, '')
+  assert.equal(ctx.bomRows.value[0].quantity, 20)
+})
+
+test('changing order invalidates pending inline BOM requests and clears tool state', async () => {
+  let resolve
+  const { ctx, state } = setup(Materials, { orderId:order.id, lines:[line], materials:[demand(7)] }, {
+    getPartBom:() => new Promise(done => { resolve = done }),
+  })
+  const pending = ctx.openChildren('P')
+  ctx.showPicking.value = true
+  ctx.showCutting.value = true
+  state.watches[0].action()
+  resolve({ data:[{ child_part_id:'OLD' }] })
+  await pending
+  assert.deepEqual(ctx.childBoms.value, {})
+  assert.equal(ctx.showPicking.value, false)
+  assert.equal(ctx.showCutting.value, false)
+})
+
+test('production mounts one unified material table, retains tools/history and defaults old estimates to collapsed', async () => {
+  const page = await read('views/orders/OrderProduction.vue'), source = await read('components/fulfillment/OrderMaterials.vue')
+  assert.equal((page.match(/<OrderMaterials\b/g) || []).length, 1)
+  assert.match(page, /:materials="data.materials \|\| \[\]"/)
+  assert.doesNotMatch(page, /title="配件备料需求"/)
+  assert.match(source, /<OrderSection title="配件备料"/)
+  for (const title of ['裁剪统计', '配货模拟 / PDF', '已有批次与生产关联记录', '原备料估算参考']) assert.ok(source.includes(title))
+  assert.match(source, /<n-collapse style="margin-top:16px"><n-collapse-item title="原备料估算参考"/)
+  const { descriptor } = parse(source), script = compileScript(descriptor, { id:'merged-materials' })
+  assert.deepEqual(compileTemplate({ source:descriptor.template.content, filename:'OrderMaterials.vue', id:'merged-materials', compilerOptions:{ bindingMetadata:script.bindings } }).errors, [])
 })
 
 test('BOM errors are not an empty valid requirement and no history/movement write is called', async () => {
@@ -229,6 +390,21 @@ test('BOM errors are not an empty valid requirement and no history/movement writ
   await ctx.load()
   assert.match(ctx.error.value, /不能当作没有需求/)
   assert.equal(calls.some(([name]) => /create|delete|update|mark/i.test(name)), false)
+})
+
+test('complete legacy history expands, scrolls and focuses without writing records', async () => {
+  const { ctx, calls } = setup(Materials, { orderId: order.id, editable: false, lines: [line] })
+  const actions = []
+  ctx.historySection.value = { $el: {
+    scrollIntoView: options => actions.push(['scroll', options]),
+    focus: options => actions.push(['focus', options]),
+  } }
+  await ctx.openHistory()
+  assert.deepEqual(ctx.historyExpanded.value, ['history'])
+  assert.deepEqual(actions, [['scroll', { block: 'start', behavior: 'auto' }], ['focus', { preventScroll: true }]])
+  assert.deepEqual(calls, [])
+  ctx.historySection.value = null
+  await ctx.openHistory()
 })
 
 test('detail guards navigation during each remaining kind of save and exposes no manual status mutation', async () => {

@@ -238,7 +238,7 @@ def test_legacy_conflicts_are_not_guessed(db, material, legacy):
         db.add(todo); db.flush()
         db.add(OrderItemLink(order_todo_item_id=todo.id, plating_order_item_id=f["plated"].id))
     elif legacy == "batch":
-        batch = OrderTodoBatch(order_id="OR-0015")
+        batch = OrderTodoBatch(order_id="OR-0015", handcraft_order_id="HC-A")
         db.add(batch); db.flush()
         db.add(OrderTodoBatchJewelry(batch_id=batch.id, jewelry_id="finished", quantity=1))
     else:

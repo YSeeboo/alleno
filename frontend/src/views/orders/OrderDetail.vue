@@ -24,8 +24,13 @@
             <n-button v-if="canEdit" text type="primary" size="small" :disabled="busy" @click="showBatchCode = true">客户货号</n-button>
             <n-button v-if="canEdit" size="small" type="primary" secondary :disabled="busy" @click="openLineEditor()">＋ 添加商品</n-button>
           </template>
+          <div class="wf-actions readiness-filter" aria-label="商品备货筛选">
+            <n-button size="small" :type="readinessFilter === 'all' ? 'primary' : 'default'" :aria-pressed="readinessFilter === 'all'" @click="readinessFilter = 'all'">全部 {{ data.lines.length }}</n-button>
+            <n-button size="small" :type="readinessFilter === 'pending' ? 'primary' : 'default'" :aria-pressed="readinessFilter === 'pending'" @click="readinessFilter = 'pending'">尚待备货 {{ pendingLineCount }}<span v-if="unknownGapCount"> · {{ unknownGapCount }} 项待核对</span></n-button>
+          </div>
+          <n-alert v-if="readinessFilter === 'pending' && unknownGapCount" type="warning" :bordered="false">历史待核对的尚待备货数量未知，仍保留显示，不作为已备齐隐藏。</n-alert>
           <div class="ow-table-panel"><div class="wf-table-wrap" role="region" aria-label="商品明细，可横向滚动" tabindex="0"><n-table :bordered="false" class="wf-table ow-product-table"><thead><tr><th>商品 / 客户货号</th><th class="ow-num">单价 / 金额</th><th class="ow-num">订购数量</th><th class="ow-num">生产安排</th><th class="ow-num">已预留待发</th><th class="ow-num">已出货</th><th class="ow-num">尚待备货</th><th>操作</th></tr></thead><tbody>
-            <tr v-for="line in data.lines" :key="line.id">
+            <tr v-for="line in visibleLines" :key="line.id">
               <td><ProductCell :line="line" interactive @inspect="selectedProduct = $event" /><small v-if="line.remarks" class="wf-subtext ow-line-remarks">{{ line.remarks }}</small></td>
               <td class="ow-num">¥{{ fmtPrice(Number(line.unit_price)) }}<small class="wf-subtext">小计 ¥{{ fmtMoney(line.quantity * Number(line.unit_price)) }}</small></td>
               <td class="ow-num"><strong>{{ line.quantity }}</strong> <small class="wf-muted">{{ line.unit }}</small></td>
@@ -35,6 +40,7 @@
               <td class="ow-num wf-amber">{{ line.gap ?? '—' }}</td>
               <td><div v-if="canEdit" class="wf-actions ow-row-actions"><n-button text type="primary" size="small" :disabled="busy" @click="openLineEditor(line)">编辑</n-button><n-popconfirm :disabled="busy || !canDeleteLine" @positive-click="removeLine(line)"><template #trigger><n-button text type="error" size="small" :loading="deletingLineId === line.id" :disabled="busy || !canDeleteLine" :title="!canDeleteLine ? '订单至少保留一条商品明细' : undefined">删除</n-button></template>仅无业务关联的明细可删除，确定删除 {{ line.customer_code || line.product_name }}？</n-popconfirm></div></td>
             </tr>
+            <tr v-if="!visibleLines.length"><td colspan="8" class="wf-muted">没有尚待备货的商品；切换「全部」可查看全部明细。</td></tr>
           </tbody></n-table></div>
           <div class="ow-table-total"><span>商品金额<strong>¥{{ fmtMoney(Number(order?.total_amount || 0)) }}</strong></span><span>包装费<strong>¥{{ fmtMoney(Number(order?.packaging_cost || 0)) }}</strong></span><span>合计<strong>¥{{ fmtMoney(orderTotal) }}</strong></span></div></div>
           <template #footer>尚待备货 = 订购 − 已出货 − 待发预留；生产计划不与现货相加。现货可直接出货，无需关联生产或 BOM；每条明细足量出货后订单才会完成。表格可横向滚动。</template>
@@ -105,6 +111,7 @@ import OrderCosts from '@/components/fulfillment/OrderCosts.vue'
 import OrderLineEditor from '@/components/fulfillment/OrderLineEditor.vue'
 import { getOrder, batchFillCustomerCode, deleteOrderItem } from '@/api/orders'
 import { fmtMoney, fmtPrice } from '@/utils/ui'
+import { filterOrderLines, needsPreparation, unknownGap } from '@/utils/orderReadinessFilter'
 const route = useRoute(), message = useMessage()
 const router = useRouter()
 const orderId = computed(() => String(route.params.id))
@@ -121,6 +128,11 @@ const deletingLineId = ref(null)
 const busy = computed(() => activating.value || costBusy.value || lineBusy.value || batchSaving.value || reservationBusy.value || deletingLineId.value !== null)
 const showMaterials = ref(false), selectedProduct = ref(null)
 const orderTotal = computed(() => Number(order.value?.total_amount || 0) + Number(order.value?.packaging_cost || 0))
+const readinessFilter = ref('all')
+const visibleLines = computed(() => filterOrderLines(data.value?.lines || [], readinessFilter.value))
+const pendingLineCount = computed(() => (data.value?.lines || []).filter(needsPreparation).length)
+const unknownGapCount = computed(() => (data.value?.lines || []).filter(unknownGap).length)
+watch(orderId, () => { readinessFilter.value = 'all' })
 function openLineEditor(line = null) {
   if (!canEdit.value || busy.value) return
   selectedEdit.value = line
@@ -176,6 +188,7 @@ watch(orderId, () => { data.value = null; order.value = null; batchIds.value = [
 </script>
 
 <style scoped>
+.readiness-filter { padding: 12px 20px; }
 /* NModal teleports its card without this component's scoped attribute. */
 :global(.customer-code-dialog) { max-height: calc(100dvh - 32px); }
 :global(.customer-code-dialog .n-card-header) { padding-bottom: 8px; }

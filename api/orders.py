@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel as _BaseModel, Field as _Field
 
 from database import get_db
-from schemas.production_allocation import AllocationReplace, AllocationBatch, OrderHandcraftCreate
+from schemas.production_allocation import AllocationReplace, AllocationBatch, OrderHandcraftCreate, OrderHandcraftBatchCreate
 from api.deps import require_permission
 from services.production_allocation import order_production, replace_order_source, replace_order_sources
 from schemas.order import (
@@ -136,6 +136,15 @@ def api_replace_order_production(order_id: str, body: AllocationReplace, db: Ses
     with service_errors():
         return replace_order_source(db, order_id, body.source_type, body.source_item_id,
                                     body.revision, [row.model_dump() for row in body.allocations])
+
+
+@router.post("/{order_id}/production/handcraft/batch", status_code=201, dependencies=[require_permission("handcraft")])
+def api_create_order_handcraft_batch(order_id: str, body: OrderHandcraftBatchCreate, db: Session = Depends(get_db)):
+    from services.order_production_creation import create_order_handcraft_batch
+    if get_order(db, order_id) is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    with service_errors():
+        return create_order_handcraft_batch(db, order_id, body.model_dump())
 
 
 @router.post("/{order_id}/production/batch", dependencies=[require_permission("handcraft")])

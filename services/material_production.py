@@ -4,7 +4,7 @@ import json
 from decimal import Decimal
 
 from models.bom import Bom
-from models.order import OrderItem, OrderTodoItem, OrderItemLink
+from models.order import OrderItem
 from models.part import Part
 from models.jewelry import Jewelry
 from models.material_production import OrderMaterialDemand as Demand, MaterialProductionAllocation as Allocation
@@ -33,9 +33,8 @@ def material_demands(db, order_id):
             changed = snapshot is not None and revision != demand_revision(
                 line, part_id, snapshot.qty_per_unit, snapshot.unit)
             changed = changed or bool(snapshot and snapshot.order_quantity != line.quantity)
-            from services.production_allocation import legacy_demand_claim
-            legacy = legacy_demand_claim(db, line) or db.query(OrderItemLink.id).join(OrderTodoItem).filter(
-                OrderTodoItem.order_id == order_id, OrderTodoItem.part_id == part_id).first() is not None
+            from services.production_allocation import legacy_demand_claim, legacy_todo_output_claim
+            legacy = legacy_demand_claim(db, line) or legacy_todo_output_claim(db, order_id, part_id)
             result.append({
                 "id": f"material:{line.id}:{part_id}", "order_item_id": line.id, "material_part_id": part_id,
                 "product_type": "part", "product_id": part_id, "product_name": part.name if part else part_id,

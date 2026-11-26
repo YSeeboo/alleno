@@ -12,3 +12,13 @@ export function orderHandcraftPayload({ line, supplier, planned, allocated, mate
     parts: materials.map(r => ({ part_id: r.part_id, qty: Number(r.qty), unit: r.unit })),
     jewelries: [{ [line.product_type === 'jewelry' ? 'jewelry_id' : 'part_id']: line.product_id, qty: total, unit: line.unit }] }
 }
+
+export function orderHandcraftBatchPayload({ rows, supplier, targetId = null, note = '', requestKey, reviewed = false }) {
+  if (!rows?.length || rows.length > 100 || new Set(rows.map(r => r.line.id)).size !== rows.length) throw new Error('请选择 1 至 100 条不重复的订单明细')
+  if (rows.some(r => r.line.legacy_claim)) throw new Error('存在旧归属冲突，请先核对')
+  if (rows.some(r => r.line.legacy_batches?.length) && !reviewed) throw new Error('请确认已核对旧加工记录和现有库存')
+  const payloads = rows.map(row => orderHandcraftPayload({ ...row, supplier, targetId, note, requestKey }))
+  return { request_key: requestKey, supplier_name: payloads[0].supplier_name, append_to_order_id: targetId, note,
+    allocations: payloads.map(p => ({ order_item_id: p.order_item_id, allocated_quantity: p.allocated_quantity })),
+    jewelries: payloads.flatMap(p => p.jewelries), parts: payloads.flatMap(p => p.parts) }
+}

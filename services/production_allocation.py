@@ -89,16 +89,46 @@ def legacy_source_claim(db, source_type, item_id):
     return False
 
 
+def legacy_demand_batches(db, line):
+    """Keep estimate-only batches visible without claiming any production capacity.
+
+    Either source reference is enough to retain the conservative protection,
+    including dangling historical references; never guess a replacement source.
+    """
+    if not line.jewelry_id:
+        return []
+    records = (db.query(OrderTodoBatchJewelry, OrderTodoBatch)
+               .join(OrderTodoBatch, OrderTodoBatch.id == OrderTodoBatchJewelry.batch_id)
+               .filter(OrderTodoBatch.order_id == line.order_id,
+                       OrderTodoBatchJewelry.jewelry_id == line.jewelry_id)
+               .order_by(OrderTodoBatch.id, OrderTodoBatchJewelry.id).all())
+    return [{"batch_id": batch.id, "quantity": item.quantity,
+             "production_order_id": batch.handcraft_order_id,
+             "source_item_id": item.handcraft_jewelry_item_id,
+             "blocks_allocation": batch.handcraft_order_id is not None or item.handcraft_jewelry_item_id is not None}
+            for item, batch in records]
+
+
+def legacy_todo_output_claim(db, order_id, part_id):
+    """Only old production OUTPUT links claim demand, not inputs or purchases."""
+    return db.query(OrderItemLink.id).join(OrderTodoItem).filter(
+        OrderTodoItem.order_id == order_id, OrderTodoItem.part_id == part_id,
+        or_(OrderItemLink.plating_order_item_id.isnot(None),
+            OrderItemLink.handcraft_jewelry_item_id.isnot(None))).first() is not None
+
+
 def legacy_demand_claim(db, line):
-    """No row-level history exists; protect the matching product, not guessed shares."""
+    """Protect actual old output claims; estimate-only batches are not allocations."""
     if line.jewelry_id:
-        if (db.query(OrderTodoBatchJewelry.id).join(OrderTodoBatch, OrderTodoBatch.id == OrderTodoBatchJewelry.batch_id)
-                .filter(OrderTodoBatch.order_id == line.order_id, OrderTodoBatchJewelry.jewelry_id == line.jewelry_id).first()):
+        if any(batch["blocks_allocation"] for batch in legacy_demand_batches(db, line)):
             return True
         return (db.query(OrderItemLink.id).join(HandcraftJewelryItem, HandcraftJewelryItem.id == OrderItemLink.handcraft_jewelry_item_id)
                 .filter(OrderItemLink.order_id == line.order_id, HandcraftJewelryItem.jewelry_id == line.jewelry_id).first()) is not None
-    return (db.query(OrderItemLink.id).join(OrderTodoItem, OrderTodoItem.id == OrderItemLink.order_todo_item_id)
-            .filter(OrderTodoItem.order_id == line.order_id, OrderTodoItem.part_id == line.part_id).first()) is not None
+    return (
+        legacy_todo_output_claim(db, line.order_id, line.part_id)
+        or db.query(OrderItemLink.id).join(HandcraftJewelryItem, HandcraftJewelryItem.id == OrderItemLink.handcraft_jewelry_item_id)
+        .filter(OrderItemLink.order_id == line.order_id, HandcraftJewelryItem.part_id == line.part_id).first() is not None
+    )
 
 
 def guard_legacy_order_write(db, order_id):
@@ -260,7 +290,8 @@ def order_production(db: Session, order_id: str):
                              "quantity": line.quantity, "customer_code": line.customer_code,
                              "unit": product.unit if product else None,
                              "allocated": sum((row.quantity for row in own if row.order_item_id == line.id), Decimal(0)),
-                             "legacy_claim": legacy_demand_claim(db, line)})
+                             "legacy_claim": legacy_demand_claim(db, line),
+                             "legacy_batches": legacy_demand_batches(db, line)})
     return {"order_id": order.id, "customer_name": order.customer_name, "editable": order.status in EDITABLE_ORDERS,
             "lines": result_lines, "materials": materials, "sources": sources}
 

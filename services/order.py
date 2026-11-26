@@ -433,8 +433,14 @@ def delete_order_item(db: Session, order_id: str, item_id: int) -> None:
     ).first()
     if item is None:
         raise ValueError(f"OrderItem not found: {item_id}")
-    from services.production_allocation import legacy_demand_claim
-    if legacy_demand_claim(db, item):
+    from services.production_allocation import legacy_demand_claim, legacy_demand_batches
+    # Reference-only batches and input/purchase links do not claim production
+    # capacity, but their product identity must still survive line deletion.
+    has_history = bool(legacy_demand_batches(db, item)) if item.jewelry_id else (
+        db.query(OrderItemLink.id).join(OrderTodoItem)
+        .filter(OrderTodoItem.order_id == order_id, OrderTodoItem.part_id == item.part_id).first() is not None
+    )
+    if has_history or legacy_demand_claim(db, item):
         raise ValueError("存在历史生产关联或批次，请先核对，不能删除明细")
     if db.query(OrderItem).filter_by(order_id=order_id).count() <= 1:
         raise ValueError("订单至少保留一条明细")

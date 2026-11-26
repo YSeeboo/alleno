@@ -2,6 +2,7 @@
   <n-modal :show="true" preset="card" title="为此明细安排手工制作" :mask-closable="!blocked" :closable="!blocked" :close-on-esc="!blocked" style="width:min(760px, calc(100vw - 24px))" @update:show="!$event && !blocked && $emit('close')">
     <div class="fulfillment-page">
       <n-alert type="info" :bordered="false" class="wf-notice">{{ orderId }} · 明细 #{{ line.id }} · {{ line.customer_code || line.product_name }}<br>只安排此明细，不改同款其他行。保存只建立制作计划和数量用途，不发料、不预留、不入库、不计客户出货。</n-alert>
+      <n-alert v-if="line.legacy_batches?.length" type="warning" :bordered="false" class="wf-notice">此商品有旧批次参考记录，未自动计入本行生产安排。请先核对历史加工与库存，再填写实际仍需制作的数量；新安排为 0 不代表从未生产。</n-alert>
       <p v-if="loading" role="status">正在读取商品、商家与当前 BOM…</p>
       <n-alert v-if="error" type="error" class="wf-notice">{{ error }}</n-alert>
       <n-form label-placement="top" :disabled="fieldsLocked">

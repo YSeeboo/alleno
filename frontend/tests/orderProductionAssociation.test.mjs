@@ -10,8 +10,8 @@ const { descriptor } = parse(pageSource)
 const script = compileScript(descriptor, { id: 'production-association' })
 const moduleUrl = code => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
 const Production = (await import(moduleUrl(script.content
-  .replace(/from ['"]vue['"]/g, `from ${JSON.stringify(moduleUrl(`export { ref, computed, nextTick } from ${JSON.stringify(import.meta.resolve('vue'))}; export const watch = (...args) => globalThis.__association.watches.push(args);`))}`)
-  .replace(/import \{ useRoute, useRouter \} from ['"]vue-router['"]/, "const useRoute = () => globalThis.__association.route, useRouter = () => ({ push() {} })")
+  .replace(/from ['"]vue['"]/g, `from ${JSON.stringify(moduleUrl(`export { ref, computed, nextTick } from ${JSON.stringify(import.meta.resolve('vue'))}; export const provide = () => {}; export const watch = (...args) => globalThis.__association.watches.push(args);`))}`)
+  .replace(/import \{ [^}]+ \} from ['"]vue-router['"]/, "const useRoute = () => globalThis.__association.route, useRouter = () => ({ push() {} }), onBeforeRouteLeave = fn => globalThis.__association.guards.push(fn), onBeforeRouteUpdate = onBeforeRouteLeave")
   .replace(/import \{ ([^}]+) \} from ['"]naive-ui['"]/g, (_, names) => `const ${names.split(',').map(n => `${n.trim()} = ${n.trim() === 'useMessage' ? '() => ({ success() {} })' : '{}'}`).join(', ')}`)
   .replace(/import (\w+) from ['"][^'"]+\.vue['"]/g, 'const $1 = {}')
   .replace(/import \{ useAuthStore \} from ['"]@\/stores\/auth['"]/, 'const useAuthStore = () => ({ hasPermission: () => true })')
@@ -21,9 +21,9 @@ const Production = (await import(moduleUrl(script.content
 
 function setup(sources = [source()], api = {}) {
   const calls = [], data = { order_id: 'OR-A', editable: true, lines: structuredClone(lines), sources }
-  globalThis.__association = { route: { params: { id: 'OR-A' }, hash: '' }, watches: [], api: {
+  globalThis.__association = { route: { params: { id: 'OR-A' }, hash: '' }, watches: [], guards: [], api: {
     getOrderProduction: async () => ({ data }), getOrder: async () => ({ data: { id: 'OR-A' } }),
-    replaceOrderProduction: async (...args) => { calls.push(args) }, ...api,
+    replaceOrderProduction: async (...args) => { calls.push(args) }, replaceOrderProductionBatch: async (...args) => { calls.push(args) }, ...api,
   } }
   const ctx = Production.setup({}, { expose() {} })
   ctx.data.value = data
@@ -39,6 +39,22 @@ const lines = [
   { id: 10, product_type: 'jewelry', product_id: 'SP-1', quantity: 30, allocated: 0 },
   { id: 11, product_type: 'jewelry', product_id: 'SP-1', quantity: 20, allocated: 0 },
 ]
+
+test('review opens complete history without allocation writes and clears stale order context', async () => {
+  const { ctx, calls, state } = setup()
+  let opened = 0
+  ctx.legacyReviewLine.value = { ...lines[0], legacy_batches: [{ batch_id: 15, quantity: 20 }] }
+  ctx.orderMaterials.value = { openHistory() { opened++ } }
+  await ctx.showLegacyHistory()
+  assert.equal(opened, 1)
+  assert.equal(ctx.legacyReviewLine.value, null)
+  assert.deepEqual(calls, [])
+  ctx.legacyReviewLine.value = lines[0]
+  state.watches.find(([value]) => typeof value === 'function' && value() === 'OR-A')[1]()
+  assert.equal(ctx.legacyReviewLine.value, null)
+  assert.match(pageSource, /@click="legacyReviewLine = line">查看旧记录/)
+  assert.match(pageSource, /旧批次仅作参考/)
+})
 
 test('production deep links wait for loaded content, then scroll and focus the requested section', async () => {
   const { ctx, state } = setup()
@@ -153,7 +169,7 @@ test('real association modal renders grouped existing orders with output-level a
   assert.match(pageSource, /<n-select v-model:value="linkSupplier" :options="linkSupplierOptions" filterable clearable :disabled="saving"/)
   assert.match(pageSource, /v-for="group in linkGroups"/)
   assert.match(pageSource, /v-for="source in group.sources" :key="source.source_item_id"/)
-  assert.match(pageSource, /@click="selectLinkOutput\(source.source_item_id\)"/)
+  assert.match(pageSource, /@update:checked="selectLinkOutput\(source.source_item_id\)"/)
   for (const text of ['分配给本单', '本单已分配', '未分配', '旧归属待核对', '没有找到匹配的手工单']) assert.ok(pageSource.includes(text))
   const template = compileTemplate({ source: descriptor.template.content, filename: 'OrderProduction.vue', id: 'production-association', compilerOptions: { bindingMetadata: script.bindings } })
   assert.deepEqual(template.errors, [])
@@ -173,35 +189,38 @@ test('grouping and search preserve separate matching outputs under the same hand
   assert.deepEqual(ctx.linkGroups.value, [])
 })
 
-test('selecting an exact output only edits a draft, preserves duplicate lines and waits for confirmation', async () => {
-  const { ctx, calls } = setup([source(), source({ source_item_id: 2, public_unallocated: 12, revision: 8, allocations: [{ order_id: 'OR-B', order_item_id: 99, quantity: 28 }] })])
+test('selecting exact outputs only edits independent drafts and confirms them together', async () => {
+  const { ctx, calls } = setup([source(), source({ source_item_id: 2, allocated: 28, public_unallocated: 12, revision: 8, allocations: [{ order_id: 'OR-B', order_item_id: 99, quantity: 28 }] })])
   ctx.openLinker()
   ctx.selectLinkOutput(2)
-  assert.equal(ctx.selected.value.source_item_id, 2)
-  assert.deepEqual(ctx.quantities.value, { 10: 12, 11: 0 })
+  assert.equal(ctx.linkSelectedSources.value[0].source_item_id, 2)
+  assert.deepEqual(ctx.linkDrafts.value[2].quantities, { 10: 0, 11: 0 })
   assert.deepEqual(calls, [])
-  ctx.quantities.value = { 10: 5, 11: 7 }
-  ctx.selectLinkOutput(2)
-  assert.deepEqual(ctx.quantities.value, { 10: 5, 11: 7 }, 'clicking the selected row cannot reset its draft')
+  ctx.linkDrafts.value[2].quantities = { 10: 5, 11: 7 }
+  ctx.selectLinkOutput(1)
+  ctx.linkDrafts.value[1].quantities = { 10: 4, 11: 2 }
   await ctx.save()
-  assert.deepEqual(calls, [['OR-A', { source_type: 'handcraft', source_item_id: 2, revision: 8, allocations: [{ order_item_id: 10, quantity: 5 }, { order_item_id: 11, quantity: 7 }] }]])
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0][1].length, 2)
+  assert.deepEqual(calls[0][1][1], { source_type: 'handcraft', source_item_id: 2, revision: 8, allocations: [{ order_item_id: 10, quantity: 5 }, { order_item_id: 11, quantity: 7 }] })
   assert.equal(ctx.showEditor.value, false)
-  assert.deepEqual(ctx.selected.value.allocations, [{ order_id: 'OR-B', order_item_id: 99, quantity: 28 }])
+  assert.deepEqual(ctx.linkDrafts.value[2].source.allocations, [{ order_id: 'OR-B', order_item_id: 99, quantity: 28 }])
 })
 
 test('existing shares are retained, switching outputs is exact and cancelling then reopening clears drafts', () => {
   const { ctx, calls } = setup([source({ allocations: [{ order_id: 'OR-A', order_item_id: 11, quantity: 8 }] }), source({ source_item_id: 2 })])
   ctx.openLinker(); ctx.selectLinkOutput(1)
-  assert.deepEqual(ctx.quantities.value, { 10: 0, 11: 8 })
+  assert.deepEqual(ctx.linkDrafts.value[1].quantities, { 10: 0, 11: 8 })
   ctx.selectLinkOutput(2)
-  assert.deepEqual(ctx.quantities.value, { 10: 30, 11: 10 })
-  ctx.quantities.value[10] = 6
+  assert.deepEqual(ctx.linkDrafts.value[2].quantities, { 10: 0, 11: 0 })
+  ctx.linkDrafts.value[2].quantities[10] = 6
   ctx.showEditor.value = false
   ctx.linkSearch.value = 'something'
   ctx.linkSupplier.value = '商家甲'
   ctx.openLinker()
   assert.equal(ctx.selected.value, null)
   assert.deepEqual(ctx.quantities.value, {})
+  assert.deepEqual(ctx.linkDrafts.value, {})
   assert.equal(ctx.linkSearch.value, '')
   assert.equal(ctx.linkSupplier.value, null)
   assert.deepEqual(calls, [])
@@ -228,21 +247,21 @@ test('historical conflicts, unit mismatch, ineligible sources and closed orders 
   assert.equal(ctx.showEditor.value, false)
 })
 
-test('zero and invalid shares cannot confirm an association; failed saves keep selected output and draft', async () => {
+test('invalid shares cannot confirm; zero releases shares and failed saves keep all drafts', async () => {
   const { ctx, calls } = setup()
   ctx.openLinker(); ctx.selectLinkOutput(1)
-  for (const quantities of [{ 10: 0, 11: 0 }, { 10: 1.5, 11: 0 }, { 10: null, 11: 0 }]) {
-    ctx.quantities.value = quantities
+  for (const quantities of [{ 10: 1.5, 11: 0 }, { 10: null, 11: 0 }]) {
+    ctx.linkDrafts.value[1].quantities = quantities
     await ctx.save()
     assert.ok(ctx.saveError.value)
     assert.equal(ctx.showEditor.value, true)
     assert.deepEqual(calls, [])
   }
-  globalThis.__association.api.replaceOrderProduction = async () => { throw { response: { data: { detail: '份额版本已变化，请刷新核对' } } } }
-  ctx.quantities.value = { 10: 20, 11: 5 }
+  globalThis.__association.api.replaceOrderProductionBatch = async () => { throw { response: { data: { detail: '份额版本已变化，请刷新核对' } } } }
+  ctx.linkDrafts.value[1].quantities = { 10: 20, 11: 5 }
   await ctx.save()
   assert.equal(ctx.saveError.value, '份额版本已变化，请刷新核对')
-  assert.deepEqual(ctx.quantities.value, { 10: 20, 11: 5 })
+  assert.deepEqual(ctx.linkDrafts.value[1].quantities, { 10: 20, 11: 5 })
   assert.equal(ctx.showEditor.value, true)
   assert.equal(ctx.saving.value, false)
 })
@@ -250,16 +269,18 @@ test('zero and invalid shares cannot confirm an association; failed saves keep s
 test('a pending confirmation freezes output selection and prevents duplicate writes', async () => {
   let finish
   const calls = []
-  const { ctx } = setup([source(), source({ source_item_id: 2 })], { replaceOrderProduction: (...args) => { calls.push(args); return new Promise(resolve => { finish = resolve }) } })
+  const { ctx, state } = setup([source(), source({ source_item_id: 2 })], { replaceOrderProductionBatch: (...args) => { calls.push(args); return new Promise(resolve => { finish = resolve }) } })
   ctx.openLinker(); ctx.selectLinkOutput(1)
   const pending = ctx.save()
   assert.equal(ctx.saving.value, true)
   ctx.selectLinkOutput(2); ctx.openLinker()
-  assert.equal(ctx.selected.value.source_item_id, 1)
+  assert.deepEqual(ctx.linkSelectedSources.value.map(s => s.source_item_id), [1])
+  assert.ok(state.guards.every(fn => fn() === false))
   await ctx.save()
   assert.equal(calls.length, 1)
   finish(); await pending
   assert.equal(ctx.saving.value, false)
+  assert.ok(state.guards.every(fn => fn() === true))
   assert.match(pageSource, /:close-on-esc="!saving"/)
 })
 
@@ -314,11 +335,11 @@ test('unrelated products and product types are excluded before grouping even in 
 test('changing list filters preserves an explicit selected draft without creating writes', () => {
   const { ctx, calls } = setup([source({ supplier_name: '商家甲' }), source({ source_item_id: 2, supplier_name: '商家乙', production_order_id: 'HC-B' })])
   ctx.openLinker(); ctx.selectLinkOutput(1)
-  ctx.quantities.value = { 10: 5, 11: 7 }
+  ctx.linkDrafts.value[1].quantities = { 10: 5, 11: 7 }
   ctx.linkSupplier.value = '商家乙'
   assert.deepEqual(ctx.linkGroups.value.map(group => group.id), ['HC-B'])
-  assert.equal(ctx.selected.value.source_item_id, 1)
-  assert.deepEqual(ctx.quantities.value, { 10: 5, 11: 7 })
+  assert.equal(ctx.linkSelectedSources.value[0].source_item_id, 1)
+  assert.deepEqual(ctx.linkDrafts.value[1].quantities, { 10: 5, 11: 7 })
   assert.deepEqual(calls, [])
 })
 
@@ -329,9 +350,10 @@ test('BOM-only handcraft candidates link exact parent demands and appear in the 
   assert.equal(ctx.visibleSources('handcraft').length, 0)
   assert.equal(ctx.linkSources.value.length, 1)
   ctx.openLinker(); ctx.selectLinkOutput(1)
-  assert.deepEqual(ctx.quantities.value, { 'material:10:A': 40 })
+  assert.deepEqual(ctx.linkDrafts.value[1].quantities, { 'material:10:A': 0 })
+  ctx.linkDrafts.value[1].quantities['material:10:A'] = 40
   await ctx.save()
-  assert.deepEqual(calls[0][1].allocations, [{ order_item_id: 10, material_part_id: 'A', demand_revision: 'd'.repeat(64), quantity: 40 }])
+  assert.deepEqual(calls[0][1][0].allocations, [{ order_item_id: 10, material_part_id: 'A', demand_revision: 'd'.repeat(64), quantity: 40 }])
   ctx.data.value.sources[0].allocations = [{ order_id: 'OR-A', order_item_id: 10, material_part_id: 'A', quantity: 40 }]
   assert.equal(ctx.visibleSources('handcraft').length, 1)
   assert.equal(ctx.data.value.lines[0].allocated, 0)
@@ -350,4 +372,59 @@ test('editing a source shared by direct orders and BOM demands sends both purpos
   ctx.quantities.value['material:11:A'] = 0
   await ctx.save()
   assert.deepEqual(calls[0][1].allocations.map(row => [row.order_item_id, row.material_part_id, row.quantity]), [[10, undefined, 3], [11, 'A', 0]])
+})
+
+test('group selection and filtered all-selection preserve hidden drafts and clear only the current subset', () => {
+  const { ctx, calls } = setup([source(), source({ source_item_id: 2 }), source({ source_item_id: 3, production_order_id: 'HC-B' })])
+  ctx.openLinker(); ctx.toggleAllLinkOutputs(true)
+  assert.equal(ctx.linkSelectedSources.value.length, 3)
+  ctx.linkDrafts.value[1].quantities[10] = 7
+  ctx.linkSearch.value = 'HC-B'
+  assert.equal(ctx.allLinkSelected.value, true)
+  ctx.toggleAllLinkOutputs(false)
+  assert.deepEqual(ctx.linkSelectedSources.value.map(s => s.source_item_id), [1, 2])
+  assert.equal(ctx.linkDrafts.value[1].quantities[10], 7)
+  ctx.linkSearch.value = ''
+  ctx.toggleLinkGroup(ctx.linkGroups.value.find(g => g.id === 'HC-A'), false)
+  assert.equal(ctx.linkSelectedSources.value.length, 0)
+  assert.deepEqual(calls, [])
+})
+
+test('independent section collapse preserves exact creation selections and history/deep links expand their targets', async () => {
+  const { ctx, calls } = setup()
+  ctx.toggleCreationAll(true)
+  assert.deepEqual(ctx.creatingIds.value, [10, 11])
+  ctx.expandSections(true)
+  assert.ok(ctx.sectionTitles.every(title => ctx.collapsedSections.value[title]))
+  ctx.setSectionCollapsed('本单生产需求', false)
+  assert.equal(ctx.collapsedSections.value['手工生产安排'], true)
+  assert.deepEqual(ctx.creatingIds.value, [10, 11])
+  ctx.openBatchCreation()
+  assert.deepEqual(ctx.batchCreating.value.map(l => l.id), [10, 11])
+  ctx.orderMaterials.value = { openHistory() {} }
+  await ctx.showLegacyHistory()
+  assert.equal(ctx.collapsedSections.value['已有批次与生产关联记录'], false)
+  assert.equal(ctx.collapsedSections.value['配件备料'], true)
+  assert.deepEqual(calls, [])
+})
+
+test('merged material section migrates previous collapse settings without hiding an open section', () => {
+  const original = globalThis.localStorage
+  try {
+    for (const [stored, expected] of [
+      [{ '配件备料需求': true, '配件备料与 BOM': true }, true],
+      [{ '配件备料需求': true, '配件备料与 BOM': false }, false],
+      [{ '配件备料需求': false, '配件备料与 BOM': true }, false],
+      [{ '配件备料': false, '配件备料需求': true, '配件备料与 BOM': true }, false],
+      [{ '配件备料': true }, true],
+    ]) {
+      const writes = []
+      globalThis.localStorage = { getItem: () => JSON.stringify(stored), setItem: (...args) => writes.push(args) }
+      const { ctx } = setup()
+      assert.equal(ctx.collapsedSections.value['配件备料'], expected)
+      assert.equal(ctx.sectionTitles.filter(t => t.includes('配件备料')).length, 1)
+      ctx.setSectionCollapsed('配件备料', !expected)
+      assert.equal(JSON.parse(writes[0][1])['配件备料'], !expected)
+    }
+  } finally { if (original === undefined) delete globalThis.localStorage; else globalThis.localStorage = original }
 })
