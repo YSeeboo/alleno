@@ -37,13 +37,14 @@
               <header><div class="batch-product-name"><strong>{{ row.product.name }}</strong><small>{{ row.product.id }} · {{ kindLabel(row.product.kind) }}</small></div><span v-if="row.status === 'saved'" class="batch-saved">已保存 ✓</span><template v-else><n-button v-if="scene === 'order'" text size="tiny" :disabled="rowLocked(row)" @click="duplicate(row)">再加一行</n-button><n-button text size="small" :disabled="rowLocked(row)" :aria-label="`移除 ${row.product.name}`" @click="removeRow(row)">×</n-button></template></header>
               <div class="batch-fields" :class="{ 'three-fields': config.price || scene === 'plating', 'plating-fields': scene === 'plating' }">
                 <div><label :for="`batch-qty-${row.key}`">{{ scene === 'bom' ? '每 1 单位用量' : scene === 'order' ? '订购数量' : scene === 'plating' ? '发出数量' : '数量' }}</label><n-input-number v-model:value="row.qty" :input-props="{ id: `batch-qty-${row.key}` }" size="small" :min="scene === 'bom' ? 0.0001 : 1" :max="scene === 'bom' ? 999999.9999 : undefined" :precision="scene === 'bom' ? 4 : 0" :show-button="false" :disabled="rowLocked(row)" /></div>
-                <div><label :for="`batch-unit-${row.key}`">单位</label><n-input v-model:value="row.unit" :input-props="{ id: `batch-unit-${row.key}` }" size="small" :disabled="rowLocked(row) || ['order', 'bom'].includes(scene)" /></div>
+                <div><label :for="`batch-unit-${row.key}`">单位</label><n-input v-model:value="row.unit" :input-props="{ id: `batch-unit-${row.key}` }" size="small" :disabled="rowLocked(row) || ['order', 'bom'].includes(scene) || (scene === 'plating' && row.product.is_composite)" /></div>
                 <div v-if="config.price"><label :for="`batch-price-${row.key}`">单价（元）</label><n-input-number v-model:value="row.price" :input-props="{ id: `batch-price-${row.key}` }" size="small" :min="0" :precision="7" :format="fmtPrice" :parse="parseNum" :show-button="false" :disabled="rowLocked(row)" :placeholder="scene === 'purchase' ? '可选' : '必填'" /></div>
                 <div v-if="scene === 'plating'"><label>电镀颜色</label><PlatingColorPicker :model-value="row.color" :colors="colors" :disabled="rowLocked(row)" :label="`${row.product.name} 电镀颜色`" @update:model-value="code => selectColor(row, code)" /></div>
               </div>
               <div v-if="scene === 'plating'" class="batch-variant">
-                <span v-if="row.variantBusy">正在查询对应配件…</span><span v-else-if="!row.color">未选颜色，沿用原页面的无对应配件模式</span><span v-else-if="row.variant?.part">对应配件：{{ row.variant.part.name }}（{{ row.variant.part.id }}）</span>
-                <template v-else-if="row.variant?.suggested_name">缺少对应配件：{{ row.variant.suggested_name }} <n-button text type="primary" size="tiny" :disabled="rowLocked(row)" @click="confirmVariant(row)">确认新建</n-button></template><n-button v-else text size="tiny" :disabled="rowLocked(row)" @click="selectColor(row, row.color)">重新查询对应配件</n-button>
+                <strong v-if="row.product.is_composite">整件送镀 · </strong>
+                <span v-if="row.variantBusy">正在查询对应配件…</span><span v-else-if="!row.color">{{ row.product.is_composite ? '请选择颜色及收回组合件' : '未选颜色，沿用原页面的无对应配件模式' }}</span><span v-else-if="row.variant?.part">{{ row.product.is_composite ? `发出 ${row.product.id} → 收回：` : '对应配件：' }}{{ row.variant.part.name }}（{{ row.variant.part.id }}）</span>
+                <template v-else-if="row.variant?.suggested_name">{{ row.variant.suggested_name }} <n-button text type="primary" size="tiny" :disabled="rowLocked(row)" @click="confirmVariant(row)">{{ row.product.is_composite ? '新建镀色组合件' : '确认新建' }}</n-button></template><n-button v-else text size="tiny" :disabled="rowLocked(row)" @click="selectColor(row, row.color)">重新查询对应配件</n-button>
               </div>
               <n-button v-if="scene !== 'bom'" text size="tiny" :disabled="busy" @click="row.details = !row.details">{{ row.details ? '收起' : '展开' }}{{ config.weight ? '重量 / ' : '' }}备注</n-button>
               <div v-if="row.details && scene !== 'bom'" class="batch-details">
@@ -61,11 +62,12 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, h, ref, onMounted, onBeforeUnmount } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { NAlert, NButton, NCheckbox, NEmpty, NInput, NInputNumber, NModal, NSelect, NSpin, NTab, NTabs, useDialog, useMessage } from 'naive-ui'
 import { loadBatchCatalog, saveBatchRow } from '@/api/batchAdd'
-import { findOrCreateVariant, createPartVariant, getPart } from '@/api/parts'
+import { getPart } from '@/api/parts'
+import { compositeTargetConfirmation, createPlatingTarget, lookupPlatingTarget } from '@/api/platingTargets'
 import { batchScenes, makeBatchRow, batchRowError, batchPayload, submitBatchRows } from '@/utils/batchAdd'
 import { fmtPrice, parseNum } from '@/utils/ui'
 import PlatingColorPicker from './PlatingColorPicker.vue'
@@ -139,23 +141,29 @@ async function selectColor(row, code) {
   row.variantBusy = !!code
   if (!code) return
   try {
-    const { data } = await findOrCreateVariant(row.product.id, { color_code: code })
-    if (active && rows.value.includes(row) && row.variantSeq === seq) row.variant = data
-  } catch { if (active && row.variantSeq === seq) row.error = '对应配件查询失败，请重新查询' }
+    const data = await lookupPlatingTarget(row.product, code)
+    if (active && rows.value.includes(row) && row.variantSeq === seq) {
+      row.variant = data
+      if (data.unit) row.unit = data.unit
+    }
+  } catch (e) { if (active && row.variantSeq === seq) row.error = e.response?.data?.detail || '对应配件查询失败，请重新查询' }
   finally { if (active && row.variantSeq === seq) row.variantBusy = false }
 }
 function applyColor() { if (!busy.value && !uncertain.value) for (const row of pending.value) selectColor(row, batchColor.value) }
 function confirmVariant(row) {
   if (rowLocked(row) || row.variantBusy || !props.allowed) return
   const code = row.color, seq = row.variantSeq
-  dialog.warning({ title: '确认新建对应配件', content: `当前没有 ${row.variant?.suggested_name}，确定新建吗？`, positiveText: '确认新建', negativeText: '取消', onPositiveClick: async () => {
+  const composite = row.product.is_composite
+  const content = composite ? compositeTargetConfirmation(row.variant) : `当前没有 ${row.variant?.suggested_name}，确定新建吗？`
+  dialog.warning({ title: composite ? '确认新建镀色组合件' : '确认新建对应配件', content: () => h('div', { style: 'white-space: pre-line; overflow-wrap: anywhere' }, content), positiveText: '确认新建', negativeText: '取消', onPositiveClick: async () => {
     if (!active || rowLocked(row) || row.variantSeq !== seq || !props.allowed || !rows.value.includes(row)) return
     setBusy(true)
     try {
-      const { data } = await createPartVariant(row.product.id, { color_code: code })
-      row.variant = { part: data, created: true }
-      message.success('对应配件已新建')
-    } catch { row.error = '新建结果未能确认，请重新查询对应配件后再操作。'; row.variant = null }
+      const target = await createPlatingTarget(row.product, code)
+      row.variant = target
+      if (target.unit) row.unit = target.unit
+      message.success(target.created ? '对应配件已新建' : '已使用现有镀色组合件')
+    } catch (e) { row.error = e.response?.data?.detail || '新建结果未能确认，请重新查询对应配件后再操作。'; row.variant = null }
     finally { setBusy(false) }
   } })
 }

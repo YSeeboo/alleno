@@ -1,6 +1,6 @@
 import json
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
 
 from database import Base
 from time_utils import now_beijing
@@ -52,3 +52,14 @@ class PlatingOrderItem(Base):
     unit = Column(String, nullable=True, default="个")
     note = Column(Text, nullable=True)
     receive_part_id = Column(String, ForeignKey("part.id"), nullable=True)
+
+
+class CompositePlatingTarget(Base):
+    """A whole-assembly finish, deliberately separate from normal part families."""
+
+    __tablename__ = "composite_plating_target"
+    __table_args__ = (CheckConstraint("source_part_id <> target_part_id", name="ck_composite_plating_distinct_parts"),)
+
+    source_part_id = Column(String, ForeignKey("part.id"), primary_key=True)
+    color_code = Column(String, primary_key=True)
+    target_part_id = Column(String, ForeignKey("part.id"), nullable=False, unique=True)

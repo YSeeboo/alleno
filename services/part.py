@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from decimal import Decimal, ROUND_HALF_UP
 
 from models.part import Part, PartCostLog
+from models.plating_order import CompositePlatingTarget
 from services._helpers import _next_id_by_category, keyword_filter
 
 COLOR_VARIANTS = [
@@ -110,6 +111,12 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
     part = get_part(db, part_id)
     if part is None:
         raise ValueError(f"Part not found: {part_id}")
+    identity = {"color", "unit", "spec", "parent_part_id"} & data.keys()
+    if identity and db.query(CompositePlatingTarget).filter_by(target_part_id=part_id).first():
+        for field in identity:
+            value = (data[field] or "").strip() if field == "spec" else data[field]
+            if (value or None) != (getattr(part, field) or None):
+                raise ValueError("整件电镀生成的组合件不可修改颜色、单位、规格或父配件")
     # Category changes are disallowed because the part ID encodes the category
     # (e.g. PJ-DZ-00001 means 吊坠). Allowing a category change would make the
     # ID misleading and break the ID-format contract.
@@ -202,6 +209,8 @@ def _validate_variant_request(db: Session, part_id: str, color_code: Optional[st
     part = get_part(db, part_id)
     if part is None:
         raise ValueError(f"Part not found: {part_id}")
+    if part.is_composite:
+        raise ValueError("组合件不支持变体")
     # Always resolve to root — all variants are flat siblings under root
     source = part
     root = part
@@ -217,6 +226,8 @@ def _validate_variant_request(db: Session, part_id: str, color_code: Optional[st
         raise ValueError(
             "该配件疑似未挂载的变体（名称含颜色 / 颜色+规格后缀），请先修正数据"
         )
+    if root.is_composite:
+        raise ValueError("组合件不支持变体")
     return source, root, color, spec
 
 
@@ -263,7 +274,8 @@ def _find_existing_variant(db: Session, part_id: str, variant_name: str, color: 
     """
     def _match(candidate: Part) -> bool:
         return (
-            (candidate.color or None) == color
+            not candidate.is_composite
+            and (candidate.color or None) == color
             and (candidate.spec or None) == spec
         )
 
@@ -305,8 +317,6 @@ def _find_existing_variant(db: Session, part_id: str, variant_name: str, color: 
 
 def create_part_variant(db: Session, part_id: str, color_code: Optional[str] = None, spec: Optional[str] = None) -> Part:
     source, root, color, spec = _validate_variant_request(db, part_id, color_code, spec)
-    if root.is_composite:
-        raise ValueError("组合件不支持变体")
     variant_name = _build_variant_name(root.name, color, spec)
     existing = _find_existing_variant(db, root.id, variant_name, color, spec)
     if existing is not None:
@@ -372,6 +382,10 @@ def delete_part(db: Session, part_id: str) -> None:
     part = get_part(db, part_id)
     if part is None:
         raise ValueError(f"Part not found: {part_id}")
+    if db.query(CompositePlatingTarget).filter(
+        (CompositePlatingTarget.source_part_id == part_id) | (CompositePlatingTarget.target_part_id == part_id)
+    ).first():
+        raise ValueError("此配件已有整件电镀关联，不能删除")
     has_children = db.query(Part).filter(Part.parent_part_id == part_id).first() is not None
     if has_children:
         raise ValueError("该配件存在颜色变体，请先删除所有变体后再删除根配件")

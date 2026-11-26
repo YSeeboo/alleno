@@ -5,6 +5,10 @@ export const getPlating = (id) => api.get(`/plating/${id}`)
 export const deletePlating = (id) => api.delete(`/plating/${id}`)
 export const getPlatingItems = (id) => api.get(`/plating/${id}/items`)
 export const createPlating = (data) => api.post('/plating/', data)
+export const getCompositePlatingTarget = (partId, colorCode) =>
+  api.get(`/plating/composite-targets/${encodeURIComponent(partId)}`, { params: { color_code: colorCode }, _silentError: true })
+export const createCompositePlatingTarget = (partId, colorCode) =>
+  api.post(`/plating/composite-targets/${encodeURIComponent(partId)}`, { color_code: colorCode }, { _silentError: true })
 export const sendPlating = (id) => api.post(`/plating/${id}/send`, null, { _silentError: true })
 export const supplementAndSendPlating = (id) =>
   api.post(`/plating/${id}/supplement-and-send`, null, { _silentError: true })

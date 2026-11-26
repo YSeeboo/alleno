@@ -156,7 +156,7 @@ test('permission/status changes, invalid fields and failed catalogs never write'
 test('plating color resolution is per-row, ignores stale responses and deselection clears the target', async () => {
   const old = deferred()
   const h = setupBatch({ scene: 'plating' }, { findOrCreateVariant: (id, { color_code }) => color_code === 'G' ? old.promise : response({ part: { id: `${id}-S` } }) })
-  h.ctx.colors.value = colors; h.ctx.toggleProduct(part, true)
+  h.ctx.colors.value = colors; h.ctx.toggleProduct({ ...part, is_composite: false }, true)
   const row = h.ctx.rows.value[0]
   await h.ctx.selectColor(row, 'S')
   old.resolve({ data: { part: { id: 'stale-G' } } }); await Promise.resolve()
@@ -170,8 +170,8 @@ test('plating color resolution is per-row, ignores stale responses and deselecti
 test('missing plating variants require explicit confirmation and only the matching draft can create', async () => {
   const h = setupBatch({ scene: 'plating' }, { findOrCreateVariant: () => response({ suggested_name: '链条_金色' }) })
   h.ctx.colors.value = colors; h.ctx.toggleProduct(part, true)
-  await Promise.resolve()
   const row = h.ctx.rows.value[0]
+  await h.ctx.selectColor(row, 'G')
   await h.ctx.submit(); assert.equal(h.calls.length, 0)
   h.ctx.confirmVariant(row)
   assert.equal(row.variant.part, undefined)
@@ -179,6 +179,22 @@ test('missing plating variants require explicit confirmation and only the matchi
   assert.equal(row.variant.part.id, 'P-G')
   await h.ctx.submit()
   assert.equal(h.calls[0][2].receive_part_id, 'P-G')
+})
+
+test('whole-composite batch rows cannot be saved without a target and reuse a resolved SKU with its unit', async () => {
+  const h = setupBatch({ scene: 'plating' }, {
+    lookupPlatingTarget: async () => ({ part: { id: 'P-EP-G' }, unit: '个' }),
+    createPlatingTarget: () => assert.fail('Do not recreate an existing SKU'),
+  })
+  h.ctx.colors.value = colors; h.ctx.toggleProduct(part, true)
+  const row = h.ctx.rows.value[0]
+  await h.ctx.selectColor(row, null)
+  await h.ctx.submit()
+  assert.match(row.error, /收回组合件/)
+  assert.equal(h.calls.length, 0)
+  await h.ctx.selectColor(row, 'G')
+  await h.ctx.submit()
+  assert.deepEqual(h.calls[0][2], { part_id: 'P', receive_part_id: 'P-EP-G', qty: 1, unit: '个', plating_method: '金', note: null, weight: null, weight_unit: null })
 })
 
 test('closing dirty drafts requires confirmation while successful rows cannot be discarded or resent', () => {

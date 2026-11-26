@@ -20,7 +20,7 @@ export function makeBatchRow(scene, product, key, colors = []) {
   const color = colors.find(c => c.label === product.color || product.name?.endsWith(`_${c.label}`))?.code || 'G'
   return { key, product, qty: 1, unit: product.unit || (product.kind === 'jewelry' ? '套' : '个'),
     price: scene === 'purchase' ? null : Number(product.wholesale_price || 0), note: '', weight: null, weightUnit: 'kg',
-    color: scene === 'plating' ? color : null, variant: null, variantBusy: false, variantSeq: 0,
+    color: scene === 'plating' ? (product.is_composite ? (color === 'G' && product.color === '金色' ? 'S' : 'G') : color) : null, variant: null, variantBusy: false, variantSeq: 0,
     status: 'draft', error: '', details: false }
 }
 
@@ -40,6 +40,7 @@ export function batchRowError(scene, row, existing = []) {
     if (!decimal(row.price, 7) || Number(row.price) < 0) return '单价须非负，最多 7 位小数'
   }
   if (batchScenes[scene].weight && row.weight != null && (!decimal(row.weight, 2) || Number(row.weight) < 0)) return '重量须非负，最多 2 位小数'
+  if (scene === 'plating' && row.product.is_composite && !row.variant?.part?.id) return '请先确定收回组合件'
   if (scene === 'plating' && (row.variantBusy || (row.color && !row.variant?.part?.id))) return '请先核对颜色对应配件'
   return ''
 }

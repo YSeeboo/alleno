@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from models.part_bom import PartBom
 from models.part import Part
+from models.plating_order import CompositePlatingTarget
 from services._helpers import _next_id
 
 
@@ -105,6 +106,10 @@ def delete_part_bom_item(db: Session, bom_id: str) -> None:
     if not row:
         raise ValueError(f"配件 BOM {bom_id} 不存在")
     parent_id = row.parent_part_id
+    if db.query(CompositePlatingTarget).filter(
+        (CompositePlatingTarget.source_part_id == parent_id) | (CompositePlatingTarget.target_part_id == parent_id)
+    ).first() and not db.query(PartBom.id).filter(PartBom.parent_part_id == parent_id, PartBom.id != bom_id).first():
+        raise ValueError("已有整件电镀关联的组合件必须至少保留一条 BOM")
     db.delete(row)
     db.flush()
     remaining = db.query(PartBom).filter_by(parent_part_id=parent_id).count()

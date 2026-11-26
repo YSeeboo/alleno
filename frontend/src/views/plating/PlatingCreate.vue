@@ -78,7 +78,7 @@
               <span class="pc-mobile-label">发出配件</span>
               <n-select
                 v-model:value="item.part_id" :options="partOptions" :render-label="renderOptionWithImage"
-                filterable clearable placeholder="选择发出配件" :aria-label="`第 ${idx + 1} 行发出配件`"
+                 filterable clearable :disabled="item._creatingVariant" placeholder="选择发出配件" :aria-label="`第 ${idx + 1} 行发出配件`"
                 @update:value="(val) => onPartSelect(item, val)"
               />
             </div>
@@ -88,7 +88,8 @@
             </div>
             <div class="pc-field">
               <span class="pc-mobile-label">单位</span>
-              <n-select v-model:value="item.unit" :options="unitOptions" :aria-label="`第 ${idx + 1} 行单位`" />
+              <span v-if="isComposite(item)" class="pc-color-label">{{ item.unit }}</span>
+              <n-select v-else v-model:value="item.unit" :options="unitOptions" :aria-label="`第 ${idx + 1} 行单位`" />
             </div>
             <div class="pc-field">
               <span class="pc-mobile-label">重量</span>
@@ -105,13 +106,14 @@
             <button type="button" class="pc-delete" :aria-label="`删除第 ${idx + 1} 行`" title="删除当前行" @click="items.splice(idx, 1)"><TrashOutline /></button>
           </div>
           <div v-if="item.part_id" class="pc-line-extra">
+            <strong v-if="isComposite(item)" class="pc-target">组合件 · 整件送镀</strong>
             <span class="pc-color-label">电镀颜色</span>
             <div class="pc-colors">
               <button
                 v-for="cv in (item._showMore ? [...commonColors, ...moreColors] : commonColors)" :key="cv.code"
                 type="button" class="pc-color" :class="{ 'pc-color--selected': item._selectedColor === cv.code }"
                 :style="{ '--badge-color': cv.badge || '#8B9096' }"
-                :aria-pressed="item._selectedColor === cv.code" :title="cv.label"
+                :aria-pressed="item._selectedColor === cv.code" :title="cv.label" :disabled="item._creatingVariant"
                 @click="toggleColor(item, cv.code)"
               >{{ cv.code }}</button>
               <button v-if="moreColors.length" type="button" class="pc-color pc-color--more" :aria-expanded="item._showMore" @click="item._showMore = !item._showMore">
@@ -120,14 +122,15 @@
             </div>
             <div v-if="item._selectedColor && item._variantInfo" class="pc-target">
               <template v-if="item._variantInfo.part">
-                对应配件：<strong>{{ item._variantInfo.part.name }}</strong><code>{{ item._variantInfo.part.id }}</code>
+                {{ isComposite(item) ? `发出 ${item.part_id} → 收回：` : '对应配件：' }}<strong>{{ item._variantInfo.part.name }}</strong><code>{{ item._variantInfo.part.id }}</code>
               </template>
               <template v-else-if="item._variantInfo.suggested_name">
-                对应配件：{{ item._variantInfo.suggested_name }}
-                <n-button size="tiny" type="primary" :loading="item._creatingVariant" @click="doCreateVariantForItem(item)">新建</n-button>
+                {{ isComposite(item) ? '待新建收回组合件：' : '对应配件：' }}{{ item._variantInfo.suggested_name }}
+                <n-button size="tiny" type="primary" :loading="item._creatingVariant" @click="doCreateVariantForItem(item)">{{ isComposite(item) ? '新建镀色组合件' : '新建' }}</n-button>
               </template>
             </div>
             <span v-if="item._selectedColor && item._variantLoading" class="pc-target">查询中...</span>
+            <span v-else-if="isComposite(item) && !item._variantInfo" class="pc-target">{{ item._targetError || '请先确定收回组合件' }}</span>
           </div>
         </article>
         <div v-if="!items.length" class="pc-empty">暂无明细，点击下方按钮添加发出配件。</div>
@@ -151,13 +154,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onBeforeUnmount, nextTick, computed } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, nextTick, computed, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { NSpace, NButton, NSelect, NInput, NInputNumber, NForm, NFormItem, NDatePicker, NAlert } from 'naive-ui'
 import { AddOutline, ArrowBackOutline, CopyOutline, TrashOutline, InformationCircleOutline, CheckmarkOutline } from '@vicons/ionicons5'
-import { listParts, findOrCreateVariant, createPartVariant, getColorVariants } from '@/api/parts'
+import { listParts, getColorVariants } from '@/api/parts'
 import { createPlating, listPlating, addPlatingItem } from '@/api/plating'
+import { compositeTargetConfirmation, createPlatingTarget, lookupPlatingTarget } from '@/api/platingTargets'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { renderOptionWithImage } from '@/utils/ui'
 import { tsToDateStr } from '@/utils/date'
@@ -183,6 +187,8 @@ onBeforeUnmount(() => clearTimeout(highlightTimer))
 const submitting = ref(false)
 const partOptions = ref([])
 const allParts = ref([])
+const partMap = computed(() => Object.fromEntries(allParts.value.map(p => [p.id, p])))
+const isComposite = item => !!partMap.value[item.part_id]?.is_composite
 const colorVariants = ref([])
 
 const mergeCandidate = ref(null)
@@ -232,6 +238,7 @@ const doMerge = async () => {
     return
   }
   if (validItems.some((i) => i._variantLoading || i._creatingVariant)) { message.warning('颜色变体处理中，请稍候'); return }
+  if (!validateCompositeRows(validItems)) return
   merging.value = true
   const orderId = mergeCandidate.value.id
   let added = 0
@@ -285,28 +292,41 @@ const getPartColorCode = (part) => {
   return null
 }
 
+const defaultColorFor = part => {
+  const code = getPartColorCode(part)
+  return part?.is_composite ? (code === 'G' ? 'S' : 'G') : (code || 'G')
+}
+
+function validateCompositeRows(rows) {
+  const missing = rows.find(item => isComposite(item) && !item.receive_part_id)
+  if (!missing) return true
+  message.warning(`请先为 ${missing.part_id} 确定收回组合件`)
+  return false
+}
+
 const onPartSelect = (item, val) => {
   const found = partOptions.value.find((p) => p.value === val)
   item.unit = found?.unit || '个'
   item.receive_part_id = null
   item._selectedColor = null
   item._variantInfo = null
+  item._targetError = ''
   item._variantLoading = false
   ++item._reqSeq
   if (val) {
-    const part = allParts.value.find((p) => p.id === val)
-    const existingCode = getPartColorCode(part)
-    // Default: use existing color if variant, otherwise G
-    toggleColor(item, existingCode || 'G')
+    const part = partMap.value[val]
+    toggleColor(item, defaultColorFor(part))
   }
 }
 
 const toggleColor = async (item, code) => {
-  if (item._selectedColor === code) {
+  if (item._creatingVariant) return
+  if (item._selectedColor === code && (item._variantInfo || item._variantLoading)) {
     // Deselect
     ++item._reqSeq
     item._selectedColor = null
     item._variantInfo = null
+    item._targetError = ''
     item._variantLoading = false
     item.receive_part_id = null
     item.plating_method = '金'
@@ -316,16 +336,19 @@ const toggleColor = async (item, code) => {
   item.plating_method = methodOf.value[code] || '金'
   item.receive_part_id = null
   item._variantInfo = null
+  item._targetError = ''
   item._variantLoading = true
   const seq = ++item._reqSeq
   try {
-    const { data } = await findOrCreateVariant(item.part_id, { color_code: code })
+    const data = await lookupPlatingTarget(partMap.value[item.part_id], code)
     if (item._reqSeq !== seq) return // stale
     item._variantInfo = data
     item.receive_part_id = data.part?.id || null
+    if (data.unit) item.unit = data.unit
   } catch (e) {
     if (item._reqSeq === seq) {
-      message.error(e.response?.data?.detail || '查询变体失败')
+      item._targetError = e.response?.data?.detail || '查询收回配件失败'
+      message.error(item._targetError)
     }
   } finally {
     if (item._reqSeq === seq) {
@@ -335,18 +358,25 @@ const toggleColor = async (item, code) => {
 }
 
 const doCreateVariantForItem = (item) => {
-  const suggestedName = item._variantInfo?.suggested_name
+  const info = item._variantInfo
+  const seq = item._reqSeq
+  const part = partMap.value[item.part_id]
+  const code = item._selectedColor
   dialog.info({
-    title: '确认新建',
-    content: `当前没有 ${suggestedName}，确定新建吗？`,
+    title: part.is_composite ? '确认新建镀色组合件' : '确认新建',
+    content: part.is_composite
+      ? () => h('div', { style: 'white-space: pre-line; overflow-wrap: anywhere' }, compositeTargetConfirmation(info))
+      : `当前没有 ${info.suggested_name}，确定新建吗？`,
     positiveText: '确认',
     negativeText: '取消',
     onPositiveClick: async () => {
+      if (!items.includes(item) || item._reqSeq !== seq || item._creatingVariant) return
       item._creatingVariant = true
       try {
-        const { data: newPart } = await createPartVariant(item.part_id, { color_code: item._selectedColor })
-        item.receive_part_id = newPart.id
-        item._variantInfo = { part: newPart, created: true }
+        const target = await createPlatingTarget(part, code)
+        item.receive_part_id = target.part.id
+        item._variantInfo = target
+        if (target.unit) item.unit = target.unit
         // Refresh parts list
         const { data: parts } = await listParts()
         allParts.value = parts
@@ -358,7 +388,7 @@ const doCreateVariantForItem = (item) => {
           image: p.image,
           unit: p.unit,
         }))
-        message.success('变体创建成功')
+        message.success(part.is_composite ? (target.created ? '已新建镀色组合件' : '已使用现有镀色组合件') : '变体创建成功')
       } catch (e) {
         message.error(e.response?.data?.detail || '创建变体失败')
       } finally {
@@ -397,6 +427,7 @@ const submit = async () => {
   if (items.length === 0) { message.warning('请至少添加一条明细'); return }
   if (items.some((i) => !i.part_id)) { message.warning('请选择配件'); return }
   if (items.some((i) => i._variantLoading || i._creatingVariant)) { message.warning('颜色变体处理中，请稍候'); return }
+  if (!validateCompositeRows(items)) return
   submitting.value = true
   try {
     // Auto-create supplier if new (swallow duplicate 400, rethrow others)
@@ -412,6 +443,8 @@ const submit = async () => {
     const { data } = await createPlating(payload)
     message.success('创建成功')
     router.push(`/plating/${data.id}`)
+  } catch (_) {
+    // Request errors are shown by the API interceptor.
   } finally {
     submitting.value = false
   }
@@ -449,9 +482,9 @@ onMounted(async () => {
           // Trigger color variant lookup for each prefilled item
           for (const item of items) {
             if (item.part_id) {
-              const part = allParts.value.find((p) => p.id === item.part_id)
-              const existingCode = getPartColorCode(part)
-              toggleColor(item, existingCode || 'G')
+              const part = partMap.value[item.part_id]
+              if (part?.is_composite) item.unit = part.unit || '个'
+              toggleColor(item, defaultColorFor(part))
             }
           }
         }

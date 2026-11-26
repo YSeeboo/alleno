@@ -12,6 +12,8 @@ from api.production_archive import guard_plating_archive
 from database import get_db
 from services.production_allocation import production_uses
 from schemas.plating import (
+    CompositePlatingTargetRequest,
+    CompositePlatingTargetResponse,
     PendingReceiveItemResponse,
     PlatingCreate,
     PlatingDeliveryImagesUpdate,
@@ -21,6 +23,7 @@ from schemas.plating import (
     PlatingUpdate,
     SupplementAndSendPlatingResponse,
 )
+from services.composite_plating import composite_plating_target
 from schemas.plating_receipt import LinkReceiptRequest
 from schemas.production_loss import ConfirmLossRequest, ProductionLossResponse
 from services.production_loss import confirm_plating_loss
@@ -96,6 +99,18 @@ def api_list_plating_orders(status: Optional[str] = None, supplier_name: Optiona
 @router.get("/suppliers", response_model=list[str])
 def api_get_plating_supplier_names(db: Session = Depends(get_db)):
     return get_plating_supplier_names(db)
+
+
+@router.get("/composite-targets/{part_id}", response_model=CompositePlatingTargetResponse)
+def api_get_composite_plating_target(part_id: str, color_code: str, db: Session = Depends(get_db)):
+    with service_errors():
+        return composite_plating_target(db, part_id, color_code)
+
+
+@router.post("/composite-targets/{part_id}", response_model=CompositePlatingTargetResponse)
+def api_create_composite_plating_target(part_id: str, body: CompositePlatingTargetRequest, db: Session = Depends(get_db)):
+    with service_errors():
+        return composite_plating_target(db, part_id, body.color_code, create=True)
 
 
 @router.get("/items/pending-receive", response_model=list[PendingReceiveItemResponse])

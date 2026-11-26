@@ -8,6 +8,7 @@ from models.part import Part
 from models.plating_order import PlatingOrder, PlatingOrderItem
 from models.vendor_receipt import VendorReceipt
 from services._helpers import _next_id, keyword_filter
+from services.composite_plating import validate_plating_target
 from services.inventory import add_stock, batch_get_stock, deduct_stock, supplement_shortfall
 from services.production_archive import filter_archive, require_unarchived
 from services.production_allocation import guard_source_update, guard_source_delete
@@ -25,11 +26,6 @@ def _replace_date(existing: Optional[datetime], new_date: date_type) -> datetime
     """Combine new_date with the time-of-day from existing; fall back to midnight."""
     time_of_day = existing.time() if existing else datetime.min.time()
     return datetime.combine(new_date, time_of_day)
-
-
-def _require_part(db: Session, part_id: str) -> None:
-    if db.get(Part, part_id) is None:
-        raise ValueError(f"Part not found: {part_id}")
 
 
 def _normalize_delivery_images(delivery_images: Optional[list]) -> list[str]:
@@ -54,10 +50,7 @@ def _vendor_receipt_totals_for_plating(db: Session, order_id: str) -> dict[str, 
 
 
 def create_plating_order(db: Session, supplier_name: str, items: list, note: str = None, created_at: Optional[date_type] = None) -> PlatingOrder:
-    for item in items:
-        _require_part(db, item["part_id"])
-        if item.get("receive_part_id"):
-            _require_part(db, item["receive_part_id"])
+    items = [_validate_new_item(db, item) for item in items]
     order_id = _next_id(db, PlatingOrder, "EP")
     order = PlatingOrder(id=order_id, supplier_name=supplier_name, status="pending", note=note)
     if created_at is not None:
@@ -82,8 +75,8 @@ def create_plating_order(db: Session, supplier_name: str, items: list, note: str
     return order
 
 
-def send_plating_order(db: Session, plating_order_id: str) -> PlatingOrder:
-    order = get_plating_order(db, plating_order_id)
+def _prepare_dispatch(db: Session, plating_order_id: str):
+    order = get_plating_order(db, plating_order_id, lock=True)
     require_unarchived(order)
     if order is None:
         raise ValueError(f"PlatingOrder not found: {plating_order_id}")
@@ -96,10 +89,19 @@ def send_plating_order(db: Session, plating_order_id: str) -> PlatingOrder:
     )
     if not items:
         raise ValueError(f"PlatingOrder {plating_order_id} has no items and cannot be sent")
-    # Aggregate total qty per part and batch-check stock before deducting
     part_totals: dict[str, float] = {}
     for item in items:
+        validate_plating_target(db, item.part_id, item.receive_part_id, item.plating_method, item.unit)
         part_totals[item.part_id] = part_totals.get(item.part_id, 0.0) + float(item.qty)
+    return order, items, part_totals
+
+
+def send_plating_order(db: Session, plating_order_id: str) -> PlatingOrder:
+    return _dispatch(db, *_prepare_dispatch(db, plating_order_id))
+
+
+def _dispatch(db: Session, order, items, part_totals) -> PlatingOrder:
+    # Batch-check stock before deducting.
     stocks = batch_get_stock(db, "part", list(part_totals.keys()))
     insufficient = []
     for part_id, total_qty in part_totals.items():
@@ -128,41 +130,22 @@ def supplement_and_send_plating_order(
     db: Session, plating_order_id: str
 ) -> tuple[PlatingOrder, dict[str, float]]:
     """Supplement any part-stock shortfall for this plating order, then
-    call send_plating_order. Mirror of supplement_and_send_handcraft_order.
+    dispatch the validated rows. Mirror of supplement_and_send_handcraft_order.
     Returns (order, supplemented_dict).
     """
-    order = get_plating_order(db, plating_order_id)
-    require_unarchived(order)
-    if order is None:
-        raise ValueError(f"PlatingOrder not found: {plating_order_id}")
-    if order.status != "pending":
-        raise ValueError(
-            f"PlatingOrder {plating_order_id} cannot be sent: "
-            f"current status is '{order.status}'"
-        )
-    items = (
-        db.query(PlatingOrderItem)
-        .filter(PlatingOrderItem.plating_order_id == plating_order_id)
-        .all()
-    )
-    if not items:
-        raise ValueError(
-            f"PlatingOrder {plating_order_id} has no items and cannot be sent"
-        )
-    part_totals: dict[str, float] = {}
-    for it in items:
-        part_totals[it.part_id] = part_totals.get(it.part_id, 0.0) + float(it.qty)
+    order, items, part_totals = _prepare_dispatch(db, plating_order_id)
     supplemented = supplement_shortfall(
         db, "part", part_totals,
         reason="电镀单缺货补进",
         note=plating_order_id,
     )
-    order = send_plating_order(db, plating_order_id)
+    order = _dispatch(db, order, items, part_totals)
     return order, supplemented
 
 
-def get_plating_order(db: Session, plating_order_id: str) -> Optional[PlatingOrder]:
-    return db.query(PlatingOrder).filter(PlatingOrder.id == plating_order_id).first()
+def get_plating_order(db: Session, plating_order_id: str, *, lock=False) -> Optional[PlatingOrder]:
+    q = db.query(PlatingOrder).filter(PlatingOrder.id == plating_order_id)
+    return (q.with_for_update(key_share=True).populate_existing() if lock else q).first()
 
 
 def list_plating_orders(db: Session, status: str = None, supplier_name: str = None, archive: str = "active") -> list:
@@ -201,16 +184,21 @@ def get_plating_items(db: Session, order_id: str) -> list:
     return items
 
 
+def _validate_new_item(db: Session, item: dict) -> dict:
+    receive_id = item.get("receive_part_id") or None
+    method = validate_plating_target(db, item["part_id"], receive_id, item.get("plating_method"),
+                                     item.get("unit") or None, infer_method=True)
+    return {**item, "receive_part_id": receive_id, "plating_method": method}
+
+
 def add_plating_item(db: Session, order_id: str, item: dict) -> PlatingOrderItem:
-    order = get_plating_order(db, order_id)
+    order = get_plating_order(db, order_id, lock=True)
     require_unarchived(order)
     if order is None:
         raise ValueError(f"PlatingOrder not found: {order_id}")
     if order.status != "pending":
         raise ValueError(f"Cannot add item: order {order_id} status is '{order.status}', must be 'pending'")
-    _require_part(db, item["part_id"])
-    if item.get("receive_part_id"):
-        _require_part(db, item["receive_part_id"])
+    item = _validate_new_item(db, item)
     new_item = PlatingOrderItem(
         plating_order_id=order_id,
         part_id=item["part_id"],
@@ -230,7 +218,7 @@ def add_plating_item(db: Session, order_id: str, item: dict) -> PlatingOrderItem
 
 
 def update_plating_item(db: Session, order_id: str, item_id: int, data: dict) -> PlatingOrderItem:
-    order = get_plating_order(db, order_id)
+    order = get_plating_order(db, order_id, lock=True)
     require_unarchived(order)
     if order is None:
         raise ValueError(f"PlatingOrder not found: {order_id}")
@@ -242,36 +230,28 @@ def update_plating_item(db: Session, order_id: str, item_id: int, data: dict) ->
     ).first()
     if item is None:
         raise ValueError(f"PlatingOrderItem {item_id} not found in order {order_id}")
-    new_input = data.get("part_id") or item.part_id
-    new_target = data.get("receive_part_id", item.receive_part_id if new_input == item.part_id else None) or new_input
+    new_input = data.get("part_id", item.part_id)
+    if not new_input:
+        raise ValueError("发出配件不能为空")
+    source_changed = new_input != item.part_id
+    receive_id = data.get("receive_part_id", None if source_changed else item.receive_part_id)
+    method = validate_plating_target(
+        db, new_input, receive_id, data.get("plating_method", item.plating_method),
+        data.get("unit") if data.get("unit") is not None else item.unit,
+        # Old incomplete drafts (or a changed source) can be edited in place,
+        # but can never be dispatched without explicitly setting the target.
+        allow_incomplete=source_changed or item.receive_part_id is None,
+        check_normal_family="receive_part_id" in data,
+        infer_method="receive_part_id" in data and "plating_method" not in data and not item.plating_method,
+    )
     guard_source_update(db, "plating", item.id, quantity=data.get("qty"),
-                        target=("part", new_target), unit=data.get("unit"))
-    if "part_id" in data:
-        if data["part_id"] is None:
-            raise ValueError("发出配件不能为空")
-        _require_part(db, data["part_id"])
-        # Only clear receive_part_id when part_id actually changes
-        if data["part_id"] != item.part_id:
-            item.part_id = data["part_id"]
-            if "receive_part_id" not in data:
-                item.receive_part_id = None
-    if "receive_part_id" in data:
-        if data["receive_part_id"] is not None:
-            _require_part(db, data["receive_part_id"])
-            # Validate receive part belongs to same family as send part
-            send_part_id = item.part_id
-            recv_part = db.get(Part, data["receive_part_id"])
-            send_part = db.get(Part, send_part_id)
-            send_root = send_part.parent_part_id or send_part.id
-            recv_root = recv_part.parent_part_id or recv_part.id
-            if send_root != recv_root:
-                raise ValueError("收回配件必须与发出配件属于同一配件族")
-        item.receive_part_id = data["receive_part_id"]
+                        target=("part", receive_id or new_input), unit=data.get("unit"))
+    item.part_id = new_input
+    item.receive_part_id = receive_id
+    item.plating_method = method
     for field in ("qty", "unit", "note"):
         if field in data and data[field] is not None:
             setattr(item, field, data[field])
-    if "plating_method" in data:
-        item.plating_method = data["plating_method"]
     for wf in ("weight", "weight_unit"):
         if wf in data:
             setattr(item, wf, data[wf])
@@ -280,7 +260,7 @@ def update_plating_item(db: Session, order_id: str, item_id: int, data: dict) ->
 
 
 def delete_plating_item(db: Session, order_id: str, item_id: int) -> None:
-    order = get_plating_order(db, order_id)
+    order = get_plating_order(db, order_id, lock=True)
     require_unarchived(order)
     if order is None:
         raise ValueError(f"PlatingOrder not found: {order_id}")

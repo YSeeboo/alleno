@@ -441,7 +441,8 @@ import { deletePlatingReceiptItem } from '@/api/platingReceipts'
 import { confirmPlatingLoss } from '@/api/productionLoss'
 import { listSuppliers, createSupplier } from '@/api/suppliers'
 import { changeOrderStatus } from '@/api/kanban'
-import { listParts, findOrCreateVariant, createPartVariant, getColorVariants } from '@/api/parts'
+import { listParts, getColorVariants } from '@/api/parts'
+import { compositeTargetConfirmation, createPlatingTarget, lookupPlatingTarget } from '@/api/platingTargets'
 import { listOrders, getTodo, createLink, batchLink } from '@/api/orders'
 import { renderImageThumb, renderOptionWithImage } from '@/utils/ui'
 import ImageUploadModal from '@/components/ImageUploadModal.vue'
@@ -711,6 +712,8 @@ const saveInline = async (row, field, value) => {
     // Changing part_id invalidates receive_part_id — clear it
     if (field === 'part_id') {
       body.receive_part_id = null
+      inlineColorSeq.value[row.id] = (inlineColorSeq.value[row.id] || 0) + 1
+      if (partMap.value[value]?.is_composite) body.unit = partMap.value[value].unit || '个'
     }
     await updatePlatingItem(route.params.id, row.id, body)
     await loadData()
@@ -767,7 +770,7 @@ const loadData = async () => {
   }
 }
 
-const { sending, doSend } = useSendWithStockSupplement({
+const { sending, doSend: dispatchOrder } = useSendWithStockSupplement({
   orderId: computed(() => route.params.id),
   sendApi: sendPlating,
   supplementApi: supplementAndSendPlating,
@@ -775,6 +778,24 @@ const { sending, doSend } = useSendWithStockSupplement({
   message,
   dialog,
 })
+
+function doSend() {
+  if (sending.value || !isPending()) return
+  const assemblies = items.value.filter(row => partMap.value[row.part_id]?.is_composite)
+  if (!assemblies.length) return dispatchOrder()
+  const missing = assemblies.find(row => !row.receive_part_id)
+  if (missing) return message.warning(`请先为 ${missing.part_id} 选择电镀颜色和收回组合件`)
+  dialog.warning({
+    title: '确认整件送镀',
+    content: () => h('div', [
+      h('p', '请核对发出和收回组合件。发出后收回编号将锁定，只扣发出整件库存。'),
+      h('ul', { style: 'max-height: 40vh; overflow: auto; padding-left: 1.4em; overflow-wrap: anywhere' },
+        assemblies.map(row => h('li', `${row.part_id} → ${row.receive_part_id} · ${row.qty} ${row.unit || ''}`))),
+    ]),
+    positiveText: '确认发出', negativeText: '取消',
+    onPositiveClick: () => { if (isPending() && !sending.value) void dispatchOrder() },
+  })
+}
 
 const doDownloadExcel = async () => {
   await downloadExportFile('xlsx', downloadingExcel, downloadPlatingExcel, 'Excel 下载失败')
@@ -886,8 +907,15 @@ async function refreshAfterBatchAdd() {
 const inlineColorSeq = ref({}) // key: row.id, value: request sequence number
 
 const toggleInlineColor = async (row, code) => {
+  const part = partMap.value[row.part_id]
+  if (!part || !isPending() || sending.value) return
+  const composite = part.is_composite
+  const orderId = route.params.id
+  const seq = (inlineColorSeq.value[row.id] || 0) + 1
+  inlineColorSeq.value[row.id] = seq
+  const isStale = () => route.params.id !== orderId || !isPending() || sending.value || inlineColorSeq.value[row.id] !== seq
   const currentBadge = getColorBadge(row.receive_part_name) || codeOfMethod.value[row.plating_method] || null
-  if (currentBadge === code) {
+  if (!composite && currentBadge === code) {
     // Deselect: clear receive_part_id
     try {
       await updatePlatingItem(route.params.id, row.id, { receive_part_id: null, plating_method: null })
@@ -897,50 +925,37 @@ const toggleInlineColor = async (row, code) => {
     }
     return
   }
-  // Find or create variant with stale-response protection
-  const seq = (inlineColorSeq.value[row.id] || 0) + 1
-  inlineColorSeq.value[row.id] = seq
-  const isStale = () => inlineColorSeq.value[row.id] !== seq
+  const applyTarget = (target) => updatePlatingItem(orderId, row.id, {
+    receive_part_id: target.part.id,
+    plating_method: target.plating_method || methodOf.value[code] || '金',
+    ...(composite ? { unit: target.unit } : {}),
+  })
   try {
-    const { data } = await findOrCreateVariant(row.part_id, { color_code: code })
+    const data = await lookupPlatingTarget(part, code)
     if (isStale()) return
     if (data.part) {
       // Variant exists, update directly
-      await updatePlatingItem(route.params.id, row.id, {
-        receive_part_id: data.part.id,
-        plating_method: methodOf.value[code] || '金',
-      })
+      await applyTarget(data)
       if (!isStale()) await loadData()
     } else {
       if (isStale()) return
       // Variant doesn't exist, confirm creation
       dialog.info({
-        title: '确认新建',
-        content: `当前没有 ${data.suggested_name}，确定新建吗？`,
+        title: composite ? '确认新建镀色组合件' : '确认新建',
+        content: composite
+          ? () => h('div', { style: 'white-space: pre-line; overflow-wrap: anywhere' }, compositeTargetConfirmation(data))
+          : `当前没有 ${data.suggested_name}，确定新建吗？`,
         positiveText: '确认',
         negativeText: '取消',
         onPositiveClick: async () => {
           if (isStale()) return
           try {
-            const { data: newPart } = await createPartVariant(row.part_id, { color_code: code })
-            await updatePlatingItem(route.params.id, row.id, {
-              receive_part_id: newPart.id,
-              plating_method: methodOf.value[code] || '金',
-            })
-            // Refresh parts list and table
-            const { data: parts } = await listParts()
-            allParts.value = parts
-            parts.forEach((p) => { partMap.value[p.id] = p })
-            partOptions.value = parts.map((p) => ({
-              label: `${p.id} ${p.name}`,
-              value: p.id,
-              code: p.id,
-              name: p.name,
-              image: p.image,
-              unit: p.unit,
-            }))
-            await loadData()
-            message.success('变体创建成功')
+            const target = await createPlatingTarget(part, code)
+            if (isStale()) return
+            await applyTarget(target)
+            if (route.params.id !== orderId) return
+            await refreshAfterBatchAdd()
+            message.success(composite ? (target.created ? '已新建镀色组合件' : '已使用现有镀色组合件') : '变体创建成功')
           } catch (e) {
             message.error(e.response?.data?.detail || '创建变体失败')
           }
@@ -1468,7 +1483,7 @@ const editableColumns = [
       const pending = isPending()
       if (!pending) return row.plating_method || '—'
       const makeChip = (cv) => {
-        const isActive = currentBadge === cv.code
+        const isActive = currentBadge === cv.code && (!partMap.value[row.part_id]?.is_composite || !!row.receive_part_id)
         const badge = badgeOf.value[cv.code]
         return h('span', {
           style: {
@@ -1548,7 +1563,7 @@ const editableColumns = [
         return renderInlineSelect(row, 'unit', unitOptions)
       }
       const text = row.unit || '-'
-      if (!isPending()) return text
+      if (!isPending() || partMap.value[row.part_id]?.is_composite) return text
       return h('span', { style: 'cursor: pointer; color: #2080f0;', onClick: () => startInline(row, 'unit') }, text)
     },
   },
@@ -1650,16 +1665,17 @@ const itemColumns = [
         return renderInlineSelect(row, 'part_id', partOptions.value, { renderLabel: renderOptionWithImage, placeholder: '选择发出配件' })
       }
       const badge = getColorBadge(row.receive_part_name) || codeOfMethod.value[row.plating_method]
+      const composite = !!partMap.value[row.part_id]?.is_composite
       return h('div', { class: 'pd-part' }, [
         renderImageThumb(row.part_image, row.part_name, 36),
         h('div', { class: 'pd-part-body' }, [
           h('div', { class: 'pd-part-name' }, [
             isPending() ? h('button', { class: 'pd-part-edit', onClick: () => startInline(row, 'part_id'), 'aria-label': `修改发出配件 ${row.part_name}` }, row.part_name) : row.part_name,
             ...(badge ? [h('span', { class: 'pd-color-tag', style: { color: badgeOf.value[badge] || '#8B9096' } }, badge)] : []),
-            ...(partMap.value[row.part_id]?.is_composite ? [h('span', { class: 'pd-color-tag' }, '组合')] : []),
+            ...(composite ? [h('span', { class: 'pd-color-tag' }, row.receive_part_id || isPending() ? '整件送镀' : '组合')] : []),
           ]),
           h('div', { class: 'pd-part-code' }, row.part_id),
-          h('div', { class: 'pd-part-receive' }, `收回：${row.receive_part_name || '同发出配件'}`),
+          h('div', { class: 'pd-part-receive' }, `→ 收回：${row.receive_part_name || (composite && isPending() ? '未设置，请选择电镀颜色' : '同发出配件')}`),
           ...(row.receive_part_id ? [h('div', { class: 'pd-part-code' }, row.receive_part_id)] : []),
         ]),
       ])

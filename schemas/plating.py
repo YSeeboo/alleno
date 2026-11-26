@@ -1,6 +1,20 @@
 from typing import Optional, List
 from datetime import datetime, date
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from schemas.part import PartResponse
+
+
+class CompositePlatingTargetRequest(BaseModel):
+    color_code: str
+
+
+class CompositePlatingTargetResponse(BaseModel):
+    part: Optional[PartResponse] = None
+    suggested_id: Optional[str] = None
+    suggested_name: Optional[str] = None
+    unit: str
+    plating_method: str
+    created: bool = False
 
 
 class PlatingItemCreate(BaseModel):

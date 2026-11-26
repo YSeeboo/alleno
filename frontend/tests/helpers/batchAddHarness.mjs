@@ -4,7 +4,7 @@ import { reactive } from 'vue'
 
 const url = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`
 const runtime = url(`
-  export { ref, computed } from ${JSON.stringify(import.meta.resolve('vue'))};
+  export { ref, computed, h } from ${JSON.stringify(import.meta.resolve('vue'))};
   export const onMounted = fn => globalThis.__batchTest.mounted.push(fn);
   export const onBeforeUnmount = fn => globalThis.__batchTest.cleanup.push(fn);
 `)
@@ -38,6 +38,9 @@ export function setupBatch(props = {}, overrides = {}) {
       getPart: () => response({ unit: '米' }),
       findOrCreateVariant: (id, { color_code }) => response({ part: { id: `${id}-${color_code}`, name: color_code } }),
       createPartVariant: (id, { color_code }) => response({ id: `${id}-${color_code}`, name: color_code }),
+      lookupPlatingTarget: async (part, color_code) => (await state.api.findOrCreateVariant(part.id, { color_code })).data,
+      createPlatingTarget: async (part, color_code) => ({ part: (await state.api.createPartVariant(part.id, { color_code })).data, created: true }),
+      compositeTargetConfirmation: info => `${info.suggested_name} / ${info.suggested_id} / ${info.unit}`,
       saveBatchRow: async (...args) => { calls.push(args); return { data: {} } }, ...overrides,
     },
   }
