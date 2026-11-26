@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from models.part import Part
 from services.inventory import add_stock
-from services.part import PART_CATEGORIES, create_part, get_part, update_part, update_part_cost
+from services.part import PART_CATEGORIES, PART_CATEGORY_OPTIONS, create_part, get_part, normalize_part_category, update_part, update_part_cost
 
 _XML_NS = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 _REL_NS = {"rel": "http://schemas.openxmlformats.org/package/2006/relationships"}
@@ -137,8 +137,8 @@ def import_parts_excel(db: Session, file_bytes: bytes, filename: str | None) -> 
 def build_parts_import_template() -> bytes:
     return _build_xlsx_bytes([
         ["名称", "类目", "颜色", "单位", "采购成本", "默认电镀工艺", "入库数量"],
-        ["示例铜扣", "小配件", "金色", "个", 1.5, "真金", 10],
-    ])
+        ["示例铜扣", "扣具", "金色", "个", 1.5, "真金", 10],
+    ], category_options=[label for _, label, _ in PART_CATEGORY_OPTIONS])
 
 
 def _load_rows_from_xlsx(file_bytes: bytes) -> list[list[str]]:
@@ -309,7 +309,7 @@ def _normalize_header(value: str) -> str:
 def _parse_row(row: list[str], header_map: dict[str, int], row_number: int) -> _ImportRow:
     part_id = _get_text(row, header_map, "part_id")
     name = _get_text(row, header_map, "name")
-    category = _get_text(row, header_map, "category")
+    category = normalize_part_category(_get_text(row, header_map, "category"))
     color = _get_text(row, header_map, "color")
     unit = _get_text(row, header_map, "unit")
     plating_process = _get_text(row, header_map, "plating_process")
@@ -474,7 +474,7 @@ def _build_single_plan(db: Session, row: _ImportRow) -> dict:
     return {"row": row, "part": None, "payload": create_payload}
 
 
-def _build_xlsx_bytes(rows: list[list[object]]) -> bytes:
+def _build_xlsx_bytes(rows: list[list[object]], *, category_options: list[str] | None = None) -> bytes:
     sheet_rows = []
     max_columns = 0
 
@@ -494,6 +494,15 @@ def _build_xlsx_bytes(rows: list[list[object]]) -> bytes:
 
     last_column = _column_name(max_columns - 1) if max_columns > 0 else "A"
     last_row = len(rows) if rows else 1
+    validation = ""
+    if category_options:
+        choices = escape(",".join(category_options))
+        validation = (
+            '<dataValidations count="1">'
+            '<dataValidation type="list" allowBlank="1" showErrorMessage="1" sqref="B2:B1048576">'
+            f'<formula1>"{choices}"</formula1>'
+            '</dataValidation></dataValidations>'
+        )
     worksheet_xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
@@ -501,6 +510,7 @@ def _build_xlsx_bytes(rows: list[list[object]]) -> bytes:
         '<sheetViews><sheetView workbookViewId="0"/></sheetViews>'
         '<sheetFormatPr defaultRowHeight="15"/>'
         f'<sheetData>{"".join(sheet_rows)}</sheetData>'
+        f'{validation}'
         "</worksheet>"
     )
     workbook_xml = (

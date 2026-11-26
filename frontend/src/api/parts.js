@@ -1,6 +1,8 @@
 import api from './index'
 
 export const listParts = (params) => api.get('/parts/', { params })
+export const getPartCategories = () => api.get('/parts/categories')
+export const batchUpdatePartCategory = (data) => api.post('/parts/batch-update-category', data)
 export const getPart = (id) => api.get(`/parts/${id}`)
 export const createPart = (data) => api.post('/parts/', data)
 export const updatePart = (id, data) => api.patch(`/parts/${id}`, data)

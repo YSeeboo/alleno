@@ -5,7 +5,7 @@
       <div class="page-crumbs">商品 / 配件管理</div>
       <div class="title-row">
         <h1 class="page-title">
-          配件管理<span class="title-count">共 {{ rows.length }} 个配件 · {{ displayRows.length }} 个根件</span>
+          配件管理<span class="title-count">共 {{ rows.length }} 个配件 · {{ rootCount }} 个根件</span>
         </h1>
         <div class="top-actions">
           <n-button class="btn-outline" @click="openImportModal">导入配件</n-button>
@@ -57,14 +57,33 @@
     <!-- Table -->
     <n-spin :show="loading">
       <div class="table-wrap" v-if="tableData.length > 0 || loading">
-        <n-data-table :columns="columns" :data="tableData" :bordered="false" :row-key="(r) => r.id" />
+        <div v-if="categoryOptions.length" class="category-batch-actions">
+          <n-button size="small" :disabled="loading || batchSaving" @click="toggleBatchMode">
+            {{ batchMode ? '退出批量归类' : '批量归类' }}
+          </n-button>
+          <n-button v-if="batchMode" size="small" type="primary" secondary :disabled="loading || !selectedPartIds.length" @click="openBatchCategory">
+            选择新类目（已选 {{ selectedPartIds.length }} 个）
+          </n-button>
+        </div>
+        <n-data-table :columns="tableColumns" :data="tableData" :bordered="false" :row-key="(r) => r.id" v-model:checked-row-keys="checkedPartIds" />
       </div>
       <n-empty v-else-if="!loading" description="暂无数据" style="margin: 40px 0;" />
     </n-spin>
 
+    <n-modal v-model:show="showBatchCategory" preset="card" title="批量归类" :style="{ width: isMobile ? '95vw' : '420px' }" :mask-closable="!batchSaving" :closable="!batchSaving" :close-on-esc="!batchSaving">
+      <p>只修改选中的 {{ selectedPartIds.length }} 个配件的类目，不改编号、BOM、库存或成本。</p>
+      <n-select v-model:value="batchCategory" :options="categoryOptions" placeholder="请选择新类目" filterable :disabled="batchSaving" />
+      <template #footer>
+        <n-space justify="end">
+          <n-button :disabled="batchSaving" @click="showBatchCategory = false">取消</n-button>
+          <n-button type="primary" :loading="batchSaving" :disabled="!batchCategory || !selectedPartIds.length" @click="saveBatchCategory">确认归类</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
     <!-- Create / Edit Modal -->
     <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑配件' : '新增配件'" :style="{ width: isMobile ? '95vw' : '540px' }">
-      <form @submit.prevent="save">
+      <form class="edit-form-scroll" @submit.prevent="save">
       <n-form ref="formRef" :model="form" label-placement="top">
 
         <!-- 基本信息 -->
@@ -77,25 +96,19 @@
             </n-form-item>
           </div>
 
-          <!-- 类目 pill selector — full width -->
+          <!-- 类目 — full width -->
           <div class="modal-full">
             <n-form-item
               label="类目"
               path="category"
               :rule="editingId ? undefined : { required: true, message: '请选择类目', trigger: 'change' }"
             >
-              <div class="modal-pills" :class="{ 'modal-pills-disabled': !!editingId }">
-                <button
-                  v-for="opt in categoryOptions"
-                  :key="opt.value"
-                  type="button"
-                  class="modal-pill"
-                  :class="{ 'modal-pill-on': form.category === opt.value }"
-                  :disabled="!!editingId"
-                  @click="!editingId && (form.category = opt.value)"
-                >{{ opt.label }}</button>
+              <div style="width: 100%;">
+                <n-select v-model:value="form.category" :options="categoryOptions" :disabled="!categoryOptions.length" placeholder="请选择类目" filterable />
+                <span v-if="editingId" class="modal-note">
+                  <template v-if="!categoryOption(editingCategory)">{{ categoryLabel(editingCategory) }}；</template>改类目不改编号
+                </span>
               </div>
-              <span v-if="!!editingId" class="modal-note">类目不可修改</span>
             </n-form-item>
           </div>
 
@@ -159,14 +172,14 @@
             </template>
             <template #header-extra>
               <n-tag :type="bufferIsCustom ? 'warning' : 'success'" size="small" round>
-                {{ bufferIsCustom ? '自定义' : '默认 · 按类目' }}
+                {{ bufferIsCustom ? '自定义' : '默认 · 按大小' }}
               </n-tag>
             </template>
             <n-form-item label="配件大小">
               <n-select
                 v-model:value="form.size_tier"
                 :options="sizeTierOptions"
-                placeholder="未选择则按类目自动"
+                :placeholder="editingId ? '保留现有大小' : '未选择则按类目推荐'"
                 clearable
                 style="width: 160px;"
               />
@@ -263,7 +276,7 @@
       <template #footer>
         <n-space justify="end">
           <n-button @click="showModal = false">取消</n-button>
-          <n-button type="primary" :loading="saving" @click="save">保存</n-button>
+          <n-button type="primary" :loading="saving" :disabled="!editingId && !categoryOptions.length" @click="save">保存</n-button>
         </n-space>
       </template>
     </n-modal>
@@ -294,6 +307,7 @@
           仅支持 `.xlsx` 文件。系统按首个工作表导入，表头建议使用：
           名称、类目、颜色、单位、采购成本、默认电镀工艺、入库数量。
           配件编号会由系统自动生成；如果系统里已存在同名同类目的配件，会自动更新该配件并追加入库数量。
+          整理现有配件请用「批量归类」；导入不会替旧配件修改类目。
         </div>
         <n-space align="center" justify="space-between">
           <div style="color: #6b7280;">
@@ -350,7 +364,7 @@ import {
   NModal, NDataTable, NSpin, NEmpty, NDropdown, NImage,
   NCollapse, NCollapseItem, NTag,
 } from 'naive-ui'
-import { listParts, createPart, updatePart, deletePart, importPartsExcel, downloadPartsImportTemplate, getPartVariants, createPartVariant, getColorVariants } from '@/api/parts'
+import { listParts, createPart, updatePart, deletePart, importPartsExcel, downloadPartsImportTemplate, getPartVariants, createPartVariant, getColorVariants, batchUpdatePartCategory } from '@/api/parts'
 import { batchGetStock, addStock } from '@/api/inventory'
 import { renderNamedImage, fmtMoney, fmtPrice, parseNum } from '@/utils/ui'
 import ImageUploadModal from '../../components/ImageUploadModal.vue'
@@ -358,6 +372,7 @@ import BatchImageUpload from '@/components/BatchImageUpload.vue'
 import PartGroupToggle from '@/components/PartGroupToggle.vue'
 import { pushBatch } from '@/utils/recentImports'
 import { useAuthStore } from '@/stores/auth'
+import { usePartCategories } from '@/composables/usePartCategories'
 
 const router = useRouter()
 const message = useMessage()
@@ -370,18 +385,12 @@ const rows = ref([])
 const searchName = ref('')
 const searchCategory = ref(null)
 
-const categoryOptions = [
-  { label: '吊坠', value: '吊坠' },
-  { label: '链条', value: '链条' },
-  { label: '小配件', value: '小配件' },
-]
-
-const categoryChips = [
+const { categoryOptions, unclassifiedCategory, categoryOption, categoryLabel } = usePartCategories(text => message.error(text))
+const categoryChips = computed(() => [
   { label: '全部', value: null },
-  { label: '吊坠', value: '吊坠' },
-  { label: '链条', value: '链条' },
-  { label: '小配件', value: '小配件' },
-]
+  ...categoryOptions.value,
+  ...(unclassifiedCategory.value ? [{ label: '待细分', value: unclassifiedCategory.value }] : []),
+])
 
 const selectCategory = (value) => {
   searchCategory.value = value
@@ -391,6 +400,7 @@ const selectCategory = (value) => {
 // Stat strip — computed from loaded row data only
 const compositeCount = computed(() => rows.value.filter((r) => r.is_composite).length)
 const lowStockCount = computed(() => rows.value.filter((r) => r.stock < 10).length)
+const rootCount = computed(() => rows.value.filter(r => !r.parent_part_id).length)
 
 // Grouping tree: root parts (parent_part_id == null) with their variant children
 const expanded = ref(new Set())
@@ -402,16 +412,17 @@ function toggleGroup(row) {
 }
 const displayRows = computed(() => {
   const variantsByRoot = new Map()
+  const loadedIds = new Set(rows.value.map(r => r.id))
   const roots = []
   for (const r of rows.value) {
-    if (r.parent_part_id) {
+    if (r.parent_part_id && loadedIds.has(r.parent_part_id)) {
       if (!variantsByRoot.has(r.parent_part_id)) variantsByRoot.set(r.parent_part_id, [])
       variantsByRoot.get(r.parent_part_id).push(r)
     } else roots.push(r)
   }
   return roots.map((root) => {
     const children = (variantsByRoot.get(root.id) || []).slice().sort((a, b) => a.id.localeCompare(b.id))
-    return { ...root, _children: children }
+    return { ...root, _children: children, _isChild: !!root.parent_part_id }
   })
 })
 const tableData = computed(() => {
@@ -422,6 +433,50 @@ const tableData = computed(() => {
   }
   return out
 })
+
+const batchMode = ref(false)
+const checkedPartIds = ref([])
+const selectedPartIds = computed(() => {
+  const visible = new Set(tableData.value.map(row => row.id))
+  return checkedPartIds.value.filter(id => visible.has(id))
+})
+watch(tableData, () => {
+  if (selectedPartIds.value.length !== checkedPartIds.value.length) checkedPartIds.value = selectedPartIds.value
+})
+watch([searchCategory, searchName], () => { checkedPartIds.value = [] })
+const batchCategory = ref(null)
+const showBatchCategory = ref(false)
+const batchSaving = ref(false)
+
+function toggleBatchMode() {
+  checkedPartIds.value = []
+  batchMode.value = !batchMode.value
+}
+
+function openBatchCategory() {
+  batchCategory.value = null
+  showBatchCategory.value = true
+}
+
+async function saveBatchCategory() {
+  if (batchSaving.value || !batchCategory.value || !selectedPartIds.value.length) return
+  if (selectedPartIds.value.length > 500) {
+    message.warning('每次最多归类 500 个配件，请分批操作')
+    return
+  }
+  batchSaving.value = true
+  try {
+    const { data } = await batchUpdatePartCategory({ part_ids: [...selectedPartIds.value], category: batchCategory.value })
+    message.success(`已更新 ${data.updated_count} 个配件的类目`)
+    showBatchCategory.value = false
+    checkedPartIds.value = []
+    await load()
+  } catch (error) {
+    message.error(error.response?.data?.detail || '批量归类失败')
+  } finally {
+    batchSaving.value = false
+  }
+}
 
 const unitOptions = [
   { label: '个', value: '个' },
@@ -486,6 +541,9 @@ const doCreateSpecVariant = async () => {
 // Modal state
 const showModal = ref(false)
 const editingId = ref(null)
+const editingCategory = ref(null)
+const editingSizeTier = ref(null)
+let initialForm = {}
 const editingIsVariant = ref(false)
 const editingIsComposite = ref(false)
 const saving = ref(false)
@@ -505,10 +563,8 @@ const TIER_DEFAULTS = {
 
 const effectiveTier = computed(() => {
   if (form.size_tier) return form.size_tier
-  // Mirror backend default: 小配件 → small, 吊坠/链条 → medium
-  if (form.category === '小配件') return 'small'
-  if (form.category === '吊坠' || form.category === '链条') return 'medium'
-  return null
+  if (editingId.value) return editingSizeTier.value
+  return categoryOption(form.category)?.default_size_tier ?? null
 })
 
 const bufferIsCustom = computed(() =>
@@ -555,21 +611,25 @@ const loadAllPartsForSelect = async () => {
   allPartsForSelect.value = data
 }
 
+let loadRevision = 0
 const load = async () => {
+  const revision = ++loadRevision
   loading.value = true
   try {
     const params = {}
     if (searchName.value) params.name = searchName.value
     if (searchCategory.value) params.category = searchCategory.value
     const { data: parts } = await listParts(params)
+    if (revision !== loadRevision) return
     if (parts.length > 0) {
       const { data: stockMap } = await batchGetStock('part', parts.map((p) => p.id))
+      if (revision !== loadRevision) return
       rows.value = parts.map((p) => ({ ...p, stock: stockMap[p.id] ?? 0 }))
     } else {
       rows.value = []
     }
   } finally {
-    loading.value = false
+    if (revision === loadRevision) loading.value = false
   }
 }
 
@@ -578,8 +638,6 @@ const debouncedLoad = () => {
   clearTimeout(_searchTimer)
   _searchTimer = setTimeout(load, 300)
 }
-
-const VALID_CATEGORIES = categoryOptions.map((o) => o.value)
 
 const allPartsForSelect = ref([])
 
@@ -605,6 +663,8 @@ const parentPartOptions = computed(() => {
 
 const openCreate = () => {
   editingId.value = null
+  editingCategory.value = null
+  editingSizeTier.value = null
   editingIsVariant.value = false
   editingIsComposite.value = false
   existingVariantColors.value = []
@@ -629,16 +689,17 @@ const closeImportModal = () => {
 const openEdit = async (row) => {
   const rowId = row.id
   editingId.value = rowId
+  editingCategory.value = row.category ?? null
+  editingSizeTier.value = row.size_tier || null
   editingIsVariant.value = !!row.parent_part_id
   editingIsComposite.value = !!row.is_composite
   existingVariantColors.value = []
   specVariantInput.value = ''
   specVariantColor.value = null
-  const cat = row.category && VALID_CATEGORIES.includes(row.category) ? row.category : null
   Object.assign(form, {
     name: row.name,
     image: row.image || '',
-    category: cat,
+    category: categoryOption(row.category)?.value ?? null,
     color: row.color || '',
     spec: row.spec || '',
     unit: row.unit || '个',
@@ -649,6 +710,7 @@ const openEdit = async (row) => {
     buffer_ratio_override: row.buffer_ratio_override ?? null,
     buffer_floor_override: row.buffer_floor_override ?? null,
   })
+  initialForm = { ...form }
   showModal.value = true
   // Load existing variants (non-blocking, buttons disabled until done)
   // For variants, query via root parent; for root parts, query directly
@@ -679,17 +741,17 @@ const onImageUploaded = (url) => {
 }
 
 const save = async () => {
-  await formRef.value?.validate()
+  try { await formRef.value?.validate() } catch { return }
   saving.value = true
   try {
     if (editingId.value) {
-      const { category, ...updateData } = form
+      const updateData = Object.fromEntries(Object.entries(form).filter(([field, value]) => value !== initialForm[field]))
       // Variant parts: backend rejects color/parent_part_id changes
       if (editingIsVariant.value) {
         delete updateData.color
         delete updateData.parent_part_id
       }
-      await updatePart(editingId.value, updateData)
+      if (Object.keys(updateData).length) await updatePart(editingId.value, updateData)
     } else {
       await createPart(form)
     }
@@ -697,6 +759,8 @@ const save = async () => {
     showModal.value = false
     loadAllPartsForSelect()
     await load()
+  } catch (error) {
+    message.error(error.response?.data?.detail || '保存失败')
   } finally {
     saving.value = false
   }
@@ -854,7 +918,7 @@ const columns = [
       return h('div', { class: row._isChild ? 'cell-name-wrap pt-indent' : 'cell-name-wrap' }, children)
     },
   },
-  { title: '类目', key: 'category' },
+  { title: '类目', key: 'category', render: row => categoryLabel(row.category) },
   {
     title: '颜色',
     key: 'color',
@@ -934,6 +998,8 @@ const columns = [
       ]),
   },
 ]
+
+const tableColumns = computed(() => batchMode.value ? [{ type: 'selection' }, ...columns] : columns)
 
 onMounted(() => {
   loadAllPartsForSelect()
@@ -1107,6 +1173,14 @@ onMounted(() => {
   overflow: hidden;
 }
 
+.category-batch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #ECEDEF;
+}
+
 /* ── Table cell styles ── */
 .cell-name-wrap {
   display: flex;
@@ -1186,6 +1260,11 @@ onMounted(() => {
 }
 
 /* ── Create/Edit modal layout ── */
+.edit-form-scroll {
+  max-height: calc(100dvh - 160px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
 
 /* Eyebrow section headers */
 .modal-sec-h {
@@ -1206,44 +1285,6 @@ onMounted(() => {
 
 .modal-full {
   grid-column: 1 / -1;
-}
-
-/* Category pill selector */
-.modal-pills {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-}
-
-.modal-pill {
-  height: 36px;
-  flex: 1;
-  border: 1px solid #DFE2E6;
-  border-radius: 9px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  color: #4b5158;
-  cursor: pointer;
-  background: #fff;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-}
-
-.modal-pill:hover:not(:disabled) {
-  border-color: #c8cdd4;
-}
-
-.modal-pill.modal-pill-on {
-  background: #1A1D21;
-  border-color: #1A1D21;
-  color: #fff;
-  font-weight: 500;
-}
-
-.modal-pills-disabled .modal-pill {
-  cursor: default;
-  opacity: 0.65;
 }
 
 /* Inline note/hint text */

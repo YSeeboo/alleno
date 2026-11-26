@@ -9,7 +9,7 @@
           <h1 class="page-title">{{ part.name }}</h1>
           <span class="id-chip">{{ part.id }}</span>
           <n-button v-if="auth.hasPermission('handcraft')" text type="primary" size="small" @click="router.push(handcraftOutputLocation({ outputs: [`part:${part.id}`], view: 'product', archive: 'all' }))">查看手工产出 ↗</n-button>
-          <span v-if="part.category" class="cat-tag">{{ part.category }}</span>
+          <span class="cat-tag">{{ categoryLabel(part.category) }}</span>
           <span class="root-tag" :class="{ 'variant-tag': part.parent_part_id }">
             {{ part.parent_part_id ? '变体' : '根件' }}
           </span>
@@ -71,7 +71,7 @@
                 <span v-else style="color: #AEB3B8; font-size: 13px;">无图</span>
               </span>
             </div>
-            <div class="f"><span class="k">类目</span><span class="v">{{ part.category || '-' }}</span></div>
+            <div class="f"><span class="k">类目</span><span class="v">{{ categoryLabel(part.category) }}</span></div>
             <div class="f">
               <span class="k">颜色</span>
               <span class="v">
@@ -243,6 +243,7 @@
           <!-- Batch add panel -->
           <div class="addpanel">
             <div class="addpanel-h">批量添加子配件</div>
+            <n-select v-if="bomCategoryOptions.length" v-model:value="bomCategory" :options="bomCategoryOptions" clearable filterable aria-label="子配件类目筛选" placeholder="全部配件类目" style="max-width: 240px; margin-bottom: 8px;" />
             <n-select
               v-model:value="batchSelectVal"
               filterable
@@ -330,7 +331,7 @@
       title="编辑基本信息"
       :style="{ width: isMobile ? '95vw' : '540px' }"
     >
-      <n-form ref="editFormRef" :model="editForm" label-placement="top">
+      <n-form ref="editFormRef" :model="editForm" label-placement="top" class="edit-form-scroll">
         <div class="modal-grid2">
           <div class="modal-full">
             <n-form-item label="名称" path="name" :rule="{ required: true, message: '请输入名称' }">
@@ -339,8 +340,12 @@
           </div>
           <div class="modal-full">
             <n-form-item label="类目">
-              <span style="font-size: 14px; color: #1A1D21;">{{ editForm.category || '-' }}</span>
-              <span class="modal-note">类目不可修改</span>
+              <div style="width: 100%;">
+                <n-select v-model:value="editForm.category" :options="categoryOptions" :disabled="!categoryOptions.length" placeholder="请选择类目" filterable />
+                <span class="modal-note">
+                  <template v-if="!categoryOption(part?.category)">{{ categoryLabel(part?.category) }}；</template>改类目不改编号
+                </span>
+              </div>
             </n-form-item>
           </div>
           <n-form-item label="颜色">
@@ -413,6 +418,7 @@ import { useAuthStore } from '@/stores/auth'
 import { handcraftOutputLocation } from '@/utils/handcraftOutput'
 import { useMessage } from 'naive-ui'
 import { useIsMobile } from '@/composables/useIsMobile'
+import { usePartCategories } from '@/composables/usePartCategories'
 import {
   NSpin, NDataTable, NSpace, NButton, NEmpty, NImage, NPopover,
   NSelect, NInputNumber, NPopconfirm,
@@ -431,6 +437,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const message = useMessage()
 const { isMobile } = useIsMobile()
+const { categoryOptions, unclassifiedCategory, categoryOption, categoryLabel } = usePartCategories(text => message.error(text))
 
 const loading = ref(true)
 const part = ref(null)
@@ -443,6 +450,11 @@ const partId = computed(() => route.params.id)
 // Sub-parts BOM
 const partBomList = ref([])
 const childPartOptions = ref([])
+const bomCategory = ref(null)
+const bomCategoryOptions = computed(() => [
+  ...categoryOptions.value,
+  ...(unclassifiedCategory.value ? [{ label: '待细分', value: unclassifiedCategory.value }] : []),
+])
 // Batch add state (Task 3)
 const staged = ref([])          // [{ child_part_id, child_part_name, child_part_image, qty_per_unit }]
 const batchSubmitting = ref(false)
@@ -456,7 +468,12 @@ const badgeOfLabel = computed(() => Object.fromEntries(colorVariants.value.map(c
 // Batch staging — exclude self + existing BOM + already staged
 const stageableOptions = computed(() => {
   const taken = new Set([...partBomList.value.map(b => b.child_part_id), ...staged.value.map(s => s.child_part_id)])
-  return childPartOptions.value.filter(o => !taken.has(o.value))
+  return childPartOptions.value.filter(o => {
+    if (taken.has(o.value)) return false
+    if (!bomCategory.value) return true
+    if (bomCategory.value === unclassifiedCategory.value) return !categoryOption(o.category)
+    return o.category === bomCategory.value
+  })
 })
 
 // Variant family
@@ -468,8 +485,9 @@ const familyStocks = ref({})
 const showEdit = ref(false)
 const saving = ref(false)
 const editFormRef = ref(null)
+let initialEditForm = {}
 const editForm = reactive({
-  category: '',
+  category: null,
   name: '',
   color: '',
   unit: '个',
@@ -639,7 +657,7 @@ const openEdit = () => {
   if (!part.value) return
   const p = part.value
   Object.assign(editForm, {
-    category: p.category || '',
+    category: categoryOption(p.category)?.value ?? null,
     name: p.name || '',
     color: p.color || '',
     unit: p.unit || '个',
@@ -650,6 +668,7 @@ const openEdit = () => {
     plating_process: p.plating_process || '',
     image: p.image || '',
   })
+  initialEditForm = { ...editForm }
   showEdit.value = true
 }
 
@@ -675,12 +694,13 @@ async function saveBasicInfo() {
         costUpdates.push({ part_id: id, field: f, value: newVal })
       }
     }
-    // 其余字段走 PATCH(剔除类目与三项成本)
-    const { category, purchase_cost, bead_cost, plating_cost, ...data } = editForm
+    // Only send fields edited by the user; e.g. reclassifying must not fill a stored blank unit.
+    const data = Object.fromEntries(Object.entries(editForm).filter(([field, value]) =>
+      !COST_FIELDS.includes(field) && value !== initialEditForm[field]))
     if (editingIsVariant.value) {
       delete data.color
     }
-    await updatePart(id, data)
+    if (Object.keys(data).length) await updatePart(id, data)
     if (costUpdates.length) {
       await batchUpdatePartCosts({ updates: costUpdates })
     }
@@ -716,6 +736,7 @@ watch(partId, async (id, _, onCleanup) => {
   parentPartName.value = ''
   partBomList.value = []
   childPartOptions.value = []
+  bomCategory.value = null
   variantFamily.value = []
   familyStocks.value = {}
   staged.value = []
@@ -757,6 +778,7 @@ watch(partId, async (id, _, onCleanup) => {
         code: p.id,
         name: p.name,
         image: p.image,
+        category: p.category,
       }))
   } catch (_) {
     // API interceptor reports the error; never leave the previous variant shown.
@@ -767,6 +789,12 @@ watch(partId, async (id, _, onCleanup) => {
 </script>
 
 <style scoped>
+.edit-form-scroll {
+  max-height: calc(100dvh - 160px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
 /* ── Page shell ── */
 .part-detail-page {
   padding: 0 0 40px;

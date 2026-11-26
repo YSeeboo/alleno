@@ -6,8 +6,10 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from schemas.part import BatchCostUpdateRequest, BatchCostUpdateResponse, BatchCostUpdateResultItem, PartCreate, FindOrCreateVariantResponse, PartCostLogResponse, PartImportResponse, PartResponse, PartUpdate, PartVariantCreate
+from schemas.part import BatchPartCategoryRequest, BatchPartCategoryResponse, PartCategoryOptionsResponse
 from schemas.part_bom import PartBomSet, PartBomBatchSet
 from services.part import COLOR_VARIANTS, create_part, create_part_variant, find_or_create_variant, get_part, list_part_cost_logs, list_part_variants, list_parts, update_part, update_part_cost, delete_part
+from services.part import PART_CATEGORY_OPTIONS, UNCLASSIFIED_PART_CATEGORY, batch_update_part_category
 from services.part_bom import set_part_bom, get_part_bom, delete_part_bom_item, set_part_bom_batch
 from services.part_import import build_parts_import_template, import_parts_excel
 from api._errors import service_errors
@@ -52,6 +54,24 @@ def api_download_parts_import_template(_db: Session = Depends(get_db)):
 @router.get("/color-variants")
 def api_get_color_variants():
     return COLOR_VARIANTS
+
+
+@router.get("/categories", response_model=PartCategoryOptionsResponse)
+def api_get_part_categories():
+    return {
+        "options": [
+            {"value": value, "label": label, "default_size_tier": tier}
+            for value, label, tier in PART_CATEGORY_OPTIONS
+        ],
+        "unclassified_value": UNCLASSIFIED_PART_CATEGORY,
+    }
+
+
+@router.post("/batch-update-category", response_model=BatchPartCategoryResponse)
+def api_batch_update_part_category(body: BatchPartCategoryRequest, db: Session = Depends(get_db)):
+    with service_errors():
+        updated_count = batch_update_part_category(db, body.part_ids, body.category)
+    return {"updated_count": updated_count}
 
 
 @router.post("/batch-update-costs", response_model=BatchCostUpdateResponse)

@@ -100,18 +100,18 @@ def test_update_part_partial(db):
     assert part.category == "吊坠"  # untouched
 
 
-def test_update_part_category_raises(db):
-    # Any attempt to change category should fail — the ID encodes the category.
-    create_part(db, {"name": "铜吊坠", "category": "吊坠"})
-    with pytest.raises(ValueError, match="Category cannot be changed after creation"):
-        update_part(db, "PJ-DZ-00001", {"category": "非法分类"})
+@pytest.mark.parametrize("category", ["非法分类", "小配件", None])
+def test_update_part_rejects_invalid_or_legacy_reclassification(db, category):
+    part = create_part(db, {"name": "铜吊坠", "category": "吊坠"})
+    with pytest.raises(ValueError, match="请选择有效的新类目"):
+        update_part(db, part.id, {"category": category})
+    assert part.category == "吊坠"
 
 
-def test_update_part_valid_category_still_raises(db):
-    # Even passing a valid (but different) category is disallowed.
-    create_part(db, {"name": "铜吊坠", "category": "吊坠"})
-    with pytest.raises(ValueError, match="Category cannot be changed after creation"):
-        update_part(db, "PJ-DZ-00001", {"category": "链条"})
+def test_update_part_valid_category_preserves_id_and_size(db):
+    part = create_part(db, {"name": "铜吊坠", "category": "吊坠"})
+    result = update_part(db, part.id, {"category": "底托/镶嵌件"})
+    assert (result.id, result.category, result.size_tier) == ("PJ-DZ-00001", "底托", "medium")
 
 
 def test_update_part_not_found(db):
@@ -128,4 +128,3 @@ def test_delete_part(db):
 def test_delete_part_not_found(db):
     with pytest.raises(ValueError):
         delete_part(db, "PJ-DZ-99999")
-

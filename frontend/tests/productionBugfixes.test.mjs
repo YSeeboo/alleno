@@ -14,7 +14,7 @@ const response = (data) => Promise.resolve({ data })
 
 function partDetailHarness(overrides = {}) {
   const names = ['loading', 'part', 'stock', 'logs', 'costLogs', 'parentPartName', 'partBomList',
-    'childPartOptions', 'variantFamily', 'familyStocks', 'staged', 'batchSelectVal', 'showCopyBom', 'showEdit', 'showImageModal']
+    'childPartOptions', 'bomCategory', 'variantFamily', 'familyStocks', 'staged', 'batchSelectVal', 'showCopyBom', 'showEdit', 'showImageModal']
   const state = Object.fromEntries(names.map(name => [name, { value: 'old' }]))
   let callback
   const deps = {
@@ -22,7 +22,7 @@ function partDetailHarness(overrides = {}) {
     getPart: id => response({ id, name: id, parent_part_id: id === 'root' ? null : 'root' }),
     getStock: (_, id) => response({ current: id === 'root' ? 10 : 25 }),
     getStockLog: (_, id) => response([{ item_id: id }]),
-    listParts: () => response([{ id: 'root', name: '原色' }, { id: 'gold', name: '金色' }]),
+    listParts: () => response([{ id: 'root', name: '原色', category: '连接件' }, { id: 'gold', name: '金色' }]),
     getPartBom: id => response([{ child_part_id: `${id}-child` }]),
     getPartCostLogs: id => response([{ part_id: id }]),
     getPartVariants: id => response(id === 'root' ? [{ id: 'gold' }] : [{ id: 'root' }, { id: 'gold' }]),
@@ -50,6 +50,8 @@ test('variant navigation reloads basic information, inventory, costs, BOM, famil
   assert.equal(s.costLogs.value[0].part_id, 'gold')
   assert.equal(s.partBomList.value[0].child_part_id, 'gold-child')
   assert.deepEqual(s.childPartOptions.value.map(row => row.value), ['root'])
+  assert.equal(s.childPartOptions.value[0].category, '连接件')
+  assert.equal(s.bomCategory.value, null)
   assert.deepEqual(s.familyStocks.value, { root: 10, gold: 25 })
   assert.equal(s.parentPartName.value, 'root root')
   assert.deepEqual(s.staged.value, [])

@@ -1,6 +1,7 @@
 import re
 from typing import List, Optional
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -45,27 +46,44 @@ def _looks_like_orphan_variant_name(name: str) -> bool:
     return _is_color_variant(name) or bool(_COLOR_PLUS_SPEC_NAME_REGEX.search(name))
 
 
-PART_CATEGORIES = {
-    "吊坠": "PJ-DZ",
-    "链条": "PJ-LT",
-    "小配件": "PJ-X",
-}
+PART_CATEGORY_OPTIONS = (
+    ("吊坠", "吊坠／挂件", "medium"),
+    ("链条", "链条", "medium"),
+    ("扣具", "扣具", "small"),
+    ("连接件", "连接件", "small"),
+    ("耳饰配件", "耳饰配件", "small"),
+    ("珠子", "珠子／散珠", "small"),
+    ("底托", "底托／镶嵌件", "small"),
+    ("线材", "线材／绳带", "small"),
+)
+UNCLASSIFIED_PART_CATEGORY = "__unclassified__"
+_CATEGORY_SIZE_TIERS = {value: tier for value, _, tier in PART_CATEGORY_OPTIONS}
+_CATEGORY_ALIASES = {label: value for value, label, _ in PART_CATEGORY_OPTIONS}
+# Preserve existing creation formats for callers using the three old values.
+# The new categories all use the same PJ counter, regardless of classification.
+PART_CATEGORIES = {value: "PJ" for value in _CATEGORY_SIZE_TIERS}
+PART_CATEGORIES.update({"吊坠": "PJ-DZ", "链条": "PJ-LT", "小配件": "PJ-X"})
 
-# Default size_tier inferred from category prefix when caller omits size_tier.
-# Used in create_part and the schema-compat backfill for existing rows.
-DEFAULT_SIZE_TIER_BY_PREFIX = {
-    "PJ-DZ": "medium",
-    "PJ-LT": "medium",
-    "PJ-X": "small",
-}
+def normalize_part_category(category):
+    if isinstance(category, str):
+        category = category.strip().replace("/", "／")
+    return _CATEGORY_ALIASES.get(category, category)
+
+
+def _validate_reclassification(category):
+    category = normalize_part_category(category)
+    if category not in _CATEGORY_SIZE_TIERS:
+        raise ValueError("请选择有效的新类目")
+    return category
 
 
 def create_part(db: Session, data: dict) -> Part:
-    category = data.get("category")
+    category = normalize_part_category(data.get("category"))
     if category not in PART_CATEGORIES:
         raise ValueError(
             f"Invalid category '{category}'. Must be one of: {list(PART_CATEGORIES.keys())}"
         )
+    data["category"] = category
     parent_part_id = data.get("parent_part_id")
     if parent_part_id is not None:
         parent = db.get(Part, parent_part_id)
@@ -84,7 +102,7 @@ def create_part(db: Session, data: dict) -> Part:
         data["buffer_ratio_override"] = Decimal(str(data["buffer_ratio_override"]))
     prefix = PART_CATEGORIES[category]
     if data.get("size_tier") is None:
-        data["size_tier"] = DEFAULT_SIZE_TIER_BY_PREFIX.get(prefix, "small")
+        data["size_tier"] = _CATEGORY_SIZE_TIERS.get(category, "small")
     part = Part(id=_next_id_by_category(db, Part, prefix), **data)
     db.add(part)
     db.flush()
@@ -97,8 +115,10 @@ def get_part(db: Session, part_id: str) -> Optional[Part]:
 
 def list_parts(db: Session, category: str = None, name: str = None, parent_part_id: str = None) -> List[Part]:
     q = db.query(Part)
-    if category is not None:
-        q = q.filter(Part.category == category)
+    if category == UNCLASSIFIED_PART_CATEGORY:
+        q = q.filter(or_(Part.category.is_(None), Part.category.notin_(_CATEGORY_SIZE_TIERS)))
+    elif category is not None:
+        q = q.filter(Part.category == normalize_part_category(category))
     clause = keyword_filter(name, Part.name, Part.id)
     if clause is not None:
         q = q.filter(clause)
@@ -117,13 +137,8 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
             value = (data[field] or "").strip() if field == "spec" else data[field]
             if (value or None) != (getattr(part, field) or None):
                 raise ValueError("整件电镀生成的组合件不可修改颜色、单位、规格或父配件")
-    # Category changes are disallowed because the part ID encodes the category
-    # (e.g. PJ-DZ-00001 means 吊坠). Allowing a category change would make the
-    # ID misleading and break the ID-format contract.
     if "category" in data:
-        raise ValueError(
-            "Category cannot be changed after creation — the part ID encodes the category."
-        )
+        data["category"] = _validate_reclassification(data["category"])
     # Frontend "clear selection" UX often sends null; size_tier is NOT NULL
     # so treat explicit None as omission rather than letting the DB raise.
     if "size_tier" in data and data["size_tier"] is None:
@@ -182,6 +197,22 @@ def update_part(db: Session, part_id: str, data: dict) -> Part:
         )
         db.flush()
     return part
+
+
+def batch_update_part_category(db: Session, part_ids: list[str], category: str) -> int:
+    category = _validate_reclassification(category)
+    ids = set(part_ids)
+    parts = db.query(Part).filter(Part.id.in_(ids)).order_by(Part.id).with_for_update().all()
+    missing = ids - {p.id for p in parts}
+    if missing:
+        raise ValueError(f"以下配件不存在，未改动任何类目：{'、'.join(sorted(missing))}")
+    changed = 0
+    for part in parts:
+        if part.category != category:
+            part.category = category
+            changed += 1
+    db.flush()
+    return changed
 
 
 COLOR_CODES = {v["code"]: v["label"] for v in COLOR_VARIANTS}

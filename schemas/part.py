@@ -43,7 +43,7 @@ class PartResponse(BaseModel):
     id: str
     name: str
     image: Optional[str] = None
-    category: str
+    category: Optional[str] = None
     color: Optional[str] = None
     spec: Optional[str] = None
     unit: Optional[str] = None
@@ -59,6 +59,26 @@ class PartResponse(BaseModel):
     size_tier: SizeTier = "small"
     buffer_ratio_override: Optional[float] = None
     buffer_floor_override: Optional[int] = None
+
+
+class PartCategoryOption(BaseModel):
+    value: str
+    label: str
+    default_size_tier: SizeTier
+
+
+class PartCategoryOptionsResponse(BaseModel):
+    options: list[PartCategoryOption]
+    unclassified_value: str
+
+
+class BatchPartCategoryRequest(BaseModel):
+    part_ids: list[str] = Field(min_length=1, max_length=500)
+    category: str
+
+
+class BatchPartCategoryResponse(BaseModel):
+    updated_count: int
 
 
 class PartVariantCreate(BaseModel):
